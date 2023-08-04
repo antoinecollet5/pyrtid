@@ -14,7 +14,7 @@ build:
   tools:
     python: "3.9"
   apt_packages:
-    - libsuitesparse
+    - libsuitesparse-dev
 
 # Optionally set the version of Python and requirements required to build your docs
 python:
