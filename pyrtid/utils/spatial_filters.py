@@ -25,7 +25,22 @@ class Filter:
 
     @abstractmethod
     def filter(self, param: NDArrayFloat, iteration: int) -> NDArrayFloat:
-        """Smooth the given parameter array."""
+        """Filter the given values.
+
+        Parameters
+        ----------
+        param : NDArrayFloat
+            Values to filter.
+        iteration : int
+            Iteration number knowing that iterations start at 1 (and not at zero).
+
+        Returns
+        -------
+        NDArrayFloat
+            Filtered values.
+
+        """
+        ...  # pragma: no cover
 
 
 @dataclass
@@ -70,11 +85,24 @@ class GaussianFilter(Filter):
     truncate: float = 4.0
 
     def filter(self, param: NDArrayFloat, iteration: int) -> NDArrayFloat:
-        """Smooth the given parameter array."""
+        """Apply a gaussian smoothing to the given values.
+
+        Parameters
+        ----------
+        param : NDArrayFloat
+            Values to filter.
+        iteration : int
+            Iteration number knowing that iterations start at 1 (and not at zero).
+
+        Returns
+        -------
+        NDArrayFloat
+            Filtered values.
+        """
 
         return gaussian_filter(
             param,
-            get_sigma(self.sigmas, iteration, param.ndim),
+            get_sigma(self.sigmas, iteration - 1, param.ndim),
             self.order,
             mode=self.mode,
             cval=self.cval,
@@ -84,22 +112,22 @@ class GaussianFilter(Filter):
 
 def get_sigma(
     sigmas: Union[float, Sequence[Union[float, Sequence[float]]]],
-    iteration: int,
+    index: int,
     dim: int,
-) -> Union[float, List[float]]:
+) -> Union[float, Sequence[float]]:
     """
     Get the sigma.
 
     Parameters
     ----------
-    iteration : int
-        _description_
+    index : int
+        Index in the sequence of sigmas.
     dim : int
         Spatial dimension (1, 2 or 3).
 
     Returns
     -------
-    Union[float, List[float]]
+    Union[float, Sequence[float]]
         The computed sigmas.
 
     Raises
@@ -109,12 +137,16 @@ def get_sigma(
     """
     if isinstance(sigmas, float):
         return sigmas
+    if isinstance(sigmas, int):
+        return float(sigmas)
     try:
-        sigma = object_or_object_sequence_to_list(sigmas)[iteration]
+        sigma = object_or_object_sequence_to_list(sigmas)[index]
     except IndexError:
         return 0.0
     if isinstance(sigma, float):
         return sigma
+    if isinstance(sigma, int):
+        return float(sigma)
     dim_sigma: int = len(sigma)
     if dim_sigma != dim:
         raise ValueError(
