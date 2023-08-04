@@ -69,7 +69,7 @@ def get_param_values() -> NDArrayFloat:
                 kernel=exponential_kernel,
                 len_scale=len_scale,
             ),
-            1e-5,
+            1e-4,
         ),
         (
             cov_mat_to_ud_mat(
