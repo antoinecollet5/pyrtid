@@ -14,7 +14,7 @@ requires = [
     "pyPCGA @ git+https://github.com/antoinecollet5/pyPCGA.git@feature/random_state",
     "iterative_ensemble_smoother @ git+https://github.com/equinor/iterative_ensemble_smoother",
     "typing_extensions",
-    "matplotlib>=3.7",
+    "matplotlib>=3.5.1",
     "joblib",
     "gstools",
     "nested_grid_plotter",
