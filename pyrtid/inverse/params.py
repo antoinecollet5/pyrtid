@@ -8,7 +8,6 @@ from __future__ import annotations
 import json
 import sys
 import warnings
-from dataclasses import dataclass
 from typing import Callable, List, Optional, Sequence, Tuple, Union
 
 import numdifftools as nd
@@ -47,7 +46,6 @@ class ParameterName(StrEnum):
     INITIAL_MINERAL_GRADE = "initial_mineral_grade"
 
 
-@dataclass
 class AdjustableParameter:
     """
     Represent an adjustable parameter for hytec-python-auto-hm.
@@ -105,7 +103,7 @@ class AdjustableParameter:
     def __init__(
         self,
         name: ParameterName,
-        values: NDArrayFloat = np.array([]),
+        values: Optional[NDArrayFloat] = None,
         lbound: float = -1e20,
         ubound: float = 1e20,
         regularizators: Optional[List[Regularizator]] = None,
@@ -119,7 +117,7 @@ class AdjustableParameter:
         filters: Optional[List[Filter]] = None,
     ) -> None:
         self.name = name
-        self.values = values
+        self.values = values if values is not None else np.array([])
         self.lbound = lbound
         self.ubound = ubound
         self.regularizators = regularizators if regularizators is not None else []

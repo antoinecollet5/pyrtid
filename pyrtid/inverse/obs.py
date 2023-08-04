@@ -1,6 +1,5 @@
 """Provide a representation of observables."""
 import json
-from dataclasses import dataclass
 from typing import Optional, Sequence, Tuple, Union
 
 import numpy as np
@@ -25,7 +24,6 @@ class StateVariable(StrEnum):
     MINERAL_GRADE = "grade"
 
 
-@dataclass
 class Observable:
     """
     Class representing observations data within time at a defined location.
@@ -40,26 +38,59 @@ class Observable:
         Timesteps matching the values.
     values: NDArrayFloat
         Observed values.
-    uncertainties: Union[float, NDArrayFloat]
+    uncertainties: NDArrayFloat
         Absolute uncertainties associated with the observed values.
     """
 
-    state_variable: StateVariable
-    location: Union[NDArrayInt, Tuple[slice, slice]]
-    timesteps: NDArrayInt
-    values: NDArrayFloat
-    uncertainties: Union[float, NDArrayFloat] = np.array([])
+    def __init__(
+        self,
+        state_variable: StateVariable,
+        location: Union[NDArrayInt, Tuple[slice, slice]],
+        timesteps: NDArrayInt,
+        values: NDArrayFloat,
+        uncertainties: Optional[Union[float, NDArrayFloat]] = None,
+    ) -> None:
+        """_summary_
 
-    def __post_init__(self) -> None:
-        """Construct the class."""
-        self.uncertainties = np.array(self.uncertainties)
-        if self.uncertainties.size == 0:
+        Parameters
+        ----------
+        state_variable: StateVariable
+            Name of the state variable or the parameter being observed.
+        location: slice
+            Location of the observation in the grid.
+        timesteps: NDArrayInt
+            Timesteps matching the values.
+        values: NDArrayFloat
+            Observed values.
+        uncertainties: Optional[Union[float, NDArrayFloat]]
+            Absolute uncertainties associated with the observed values.
+
+        Raises
+        ------
+        ValueError
+            _description_
+        ValueError
+            _description_
+        ValueError
+            _description_
+        """
+
+        self.state_variable = state_variable
+        self.location = location
+        self.timesteps = timesteps
+        self.values = values
+
+        _uncertainties = (
+            np.array(uncertainties) if uncertainties is not None else np.array([])
+        )
+
+        if _uncertainties.size == 0:
             self.uncertainties = np.ones(self.values.shape)
-        elif self.uncertainties.size == 1:
+        elif _uncertainties.size == 1:
             self.uncertainties = (
                 np.ones(self.values.shape) * self.uncertainties.ravel()[0]
             )
-        if self.uncertainties.size != self.values.size:
+        if _uncertainties.size != self.values.size:
             raise ValueError(
                 "Uncertainties should be a float values or a numpy "
                 "array with the same dimension as values."
