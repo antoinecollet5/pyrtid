@@ -139,7 +139,7 @@ __all__ = [
     "DenseCovarianceMatrix",
     "FFTCovarianceMatrix",
     "HCovarianceMatrix",
-    CovarianceMatrix,
+    "CovarianceMatrix",
     "CovarianceMatrixbyUd",
     "SparseInvCovarianceMatrix",
     "PriorTerm",

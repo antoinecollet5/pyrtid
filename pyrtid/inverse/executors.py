@@ -703,7 +703,7 @@ class PCGAInversionExecutor(BaseInversionExecutor[PCGASolverConfig]):
 
 @dataclass
 class ESMDASolverConfig(BaseSolverConfig):
-    """
+    r"""
     Ensemble Smoother with Multiple Data Assimilation Inversion Configuration.
 
     Attributes

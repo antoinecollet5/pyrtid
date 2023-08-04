@@ -39,7 +39,7 @@ Sub module providing regularization tools.
 
     regularization
 
-.. currentmodule:: pyrtid.inverse.adjoint
+.. currentmodule:: pyrtid.inverse
 
 Adjoint
 ^^^^^^^
@@ -53,6 +53,7 @@ Provide adjoint model and solver for the estimated parameter gradient computatio
     AdjointModel
     is_adjoint_gradient_correct
 
+.. currentmodule:: pyrtid.inverse
 
 Observables and utilities
 ^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -22,7 +22,7 @@ nbsphinx-link
 sphinxcontrib-blockdiag
 jupyter_sphinx>=0.3.2
 sphinx-jsonschema>=1.15
-pygments==2.6.1
+pygments==2.11.1
 sphinx-panels
 pydata-sphinx-theme
 sphinxcontrib-bibtex

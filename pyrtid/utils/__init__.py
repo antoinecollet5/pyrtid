@@ -106,7 +106,6 @@ finite difference numerical approximation.
 .. currentmodule:: pyrtid.utils.operators
 
 Spatial differential operators
-
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 Provide functions for spatial differentiation.
 
