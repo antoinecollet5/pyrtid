@@ -21,24 +21,24 @@ python Reactive Transport Inversion is a reactive transport inversion demonstrat
     :target: https://github.com/antoinecollet5/pyrtid/stargazers
     :alt: Stars
 
-.. |Python| image:: https://img.shields.io/pypi/pyversions/nested-grid-plotter.svg
-    :target: https://pypi.org/pypi/nested-grid-plotter
+.. |Python| image:: https://img.shields.io/pypi/pyversions/pyrtid.svg
+    :target: https://pypi.org/pypi/pyrtid
     :alt: Python
 
-.. |PyPI| image:: https://img.shields.io/pypi/v/nested-grid-plotter.svg
-    :target: https://pypi.org/pypi/nested-grid-plotter
+.. |PyPI| image:: https://img.shields.io/pypi/v/pyrtid.svg
+    :target: https://pypi.org/pypi/pyrtid
     :alt: PyPI
 
-.. |Downloads| image:: https://pepy.tech/badge/nested-grid-plotter
-    :target: https://pepy.tech/project/nested-grid-plotter
+.. |Downloads| image:: https://pepy.tech/badge/pyrtid
+    :target: https://pepy.tech/project/pyrtid
     :alt: Downoads
 
 .. |Build Status| image:: https://github.com/antoinecollet5/pyrtid/actions/workflows/main.yml/badge.svg
     :target: https://github.com/antoinecollet5/pyrtid/actions/workflows/main.yml
-    :alt: Build Status  
+    :alt: Build Status
 
-.. |Documentation Status| image:: https://readthedocs.org/projects/nested-grid-plotter/badge/?version=latest
-    :target: https://nested-grid-plotter.readthedocs.io/en/latest/?badge=latest
+.. |Documentation Status| image:: https://readthedocs.org/projects/pyrtid/badge/?version=latest
+    :target: https://pyrtid.readthedocs.io/en/latest/?badge=latest
     :alt: Documentation Status
 
 .. |Coverage| image:: https://codecov.io/gh/antoinecollet5/pyrtid/branch/master/graph/badge.svg?token=ISE874MMOF
@@ -60,5 +60,5 @@ python Reactive Transport Inversion is a reactive transport inversion demonstrat
     :target: https://timothycrosley.github.io/isort
     :alt: isort
 
-.. |DOI| image:: https://zenodo.org/badge/DOI/10.5281/zenodo.7542499.svg
-   :target: https://doi.org/10.5281/zenodo.7542499
+.. |DOI| image:: https://zenodo.org/badge/DOI/10.5281/zenodo.8192031.svg
+   :target: https://doi.org/10.5281/zenodo.8192031
