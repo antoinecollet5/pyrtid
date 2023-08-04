@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from abc import abstractmethod
 from dataclasses import dataclass
-from typing import List, Sequence, Union
+from typing import Sequence, Union
 
 from scipy.ndimage import gaussian_filter
 from typing_extensions import Literal
