@@ -35,12 +35,12 @@ numdifftools
 gstools
 numba
 typing_extensions
-pyesmda>=0.4.1
+pyesmda>=0.4.3
 stochopy
 pyPCGA @ git+https://github.com/jonghyunharrylee/pyPCGA
 iterative_ensemble_smoother @ git+https://github.com/equinor/iterative_ensemble_smoother
 typing_extensions
-matplotlib~=3.6.2
+matplotlib>=3.7
 joblib
 gstools
 nested_grid_plotter
