@@ -25,7 +25,7 @@ sphinx-jsonschema>=1.15
 pygments==2.6.1
 sphinx-panels
 pydata-sphinx-theme
-sphinxcontrib.plantuml
+sphinxcontrib-bibtex
 jinja2==3.0.3
 
 numpy>=1.2
