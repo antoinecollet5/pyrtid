@@ -14,21 +14,6 @@ Utilities for python dataclasses.
     default_field
 
 
-.. currentmodule:: pyrtid.utils.logging
-
-Logging
-^^^^^^^
-
-Utilities for output display and logging.
-
-.. autosummary::
-   :toctree: _autosummary
-
-   display_final_computation_time_message
-   display_initial_message
-   display_intermediate_message
-
-
 .. currentmodule:: pyrtid.utils.grid
 
 Regular grids
@@ -141,19 +126,6 @@ Provide some spatial filters
 
     GaussianFilter
 
-
-.. currentmodule:: pyrtid.utils.timer
-
-Function timer
-^^^^^^^^^^^^^^
-
-Function to measure function time consumption.
-
-.. autosummary::
-   :toctree: _autosummary
-
-    time_it
-
 .. currentmodule:: pyrtid.utils
 
 Others
@@ -194,11 +166,6 @@ from pyrtid.utils.grid import (
     node_number_to_indices,
     span_to_node_numbers_2d,
 )
-from pyrtid.utils.logging import (
-    display_final_computation_time_message,
-    display_initial_message,
-    display_intermediate_message,
-)
 from pyrtid.utils.means import (
     arithmetic_mean,
     dxi_arithmetic_mean,
@@ -220,7 +187,6 @@ from pyrtid.utils.random_field import (
     get_normalized_std_from_lognormal_params,
 )
 from pyrtid.utils.spatial_filters import GaussianFilter
-from pyrtid.utils.timer import time_it
 from pyrtid.utils.types import (
     NDArrayBool,
     NDArrayFloat,
@@ -231,9 +197,6 @@ from pyrtid.utils.versions import show_versions
 from pyrtid.utils.wellfield import gen_wells_coordinates
 
 __all__ = [
-    "display_initial_message",
-    "display_intermediate_message",
-    "display_final_computation_time_message",
     "node_number_to_indices",
     "indices_to_node_number",
     "gradient_ffd",
@@ -247,7 +210,6 @@ __all__ = [
     "default_field",
     "gen_wells_coordinates",
     "get_super_lu_preconditioner",
-    "time_it",
     "gen_random_ensemble",
     "get_normalized_mean_from_lognormal_params",
     "get_normalized_std_from_lognormal_params",

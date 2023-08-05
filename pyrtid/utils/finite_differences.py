@@ -25,13 +25,22 @@ import numpy as np
 
 
 def rosen(x):
-    """Rosenbrook function."""
-    return (1 - x[0]) ** 2 + 105.0 * (x[1] - x[0] ** 2) ** 2
+    """Rosenbrock function."""
+    return (1 - x[0]) ** 2 + 100.0 * (x[1] - x[0] ** 2) ** 2
 
 
-def gradient(x):
-    """Rosenbrook function first derivative."""
-    return np.array([1.0, 1.0, 1.0])
+def rosen_gradient(x):
+    """Rosenbrock function first derivative."""
+    return np.array(
+        [400 * x[0] ** 3 + (2 - 400 * x[1]) * x[0] - 2, 200 * (x[1] - x[0] ** 2)]
+    )
+
+
+def rosen_hessian(x):
+    """Rosenbrock function second derivative."""
+    return np.array(
+        [[1200 * x[0] ** 2 - 400 * x[1] + 2, -400 * x[0]], [-400 * x[0], 200.0]]
+    )
 
 
 def is_gradient_correct(
@@ -210,235 +219,3 @@ def finite_gradient(
             x[i] = tmp
         grad[i] /= dd_val
     return grad.reshape(shape)
-
-
-def is_hessian_correct(
-    x: np.ndarray,
-    fm: Callable,
-    hess: Callable,
-    fm_args: Tuple[Any] = (),
-    fm_kwargs: Dict[str, Any] = {},
-    hess_args: Tuple[Any] = (),
-    hess_kwargs: Dict[str, Any] = {},
-    accuracy: int = 0,
-    eps: float = sys.float_info.epsilon * 1e7,
-) -> bool:
-    """
-    Check by finite difference if the hessian is correct.
-
-    Parameters
-    ----------
-    x : np.ndarray
-        The input parameters vector.
-    fm : Callable
-        Forward model.
-    hess : Callable
-        Hessian model.
-    fm_args: Tuple[Any]
-        Positional arguments for the forward model.
-    fm_kwargs : Dict[Any, Any]
-        Keyword arguments for the forward model.
-    hess_args: Tuple[Any]
-        Positional arguments for the hessian model.
-    grad_kwargs : Dict[Any, Any]
-        Keyword arguments for the hessian model.
-    accuracy : int, optional
-        Number of points to use for the finite difference approximation.
-        Possible values are 0 (2 points), 1 (4 points), 2 (6 points),
-        3 (4 points). The default is 0 which corresponds to the central
-        difference scheme (2 points).
-    eps: float, optional
-        The epsilon for the computation (h). The default value has been
-        taken from the C++ implementation of
-        :cite:`wieschollek2016cppoptimizationlibrary`, and should correspond
-        to the optimal h taking into account the roundoff errors due to
-        the machine precision. The default is -2.2204e-6.
-
-    Returns
-    -------
-    bool
-        True if the gradient is correct, false otherwise.
-
-    """
-    actual_hessian = hess(x, hess_args, hess_kwargs)
-    expected_hessian = finite_gradient(x, fm, fm_args, fm_kwargs, accuracy, eps)
-
-    scale = np.maximum(
-        np.maximum(np.abs(actual_hessian), np.abs(expected_hessian)), 1.0
-    )
-    return np.less_equal(
-        (np.abs(actual_hessian - expected_hessian)), 1e-1 * scale
-    ).all()
-
-
-def finite_hessian(
-    x: np.ndarray,
-    fm: Callable,
-    fm_args: Tuple[Any] = (),
-    fm_kwargs: Dict[str, Any] = {},
-    accuracy: int = 0,
-    eps: float = sys.float_info.epsilon * 1e7,
-) -> np.ndarray:
-    r"""
-    Compute the hessian by finite difference.
-
-
-      /*
-        \displaystyle{{\frac{\partial^2{f}}{\partial{x}\partial{y}}}\approx
-        \frac{1}{600\,h^2} \left[\begin{matrix}
-          -63(f_{1,-2}+f_{2,-1}+f_{-2,1}+f_{-1,2})+\\
-          63(f_{-1,-2}+f_{-2,-1}+f_{1,2}+f_{2,1})+\\
-          44(f_{2,-2}+f_{-2,2}-f_{-2,-2}-f_{2,2})+\\
-          74(f_{-1,-1}+f_{1,1}-f_{1,-1}-f_{-1,1})
-        \end{matrix}\right] }
-      */
-
-    Parameters
-    ----------
-    x : np.ndarray
-        The input parameters vector.
-    fm : Callable
-        Forward model.
-    fm_args: Tuple[Any]
-        Positional arguments for the forward model.
-    fm_kwargs : Dict[Any, Any]
-        Keyword arguments for the forward model.
-    accuracy : int, optional
-        Number of points to use for the finite difference approximation.
-        Possible values are 0 (3 points), 1 (4 points), 2 (6 points),
-        3 (4 points). The default is 0 which corresponds to the central
-        difference scheme (2 points).
-    eps: float, optional
-        The epsilon for the computation (h). The default value has been
-        taken from the C++ implementation of
-        :cite:`wieschollek2016cppoptimizationlibrary`, and should correspond
-        to the optimal h taking into account the roundoff errors due to
-        the machine precision. The default is 2.2204e-9.
-
-    Returns
-    -------
-    None.
-
-    """
-    hessian = np.zeros((x.size, x.size))
-
-    # Centered scheme
-    if accuracy == 0:
-        for i, j in np.ndindex(hessian.shape):
-            tmp_xi = x[i].copy()
-            tmp_xj = x[j].copy()
-            f4 = fm(x, *fm_args, **fm_kwargs)
-            x[i] += eps
-            x[i] += eps
-            f1 = fm(x, *fm_args, **fm_kwargs)
-            x[i] -= eps
-            f2 = fm(x, *fm_args, **fm_kwargs)
-            x[j] += eps
-            x[i] -= eps
-            f3 = fm(x, *fm_args, **fm_kwargs)
-
-            hessian[i, j] = (f1 - f2 - f3 + f4) / (eps * eps)
-
-            x[i] = tmp_xi
-            x[j] = tmp_xj
-    else:
-        for i, j in np.ndindex(hessian.shape):
-            tmp_xi = x[i].copy()
-            tmp_xj = x[j].copy()
-
-            term_1 = 0
-            x[i] = tmp_xi
-            x[j] = tmp_xj
-            x[i] += 1 * eps
-            x[j] += -2 * eps
-            term_1 += fm(x, *fm_args, **fm_kwargs)
-            x[i] = tmp_xi
-            x[j] = tmp_xj
-            x[i] += 2 * eps
-            x[j] += -1 * eps
-            term_1 += fm(x, *fm_args, **fm_kwargs)
-            x[i] = tmp_xi
-            x[j] = tmp_xj
-            x[i] += -2 * eps
-            x[j] += 1 * eps
-            term_1 += fm(x, *fm_args, **fm_kwargs)
-            x[i] = tmp_xi
-            x[j] = tmp_xj
-            x[i] += -1 * eps
-            x[j] += 2 * eps
-            term_1 += fm(x, *fm_args, **fm_kwargs)
-
-            term_2 = 0
-            x[i] = tmp_xi
-            x[j] = tmp_xj
-            x[i] += -1 * eps
-            x[j] += -2 * eps
-            term_2 += fm(x, *fm_args, **fm_kwargs)
-            x[i] = tmp_xi
-            x[j] = tmp_xj
-            x[i] += -2 * eps
-            x[j] += -1 * eps
-            term_2 += fm(x, *fm_args, **fm_kwargs)
-            x[i] = tmp_xi
-            x[j] = tmp_xj
-            x[i] += 1 * eps
-            x[j] += 2 * eps
-            term_2 += fm(x, *fm_args, **fm_kwargs)
-            x[i] = tmp_xi
-            x[j] = tmp_xj
-            x[i] += 2 * eps
-            x[j] += 1 * eps
-            term_2 += fm(x, *fm_args, **fm_kwargs)
-
-            term_3 = 0
-            x[i] = tmp_xi
-            x[j] = tmp_xj
-            x[i] += 2 * eps
-            x[j] += -2 * eps
-            term_3 += fm(x, *fm_args, **fm_kwargs)
-            x[i] = tmp_xi
-            x[j] = tmp_xj
-            x[i] += -2 * eps
-            x[j] += 2 * eps
-            term_3 += fm(x, *fm_args, **fm_kwargs)
-            x[i] = tmp_xi
-            x[j] = tmp_xj
-            x[i] += -2 * eps
-            x[j] += -2 * eps
-            term_3 -= fm(x, *fm_args, **fm_kwargs)
-            x[i] = tmp_xi
-            x[j] = tmp_xj
-            x[i] += 2 * eps
-            x[j] += 2 * eps
-            term_3 -= fm(x, *fm_args, **fm_kwargs)
-
-            term_4 = 0
-            x[i] = tmp_xi
-            x[j] = tmp_xj
-            x[i] += -1 * eps
-            x[j] += -1 * eps
-            term_4 += fm(x, *fm_args, **fm_kwargs)
-            x[i] = tmp_xi
-            x[j] = tmp_xj
-            x[i] += 1 * eps
-            x[j] += 1 * eps
-            term_4 += fm(x, *fm_args, **fm_kwargs)
-            x[i] = tmp_xi
-            x[j] = tmp_xj
-            x[i] += 1 * eps
-            x[j] += -1 * eps
-            term_4 -= fm(x, *fm_args, **fm_kwargs)
-            x[i] = tmp_xi
-            x[j] = tmp_xj
-            x[i] += -1 * eps
-            x[j] += 1 * eps
-            term_4 -= fm(x, *fm_args, **fm_kwargs)
-
-            x[i] = tmp_xi
-            x[j] = tmp_xj
-
-            hessian[i, j] = (-63 * term_1 + 63 * term_2 + 44 * term_3 + 74 * term_4) / (
-                600.0 * eps * eps
-            )
-
-    return hessian
