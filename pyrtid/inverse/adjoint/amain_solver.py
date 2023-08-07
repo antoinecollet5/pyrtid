@@ -9,7 +9,7 @@ from pyrtid.inverse.adjoint.aflow_solver import (
     solve_adj_flow_transient_semi_implicit,
     update_adjoint_u_darcy,
 )
-from pyrtid.inverse.adjoint.ageochem_solver import solve_adj_geochem_explicit
+from pyrtid.inverse.adjoint.ageochem_solver import solve_adj_geochem
 from pyrtid.inverse.adjoint.amodels import (
     AdjointFlowModel,
     AdjointModel,
@@ -99,24 +99,13 @@ class AdjointSolver:
         # TODO: for now there is no retroaction from the chemistry to the flow
 
         for time_index in range(
-            self.fwd_model.time_params.nt, 0, -1
+            self.fwd_model.time_params.nt - 1, -1, -1
         ):  # Reverse order in time, and reverse order in operator sequence
             # 0) copy last transport state
             _copy_tr_adj_prev_to_current(self.adj_model.tr_model, time_index)
 
-            # 1) Solve the transport
-            # TODO: Add a "if mob obs" ??
-            solve_adj_transport_transient_semi_implicit(
-                self.fwd_model.geometry,
-                self.fwd_model.fl_model,
-                self.fwd_model.tr_model,
-                self.adj_model.tr_model,
-                self.fwd_model.time_params.dt,
-                time_index,
-            )
-
-            # 2) Solve the chemistry
-            solve_adj_geochem_explicit(
+            # 1) Solve the adjointchemistry
+            solve_adj_geochem(
                 self.fwd_model.tr_model,
                 self.adj_model.tr_model,
                 self.fwd_model.gch_params,
@@ -125,7 +114,17 @@ class AdjointSolver:
                 time_index,
             )
 
-            # Need to compute the adjoint darcy velocities
+            # 2) Solve the adjoint transport
+            solve_adj_transport_transient_semi_implicit(
+                self.fwd_model.geometry,
+                self.fwd_model.fl_model,
+                self.fwd_model.tr_model,
+                self.adj_model.tr_model,
+                self.fwd_model.time_params,
+                time_index,
+            )
+
+            # 3) Need to compute the adjoint darcy velocities
             update_adjoint_u_darcy(
                 self.fwd_model.geometry,
                 self.fwd_model.tr_model,
@@ -135,7 +134,7 @@ class AdjointSolver:
                 time_index,
             )
 
-            # 3) Solve the flow last -> requires the previous
+            # 4) Solve the flow last -> requires the previous
             solve_adj_flow_transient_semi_implicit(
                 self.fwd_model.geometry,
                 self.fwd_model.fl_model,

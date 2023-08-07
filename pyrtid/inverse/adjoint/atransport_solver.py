@@ -356,34 +356,32 @@ def solve_adj_transport_transient_semi_implicit(
     fl_model: FlowModel,
     tr_model: TransportModel,
     a_tr_model: AdjointTransportModel,
-    dt: float,
+    time_params: TimeParameters,
     time_index: int,
 ) -> int:
     """
     Solving the adjoint diffusivity equation:
 
-    dh/dt = div K grad h + ...
+    dc/dt = div D grad c + ...
     """
+
+    # Skip the last timestep (there is no transport between n=0 and n=1)
+    if time_index == 0:
+        return 0
+
     # Update q_next and q_prev with the advection term (must be copied)
     _add_advection_to_adj_transport_matrices(
         geometry, fl_model, tr_model, a_tr_model, time_index
     )
 
     # Get the previous vector
-    prev_vector = a_tr_model.a_conc[:, :, time_index].ravel("F")
+    prev_vector = a_tr_model.a_conc_post_gch[:, :, time_index].ravel("F")
 
     # Multiply prev matrix by prev vector
     tmp = a_tr_model.q_prev.dot(prev_vector)
 
-    # Add the source terms -> from the previous timestep
-    tmp += (a_tr_model.a_sources[:, :, time_index]).ravel("F") / geometry.mesh_area
-
     # Build the LU preconditioning
     preconditioner = get_super_lu_preconditioner(a_tr_model.q_next)
-
-    # if time_index == 0:
-    # print(a_tr_model.q_next)
-    # print(a_tr_model.q_prev)
 
     # Solve Ax = b with A sparse using LU preconditioner
     res, exit_code = gmres(a_tr_model.q_next, tmp, M=preconditioner, atol=1e-15)

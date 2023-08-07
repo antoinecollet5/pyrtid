@@ -325,7 +325,7 @@ def solve_adj_flow_stationary(
     tmp[fl_model.cst_head_nn] = 0.0
 
     # Add the source terms from head observations
-    tmp += a_fl_model.a_sources[:, :, time_index].ravel("F") / geometry.mesh_area
+    tmp -= a_fl_model.a_sources[:, :, time_index].ravel("F") / geometry.mesh_area
 
     # Add the source terms from mob observations (adjoint transport)
     # tmp += _get_adjoint_transport_src_terms(

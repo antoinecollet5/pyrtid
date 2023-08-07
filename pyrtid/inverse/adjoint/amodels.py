@@ -50,13 +50,13 @@ class AdjointTransportModel:
 
     __slots__ = [
         "a_conc",
+        "a_conc_post_gch",
         "a_grade",
         "a_sources",
         "q_prev_diffusion",
         "q_next_diffusion",
         "q_prev",
         "q_next",
-        "a_conc_save",
     ]
 
     def __init__(
@@ -69,6 +69,9 @@ class AdjointTransportModel:
         self.a_conc: NDArrayFloat = np.zeros(
             (geometry.nx, geometry.ny, time_params.nt + 1), dtype=np.float64
         )
+        self.a_conc_post_gch: NDArrayFloat = np.zeros(
+            (geometry.nx, geometry.ny, time_params.nt + 1), dtype=np.float64
+        )
         self.a_grade: NDArrayFloat = np.zeros(
             (geometry.nx, geometry.ny, time_params.nt + 1), dtype=np.float64
         )
@@ -76,9 +79,6 @@ class AdjointTransportModel:
         self.a_sources = np.zeros(
             (geometry.nx, geometry.ny, time_params.nt + 1), dtype=np.float64
         )
-
-        # Save of a_conc for the chemistry
-        self.a_conc_save = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
 
         self.q_prev_diffusion = csc_matrix(geometry.nx * geometry.ny)
         self.q_next_diffusion = csc_matrix(geometry.nx * geometry.ny)
@@ -149,12 +149,12 @@ class AdjointModel:
         try:
             # case obs.location is a numpy array
             self.tr_model.a_sources[obs.location, obs.timesteps] += (
-                model.tr_model.conc[obs.location, obs.timesteps].ravel() - obs.values
+                obs.values - model.tr_model.conc[obs.location, obs.timesteps].ravel()
             ) / (obs.uncertainties**2)
         except IndexError:
             # case obs.location is a tuple of slices
             self.tr_model.a_sources[(*obs.location, obs.timesteps)] += (
-                model.tr_model.conc[(*obs.location, obs.timesteps)].ravel() - obs.values
+                obs.values - model.tr_model.conc[(*obs.location, obs.timesteps)].ravel()
             ) / (obs.uncertainties**2)
 
     def set_adjoint_sources_from_head_obs(
@@ -164,10 +164,10 @@ class AdjointModel:
         try:
             # case obs.location is a numpy array
             self.fl_model.a_sources[obs.location, obs.timesteps] += (
-                model.fl_model.head[obs.location, obs.timesteps].ravel() - obs.values
+                obs.values - model.fl_model.head[obs.location, obs.timesteps].ravel()
             ) / (obs.uncertainties**2)
         except IndexError:
             # case obs.location is a tuple of slices
             self.fl_model.a_sources[(*obs.location, obs.timesteps)] += (
-                model.fl_model.head[(*obs.location, obs.timesteps)].ravel() - obs.values
+                obs.values - model.fl_model.head[(*obs.location, obs.timesteps)].ravel()
             ) / (obs.uncertainties**2)
