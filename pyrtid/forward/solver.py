@@ -9,7 +9,7 @@ from .flow_solver import (
     solve_flow_stationary,
     solve_flow_transient_semi_implicit,
 )
-from .geochem_solver import solve_geochem_explicit
+from .geochem_solver import solve_geochem
 from .models import FlowRegime, ForwardModel
 from .transport_solver import (
     make_transport_matrices_diffusion_only,
@@ -85,7 +85,7 @@ class ForwardSolver:
         # From here the flow is transient
         for time_index in range(1, self.model.time_params.nt + 1):
             # Update the timestep based on the previous iteration
-            self.model.time_params.update_dt(1)
+            self.model.time_params.update_dt(1)  # TODO: add fix point iterations
 
             solve_flow_transient_semi_implicit(
                 self.model.geometry,
@@ -101,7 +101,7 @@ class ForwardSolver:
                 self.model.time_params,
                 time_index,
             )
-            solve_geochem_explicit(
+            solve_geochem(
                 self.model.tr_model,
                 self.model.gch_params,
                 self.model.time_params,
