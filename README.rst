@@ -45,7 +45,7 @@ python Reactive Transport Inversion is a reactive transport inversion demonstrat
     :target: https://codecov.io/gh/antoinecollet5/pyrtid
     :alt: Coverage
 
-.. |Codacy| image:: https://app.codacy.com/project/badge/Grade/f4991359b8e84a44bbadf4f1a70bfa21
+.. |Codacy| image:: https://app.codacy.com/project/badge/Grade/a3ad37554c5845e6a27e096e77dcca2f
     :target: https://app.codacy.com/gh/antoinecollet5/pyrtid/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade
     :alt: codacy
 
