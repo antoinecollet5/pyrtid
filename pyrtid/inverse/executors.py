@@ -452,7 +452,7 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
                 d_pred[j, :] = self._run_forward_model(m_ensemble[j, :], run_n + j + 1)
         # update the number of runs
 
-        # The check is already done in foward_model but nan can also be introduced
+        # The check is already done in Forward_model but nan can also be introduced
         # because of the stacking. So it is necessary to check
         self._check_nans_in_predictions(d_pred, run_n)
 
