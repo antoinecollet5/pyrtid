@@ -87,10 +87,8 @@ class Observable:
         if _uncertainties.size == 0:
             self.uncertainties = np.ones(self.values.shape)
         elif _uncertainties.size == 1:
-            self.uncertainties = (
-                np.ones(self.values.shape) * self.uncertainties.ravel()[0]
-            )
-        if _uncertainties.size != self.values.size:
+            self.uncertainties = np.ones(self.values.shape) * _uncertainties.ravel()[0]
+        elif _uncertainties.size != self.values.size:
             raise ValueError(
                 "Uncertainties should be a float values or a numpy "
                 "array with the same dimension as values."
