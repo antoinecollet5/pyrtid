@@ -1,15 +1,12 @@
 r"""
 Provide finite difference approxation for the gradient and hessian.
 
-Alternative, see the library
-`numdifftools <https://numdifftools.readthedocs.io/en/latest/index.html.>`_
-
-TODO: test and see if the results are the same with numdifftools
+This is basically the same as provided by the library
+`numdifftools <https://numdifftools.readthedocs.io/en/latest/index.html.>`_ but it
+supports multiprocessing for gradient approximation which is quite useful when
+working with large problems (python is slow).
 
 grad = finite_gradient(np.array([1, 1]), rosen)
-
-Pour le moment,j'aime bien cette implémentation car on sait ce qu'il s'y passe.
-A voir plus tard si on peu accelerer ça avec numba ?
 
 Chapitre très intéressant:
     https://pythonnumericalmethods.berkeley.edu/notebooks/chapter20.02-Finite-Difference-Approximating-Derivatives.html
@@ -234,12 +231,13 @@ def finite_gradient(
         eps = sys.float_info.epsilon * 1e10
     if accuracy not in [0, 1, 2, 3]:
         raise ValueError("The accuracy should be 0, 1, 2 or 3!")
-    grad = np.zeros(x.size)
+    x0 = np.array(x).astype(np.float64)
+    grad = np.zeros(x0.size)
     dd = [2.0, 12.0, 60.0, 840.0]
 
     fd_params = FDParams(
-        x0=x.ravel().astype(np.float64),
-        shape=x.shape,
+        x0=x0.ravel(),
+        shape=x0.shape,
         inner_steps=2 * (accuracy + 1),
         coeff=[
             [1.0, -1.0],
@@ -267,14 +265,14 @@ def finite_gradient(
 
     # Single worker (no multi-processing)
     if max_workers == 1:
-        for i in range(x.size):
+        for i in range(x0.size):
             grad[i] = approximate_mesh_gradient(i, fd_params)
     # Multi-processing enabled
     else:
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
             results: Iterator[float] = executor.map(
                 approximate_mesh_gradient,
-                range(x.size),
+                range(x0.size),
                 get_fd_params(),
             )
         for i, res in enumerate(results):
