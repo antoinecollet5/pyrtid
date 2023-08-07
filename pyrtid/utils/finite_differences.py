@@ -19,9 +19,24 @@ Chapitre très intéressant:
 
 
 import sys
-from typing import Any, Callable, Dict, Optional, Sequence, Tuple
+from concurrent.futures import ProcessPoolExecutor
+from dataclasses import dataclass
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generator,
+    Iterator,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+)
 
 import numpy as np
+
+from pyrtid.utils.types import NDArrayFloat
 
 
 def rosen(x):
@@ -47,7 +62,7 @@ def is_gradient_correct(
     x: np.ndarray,
     fm: Callable,
     grad: Callable,
-    fm_args: Optional[Tuple[Any]] = None,
+    fm_args: Optional[Union[Tuple[Any], List[Any]]] = None,
     fm_kwargs: Optional[Dict[str, Any]] = None,
     grad_args: Optional[Tuple[Any]] = None,
     grad_kwargs: Optional[Dict[str, Any]] = None,
@@ -92,7 +107,7 @@ def is_gradient_correct(
 
     """
     if grad_args is None:
-        grad_args = ()
+        grad_args = []
     if grad_kwargs is None:
         grad_kwargs = {}
     actual_grad = grad(x, *grad_args, **grad_kwargs)
@@ -104,7 +119,35 @@ def is_gradient_correct(
 def is_all_close(v1: np.ndarray, v2: np.ndarray, eps: float = 1e-2) -> bool:
     """Return whether the two vectors are approximately equal."""
     scale = np.maximum(np.maximum(np.abs(v1), np.abs(v2)), 1.0)
-    return np.less_equal((np.abs(v1 - v2)), eps * scale).all()
+    return bool(np.less_equal((np.abs(v1 - v2)), eps * scale).all())
+
+
+@dataclass
+class FDParams:
+    x0: NDArrayFloat
+    shape: Tuple[int]
+    inner_steps: int
+    coeff: List[List[float]]
+    coeff2: List[List[float]]
+    fm: Callable
+    fm_args: Sequence[Any]
+    fm_kwargs: Dict[str, Any]
+    dd_val: float
+    accuracy: int
+    eps: float
+
+
+def approximate_mesh_gradient(mesh_id: int, fd_params: FDParams) -> float:
+    val = 0
+    for s in range(fd_params.inner_steps):
+        fd_params.x0[mesh_id] += fd_params.coeff2[fd_params.accuracy][s] * fd_params.eps
+        val += fd_params.coeff[fd_params.accuracy][s] * fd_params.fm(
+            fd_params.x0.reshape(fd_params.shape),
+            *fd_params.fm_args,
+            **fd_params.fm_kwargs
+        )
+        fd_params.x0[mesh_id] -= fd_params.coeff2[fd_params.accuracy][s] * fd_params.eps
+    return val / fd_params.dd_val
 
 
 def finite_gradient(
@@ -114,6 +157,7 @@ def finite_gradient(
     fm_kwargs: Optional[Dict[str, Any]] = None,
     accuracy: int = 0,
     eps: Optional[float] = None,
+    max_workers: int = 1,
 ) -> np.ndarray:
     r"""
     Compute the gradient by finite difference.
@@ -176,6 +220,9 @@ def finite_gradient(
         :cite:`wieschollek2016cppoptimizationlibrary`, and should correspond
         to the optimal h taking into account the roundoff errors due to
         the machine precision. The default is 2.2204e-6.
+    max_workers: int
+        Number of workers used. If different from one, the calculation relies on
+        multi-processing to decrease the computation time. The default is 1.
 
     Returns
     -------
@@ -187,35 +234,50 @@ def finite_gradient(
         eps = sys.float_info.epsilon * 1e10
     if accuracy not in [0, 1, 2, 3]:
         raise ValueError("The accuracy should be 0, 1, 2 or 3!")
-    if fm_args is None:
-        fm_args = []
-    if fm_kwargs is None:
-        fm_kwargs = {}
-    shape = x.shape
-    x = x.ravel().astype(np.float64)
     grad = np.zeros(x.size)
-    coeff = [
-        [1.0, -1.0],
-        [1, -8.0, 8.0, -1.0],
-        [-1, 9, -45.0, 45.0, -9.0, 1.0],
-        [3.0, -32.0, 168.0, -672.0, 672.0, -168.0, 32.0, -3.0],
-    ]
-    coeff2 = [
-        [1.0, -1.0],
-        [-2.0, -1.0, 1.0, 2.0],
-        [-3.0, -2.0, -1.0, 1.0, 2.0, 3.0],
-        [-4, -3.0, -2.0, -1.0, 1.0, 2.0, 3.0, 4.0],
-    ]
     dd = [2.0, 12.0, 60.0, 840.0]
 
-    inner_steps = 2 * (accuracy + 1)
-    dd_val = dd[accuracy] * eps
+    fd_params = FDParams(
+        x0=x.ravel().astype(np.float64),
+        shape=x.shape,
+        inner_steps=2 * (accuracy + 1),
+        coeff=[
+            [1.0, -1.0],
+            [1, -8.0, 8.0, -1.0],
+            [-1, 9, -45.0, 45.0, -9.0, 1.0],
+            [3.0, -32.0, 168.0, -672.0, 672.0, -168.0, 32.0, -3.0],
+        ],
+        coeff2=[
+            [1.0, -1.0],
+            [-2.0, -1.0, 1.0, 2.0],
+            [-3.0, -2.0, -1.0, 1.0, 2.0, 3.0],
+            [-4, -3.0, -2.0, -1.0, 1.0, 2.0, 3.0, 4.0],
+        ],
+        fm=fm,
+        fm_args=fm_args if fm_args is not None else [],
+        fm_kwargs=fm_kwargs if fm_kwargs is not None else {},
+        dd_val=dd[accuracy] * eps,
+        accuracy=accuracy,
+        eps=eps,
+    )
 
-    for i in range(x.size):
-        for s in range(inner_steps):
-            tmp = x[i].copy()
-            x[i] += coeff2[accuracy][s] * eps
-            grad[i] += coeff[accuracy][s] * fm(x.reshape(shape), *fm_args, **fm_kwargs)
-            x[i] = tmp
-        grad[i] /= dd_val
-    return grad.reshape(shape)
+    def get_fd_params() -> Generator:
+        while True:
+            yield fd_params
+
+    # Single worker (no multi-processing)
+    if max_workers == 1:
+        for i in range(x.size):
+            grad[i] = approximate_mesh_gradient(i, fd_params)
+    # Multi-processing enabled
+    else:
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            results: Iterator[float] = executor.map(
+                approximate_mesh_gradient,
+                range(x.size),
+                get_fd_params(),
+            )
+        for i, res in enumerate(results):
+            grad[i] = res
+
+    return grad.reshape(fd_params.shape)
