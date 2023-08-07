@@ -457,13 +457,16 @@ def _get_mineral_grade_adjoint_gradient(
     computed on the full domain (grid).
     """
     return (
-        (adj_model.tr_model.a_grade[:, :, 0] + adj_model.tr_model.a_conc[:, :, 0])
-        / fwd_model.time_params.dt
-        + adj_model.tr_model.a_grade[:, :, 0]
-        * fwd_model.gch_params.kv
-        * fwd_model.gch_params.As
-        * (1.0 - fwd_model.tr_model.conc[:, :, 0] / fwd_model.gch_params.Ks)
-    ) * fwd_model.geometry.mesh_area
+        (
+            adj_model.tr_model.a_grade[:, :, 1] / fwd_model.time_params.ldt[0]
+            + (adj_model.tr_model.a_grade[:, :, 1] - adj_model.tr_model.a_conc[:, :, 1])
+            * fwd_model.gch_params.kv
+            * fwd_model.gch_params.As
+            * (1.0 - fwd_model.tr_model.conc[:, :, 0] / fwd_model.gch_params.Ks)
+        )
+        * fwd_model.geometry.mesh_area
+        * fwd_model.tr_model.porosity
+    )
 
 
 def compute_param_adjoint_ls_loss_function_gradient(
