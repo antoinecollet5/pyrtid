@@ -1,7 +1,7 @@
 """Provide gradient computation routines."""
 
 import copy
-from typing import Optional, Sequence, Union
+from typing import List, Optional, Sequence, Union
 
 import numpy as np
 
@@ -64,14 +64,15 @@ def _get_diffusion_term_adjoint_gradient(
     crank_diff = fwd_model.tr_model.crank_nicolson_diffusion
 
     conc = fwd_model.tr_model.conc
+    conc_post_tr = fwd_model.tr_model.conc_post_tr
     # conc = fwd_model.tr_model.conc_post_tr
-    aconc = adj_model.tr_model.a_conc
+    aconc = adj_model.tr_model.a_conc_post_gch
 
     # Consider the x axis
     # Forward scheme
     dconc_fx = np.zeros(shape)
     dconc_fx[:-1, :, 1:] += (
-        crank_diff * (conc[1:, :, 1:] - conc[:-1, :, 1:])
+        crank_diff * (conc_post_tr[1:, :, 1:] - conc_post_tr[:-1, :, 1:])
         + (1.0 - crank_diff) * (conc[1:, :, :-1] - conc[:-1, :, :-1])
     ) * (
         dxi_harmonic_mean(eff_diffusion[:-1, :], eff_diffusion[1:, :])
@@ -86,7 +87,7 @@ def _get_diffusion_term_adjoint_gradient(
     # Backward scheme
     dconc_bx = np.zeros(shape)
     dconc_bx[1:, :, 1:] += (
-        crank_diff * (conc[:-1, :, 1:] - conc[1:, :, 1:])
+        crank_diff * (conc_post_tr[:-1, :, 1:] - conc_post_tr[1:, :, 1:])
         + (1.0 - crank_diff) * (conc[:-1, :, :-1] - conc[1:, :, :-1])
     ) * (
         dxi_harmonic_mean(eff_diffusion[1:, :], eff_diffusion[:-1, :])
@@ -110,7 +111,7 @@ def _get_diffusion_term_adjoint_gradient(
         # Forward scheme
         dconc_fy = np.zeros(shape)
         dconc_fy[:, :-1, 1:] += (
-            crank_diff * (conc[:, 1:, 1:] - conc[:, :-1, 1:])
+            crank_diff * (conc_post_tr[:, 1:, 1:] - conc_post_tr[:, :-1, 1:])
             + (1.0 - crank_diff) * (conc[:, 1:, :-1] - conc[:, :-1, :-1])
         ) * (
             dxi_harmonic_mean(eff_diffusion[:, :-1], eff_diffusion[:, 1:])
@@ -124,7 +125,7 @@ def _get_diffusion_term_adjoint_gradient(
         # Bconckward scheme
         dconc_by = np.zeros(shape)
         dconc_by[:, 1:, 1:] += (
-            crank_diff * (conc[:, :-1, 1:] - conc[:, 1:, 1:])
+            crank_diff * (conc_post_tr[:, :-1, 1:] - conc_post_tr[:, 1:, 1:])
             + (1.0 - crank_diff) * (conc[:, :-1, :-1] - conc[:, 1:, :-1])
         ) * (
             dxi_harmonic_mean(eff_diffusion[:, 1:], eff_diffusion[:, :-1])
@@ -197,10 +198,13 @@ def _get_porosity_adjoint_gradient(
         Gradient of the objective function with respect to the porosity.
     """
     conc = fwd_model.tr_model.conc
-    aconc = adj_model.tr_model.a_conc
+    conc_post_tr = fwd_model.tr_model.conc_post_tr
+    aconc = adj_model.tr_model.a_conc_post_gch
 
     grad = (
-        (conc[:, :, 1:] - conc[:, :, :-1]) / fwd_model.time_params.dt * aconc[:, :, 1:]
+        (conc_post_tr[:, :, 1:] - conc[:, :, :-1])
+        / fwd_model.time_params.dt
+        * aconc[:, :, 1:]
     ) * fwd_model.geometry.mesh_area
 
     # We sum along the temporal axis + get the diffusion gradient
@@ -572,33 +576,54 @@ def compute_adjoint_gradient(
     return grad
 
 
+def _local_fun(
+    vector: NDArrayFloat,
+    parameter: AdjustableParameter,
+    _model: ForwardModel,
+    observables: List[Observable],
+    parameters_to_adjust: List[AdjustableParameter],
+    jreg_weight: float,
+) -> float:
+    # Update the model with the new values of x (preconditioned)
+    # Do not save parameters values (useless)
+    update_model_with_parameters_values(
+        _model, vector, parameter, is_preconditioned=True, is_to_save=False
+    )
+    # Solve the forward model with the new parameters
+    ForwardSolver(_model).solve()
+    return compute_model_loss_function(
+        _model, observables, parameters_to_adjust, jreg_weight
+    )
+
+
 def compute_fd_gradient(
     model: ForwardModel,
     observables: Union[Observable, Sequence[Observable]],
     parameters_to_adjust: Union[AdjustableParameter, Sequence[AdjustableParameter]],
     jreg_weight=1.0,
     eps: Optional[float] = None,
+    max_workers: int = 1,
 ) -> NDArrayFloat:
     """Compute the gradient of the given parameters by finite difference approximation.
 
     Warning
     -------
     This function does not update the model (a copy is used instead).
+
+    Parameters
+    ----------
+    model: ForwardModel
+        The forward RT model.
+    eps: float, optional
+        The epsilon for the computation of the approximated gradient by finite
+        difference. If None, it is automatically inferred. The default is None.
+    max_workers: int
+        Number of workers used  if the gradient is approximated by finite
+        differences. If different from one, the calculation relies on
+        multi-processing to decrease the computation time. The default is 1.
+
     """
     _model = copy.deepcopy(model)
-
-    def _local_fun(vector: NDArrayFloat, parameter: AdjustableParameter) -> float:
-        # model = copy.deepcopy(model)
-        # Update the model with the new values of x (preconditioned)
-        # Do not save parameters values (useless)
-        update_model_with_parameters_values(
-            _model, vector, parameter, is_preconditioned=True, is_to_save=False
-        )
-        # Solve the forward model with the new parameters
-        ForwardSolver(_model).solve()
-        return compute_model_loss_function(
-            _model, observables, parameters_to_adjust, jreg_weight
-        )
 
     grad = np.array([], dtype=np.float64)
     for param in object_or_object_sequence_to_list(parameters_to_adjust):
@@ -610,8 +635,9 @@ def compute_fd_gradient(
                 get_parameter_values_from_model(_model, param), is_preconditioned=True
             ),
             _local_fun,
-            fm_args=(param,),
+            fm_args=(param, _model, observables, parameters_to_adjust, jreg_weight),
             eps=eps,
+            max_workers=max_workers,
         )
 
         # 2) Create an array full of nan and fill it with the
@@ -632,8 +658,34 @@ def is_adjoint_gradient_correct(
     parameters_to_adjust: Union[AdjustableParameter, Sequence[AdjustableParameter]],
     observables: Union[Observable, Sequence[Observable]],
     eps: Optional[float] = None,
+    max_workers: int = 1,
 ) -> bool:
-    """Check if the gradient computed with the adjoint state is equal with FD."""
+    """
+    Check if the gradient computed with the adjoint state is equal with FD.
+
+    Parameters
+    ----------
+    fwd_model : ForwardModel
+        _description_
+    adj_model : AdjointModel
+        _description_
+    parameters_to_adjust : Union[AdjustableParameter, Sequence[AdjustableParameter]]
+        _description_
+    observables : Union[Observable, Sequence[Observable]]
+        _description_
+    eps: float, optional
+        The epsilon for the computation of the approximated gradient by finite
+        difference. If None, it is automatically inferred. The default is None.
+    max_workers: int
+        Number of workers used  if the gradient is approximated by finite
+        differences. If different from one, the calculation relies on
+        multi-processing to decrease the computation time. The default is 1.
+
+    Returns
+    -------
+    bool
+        True if the adjoint gradient is correct.
+    """
 
     # Update parameters with model
     update_parameters_from_model(fwd_model, parameters_to_adjust)
@@ -649,6 +701,8 @@ def is_adjoint_gradient_correct(
     adj_grad = compute_adjoint_gradient(
         fwd_model, asolver.adj_model, parameters_to_adjust
     )
-    fd_grad = compute_fd_gradient(fwd_model, observables, parameters_to_adjust, eps=eps)
+    fd_grad = compute_fd_gradient(
+        fwd_model, observables, parameters_to_adjust, eps=eps, max_workers=max_workers
+    )
 
     return is_all_close(adj_grad, fd_grad)
