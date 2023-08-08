@@ -94,6 +94,8 @@ def hessian_cfd(param: NDArrayFloat, dx: float, axis: int = 0) -> NDArrayFloat:
         The hessian
 
     """
+    if axis >= 2:
+        raise ValueError("axis should be 0 or 1 !")
     # number of scalar samples:
     nx, ny = param.shape
     # initiate a nul gradient
