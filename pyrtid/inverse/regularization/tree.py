@@ -1,5 +1,7 @@
-# Iterator
+from __future__ import annotations
+
 from itertools import product
+from typing import List, Optional
 
 import numpy as np
 
@@ -20,18 +22,24 @@ class Cluster:
 
     """
 
-    def __init__(self, dim=2, level=0, parent=None, children=[]):
+    def __init__(
+        self,
+        dim=2,
+        level=0,
+        parent: Optional[Cluster] = None,
+        children: Optional[List[Cluster]] = None,
+    ):
         # Physical dimension of the points
-        self.dim = dim
+        self.dim: int = dim
 
         # Level of the tree
-        self.level = level
+        self.level: int = level
 
         # Parent
         self.parent = parent
 
         # Siblings
-        self.children = []
+        self.children = children if children is not None else []
 
     def assign_points_bisection(self, pts, indices):
         """
@@ -107,13 +115,19 @@ def admissible(tau, sigma, eta=0.75):
 
 
 # Block cluster class
-class BlockCluster:
+class BlockCluster(Cluster):
     """
     Implementation of Block Cluster
 
     """
 
-    def __init__(self, level=0, parent=None, tau=None, sigma=None):
+    def __init__(
+        self,
+        level: int = 0,
+        parent: Cluster = None,
+        tau: Optional[Cluster] = None,
+        sigma: Optional[Cluster] = None,
+    ):
         # Level
         self.level = level
 
@@ -254,32 +268,3 @@ class BlockCluster:
                     self.B, np.dot(self.A.T, x[self.tau.indices])
                 )
         return
-
-
-if __name__ == "__main__":
-    tree = Cluster()
-
-    N = 10000
-
-    from math import pi
-
-    theta = 2.0 * pi * np.arange(N) / float(N)
-
-    # Circle
-    pts = np.hstack((np.cos(theta)[:, np.newaxis], np.sin(theta)[:, np.newaxis]))
-
-    # Cardoid
-    a = 1.0
-    x = a * (2.0 * np.cos(theta) - np.cos(2.0 * theta))
-    y = a * (2.0 * np.sin(theta) - np.sin(2.0 * theta))
-    pts = np.hstack((x[:, np.newaxis], y[:, np.newaxis]))
-
-    indices = np.arange(N)
-
-    from time import time
-
-    start = time()
-    tree.AssignPointsBisection(pts, indices)
-    print("Assigning points to clusters took %g" % (time() - start))
-
-    # PlotTree(tree, 0.75, 7)
