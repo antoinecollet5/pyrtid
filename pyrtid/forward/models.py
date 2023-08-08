@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import List, Optional, Sequence, Tuple, Union
 
 import numpy as np
-from scipy.sparse import csc_matrix
+from scipy.sparse import csc_matrix, lil_matrix
 
 from pyrtid.utils import StrEnum, node_number_to_indices, span_to_node_numbers_2d
 from pyrtid.utils.types import (
@@ -59,17 +59,37 @@ class TimeParameters:
     ) -> None:
         """Initialize the instance."""
         self.nt: int = int(nt)
-        self.dt_init: float = dt_init
-        self.dt: float = dt_init
+
+        # First pass on the min/max
+        if dt_min is not None:
+            _dt_min: float = dt_min
+        else:
+            _dt_min = dt_init
+        if dt_max is not None:
+            _dt_max: float = dt_max
+        else:
+            _dt_max = dt_init
+
+        _dt_init = max(min(_dt_max, dt_init), _dt_min, dt_init)
+
+        # Second pass on the min/max
         if dt_min is not None:
             self.dt_min: float = dt_min
         else:
-            self.dt_min = self.dt
+            self.dt_min = _dt_init
         if dt_max is not None:
             self.dt_max: float = dt_max
         else:
-            self.dt_max = self.dt
-        self.ldt: List[float] = []
+            self.dt_max = _dt_init
+
+        # Check dt_min and dt_max consistency
+        if self.dt_min > self.dt_max:
+            raise ValueError(f"dt_min ({self.dt_min}) is above dt_max ({self.dt_max})!")
+
+        # Apply bounds
+        self.dt_init: float = _dt_init
+        self.dt = _dt_init
+        self.ldt: List[float] = [self.dt]
 
     @property
     def duration(self) -> float:
@@ -79,7 +99,7 @@ class TimeParameters:
     def reset_dt(self) -> None:
         """Empty the list of timesteps and set dt to its initial value."""
         self.dt = self.dt_init
-        self.ldt = []
+        self.ldt = [self.dt_init]
 
     def update_dt(self, n_iter: int) -> None:
         """
@@ -90,6 +110,9 @@ class TimeParameters:
         n_iter: int
             Number of iterations required to solve the current timestep.
         """
+        # Save the previous timestep
+        self.ldt.append(self.dt)
+
         if n_iter < 20:
             # increase dt by 5%
             self.dt *= 1.05
@@ -101,7 +124,6 @@ class TimeParameters:
             self.dt = self.dt_min
         if self.dt > self.dt_max:
             self.dt = self.dt_max
-        self.ldt.append(self.dt)
 
 
 class FlowRegime(StrEnum):
@@ -138,10 +160,6 @@ class FlowParameters:
         enabled. The default is the z axis.
     tolerance: float, optional
         The tolerance on the flow. The default is 1e-8.
-    is_numerical_acceleration: bool, optional
-        Whether to use the head values at the previous iteration as an initial guess
-        for gmres (x0) rather than using a random vector. This should increase the
-        speed of resolution. The default is False.
     """
 
     def __init__(
@@ -153,7 +171,6 @@ class FlowParameters:
         is_gravity: bool = False,
         vertical_axis: VerticalAxis = VerticalAxis.DZ,
         tolerance: float = 1e-8,
-        is_numerical_acceleration: bool = False,
     ) -> None:
         """Initialize the instance."""
         self.permeability: float = permeability
@@ -163,7 +180,6 @@ class FlowParameters:
         self.is_gravity: bool = is_gravity
         self.vertical_axis: VerticalAxis = vertical_axis
         self.tolerance: float = tolerance
-        self.is_numerical_acceleration: bool = is_numerical_acceleration
 
 
 class TransportParameters:
@@ -457,7 +473,6 @@ class FlowModel:
         "q_prev",
         "q_next",
         "tolerance",
-        "is_numerical_acceleration",
     ]
 
     def __init__(
@@ -487,11 +502,10 @@ class FlowModel:
         self.sources = np.zeros(
             (geometry.nx, geometry.ny, time_params.nt + 1), dtype=np.float64
         )
-        self.q_prev = csc_matrix(geometry.nx * geometry.ny)
-        self.q_next = csc_matrix(geometry.nx * geometry.ny)
+        self.q_prev = lil_matrix(geometry.nx * geometry.ny)
+        self.q_next = lil_matrix(geometry.nx * geometry.ny)
         self.cst_head_nn: NDArrayInt = np.array([], dtype=np.int32)
         self.tolerance = fl_params.tolerance
-        self.is_numerical_acceleration = fl_params.is_numerical_acceleration
         self.vertical_axis = fl_params.vertical_axis
         self.vertical_mesh_size = {
             VerticalAxis.DX: geometry.dx,
@@ -676,8 +690,8 @@ class TransportModel:
             (geometry.nx, geometry.ny, time_params.nt + 1), dtype=np.float64
         )
         # q_prev is composed of q_prev_diffusion + advection term
-        self.q_prev_diffusion = csc_matrix(geometry.nx * geometry.ny)
-        self.q_next_diffusion = csc_matrix(geometry.nx * geometry.ny)
+        self.q_prev_diffusion = lil_matrix(geometry.nx * geometry.ny)
+        self.q_next_diffusion = lil_matrix(geometry.nx * geometry.ny)
         self.q_prev = csc_matrix(geometry.nx * geometry.ny)
         self.q_next = csc_matrix(geometry.nx * geometry.ny)
         self.cst_conc_indices: NDArrayInt = np.array([], dtype=np.int32)

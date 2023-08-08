@@ -1,11 +1,11 @@
 """Provide an adjoint solver and model."""
 from __future__ import annotations
 
-from typing import Optional, Tuple
+from typing import Tuple
 
 import numpy as np
-from scipy.sparse import csc_matrix, lil_matrix
-from scipy.sparse.linalg import LinearOperator, gmres
+from scipy.sparse import lil_matrix
+from scipy.sparse.linalg import gmres
 
 from pyrtid.forward.models import (  # ConstantHead,; ZeroConcGradient,
     FlowModel,
@@ -15,13 +15,13 @@ from pyrtid.forward.models import (  # ConstantHead,; ZeroConcGradient,
     get_owner_neigh_indices,
 )
 from pyrtid.inverse.adjoint.amodels import AdjointFlowModel, AdjointTransportModel
-from pyrtid.utils import harmonic_mean
+from pyrtid.utils import get_super_lu_preconditioner, harmonic_mean
 from pyrtid.utils.types import NDArrayFloat
 
 
 def make_stationary_adj_flow_matrices(
     geometry: Geometry, fl_model: FlowModel, time_params: TimeParameters
-) -> Tuple[csc_matrix, csc_matrix]:
+) -> Tuple[lil_matrix, lil_matrix]:
     """
     Make matrices for the transient flow.
 
@@ -127,15 +127,15 @@ def make_stationary_adj_flow_matrices(
 
     # Add 1/dt for the left term contribution
     q_prev.setdiag(
-        q_prev.diagonal() + 1 / time_params.dt * fl_model.storage_coefficient
+        q_prev.diagonal() + 1 / time_params.ldt[0] * fl_model.storage_coefficient
     )
 
-    return q_next.tocsc(), q_prev.tocsc()
+    return q_next, q_prev
 
 
 def make_transient_adj_flow_matrices(
     geometry: Geometry, fl_model: FlowModel, time_params: TimeParameters
-) -> Tuple[csc_matrix, csc_matrix]:
+) -> Tuple[lil_matrix, lil_matrix]:
     """
     Make matrices for the transient flow.
 
@@ -299,18 +299,13 @@ def make_transient_adj_flow_matrices(
             / fl_model.storage_coefficient
         )
 
-    # Add 1/dt for the left term contribution
-    q_next.setdiag(q_next.diagonal() + 1 / time_params.dt)
-    q_prev.setdiag(q_prev.diagonal() + 1 / time_params.dt)
-
-    return q_next.tocsc(), q_prev.tocsc()
+    return q_next, q_prev
 
 
 def solve_adj_flow_stationary(
     geometry: Geometry,
     fl_model: FlowModel,
     a_fl_model: AdjointFlowModel,
-    preconditioner: Optional[LinearOperator],
     time_index: int,
 ) -> int:
     """
@@ -327,13 +322,15 @@ def solve_adj_flow_stationary(
     # Add the source terms from head observations
     tmp -= a_fl_model.a_sources[:, :, time_index].ravel("F") / geometry.mesh_area
 
+    preconditioner = get_super_lu_preconditioner(a_fl_model.q_next.tocsc())
+
     # Add the source terms from mob observations (adjoint transport)
     # tmp += _get_adjoint_transport_src_terms(
     #     geometry, fl_model, a_fl_model, time_index, False
     # )
 
     # Solve Ax = b with A sparse using LU preconditioner
-    res, exit_code = gmres(a_fl_model.q_next, tmp, M=preconditioner, atol=1e-15)
+    res, exit_code = gmres(a_fl_model.q_next.tocsc(), tmp, M=preconditioner, atol=1e-15)
     # Note: we solve
     a_fl_model.a_head[:, :, time_index] = res.reshape(geometry.ny, geometry.nx).T
 
@@ -469,7 +466,7 @@ def solve_adj_flow_transient_semi_implicit(
     geometry: Geometry,
     fl_model: FlowModel,
     a_fl_model: AdjointFlowModel,
-    preconditioner: Optional[LinearOperator],
+    time_params: TimeParameters,
     time_index: int,
     is_mob_obs: bool,
 ) -> int:
@@ -478,8 +475,19 @@ def solve_adj_flow_transient_semi_implicit(
 
     dh/dt = div K grad h + ...
     """
-    _q_prev = a_fl_model.q_prev
-    _q_next = a_fl_model.q_next
+    _q_prev = a_fl_model.q_prev.copy()
+    _q_next = a_fl_model.q_next.copy()
+
+    # Add 1/dt for the left term contribution
+    _q_next.setdiag(_q_next.diagonal() + 1 / time_params.ldt[time_index - 2])
+    _q_prev.setdiag(_q_prev.diagonal() + 1 / time_params.ldt[time_index - 1])
+
+    # convert to csc format for efficiency
+    _q_next = _q_next.tocsc()
+    _q_prev = _q_prev.tocsc()
+
+    # LU preconditioner
+    preconditioner = get_super_lu_preconditioner(_q_next)
 
     # Handle the first time step in the adjoint (= last timestep in the forward)
     # if time_index + 1 != a_fl_model.a_sources.shape[-1]:

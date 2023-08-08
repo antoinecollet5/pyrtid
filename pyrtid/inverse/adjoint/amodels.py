@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import numpy as np
-from scipy.sparse import csc_matrix
+from scipy.sparse import csc_matrix, lil_matrix
 
 from pyrtid.forward.models import (  # ConstantHead,; ZeroConcGradient,
     ForwardModel,
@@ -41,8 +41,8 @@ class AdjointFlowModel:
         self.a_sources = np.zeros(
             (geometry.nx, geometry.ny, time_params.nt + 1), dtype=np.float64
         )
-        self.q_prev = csc_matrix(geometry.nx * geometry.ny)
-        self.q_next = csc_matrix(geometry.nx * geometry.ny)
+        self.q_prev = lil_matrix(geometry.nx * geometry.ny)
+        self.q_next = lil_matrix(geometry.nx * geometry.ny)
 
 
 class AdjointTransportModel:

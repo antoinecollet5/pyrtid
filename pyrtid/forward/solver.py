@@ -1,8 +1,6 @@
 """Provide a reactive transport solver."""
 from __future__ import annotations
 
-from pyrtid.utils.operators import get_super_lu_preconditioner
-
 from .flow_solver import (
     make_stationary_flow_matrices,
     make_transient_flow_matrices,
@@ -67,7 +65,6 @@ class ForwardSolver:
             solve_flow_stationary(
                 self.model.geometry,
                 self.model.fl_model,
-                get_super_lu_preconditioner(self.model.fl_model.q_next),
                 0,
             )
 
@@ -76,21 +73,12 @@ class ForwardSolver:
         self.initialize_flow_matrices(FlowRegime.TRANSIENT)
         self.initialize_transport_matrices()
 
-        # Preconditioner for the flow matrices (must be done on the fly for transport)
-        _flow_q_next_preconditioner = get_super_lu_preconditioner(
-            self.model.fl_model.q_next
-        )
-
         # Sequential iterative approach
         # From here the flow is transient
         for time_index in range(1, self.model.time_params.nt + 1):
-            # Update the timestep based on the previous iteration
-            self.model.time_params.update_dt(1)  # TODO: add fix point iterations
-
             solve_flow_transient_semi_implicit(
                 self.model.geometry,
                 self.model.fl_model,
-                _flow_q_next_preconditioner,
                 self.model.time_params,
                 time_index,
             )
@@ -107,3 +95,6 @@ class ForwardSolver:
                 self.model.time_params,
                 time_index,
             )
+
+            # Update the timestep based on the previous iteration
+            self.model.time_params.update_dt(1)  # TODO: add fix point iterations

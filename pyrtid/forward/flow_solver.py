@@ -1,13 +1,13 @@
 """Provide a reactive transport solver."""
 from __future__ import annotations
 
-from typing import Optional, Tuple
+from typing import Tuple
 
 import numpy as np
-from scipy.sparse import csc_matrix, lil_matrix
-from scipy.sparse.linalg import LinearOperator, gmres
+from scipy.sparse import lil_matrix
+from scipy.sparse.linalg import gmres
 
-from pyrtid.utils import harmonic_mean
+from pyrtid.utils import get_super_lu_preconditioner, harmonic_mean
 from pyrtid.utils.types import NDArrayFloat
 
 from .models import FlowModel, Geometry, TimeParameters, get_owner_neigh_indices
@@ -15,7 +15,7 @@ from .models import FlowModel, Geometry, TimeParameters, get_owner_neigh_indices
 
 def make_stationary_flow_matrices(
     geometry: Geometry, fl_model: FlowModel
-) -> csc_matrix:
+) -> lil_matrix:
     """
     Make matrices for the transient flow.
 
@@ -91,12 +91,12 @@ def make_stationary_flow_matrices(
     # Take constant head into account
     q_next[fl_model.cst_head_nn, fl_model.cst_head_nn] = 1.0
 
-    return q_next.tocsc()
+    return q_next
 
 
 def make_transient_flow_matrices(
     geometry: Geometry, fl_model: FlowModel, time_params: TimeParameters
-) -> Tuple[csc_matrix, csc_matrix]:
+) -> Tuple[lil_matrix, lil_matrix]:
     """
     Make matrices for the transient flow.
 
@@ -258,17 +258,12 @@ def make_transient_flow_matrices(
             / fl_model.storage_coefficient
         )
 
-    # Add 1/dt for the left term contribution
-    q_next.setdiag(q_next.diagonal() + 1 / time_params.dt)
-    q_prev.setdiag(q_prev.diagonal() + 1 / time_params.dt)
-
-    return q_next.tocsc(), q_prev.tocsc()
+    return q_next, q_prev
 
 
 def solve_flow_stationary(
     geometry: Geometry,
     fl_model: FlowModel,
-    preconditioner: Optional[LinearOperator],
     time_index: int,
 ) -> int:
     """
@@ -282,12 +277,15 @@ def solve_flow_stationary(
         fl_model.cst_head_nn
     ]
 
+    # LU preconditioner
+    preconditioner = get_super_lu_preconditioner(fl_model.q_next.tocsc())
+
     # Add the source terms
     tmp += fl_model.sources[:, :, time_index].flatten(order="F")
 
     # Solve Ax = b with A sparse using LU preconditioner
     res, exit_code = gmres(
-        fl_model.q_next, tmp, M=preconditioner, atol=fl_model.tolerance
+        fl_model.q_next.tocsc(), tmp, M=preconditioner, atol=fl_model.tolerance
     )
     fl_model.head[:, :, time_index] = res.reshape(geometry.ny, geometry.nx).T
 
@@ -449,7 +447,6 @@ def update_u_darcy_div(
 def solve_flow_transient_semi_implicit(
     geometry: Geometry,
     fl_model: FlowModel,
-    preconditioner: Optional[LinearOperator],
     time_params: TimeParameters,
     time_index: int,
 ) -> int:
@@ -458,8 +455,22 @@ def solve_flow_transient_semi_implicit(
 
     dh/dt = div K grad h + ...
     """
+    _q_next = fl_model.q_next.copy()
+    _q_prev = fl_model.q_prev.copy()
+
+    # Add 1/dt for the left term contribution (note: the timestep is variable)
+    _q_next.setdiag(_q_next.diagonal() + 1 / time_params.dt)
+    _q_prev.setdiag(_q_prev.diagonal() + 1 / time_params.dt)
+
+    # csc format for efficiency
+    _q_next = _q_next.tocsc()
+    _q_prev = _q_prev.tocsc()
+
+    # Get LU preconditioner
+    preconditioner = get_super_lu_preconditioner(_q_next)
+
     # Multiply prev matrix by prev vector
-    tmp = fl_model.q_prev.dot(fl_model.head[:, :, time_index - 1].flatten(order="F"))
+    tmp = _q_prev.dot(fl_model.head[:, :, time_index - 1].flatten(order="F"))
 
     # Add the source terms
     sources = (
@@ -470,19 +481,9 @@ def solve_flow_transient_semi_implicit(
 
     tmp += sources
 
-    # Use the last state as initial guess for the solver.
-    # Also takes the sources/sinks into account
-    if fl_model.is_numerical_acceleration:
-        x0 = (
-            fl_model.head[:, :, time_index - 1].flatten(order="F")
-            + sources * time_params.dt
-        )
-    else:
-        x0 = None
-
     # Solve Ax = b with A sparse using LU preconditioner
     res, exit_code = gmres(
-        fl_model.q_next, tmp, x0=x0, M=preconditioner, atol=fl_model.tolerance
+        _q_next, tmp, x0=None, M=preconditioner, atol=fl_model.tolerance
     )
     fl_model.head[:, :, time_index] = res.reshape(geometry.ny, geometry.nx).T
 

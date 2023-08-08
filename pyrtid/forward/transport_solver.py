@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Tuple
 
 import numpy as np
-from scipy.sparse import csc_matrix, lil_matrix
+from scipy.sparse import lil_matrix
 from scipy.sparse.linalg import gmres
 
 from pyrtid.utils import harmonic_mean
@@ -22,7 +22,7 @@ from .models import (
 
 def make_transport_matrices_diffusion_only(
     geometry: Geometry, tr_model: TransportModel, time_params: TimeParameters
-) -> Tuple[csc_matrix, csc_matrix]:
+) -> Tuple[lil_matrix, lil_matrix]:
     """
     Make matrices for the transport.
 
@@ -152,19 +152,23 @@ def make_transport_matrices_diffusion_only(
             / geometry.dy**2
         )
 
-    # Add 1/dt for the left term contribution
-    q_next.setdiag(q_next.diagonal() + tr_model.porosity.flatten("F") / time_params.dt)
-    q_prev.setdiag(q_prev.diagonal() + tr_model.porosity.flatten("F") / time_params.dt)
-
-    return q_next.tocsc(), q_prev.tocsc()
+    return q_next, q_prev
 
 
 def _add_advection_to_transport_matrices(
-    geometry: Geometry, fl_model: FlowModel, tr_model: TransportModel, time_index: int
+    geometry: Geometry,
+    fl_model: FlowModel,
+    tr_model: TransportModel,
+    time_params: TimeParameters,
+    time_index: int,
 ) -> None:
-    crank_adv = tr_model.crank_nicolson_advection
-    q_next = tr_model.q_next_diffusion.copy().tolil()
-    q_prev = tr_model.q_prev_diffusion.copy().tolil()
+    crank_adv: float = tr_model.crank_nicolson_advection
+    q_next: lil_matrix = tr_model.q_next_diffusion.copy()
+    q_prev: lil_matrix = tr_model.q_prev_diffusion.copy()
+
+    # Add 1/dt for the left term contribution
+    q_next.setdiag(q_next.diagonal() + tr_model.porosity.flatten("F") / time_params.dt)
+    q_prev.setdiag(q_prev.diagonal() + tr_model.porosity.flatten("F") / time_params.dt)
 
     # X contribution
     if geometry.nx >= 2:
@@ -444,7 +448,9 @@ def solve_transport_semi_implicit(
     """Compute the conc and grade fields by solving the flow problem."""
 
     # Update q_next and q_prev with the advection term (must be copied)
-    _add_advection_to_transport_matrices(geometry, fl_model, tr_model, time_index)
+    _add_advection_to_transport_matrices(
+        geometry, fl_model, tr_model, time_params, time_index
+    )
 
     # Multiply prev matrix by prev vector
     tmp = tr_model.q_prev.dot(tr_model.conc[:, :, time_index - 1].flatten(order="F"))
@@ -458,13 +464,14 @@ def solve_transport_semi_implicit(
 
     # Use the last state as initial guess for the solver.
     # Also takes the sources/sinks into account
-    if tr_model.is_numerical_acceleration:
-        x0 = (
-            tr_model.conc[:, :, time_index - 1].flatten(order="F")
-            + _get_transport_source_term(tr_model, time_index) * time_params.dt
-        )
-    else:
-        x0 = None
+    # TODO: this is for the chemical source term
+    # if tr_model.is_numerical_acceleration:
+    #     x0 = (
+    #         tr_model.conc[:, :, time_index - 1].flatten(order="F")
+    #         + _get_transport_source_term(tr_model, time_index) * time_params.dt
+    #     )
+    # else:
+    x0 = None
 
     # Solve Ax = b with A sparse using LU preconditioner
     res, exit_code = gmres(

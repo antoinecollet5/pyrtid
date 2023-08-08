@@ -19,7 +19,6 @@ from pyrtid.inverse.adjoint.atransport_solver import (
     make_transient_adj_transport_matrices,
     solve_adj_transport_transient_semi_implicit,
 )
-from pyrtid.utils.operators import get_super_lu_preconditioner
 
 
 class AdjointSolver:
@@ -88,9 +87,6 @@ class AdjointSolver:
         # Construct the flow matrices (not modified along the timesteps because
         # permeability and storage coefficients are constant).
         self.initialize_ajd_flow_matrices(FlowRegime.TRANSIENT)
-        _flow_q_next_preconditioner = get_super_lu_preconditioner(
-            self.adj_model.fl_model.q_next
-        )
 
         # Initialize transport matrices with diffusion (advection is added on the fly)
         # Consequently, the preconditioner is built on the fly too.
@@ -139,7 +135,7 @@ class AdjointSolver:
                 self.fwd_model.geometry,
                 self.fwd_model.fl_model,
                 self.adj_model.fl_model,
-                _flow_q_next_preconditioner,
+                self.fwd_model.time_params,
                 time_index,
                 self.adj_model.is_mob_obs,
             )
@@ -157,7 +153,6 @@ class AdjointSolver:
                 self.fwd_model.geometry,
                 self.fwd_model.fl_model,
                 self.adj_model.fl_model,
-                _flow_q_next_preconditioner,
                 0,  # time index
             )
 

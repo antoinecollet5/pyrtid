@@ -160,10 +160,11 @@ def _add_advection_to_adj_transport_matrices(
 
     q_next.setdiag(
         q_next.diagonal()
-        + tr_model.porosity.flatten("F") / time_params.ldt[time_index - 1]
+        + tr_model.porosity.flatten("F") / time_params.ldt[time_index - 2]
     )
     q_prev.setdiag(
-        q_prev.diagonal() + tr_model.porosity.flatten("F") / time_params.ldt[time_index]
+        q_prev.diagonal()
+        + tr_model.porosity.flatten("F") / time_params.ldt[time_index - 1]
     )
 
     # X contribution

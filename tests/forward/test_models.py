@@ -1,5 +1,6 @@
 """Some basic tests for the forward model."""
 
+import re
 from contextlib import contextmanager
 
 import numpy as np
@@ -29,6 +30,33 @@ gch_params = GeochemicalParameters(0.0, 0.0)
 @contextmanager
 def does_not_raise():
     yield
+
+
+@pytest.mark.parametrize(
+    "args, kwargs, expected_dt, expected_dt_min, expected_dt_max",
+    [
+        ((100, 150), {}, 150, 150, 150),
+        ((10, 0, 30), {}, 30, 30, 30),
+        ((100, 150), {"dt_min": 30}, 150, 30, 150),
+        ((100, 150), {"dt_max": 300}, 150, 150, 300),
+        ((100, 150), {"dt_min": 30, "dt_max": 300}, 150, 30, 300),
+        ((100, 150, 30, 300), {}, 150, 30, 300),
+    ],
+)
+def test_time_params(
+    args, kwargs, expected_dt, expected_dt_min, expected_dt_max
+) -> None:
+    time_params = TimeParameters(*args, **kwargs)
+    assert time_params.dt == expected_dt
+    assert time_params.dt_min == expected_dt_min
+    assert time_params.dt_max == expected_dt_max
+
+
+def test_wrong_time_params() -> None:
+    with pytest.raises(
+        ValueError, match=re.escape("dt_min (40.0) is above dt_max (30.0)!")
+    ):
+        TimeParameters(2, 35.0, 40.0, 30.0)
 
 
 @pytest.mark.parametrize(
