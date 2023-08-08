@@ -154,7 +154,6 @@ Other functions
 
 """
 from pyrtid.utils.dataclass import default_field
-from pyrtid.utils.decorator import ConditionalClassDecorator, conditional_decorator_func
 from pyrtid.utils.enum import StrEnum
 from pyrtid.utils.finite_differences import (
     finite_gradient,
@@ -215,8 +214,6 @@ __all__ = [
     "get_normalized_std_from_lognormal_params",
     "get_log_normalized_mean_from_normal_params",
     "get_log_normalized_std_from_normal_params",
-    "ConditionalClassDecorator",
-    "conditional_decorator_func",
     "arithmetic_mean",
     "dxi_arithmetic_mean",
     "harmonic_mean",
