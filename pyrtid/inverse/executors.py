@@ -592,8 +592,7 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         raise Exception(msg)
 
     def is_adjoint_gradient_correct(
-        self,
-        eps: Optional[float] = None,
+        self, eps: Optional[float] = None, max_workers: int = 1
     ) -> bool:
         """
         Return whether the adjoint gradient is correct or not.
@@ -604,6 +603,16 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         optimized area (sliced parameter values) while the adjoint gradient is
         computed everywhere. This allows to check the gradient on small portions
         of big models.
+
+        Parameters
+        ----------
+        eps: float, optional
+            The epsilon for the computation of the approximated gradient by finite
+            difference. If None, it is automatically inferred. The default is None.
+        max_workers: int
+            Number of workers used for the gradient approximation by finite
+            differences. If different from one, the calculation relies on
+            multi-processing to decrease the computation time. The default is 1.
         """
         return is_adjoint_gradient_correct(
             self.fwd_model,
@@ -611,6 +620,7 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
             self.inv_model.parameters_to_adjust,
             self.inv_model.observables,
             eps=eps,
+            max_workers=max_workers,
         )
 
 
