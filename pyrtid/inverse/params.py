@@ -61,9 +61,9 @@ class AdjustableParameter:
         Note: value is a 2D ndarray, which possesses all values, including not
         adjusted ones.
     lbound : Optional[float]
-        The lower bound for the parameter.The default is -1e20.
+        The lower bound for the parameter.
     ubound : Optional[float]
-        The upper bound for the parameter. The default is 1e20.
+        The upper bound for the parameter.
     regularizator: List[Regularizator]
         List of regularization to apply to the parameter.
     preconditioner: Callable, optional
@@ -77,10 +77,15 @@ class AdjustableParameter:
         is the identity function: f(x) = x.
     span : Optional[Union[slice, NDArrayBool]
         The span over which the parameter applies.
+    filters : List[Filter]
+        List of filters to apply to the gradient.
     archived_adjoint_gradients: List[NDArrayFloat]
         List of successive adjoint gradients computed while optimizing.
     archived_fd_gradients: List[NDArrayFloat]
         List of successive finite difference gradients computed while optimizing.
+    eps: float
+        The epsilon for the computation of the approximated preconditioner first
+        derivative by finite difference.
     """
 
     __slots__ = [
@@ -98,6 +103,7 @@ class AdjustableParameter:
         "archived_adjoint_gradients",
         "archived_fd_gradients",
         "reg_weight",
+        "eps",
     ]
 
     def __init__(
@@ -115,7 +121,48 @@ class AdjustableParameter:
             slice(None),
         ),
         filters: Optional[List[Filter]] = None,
+        eps: Optional[float] = None,
     ) -> None:
+        """
+        Initialize the instance.
+
+        Parameters
+        ----------
+        name : ParameterType
+            The parameter name, such as 'Porosity'.
+        values: NDArrayFloat, optional
+            The values of the parameter field. The default is an empty array.
+            Note: value is a 2D ndarray, which possesses all values, including not
+            adjusted ones.
+        lbound : Optional[float]
+            The lower bound for the parameter.The default is -1e20.
+        ubound : Optional[float]
+            The upper bound for the parameter. The default is 1e20.
+        regularizator: List[Regularizator]
+            List of regularization to apply to the parameter.
+        preconditioner: Callable, optional
+            Parameter pre-transformation (variable change for the solver). The default
+            is the identity function: f(x) = x.
+        preconditioner_1st_derivative: Callable, optional
+            Parameter pre-transformation first order derivative.
+            The default is 1.0 (the first derivative of the identity function).
+        backconditioner: Callable, optional
+            Parameter back-transformation (variable change for the solver). The default
+            is the identity function: f(x) = x.
+        span : Optional[Union[slice, NDArrayBool]
+            The span over which the parameter applies.
+        filters : Optional[List[Filter]], optional
+            List of filters to apply to the gradient. by default None
+        eps : Optional[float], optional
+            The epsilon for the computation of the approximated preconditioner first
+            derivative by finite difference. If None, it is automatically inferred.
+            The default is None.
+
+        Raises
+        ------
+        ValueError
+            In case of issue with the regularizators or the preconditoning.
+        """
         self.name = name
         self.values = values if values is not None else np.array([])
         self.lbound = lbound
@@ -126,6 +173,7 @@ class AdjustableParameter:
         self.backconditioner = backconditioner
         self.span = span
         self.filters = filters if filters is not None else []
+        self.eps = eps if eps is not None else sys.float_info.epsilon * 1e8
 
         self._test_preconditioner()
         self._test_bounds_consistency()
@@ -136,7 +184,7 @@ class AdjustableParameter:
 
         for regularizator in self.regularizators:
             if not isinstance(regularizator, Regularizator):
-                raise ValueError("Expect a regulariator instance !")
+                raise ValueError("Expect a regularizator instance !")
 
     @property
     def lbound(self) -> float:
@@ -187,7 +235,7 @@ class AdjustableParameter:
         valid: bool = is_all_close(
             self.preconditioner_1st_derivative(test_data),
             # Finite difference differentiation
-            nd.Derivative(self.preconditioner, n=1, step=sys.float_info.epsilon * 1e8)(
+            nd.Derivative(self.preconditioner, n=1, step=self.eps)(
                 test_data
             ),  # type: ignore
         )
