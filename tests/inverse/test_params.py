@@ -106,7 +106,7 @@ def identify_function(x: np.ndarray) -> np.ndarray:
                 "span": slice(2, 20),
             },
             pytest.raises(
-                ValueError, match="Expect a regulariator instance !"
+                ValueError, match="Expect a regularizator instance !"
             ),  # not a valid regularizator
         ),
         (
