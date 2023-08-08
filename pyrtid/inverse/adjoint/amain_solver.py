@@ -99,7 +99,7 @@ class AdjointSolver:
         # TODO: for now there is no retroaction from the chemistry to the flow
 
         for time_index in range(
-            self.fwd_model.time_params.nt - 1, -1, -1
+            self.fwd_model.time_params.nt, 0, -1
         ):  # Reverse order in time, and reverse order in operator sequence
             # 0) copy last transport state
             _copy_tr_adj_prev_to_current(self.adj_model.tr_model, time_index)

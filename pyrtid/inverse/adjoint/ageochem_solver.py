@@ -10,25 +10,6 @@ from pyrtid.forward.models import (  # ConstantHead,; ZeroConcGradient,
 from pyrtid.inverse.adjoint.amodels import AdjointTransportModel
 
 
-def add_chem_adjoint_sources(
-    tr_model: TransportModel,
-    a_tr_model: AdjointTransportModel,
-    geometry: Geometry,
-    time_params: TimeParameters,
-    time_index: int,
-) -> None:
-    """Add the sources in the adjoint problem."""
-    # Note the sources are added on the previous timestep
-    # -> this is the time at which the observation has been made !
-    dt_cur = time_params.ldt[time_index]
-    a_tr_model.a_conc[:, :, time_index + 1] -= (
-        a_tr_model.a_sources[:, :, time_index + 1]
-        / geometry.mesh_area
-        / tr_model.porosity
-        * dt_cur
-    )
-
-
 def solve_adj_geochem(
     tr_model: TransportModel,
     a_tr_model: AdjointTransportModel,
@@ -38,12 +19,8 @@ def solve_adj_geochem(
     time_index: int,
 ) -> None:
     """Compute the geochemistry part."""
-
-    # 1) Add the adjoint sources on the previous timestep
-    add_chem_adjoint_sources(tr_model, a_tr_model, geometry, time_params, time_index)
-
     # Skip the last timestep (there is no transport between n=0 and n=1)
-    if time_index == 0:
+    if time_index == time_params.nt:
         return
 
     # Forward variable at the current timestep going backward

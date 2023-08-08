@@ -66,7 +66,7 @@ def _get_diffusion_term_adjoint_gradient(
     conc = fwd_model.tr_model.conc
     conc_post_tr = fwd_model.tr_model.conc_post_tr
     # conc = fwd_model.tr_model.conc_post_tr
-    aconc = adj_model.tr_model.a_conc_post_gch
+    aconc = adj_model.tr_model.a_conc
 
     # Consider the x axis
     # Forward scheme

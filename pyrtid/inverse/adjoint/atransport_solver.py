@@ -143,10 +143,6 @@ def make_transient_adj_transport_matrices(
             / geometry.dy**2
         )
 
-    # Add 1/dt for the left term contribution
-    q_next.setdiag(q_next.diagonal() + tr_model.porosity.flatten("F") / time_params.dt)
-    q_prev.setdiag(q_prev.diagonal() + tr_model.porosity.flatten("F") / time_params.dt)
-
     return q_next.tocsc(), q_prev.tocsc()
 
 
@@ -155,11 +151,20 @@ def _add_advection_to_adj_transport_matrices(
     fl_model: FlowModel,
     tr_model: TransportModel,
     a_tr_model: AdjointTransportModel,
+    time_params: TimeParameters,
     time_index: int,
 ) -> None:
     crank_adv = tr_model.crank_nicolson_advection
     q_next = a_tr_model.q_next_diffusion.copy().tolil()
     q_prev = a_tr_model.q_prev_diffusion.copy().tolil()
+
+    q_next.setdiag(
+        q_next.diagonal()
+        + tr_model.porosity.flatten("F") / time_params.ldt[time_index - 1]
+    )
+    q_prev.setdiag(
+        q_prev.diagonal() + tr_model.porosity.flatten("F") / time_params.ldt[time_index]
+    )
 
     # X contribution
     tmp = np.zeros((geometry.nx, geometry.ny))
@@ -371,7 +376,7 @@ def solve_adj_transport_transient_semi_implicit(
 
     # Update q_next and q_prev with the advection term (must be copied)
     _add_advection_to_adj_transport_matrices(
-        geometry, fl_model, tr_model, a_tr_model, time_index
+        geometry, fl_model, tr_model, a_tr_model, time_params, time_index
     )
 
     # Get the previous vector
@@ -379,6 +384,9 @@ def solve_adj_transport_transient_semi_implicit(
 
     # Multiply prev matrix by prev vector
     tmp = a_tr_model.q_prev.dot(prev_vector)
+
+    # Add the source terms -> from the previous timestep
+    tmp -= (a_tr_model.a_sources[:, :, time_index]).ravel("F") / geometry.mesh_area
 
     # Build the LU preconditioning
     preconditioner = get_super_lu_preconditioner(a_tr_model.q_next)
