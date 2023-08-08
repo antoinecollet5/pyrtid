@@ -10,7 +10,7 @@ webbrowser.open("file://" + pathname2url(os.path.abspath(sys.argv[1])))
 endef
 export BROWSER_PYSCRIPT
 
-NUMBA_DISABLE_JIT := 1.0
+NUMBA_DISABLE_JIT := 1
 export NUMBA_DISABLE_JIT
 
 define PRINT_HELP_PYSCRIPT
@@ -61,8 +61,6 @@ test-all: ## run tests on every Python version with tox
 	tox
 
 coverage: ## check code coverage quickly with the default Python
-	export NUMBA_DISABLE_JIT="1.0"
-	echo $
 	coverage run --source pyrtid -m pytest
 	coverage report -m
 	coverage html

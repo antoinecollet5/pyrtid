@@ -44,6 +44,8 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    env:
+      NUMBA_DISABLE_JIT : 1
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
