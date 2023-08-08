@@ -65,6 +65,7 @@ def is_gradient_correct(
     grad_kwargs: Optional[Dict[str, Any]] = None,
     accuracy: int = 0,
     eps: float = sys.float_info.epsilon * 1e10,
+    max_workers: int = 1,
 ) -> bool:
     """
     Check by finite difference if the gradient is correct.
@@ -96,6 +97,9 @@ def is_gradient_correct(
         :cite:`wieschollek2016cppoptimizationlibrary`, and should correspond
         to the optimal h taking into account the roundoff errors due to
         the machine precision. The default is -2.2204e-6.
+    max_workers: int
+        Number of workers used. If different from one, the calculation relies on
+        multi-processing to decrease the computation time. The default is 1.
 
     Returns
     -------
@@ -108,7 +112,9 @@ def is_gradient_correct(
     if grad_kwargs is None:
         grad_kwargs = {}
     actual_grad = grad(x, *grad_args, **grad_kwargs)
-    expected_grad = finite_gradient(x, fm, fm_args, fm_kwargs, accuracy, eps)
+    expected_grad = finite_gradient(
+        x, fm, fm_args, fm_kwargs, accuracy, eps, max_workers
+    )
 
     return is_all_close(actual_grad, expected_grad)
 

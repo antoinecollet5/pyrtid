@@ -51,7 +51,10 @@ class Regularizator(ABC):
         """
 
     def loss_function_gradient(
-        self, param: NDArrayFloat, is_finite_differences: bool = False
+        self,
+        param: NDArrayFloat,
+        is_finite_differences: bool = False,
+        max_workers: int = 1,
     ) -> NDArrayFloat:
         """
         Compute the gradient of the regularization loss function.
@@ -64,6 +67,10 @@ class Regularizator(ABC):
             If true, a numerical approximation by 2nd order finite difference is
             returned. Cost twice the `param` dimensions in terms of loss function
             calls. The default is False.
+        max_workers: int
+            Number of workers used  if the gradient is approximated by finite
+            differences. If different from one, the calculation relies on
+            multi-processing to decrease the computation time. The default is 1.
 
         Returns
         -------
@@ -71,6 +78,6 @@ class Regularizator(ABC):
             The regularization gradient.
         """
         if is_finite_differences:
-            return finite_gradient(param, self.loss_function)
+            return finite_gradient(param, self.loss_function, max_workers=max_workers)
         else:
             return self.loss_function_gradient_analytical(param)
