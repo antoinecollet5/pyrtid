@@ -502,7 +502,7 @@ def solve_adj_flow_transient_semi_implicit(
     # Add the source terms
     # Note: there is no crank-nicolson scheme on the residuals (only applies to
     # forward variables)
-    tmp += (
+    tmp -= (
         a_fl_model.a_sources[:, :, time_index].ravel("F")
         / fl_model.storage_coefficient
         / geometry.mesh_area
