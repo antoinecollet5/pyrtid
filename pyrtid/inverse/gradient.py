@@ -1,6 +1,7 @@
 """Provide gradient computation routines."""
 
 import copy
+import warnings
 from typing import List, Optional, Sequence, Union
 
 import numpy as np
@@ -630,6 +631,18 @@ def compute_fd_gradient(
         # FD approximation -> only on the adjusted values. This is convient to
         # test to gradient on a small portion of big models with to many meshes to
         # be entirely tested.
+
+        # Test the bounds -> it affects the finite differences evaluation
+        param_values = get_parameter_values_from_model(_model, param)
+        if np.any(param_values <= param.lbound) or np.any(param_values >= param.ubound):
+            warnings.warn(
+                f'Adjusted parameter "{param.name}" has one or more values'
+                " that equal the lower and/or upper bound(s). As values are clipped to"
+                " bounds to avoid solver crashes, it will results in a wrong gradient"
+                "approximation by finite differences "
+                "(typically scaled by a factor 0.5)."
+            )
+
         param_grad = finite_gradient(
             param.get_sliced_field(
                 get_parameter_values_from_model(_model, param), is_preconditioned=True
