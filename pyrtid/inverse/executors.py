@@ -112,7 +112,7 @@ class DataModel:
     ----------
     obs_data : pd.DataFrame
         Obsevration data read from the simulation folder.
-    m_init : np.array
+    s_init : np.array
         Initial ensemble of N_{e} parameters vector.
     cov_obs: NDArrayFloat
         Covariance matrix of observed data measurement errors with dimensions
@@ -120,25 +120,25 @@ class DataModel:
 
     """
 
-    __slots__ = ["obs", "m_init", "_cov_obs", "std_m_prior"]
+    __slots__ = ["obs", "s_init", "_cov_obs", "std_m_prior"]
 
     def __init__(
         self,
         obs: NDArrayFloat,
-        m_init: NDArrayFloat,
+        s_init: NDArrayFloat,
         cov_obs: NDArrayFloat,
         std_m_prior: NDArrayFloat,
     ) -> None:
         """Construct the instance."""
         self.obs = obs
-        self.m_init = m_init
+        self.s_init = s_init
         self.cov_obs = cov_obs
         self.std_m_prior = std_m_prior
 
     @property
-    def m_dim(self):
+    def s_dim(self):
         """Return the length of the parameters vector."""
-        return self.m_init.shape[1]
+        return self.s_init.shape[1]
 
     @property
     def d_dim(self):
@@ -191,7 +191,7 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         inv_model: InverseModel,
         solver_config: _BaseSolverConfig,
         pre_run_transformation: Optional[Callable] = None,
-        m_init: Optional[NDArrayFloat] = None,
+        s_init: Optional[NDArrayFloat] = None,
     ) -> None:
         """
         Initialize the executor.
@@ -211,7 +211,7 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         pre_run_transformation : Optional[Callable], optional
             Pre transformation to apply to the rt_model before oe run.
             The default is None.
-        m_init: Optional[NDArrayFloat]
+        s_init: Optional[NDArrayFloat]
             Initial adjusted values. This is required by some solvers such
             as ESMDA or SIES. In case of an ensemble, the expected shape
             is (Ne, Nm) with Ne the number of members in the ensemble and
@@ -240,20 +240,20 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         # _std_m_prior = self.source_simulation.get_std_m_prior()
         _std_m_prior = np.array([])
 
-        if m_init is None:
-            _m_init = get_parameters_values_from_model(
+        if s_init is None:
+            _s_init = get_parameters_values_from_model(
                 fwd_model, inv_model.parameters_to_adjust, is_preconditioned=True
             )
         else:
-            _m_init = m_init
+            _s_init = s_init
 
         # Need to differentiate flux and grids
         self.data_model = DataModel(
-            self.obs, _m_init, np.diag(self.std_obs**2), _std_m_prior
+            self.obs, _s_init, np.diag(self.std_obs**2), _std_m_prior
         )
 
         # Initialize the solver (this is to be defined in child classes)
-        self._init_solver(_m_init)
+        self._init_solver(_s_init)
 
     @property
     def obs(self) -> NDArrayFloat:
@@ -307,7 +307,7 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
             self.adj_model.set_adjoint_sources_from_obs(obs, self.fwd_model)
 
     @abstractmethod
-    def _init_solver(self, m_init: Optional[NDArrayFloat]) -> None:
+    def _init_solver(self, s_init: Optional[NDArrayFloat]) -> None:
         """Initiate a solver with its args."""
         pass
 
@@ -418,7 +418,7 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         return d_pred
 
     def _map_forward_model(
-        self, m_ensemble: NDArrayFloat, is_parallel: bool = False
+        self, s_ensemble: NDArrayFloat, is_parallel: bool = False
     ) -> NDArrayFloat:
         """
         Call the forward model for all ensemble members, return predicted data.
@@ -433,15 +433,15 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         None.
         """
         run_n: int = self.inv_model.nb_f_calls
-        n_ensemble: int = m_ensemble.shape[0]
-        d_pred: NDArrayFloat = np.zeros([m_ensemble.shape[0], self.data_model.d_dim])
+        n_ensemble: int = s_ensemble.shape[0]
+        d_pred: NDArrayFloat = np.zeros([n_ensemble, self.data_model.d_dim])
         if is_parallel:
             with ProcessPoolExecutor(
                 max_workers=self.solver_config.max_workers
             ) as executor:
                 results: Iterator[NDArrayFloat] = executor.map(
                     self._run_forward_model,
-                    m_ensemble,
+                    s_ensemble,
                     range(run_n + 1, run_n + n_ensemble + 1),
                 )
                 for j, res in enumerate(results):
@@ -449,7 +449,7 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
             # self.simu_n += n_ensemble
         else:
             for j in range(n_ensemble):
-                d_pred[j, :] = self._run_forward_model(m_ensemble[j, :], run_n + j + 1)
+                d_pred[j, :] = self._run_forward_model(s_ensemble[j, :], run_n + j + 1)
         # update the number of runs
 
         # The check is already done in Forward_model but nan can also be introduced
@@ -663,14 +663,14 @@ class PCGASolverConfig(BaseSolverConfig):
 class PCGAInversionExecutor(BaseInversionExecutor[PCGASolverConfig]):
     """Principal Component Geostatistical Approach Inversion Executor."""
 
-    def _init_solver(self, m_init: NDArrayFloat = None) -> None:
+    def _init_solver(self, s_init: Optional[NDArrayFloat] = None) -> None:
         """Initiate a solver with its args."""
         # Array with grid coordinates. (X, Y, Z)...
         # Note: for regular grid you don't need to specify pts.
         self.pts = None
         self.solver: PCGA = PCGA(
             self._map_forward_model_wrapper,
-            self.data_model.m_init.ravel(),  # Need to be a vector
+            self.data_model.s_init.ravel(),  # Need to be a vector
             self.pts,
             params=self.solver_config.solver_kwargs,
             obs=self.data_model.obs,
@@ -692,7 +692,7 @@ class PCGAInversionExecutor(BaseInversionExecutor[PCGASolverConfig]):
         return self.solver.Run()
 
     def _map_forward_model_wrapper(
-        self, m_ensemble: NDArrayFloat, is_parallel: bool = False, ncores: int = 1
+        self, s_ensemble: NDArrayFloat, is_parallel: bool = False, ncores: int = 1
     ) -> NDArrayFloat:
         """
         Call the forward model for all ensemble members, return predicted data.
@@ -708,7 +708,7 @@ class PCGAInversionExecutor(BaseInversionExecutor[PCGASolverConfig]):
         """
         # pylint: disable=W0613  # Unused argument 'ncores'
         # The transposition is due to the implementation of pypcga
-        return super()._map_forward_model(m_ensemble.T, is_parallel).T
+        return super()._map_forward_model(s_ensemble.T, is_parallel).T
 
 
 @dataclass
@@ -804,12 +804,12 @@ class ESMDASolverConfig(BaseSolverConfig):
 class ESMDAInversionExecutor(BaseInversionExecutor[ESMDASolverConfig]):
     """Ensemble Smoother with Multiple Data Assimilation Inversion Executor."""
 
-    def _init_solver(self, m_init: NDArrayFloat) -> None:
+    def _init_solver(self, s_init: NDArrayFloat) -> None:
         """Initiate a solver with its args."""
 
         self.solver: ESMDA = ESMDA(
             self.data_model.obs,
-            m_init,  # To change back
+            s_init,  # To change back
             self.data_model.cov_obs,
             self._map_forward_model,
             forward_model_kwargs={"is_parallel": self.solver_config.is_parallel},
@@ -840,6 +840,11 @@ class ESMDAInversionExecutor(BaseInversionExecutor[ESMDASolverConfig]):
         """
         super().run()
         return self.solver.solve()
+
+    @property
+    def s_history(self) -> List[NDArrayFloat]:
+        """Return the successive ensembles."""
+        return self.solver.m_history
 
 
 @dataclass
@@ -933,12 +938,12 @@ class ESMDARSSolverConfig(BaseSolverConfig):
 class ESMDARSInversionExecutor(BaseInversionExecutor[ESMDARSSolverConfig]):
     """Restricted Step Ensemble Smoother with Multiple Data Assimilation Executor."""
 
-    def _init_solver(self, m_init: NDArrayFloat) -> None:
+    def _init_solver(self, s_init: NDArrayFloat) -> None:
         """Initiate a solver with its args."""
 
         self.solver: ESMDA_RS = ESMDA_RS(
             self.data_model.obs,
-            m_init,  # To change back
+            s_init,  # To change back
             self.data_model.cov_obs,
             self._map_forward_model,
             forward_model_kwargs={"is_parallel": self.solver_config.is_parallel},
@@ -969,6 +974,11 @@ class ESMDARSInversionExecutor(BaseInversionExecutor[ESMDARSSolverConfig]):
         """
         super().run()
         return self.solver.solve()
+
+    @property
+    def s_history(self) -> List[NDArrayFloat]:
+        """Return the successive ensembles."""
+        return self.solver.m_history
 
 
 @dataclass
@@ -1019,22 +1029,22 @@ class _SIES(SIES):
         """Initialize the instance."""
         super().__init__(*args, **kwargs)
         self.d_history: List[NDArrayFloat] = []
-        self.m_history: List[NDArrayFloat] = []
+        self.s_history: List[NDArrayFloat] = []
 
 
 class SIESInversionExecutor(BaseInversionExecutor[SIESSolverConfig]):
     """Ensemble Smoother with Multiple Data Assimilation Inversion Executor."""
 
-    def _init_solver(self, m_init: NDArrayFloat) -> None:
+    def _init_solver(self, s_init: NDArrayFloat) -> None:
         """Initiate a solver with its args."""
 
-        self.solver: _SIES = _SIES(m_init.shape[0], seed=self.solver_config.seed)
+        self.solver: _SIES = _SIES(s_init.shape[0], seed=self.solver_config.seed)
 
     def _get_solver_name(self) -> str:
         """Return the solver name."""
         return "SIES"
 
-    def run(self, m_init: NDArrayFloat) -> NDArrayFloat:
+    def run(self, s_init: NDArrayFloat) -> NDArrayFloat:
         """
         Run the history matching.
 
@@ -1042,9 +1052,9 @@ class SIESInversionExecutor(BaseInversionExecutor[SIESSolverConfig]):
         required by the HM algorithms.
         """
         super().run()
-        _m = m_init.copy()
+        _m = s_init.copy()
         if self.solver_config.save_ensembles_history:
-            self.solver.m_history.append(_m)
+            self.solver.s_history.append(_m)
         for iteration in range(self.solver_config.n_iterations):
             logging.info(f"Iteration # {iteration}")
             d_pred = self._map_forward_model(
@@ -1060,8 +1070,13 @@ class SIESInversionExecutor(BaseInversionExecutor[SIESSolverConfig]):
             _m = self.solver.update(_m.T).T
 
             if self.solver_config.save_ensembles_history:
-                self.solver.m_history.append(_m)
+                self.solver.s_history.append(_m)
         return _m
+
+    @property
+    def s_history(self) -> List[NDArrayFloat]:
+        """Return the successive ensembles."""
+        return self.solver.s_history
 
 
 @dataclass
@@ -1108,8 +1123,8 @@ class ScipySolverConfig(BaseSolverConfig):
 class ScipyInversionExecutor(BaseInversionExecutor[ScipySolverConfig]):
     """Represent a inversion executor instance using scipy's solvers."""
 
-    def _init_solver(self, m_init: NDArrayFloat) -> None:
-        super()._init_solver(m_init)
+    def _init_solver(self, s_init: NDArrayFloat) -> None:
+        super()._init_solver(s_init)
 
         # Create an adjoint model only if needed
         self.adj_model = None
@@ -1129,7 +1144,7 @@ class ScipyInversionExecutor(BaseInversionExecutor[ScipySolverConfig]):
         """
         super().run()
         res: ScipyOptimizeResult = ScipyOptimizeResult()
-        x0 = self.data_model.m_init
+        x0 = self.data_model.s_init
 
         self.inv_model.is_regularization_at_first_round = (
             self.solver_config.is_regularization_at_first_round
@@ -1303,7 +1318,7 @@ class StochopyInversionExecutor(BaseInversionExecutor[StochopySolverConfig]):
         """
         super().run()
         res = StochpyOptimizeResult()
-        x0 = self.data_model.m_init
+        x0 = self.data_model.s_init
 
         # Empty dict for the results
         # res: Dict[str, Any] = {}
