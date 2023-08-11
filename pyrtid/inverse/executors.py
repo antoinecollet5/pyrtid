@@ -816,6 +816,7 @@ class ESMDAInversionExecutor(BaseInversionExecutor[ESMDASolverConfig]):
             m_bounds=get_parameters_bounds(
                 self.inv_model.parameters_to_adjust, is_preconditioned=True
             ),
+            n_assimilations=self.solver_config.n_assimilations,
             cov_obs_inflation_factors=self.solver_config.cov_obs_inflation_factors,
             cov_mm_inflation_factors=self.solver_config.cov_ss_inflation_factors,
             dd_correlation_matrix=self.solver_config.dd_correlation_matrix,
