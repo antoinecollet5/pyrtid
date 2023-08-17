@@ -10,7 +10,7 @@ import numpy as np
 
 from pyrtid.inverse.regularization.base import Regularizator
 from pyrtid.inverse.regularization.covariances import CovarianceMatrix
-from pyrtid.inverse.regularization.drift import DriftMatrix, NullPriorTerm, PriorTerm
+from pyrtid.inverse.regularization.priors import NullPriorTerm, PriorTerm
 from pyrtid.utils.types import NDArrayFloat
 
 
@@ -129,35 +129,36 @@ class GeostatisticalRegularizator(Regularizator):
         ) * self.transform_1st_derivative(values)
 
 
-def compute_best_beta(
-    values: NDArrayFloat, cov_m: CovarianceMatrix, drift_matrix: DriftMatrix
-) -> NDArrayFloat:
-    """
-    Compute the optimal beta (minimal objective function).
+# T
+# def compute_best_beta(
+#     values: NDArrayFloat, cov_m: CovarianceMatrix, drift_matrix: DriftMatrix
+# ) -> NDArrayFloat:
+#     """
+#     Compute the optimal beta (minimal objective function).
 
-    TODO: Add the maths here.
+#     TODO: Add the maths here.
 
-    Parameters
-    ----------
-    values : NDArrayFloat
-        Values of the parameter for which the regularization is computed.
-        Should be 2D array / 1d vector.
-    cov_m : CovarianceMatrix
-        The covariance matrix.
-    drift_matrix : DriftMatrix
-        The drift matrix instance for which to compute beta.
+#     Parameters
+#     ----------
+#     values : NDArrayFloat
+#         Values of the parameter for which the regularization is computed.
+#         Should be 2D array / 1d vector.
+#     cov_m : CovarianceMatrix
+#         The covariance matrix.
+#     drift_matrix : DriftMatrix
+#         The drift matrix instance for which to compute beta.
 
-    Returns
-    -------
-    NDArrayFloat
-        The best beta.
-    """
-    # This is valid for the linear one only.
-    invQs = cov_m.get_inv_cov_times_vector(values)
-    invQX = cov_m.get_inv_cov_times_vector(drift_matrix.mat)
+#     Returns
+#     -------
+#     NDArrayFloat
+#         The best beta.
+#     """
+#     # This is valid for the linear one only.
+#     invQs = cov_m.get_inv_cov_times_vector(values)
+#     invQX = cov_m.get_inv_cov_times_vector(drift_matrix.mat)
 
-    XTinvQs = np.dot(drift_matrix.mat.T, invQs)
-    XTinvQX = np.dot(drift_matrix.mat.T, invQX)
+#     XTinvQs = np.dot(drift_matrix.mat.T, invQs)
+#     XTinvQX = np.dot(drift_matrix.mat.T, invQX)
 
-    # inexpensive solve p by p where p <= 3, usually p = 1 (scalar division)
-    return np.linalg.solve(np.atleast_2d(XTinvQX), XTinvQs).ravel()
+#     # inexpensive solve p by p where p <= 3, usually p = 1 (scalar division)
+#     return np.linalg.solve(np.atleast_2d(XTinvQX), XTinvQs).ravel()

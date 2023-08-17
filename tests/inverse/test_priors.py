@@ -1,4 +1,4 @@
-"""Test the drift matrices implementation."""
+"""Test the priors implementation."""
 from typing import Optional
 
 import numpy as np

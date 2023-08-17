@@ -1,6 +1,5 @@
 """Hierarchical matrix."""
 import numpy as np
-from scipy.spatial import distance_matrix
 
 from pyrtid.inverse.regularization.tree import BlockCluster, Cluster
 
@@ -139,39 +138,3 @@ class Hmatrix:
 
         memory = float(np.sum(costlist) * 8.0) / (1024.0**2.0)
         return memory
-
-
-if __name__ == "__main__":
-    import sys
-
-    if len(sys.argv) < 2:
-        N = 100
-    else:
-        N = int(sys.argv[1])
-
-    pts = np.random.rand(N, 2)
-    indx = np.arange(N)
-
-    def kernel(R):
-        return np.exp(-R)
-
-    indy = None  # np.arange(N/10)
-    Q = Hmatrix(pts, kernel, indx=indx, indy=indy, verbose=True)
-
-    is_direct = True
-    if N > 5000:
-        is_direct = False
-
-    x = np.random.rand(
-        np.size(indx),
-    )
-    yd = np.zeros((np.size(indx),), dtype="d")
-    yh = np.zeros((np.size(indx),), dtype="d")
-
-    print("Memory usage in MB %g" % (Q._memoryusage()))
-    Q.mult(x, yh)
-
-    if is_direct:
-        mat = kernel(distance_matrix(pts, pts))  # dense matrix
-        yd = np.dot(mat, x)
-        print("Error is %g" % (np.linalg.norm(yd - yh) / np.linalg.norm(yd)))

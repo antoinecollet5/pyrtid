@@ -112,7 +112,8 @@ from pyrtid.inverse.regularization.covariances import (
     cov_mat_to_ud_mat,
     get_prior_eigen_factorization,
 )
-from pyrtid.inverse.regularization.drift import (
+from pyrtid.inverse.regularization.geostatistical import GeostatisticalRegularizator
+from pyrtid.inverse.regularization.priors import (
     ConstantPriorTerm,
     DriftMatrix,
     LinearDriftMatrix,
@@ -120,7 +121,6 @@ from pyrtid.inverse.regularization.drift import (
     NullPriorTerm,
     PriorTerm,
 )
-from pyrtid.inverse.regularization.geostatistical import GeostatisticalRegularizator
 from pyrtid.inverse.regularization.tikhonov import (
     TikhonovRegularizatorAnisotropic,
     TikhonovRegularizatorIsotropic,
