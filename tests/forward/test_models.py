@@ -50,6 +50,34 @@ def test_time_params(
     assert time_params.dt == expected_dt
     assert time_params.dt_min == expected_dt_min
     assert time_params.dt_max == expected_dt_max
+    assert time_params.dt_init == expected_dt
+
+    # Update timestep
+    for i in range(100):
+        time_params.update_dt(1)
+
+    assert time_params.dt == expected_dt_max
+    assert len(time_params.ldt) == 100
+    assert time_params.duration > 0
+
+    time_params.reset_dt()
+    assert time_params.dt == expected_dt
+    assert len(time_params.ldt) == 0
+
+    assert time_params.duration == 0
+
+    for i in range(20):
+        time_params.update_dt(30)
+
+    assert time_params.dt == expected_dt_min
+    assert len(time_params.ldt) == 20
+    assert time_params.duration > 0
+
+    time_params.reset_dt()
+    assert time_params.dt == expected_dt
+    assert len(time_params.ldt) == 0
+
+    assert time_params.duration == 0
 
 
 def test_wrong_time_params() -> None:
@@ -89,9 +117,11 @@ def test_wrong_time_params() -> None:
         ),
     ],
 )
-def test_geometry(nx, ny, dx, dy, expected_exception) -> Geometry:
+def test_geometry(nx, ny, dx, dy, expected_exception) -> None:
     with expected_exception:
-        return Geometry(nx, ny, dx, dy)
+        geom = Geometry(nx, ny, dx, dy)
+        assert geom.mesh_area == dx * dy
+        assert geom.mesh_volume == geom.mesh_area
 
 
 def test_resize_array() -> None:
@@ -151,6 +181,20 @@ def test_add_source_term(model) -> None:
     )
     model.add_src_term(source_term)
     assert len(model.source_terms) == 2
+
+
+def test_wrong_source_term(model) -> None:
+    with pytest.raises(
+        ValueError,
+        match="Times, flowrates and concentrations must have the same dimension !",
+    ):
+        SourceTerm(
+            "some_name",
+            node_ids=np.array([1], dtype=np.int32),
+            times=np.array([1.0, 1.0], dtype=np.float64),
+            flowrates=np.array([1.0], dtype=np.float64),
+            concentrations=np.array([1.0], dtype=np.float64),
+        )
 
 
 @pytest.mark.parametrize(

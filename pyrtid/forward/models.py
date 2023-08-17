@@ -89,17 +89,17 @@ class TimeParameters:
         # Apply bounds
         self.dt_init: float = _dt_init
         self.dt = _dt_init
-        self.ldt: List[float] = [self.dt]
+        self.ldt: List[float] = []
 
     @property
     def duration(self) -> float:
         """Simulation duration in seconds."""
-        return self.nt * self.dt
+        return np.sum(self.ldt)
 
     def reset_dt(self) -> None:
         """Empty the list of timesteps and set dt to its initial value."""
         self.dt = self.dt_init
-        self.ldt = [self.dt_init]
+        self.ldt = []
 
     def update_dt(self, n_iter: int) -> None:
         """
