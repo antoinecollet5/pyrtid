@@ -17,6 +17,7 @@ from pyrtid.forward.models import (
     TimeParameters,
     TransportParameters,
     ZeroConcGradient,
+    get_owner_neigh_indices,
     resize_array,
 )
 
@@ -240,3 +241,71 @@ def test_add_transport_boundary_conditions(
     """Test boundary conditions for the transport model."""
     with expected_exception:
         model.tr_model.add_boundary_conditions(condition)
+
+
+def test_get_owner_neigh_indices() -> None:
+    geometry = Geometry(4, 4, 1.0, 1.0, 1.0)
+
+    idc_owner, idc_neigh = get_owner_neigh_indices(
+        geometry,
+        (slice(None), slice(1, geometry.ny)),
+        (slice(None), slice(0, geometry.ny - 1)),
+        np.array([]),
+    )
+
+    np.testing.assert_equal(
+        idc_owner, np.array([4, 8, 12, 5, 9, 13, 6, 10, 14, 7, 11, 15], dtype=np.int32)
+    )
+    np.testing.assert_equal(
+        idc_neigh, np.array([0, 4, 8, 1, 5, 9, 2, 6, 10, 3, 7, 11], dtype=np.int32)
+    )
+
+    idc_owner, idc_neigh = get_owner_neigh_indices(
+        geometry,
+        (slice(None), slice(1, geometry.ny)),
+        (slice(None), slice(0, geometry.ny - 1)),
+        np.array([0, 1, 12, 13]),
+    )
+
+    np.testing.assert_equal(
+        idc_owner, np.array([4, 8, 5, 9, 6, 10, 14, 7, 11, 15], dtype=np.int32)
+    )
+    np.testing.assert_equal(
+        idc_neigh, np.array([0, 4, 1, 5, 2, 6, 10, 3, 7, 11], dtype=np.int32)
+    )
+
+
+def test_model_shape(model: ForwardModel) -> None:
+    assert model.shape == (20, 20, 401)
+
+
+def test_model_reinit(model: ForwardModel) -> None:
+    model.tr_model.conc[:, :, :] = 1.0
+    model.tr_model.conc_post_tr[:, :, :] = 1.0
+    model.tr_model.grade[:, :, :] = 1.0
+
+    model.fl_model.head[:, :, :] = 1.0
+    model.fl_model.u_darcy_x[:, :, :] = 1.0
+    model.fl_model.u_darcy_y[:, :, :] = 1.0
+
+    model.reinit()
+
+    assert np.all(model.tr_model.conc[:, :, 1:] == 0)
+    assert np.all(model.tr_model.conc_post_tr[:, :, 1:] == 0)
+    assert np.all(model.tr_model.grade[:, :, 1:] == 0)
+
+    assert np.all(model.fl_model.head[:, :, 1:] == 0)
+    assert np.all(model.fl_model.u_darcy_x[:, :, :] == 0)
+    assert np.all(model.fl_model.u_darcy_y[:, :, :] == 0)
+
+
+def test_tr_model_resize(model: ForwardModel) -> None:
+    model.tr_model.conc[:, :, :] = 1.0
+    model.tr_model.conc_post_tr[:, :, :] = 1.0
+    model.tr_model.grade[:, :, :] = 1.0
+
+    model.tr_model.reinit()
+
+    assert np.all(model.tr_model.conc[:, :, 1:] == 0)
+    assert np.all(model.tr_model.conc_post_tr[:, :, 1:] == 0)
+    assert np.all(model.tr_model.grade[:, :, 1:] == 0)
