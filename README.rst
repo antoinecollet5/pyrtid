@@ -29,9 +29,10 @@ python Reactive Transport Inversion is a reactive transport inversion demonstrat
     :target: https://pypi.org/pypi/pyrtid
     :alt: PyPI
 
-.. |Downloads| image:: https://pepy.tech/badge/pyrtid
+.. |Downloads| image:: https://static.pepy.tech/badge/pyrtid
     :target: https://pepy.tech/project/pyrtid
     :alt: Downoads
+
 
 .. |Build Status| image:: https://github.com/antoinecollet5/pyrtid/actions/workflows/main.yml/badge.svg
     :target: https://github.com/antoinecollet5/pyrtid/actions/workflows/main.yml
