@@ -10,6 +10,7 @@ coverage
 
 pre-commit
 black>=23.1.0
+jupyter-black
 isort==5.10.1
 codespell==2.1.0
 flake8
