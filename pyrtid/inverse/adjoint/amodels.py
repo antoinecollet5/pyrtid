@@ -50,9 +50,8 @@ class AdjointTransportModel:
 
     __slots__ = [
         "a_conc",
-        "a_conc_post_gch",
+        "a_conc_prev",
         "a_grade",
-        "a_grade_post_gch",
         "a_sources",
         "q_prev_diffusion",
         "q_next_diffusion",
@@ -70,15 +69,13 @@ class AdjointTransportModel:
         self.a_conc: NDArrayFloat = np.zeros(
             (geometry.nx, geometry.ny, time_params.nt + 1), dtype=np.float64
         )
-        self.a_conc_post_gch: NDArrayFloat = np.zeros(
-            (geometry.nx, geometry.ny, time_params.nt + 1), dtype=np.float64
+        self.a_conc_prev: NDArrayFloat = np.zeros(
+            (geometry.nx, geometry.ny), dtype=np.float64
         )
         self.a_grade: NDArrayFloat = np.zeros(
             (geometry.nx, geometry.ny, time_params.nt + 1), dtype=np.float64
         )
-        self.a_grade_post_gch: NDArrayFloat = np.zeros(
-            (geometry.nx, geometry.ny, time_params.nt + 1), dtype=np.float64
-        )
+
         # TODO: see if we can use sparse matrices for that
         self.a_sources = np.zeros(
             (geometry.nx, geometry.ny, time_params.nt + 1), dtype=np.float64

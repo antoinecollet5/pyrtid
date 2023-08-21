@@ -89,7 +89,7 @@ class TimeParameters:
         # Apply bounds
         self.dt_init: float = _dt_init
         self.dt = _dt_init
-        self.ldt: List[float] = []
+        self.ldt: List[float] = [dt_init]
 
     @property
     def duration(self) -> float:
@@ -99,7 +99,7 @@ class TimeParameters:
     def reset_dt(self) -> None:
         """Empty the list of timesteps and set dt to its initial value."""
         self.dt = self.dt_init
-        self.ldt = []
+        self.ldt = [self.dt_init]
 
     def update_dt(self, n_iter: int) -> None:
         """
@@ -201,9 +201,12 @@ class TransportParameters:
     tolerance: float, optional
         The tolerance on the transport. The default is 1e-8.
     is_numerical_acceleration: bool, optional
-        Whether to use the concentration values at the previous iteration as an initial
-        guess for gmres (x0) rather than using a random vector. This should increase the
-        speed of resolution. The default is False.
+        Whether to use the chemical source term of the previous iteration (at t=n-1),
+        as a first guess in the coupling fixed point iterations. In practise it might
+        save one iteration is the system is in a quasi-steady state or it might
+        reduce the error. The default is False.
+    fpi_eps: float
+       Tolerance on the transport-chemistry coupling error. The default value is 1e-5.
     """
 
     def __init__(
@@ -214,6 +217,7 @@ class TransportParameters:
         crank_nicolson_diffusion: float = 1.0,
         tolerance: float = 1e-8,
         is_numerical_acceleration: bool = False,
+        fpi_eps: float = 1e-5,
     ) -> None:
         """Initialize the instance."""
         self.diffusion: float = diffusion
@@ -222,6 +226,7 @@ class TransportParameters:
         self.crank_nicolson_diffusion: float = crank_nicolson_diffusion
         self.tolerance: float = tolerance
         self.is_numerical_acceleration: bool = is_numerical_acceleration
+        self.fpi_eps = fpi_eps
 
 
 class GeochemicalParameters:
@@ -647,6 +652,7 @@ class TransportModel:
         "conc",
         "conc_post_tr",  # required for the non iterative sequential approach.
         "grade",
+        "grade_prev",
         "boundary_conditions",
         "cst_conc_indices",
         "sources",
@@ -656,6 +662,7 @@ class TransportModel:
         "q_next",
         "tolerance",
         "is_numerical_acceleration",
+        "fpi_eps",
     ]
 
     def __init__(
@@ -684,6 +691,7 @@ class TransportModel:
         self.grade = np.zeros(
             (geometry.nx, geometry.ny, time_params.nt + 1), dtype=np.float64
         )
+        self.grade_prev = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
         self.grade[:, :, 0] = gch_params.grade
         self.boundary_conditions: List[BoundaryCondition] = []
         self.sources = np.zeros(
@@ -697,6 +705,7 @@ class TransportModel:
         self.cst_conc_indices: NDArrayInt = np.array([], dtype=np.int32)
         self.tolerance = tr_params.tolerance
         self.is_numerical_acceleration = tr_params.is_numerical_acceleration
+        self.fpi_eps = tr_params.fpi_eps
 
     @property
     def effective_diffusion(self) -> NDArrayFloat:
