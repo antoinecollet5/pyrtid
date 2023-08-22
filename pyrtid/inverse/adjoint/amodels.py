@@ -57,6 +57,7 @@ class AdjointTransportModel:
         "q_next_diffusion",
         "q_prev",
         "q_next",
+        "a_gch_src_term",
     ]
 
     def __init__(
@@ -81,8 +82,11 @@ class AdjointTransportModel:
             (geometry.nx, geometry.ny, time_params.nt + 1), dtype=np.float64
         )
 
-        self.q_prev_diffusion = csc_matrix(geometry.nx * geometry.ny)
-        self.q_next_diffusion = csc_matrix(geometry.nx * geometry.ny)
+        # Adjoint source term from the adjoint geochem to the adjoint transport
+        self.a_gch_src_term = np.zeros((geometry.nx, geometry.ny))
+
+        self.q_prev_diffusion = lil_matrix(geometry.nx * geometry.ny)
+        self.q_next_diffusion = lil_matrix(geometry.nx * geometry.ny)
         self.q_prev = csc_matrix(geometry.nx * geometry.ny)
         self.q_next = csc_matrix(geometry.nx * geometry.ny)
 

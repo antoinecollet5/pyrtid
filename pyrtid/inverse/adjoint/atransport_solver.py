@@ -381,7 +381,7 @@ def solve_adj_transport_transient_semi_implicit(
     )
 
     # Get the previous vector
-    prev_vector = a_tr_model.a_conc_post_gch[:, :, time_index].ravel("F")
+    prev_vector = a_tr_model.a_conc[:, :, time_index].ravel("F")
 
     # Multiply prev matrix by prev vector
     tmp = a_tr_model.q_prev.dot(prev_vector)
