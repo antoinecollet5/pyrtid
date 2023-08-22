@@ -10,12 +10,12 @@ repos:
     - id: trailing-whitespace
 - repo: local
   hooks:
-  - id: autoflake
-    name: autoflake
-    entry: autoflake
-    language: python
-    args: ["--in-place", "--remove-all-unused-imports", "--remove-unused-variables", "--expand-star-imports", "--ignore-init-module-imports"]
-    files: \.py$
+  # - id: autoflake
+  #   name: autoflake
+  #   entry: autoflake
+  #   language: python
+  #   args: ["--in-place", "--remove-all-unused-imports", "--remove-unused-variables", "--expand-star-imports", "--ignore-init-module-imports"]
+  #   files: \.py$
   - id: black
     name: black
     description: "Black: The uncompromising Python code formatter"

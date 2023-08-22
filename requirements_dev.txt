@@ -15,7 +15,7 @@ isort==5.10.1
 codespell==2.1.0
 flake8
 flake8-html
-autoflake >= 2.2.0
+# autoflake >= 2.2.0
 ruff
 
 sphinx>=2 # jupyter_sphinx requires sphinx>=2
