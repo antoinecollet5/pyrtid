@@ -309,7 +309,6 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
     @abstractmethod
     def _init_solver(self, s_init: Optional[NDArrayFloat]) -> None:
         """Initiate a solver with its args."""
-        pass
 
     @abstractmethod
     def _get_solver_name(self) -> str:

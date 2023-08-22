@@ -10,6 +10,12 @@ repos:
     - id: trailing-whitespace
 - repo: local
   hooks:
+  - id: autoflake
+    name: autoflake
+    entry: autoflake
+    language: python
+    args: ["--in-place", "--remove-all-unused-imports", "--remove-unused-variables", "--expand-star-imports", "--ignore-init-module-imports"]
+    files: \.py$
   - id: black
     name: black
     description: "Black: The uncompromising Python code formatter"
@@ -45,18 +51,6 @@ repos:
             (?x)^(
                 bibliography.bib
             )$
-
-  - id: flake8
-    name: flake8
-    entry: flake8
-    language: python
-    types: [python]
-    additional_dependencies: [
-      "flake8-black==0.3.2",
-      # "flake8-isort==4.1.1", it causes issues with black
-      # "flake8-quotes==3.3.1", it also causes issues with black
-    ]
-
   - id: ruff
     name: ruff
     entry: ruff
