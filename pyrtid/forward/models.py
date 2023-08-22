@@ -201,10 +201,15 @@ class TransportParameters:
     tolerance: float, optional
         The tolerance on the transport. The default is 1e-8.
     is_numerical_acceleration: bool, optional
-        Whether to use the chemical source term of the previous iteration (at t=n-1),
-        as a first guess in the coupling fixed point iterations. In practise it might
-        save one iteration is the system is in a quasi-steady state or it might
-        reduce the error. The default is False.
+        Whether to use the chemical source term from the previous iteration (at t=n-1)
+        as a first guess in the transport equation (only apply to the first coupling
+        fixed point iteration). In practise it might save one iteration (transport-
+        chemistry) or more if the system is in a quasi steady-state and it might also
+        reduce the overall coupling error. However if the timestep is large or the
+        system unstable (stiff), it might lead to non-convergence as well. For more
+        information, refer to
+        :cite:`lagneauOperatorsplittingbasedReactiveTransport2010a`.. .
+        The default is False.
     fpi_eps: float
        Tolerance on the transport-chemistry coupling error. The default value is 1e-5.
     """
@@ -617,7 +622,6 @@ class FlowModel:
 
 
 class SaturatedFlowModel(FlowModel):
-    pass
     __slots__ = [
         "_head",
     ]
