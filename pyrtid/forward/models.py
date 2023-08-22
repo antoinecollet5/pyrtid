@@ -89,17 +89,22 @@ class TimeParameters:
         # Apply bounds
         self.dt_init: float = _dt_init
         self.dt = _dt_init
-        self.ldt: List[float] = [dt_init]
+        self.ldt: List[float] = []
+
+    @property
+    def time_elapsed(self) -> float:
+        """Time elapsed in the simulation."""
+        return np.sum(self.ldt)
 
     @property
     def duration(self) -> float:
         """Simulation duration in seconds."""
         return np.sum(self.ldt)
 
-    def reset_dt(self) -> None:
+    def reset_to_init(self) -> None:
         """Empty the list of timesteps and set dt to its initial value."""
         self.dt = self.dt_init
-        self.ldt = [self.dt_init]
+        self.ldt = []
 
     def update_dt(self, n_iter: int) -> None:
         """
@@ -110,9 +115,6 @@ class TimeParameters:
         n_iter: int
             Number of iterations required to solve the current timestep.
         """
-        # Save the previous timestep
-        self.ldt.append(self.dt)
-
         if n_iter < 20:
             # increase dt by 5%
             self.dt *= 1.05
@@ -949,7 +951,7 @@ class ForwardModel:
         """Set all arrays to zero execpt for the initial conditions(first time)."""
         self.fl_model.reinit()
         self.tr_model.reinit()
-        self.time_params.reset_dt()
+        self.time_params.reset_to_init()
 
     def update_nt(self, new_nt: int) -> None:
         """Apply a new number of timesteps to the array and resizes all arrays."""
