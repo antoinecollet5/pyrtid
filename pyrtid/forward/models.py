@@ -106,6 +106,10 @@ class TimeParameters:
         self.dt = self.dt_init
         self.ldt = []
 
+    def save_dt(self) -> None:
+        "Save the current timestep to the list of timesteps."
+        self.ldt.append(self.dt)
+
     def update_dt(self, n_iter: int) -> None:
         """
         Update the timestep.

@@ -56,7 +56,7 @@ def test_time_params(
     # Update timestep
     for i in range(100):
         # Save the previous timestep
-        time_params.ldt.append(time_params.dt)
+        time_params.save_dt()
         time_params.update_dt(1)
 
     assert time_params.dt == expected_dt_max
@@ -70,7 +70,7 @@ def test_time_params(
     assert time_params.time_elapsed == 0
 
     for i in range(20):
-        time_params.ldt.append(time_params.dt)
+        time_params.save_dt()
         time_params.update_dt(30)
 
     assert time_params.dt == expected_dt_min
