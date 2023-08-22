@@ -2,7 +2,7 @@
 pyRTID
 ======
 
-|License| |Stars| |Python| |PyPI| |Downloads| |Build Status| |Documentation Status| |Coverage| |Codacy| |Precommit: enabled| |Code style: black| |Isort| |DOI|
+|License| |Stars| |Python| |PyPI| |Downloads| |Build Status| |Documentation Status| |Coverage| |Codacy| |Precommit: enabled| |Code style: black| |Ruff| |Isort| |DOI|
 
 The Python Reactive Transport Inversion Demonstrator
 
@@ -56,6 +56,10 @@ python Reactive Transport Inversion is a reactive transport inversion demonstrat
 .. |Code style: black| image:: https://img.shields.io/badge/code%20style-black-000000.svg?style=flat
     :target: https://github.com/psf/black
     :alt: Black
+
+.. |Ruff| image:: https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json
+    :target: https://github.com/astral-sh/ruff
+    :alt: Ruff
 
 .. |Isort| image:: https://img.shields.io/badge/%20imports-isort-%231674b1?style=flat
     :target: https://timothycrosley.github.io/isort
