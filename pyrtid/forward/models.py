@@ -34,8 +34,8 @@ class TimeParameters:
 
     Attributes
     ----------
-    nt : int
-        Number of timesteps in the simulation.
+    duration : float
+        Desired duration of the simulation.Duration
     dt : float
         Current timestep in seconds.
     dt_init : float
@@ -46,19 +46,21 @@ class TimeParameters:
         Maximum timestep in seconds.
     ldt: List[float]
         List of successive timesteps (in seconds) used in the forward modelling.
+    nt: int
+        Number of timesteps in the simulation.
     """
 
-    __slots__ = ["nt", "dt", "dt_init", "dt_min", "dt_max", "ldt"]
+    __slots__ = ["duration", "dt", "dt_init", "dt_min", "dt_max", "ldt"]
 
     def __init__(
         self,
-        nt: int,
+        duration: float,
         dt_init: float,
         dt_min: Optional[float] = None,
         dt_max: Optional[float] = None,
     ) -> None:
         """Initialize the instance."""
-        self.nt: int = int(nt)
+        self.duration = duration
 
         # First pass on the min/max
         if dt_min is not None:
@@ -97,9 +99,9 @@ class TimeParameters:
         return np.sum(self.ldt)
 
     @property
-    def duration(self) -> float:
-        """Simulation duration in seconds."""
-        return np.sum(self.ldt)
+    def nt(self) -> int:
+        """Number of timesteps."""
+        return len(self.ldt)
 
     def reset_to_init(self) -> None:
         """Empty the list of timesteps and set dt to its initial value."""
@@ -478,10 +480,10 @@ class FlowModel:
         "crank_nicolson",
         "storage_coefficient",
         "permeability",
-        "head",
-        "u_darcy_x",
-        "u_darcy_y",
-        "u_darcy_div",
+        "lhead",
+        "lu_darcy_x",
+        "lu_darcy_y",
+        "lu_darcy_div",
         "boundary_conditions",
         "cst_head_nn",
         "regime",
@@ -502,18 +504,18 @@ class FlowModel:
             np.ones((geometry.nx, geometry.ny), dtype=np.float64)
             * fl_params.permeability
         )
-        self.head = np.zeros(
-            (geometry.nx, geometry.ny, time_params.nt + 1), dtype=np.float64
-        )
-        self.u_darcy_x = np.zeros(
-            (geometry.nx + 1, geometry.ny, time_params.nt + 1), dtype=np.float64
-        )
-        self.u_darcy_y = np.zeros(
-            (geometry.nx, geometry.ny + 1, time_params.nt + 1), dtype=np.float64
-        )
-        self.u_darcy_div = np.zeros(
-            (geometry.nx, geometry.ny, time_params.nt + 1), dtype=np.float64
-        )
+
+        # These are list of ndarrays
+        self.lhead: List[NDArrayFloat] = [
+            np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
+        ]
+        self.lu_darcy_x: List[NDArrayFloat] = [
+            np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
+        ]
+        self.lu_darcy_y: List[NDArrayFloat] = [
+            np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
+        ]
+
         self.boundary_conditions: List[BoundaryCondition] = []
         self.sources = np.zeros(
             (geometry.nx, geometry.ny, time_params.nt + 1), dtype=np.float64
@@ -528,6 +530,48 @@ class FlowModel:
             VerticalAxis.DY: geometry.dy,
             VerticalAxis.DZ: geometry.dz,
         }[fl_params.vertical_axis]
+
+    @property
+    def head(self) -> NDArrayFloat:
+        """
+        Return head as array with dimension (nx, ny, nz, nt + 1).
+
+        This is read-only.
+        """
+        return np.transpose(np.array(self.lhead), axes=(1, 2, 0))
+
+    @property
+    def u_darcy_x(self) -> NDArrayFloat:
+        """
+        Return x-darcy velocities as array with dimension (nx, ny, nz, nt + 1).
+
+        This is read-only.
+        """
+        return np.transpose(np.array(self.lu_darcy_x), axes=(1, 2, 0))
+
+    @property
+    def u_darcy_y(self) -> NDArrayFloat:
+        """
+        Return y-darcy velocities as array with dimension (nx, ny, nz, nt + 1).
+
+        This is read-only.
+        """
+        return np.transpose(np.array(self.lu_darcy_y), axes=(1, 2, 0))
+
+    @property
+    def u_darcy_div(self) -> NDArrayFloat:
+        """
+        Return darcy divergence as array with dimension (nx, ny, nz, nt + 1).
+
+        This is read-only.
+        """
+        return np.transpose(np.array(self.lu_darcy_div), axes=(1, 2, 0))
+
+    def set_initial_head(
+        self, values: Union[float, int, NDArrayInt, NDArrayFloat]
+    ) -> None:
+        """Set the initial head field."""
+        self.lhead[0][:, :] = values
 
     def add_boundary_conditions(self, condition: BoundaryCondition) -> None:
         """Add a boundary condition to the flow model."""
@@ -546,7 +590,9 @@ class FlowModel:
                     [
                         node_numbers,
                         span_to_node_numbers_2d(
-                            condition.span, self.head.shape[0], self.head.shape[1]
+                            condition.span,
+                            self.lhead[0].shape[0],
+                            self.lhead[0].shape[1],
                         ),
                     ]
                 )
@@ -564,15 +610,16 @@ class FlowModel:
 
     def reinit(self) -> None:
         """Set all arrays to zero execpt for the initial conditions(first time)."""
-        self.head[:, :, 1:] = 0.0
-        self.u_darcy_x[:, :, :] = 0.0
-        self.u_darcy_y[:, :, :] = 0.0
+        self.lhead = self.lhead[:1]
+        self.lu_darcy_x = self.lu_darcy_x[:1]
+        self.lu_darcy_y = self.lu_darcy_y[:1]
+        self.lu_darcy_div = self.lu_darcy_div[:1]
         self.set_constant_head_indices()
 
     @property
     def u_darcy_x_center(self) -> NDArrayFloat:
         """The darcy x-velocities estimated at the mesh centers."""
-        tmp = np.zeros((self.head.shape))
+        tmp = np.zeros((self.lhead[0].shape))
         tmp += self.u_darcy_x[:-1, :, :]
         tmp += self.u_darcy_x[1:, :, :]
         tmp /= 2
@@ -581,26 +628,18 @@ class FlowModel:
     @property
     def u_darcy_y_center(self) -> NDArrayFloat:
         """The darcy y-velocities estimated at the mesh centers."""
-        tmp = np.zeros((self.head.shape))
+        tmp = np.zeros((self.lhead[0].shape))
         tmp += self.u_darcy_y[:, :-1, :]
         tmp += self.u_darcy_y[:, 1:, :]
         tmp /= 2
         return tmp
 
-    def update_nt(self, new_nt: int) -> None:
-        """Apply a new number of timesteps to the model and resizes all arrays."""
-        self.head = resize_array(self.head, 2, new_nt)
-        self.u_darcy_x = resize_array(self.u_darcy_x, 2, new_nt)
-        self.u_darcy_y = resize_array(self.u_darcy_y, 2, new_nt)
-        self.u_darcy_div = resize_array(self.u_darcy_div, 2, new_nt)
-        self.sources = resize_array(self.sources, 2, new_nt)
-
     def get_vertical_dim(self) -> int:
         """Return the number of voxel along the vertical_axis axis."""
         if self.vertical_axis == VerticalAxis.DX:
-            return self.head.shape[0]
+            return self.lhead[0].shape[0]
         elif self.vertical_axis == VerticalAxis.DY:
-            return self.head.shape[1]
+            return self.lhead[0].shape[1]
         else:
             return 1
 
@@ -659,9 +698,8 @@ class TransportModel:
         "crank_nicolson_advection",
         "diffusion",
         "porosity",
-        "conc",
-        "conc_post_tr",  # required for the non iterative sequential approach.
-        "grade",
+        "lconc",
+        "lgrade",
         "grade_prev",
         "boundary_conditions",
         "cst_conc_indices",
@@ -691,18 +729,15 @@ class TransportModel:
         self.porosity = (
             np.ones((geometry.nx, geometry.ny), dtype=np.float64) * tr_params.porosity
         )
-        self.conc = np.zeros(
-            (geometry.nx, geometry.ny, time_params.nt + 1), dtype=np.float64
-        )
-        self.conc[:, :, 0] = gch_params.conc
-        self.conc_post_tr = np.zeros(
-            (geometry.nx, geometry.ny, time_params.nt + 1), dtype=np.float64
-        )
-        self.grade = np.zeros(
-            (geometry.nx, geometry.ny, time_params.nt + 1), dtype=np.float64
-        )
+        self.lconc: List[NDArrayFloat] = [
+            np.ones((geometry.nx, geometry.ny), dtype=np.float64) * gch_params.conc
+        ]
+
+        self.lgrade: List[NDArrayFloat] = [
+            np.ones((geometry.nx, geometry.ny), dtype=np.float64) * gch_params.grade
+        ]
+
         self.grade_prev = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
-        self.grade[:, :, 0] = gch_params.grade
         self.boundary_conditions: List[BoundaryCondition] = []
         self.sources = np.zeros(
             (geometry.nx, geometry.ny, time_params.nt + 1), dtype=np.float64
@@ -718,9 +753,39 @@ class TransportModel:
         self.fpi_eps = tr_params.fpi_eps
 
     @property
+    def conc(self) -> NDArrayFloat:
+        """
+        Return mobile concentrations as array with dimension (nx, ny, nz, nt + 1).
+
+        This is read-only.
+        """
+        return np.transpose(np.array(self.lconc), axes=(1, 2, 0))
+
+    @property
+    def grade(self) -> NDArrayFloat:
+        """
+        Return immobile concentrations as array with dimension (nx, ny, nz, nt + 1).
+
+        This is read-only.
+        """
+        return np.transpose(np.array(self.lgrade), axes=(1, 2, 0))
+
+    @property
     def effective_diffusion(self) -> NDArrayFloat:
         """Return the effective diffusion (diffusion * porosity)."""
         return self.diffusion * self.porosity
+
+    def set_initial_grade(
+        self, values: Union[float, int, NDArrayInt, NDArrayFloat]
+    ) -> None:
+        """Set the initial grades."""
+        self.lgrade[0][:, :] = values
+
+    def set_initial_conc(
+        self, values: Union[float, int, NDArrayInt, NDArrayFloat]
+    ) -> None:
+        """Set the initial concentrations."""
+        self.lconc[0][:, :] = values
 
     def add_boundary_conditions(self, condition: BoundaryCondition) -> None:
         """Add a boundary condition to the transport model."""
@@ -750,17 +815,10 @@ class TransportModel:
 
     def reinit(self) -> None:
         """Set all arrays to zero execpt for the initial conditions(first time)."""
-        self.conc[:, :, 1:] = 0.0
-        self.conc_post_tr[:, :, :] = 0.0
-        self.grade[:, :, 1:] = 0.0
+        self.lconc = self.lconc[:1]
+        self.lgrade = self.lgrade[:1]
+        self.grade_prev = self.lgrade[0]
         self.set_constant_conc_indices()
-
-    def update_nt(self, new_nt: int) -> None:
-        """Apply a new number of timesteps to the model and resizes all arrays."""
-        self.conc = resize_array(self.conc, 2, new_nt)
-        self.conc_post_tr = resize_array(self.conc, 2, new_nt)
-        self.grade = resize_array(self.grade, 2, new_nt)
-        self.sources = resize_array(self.sources, 2, new_nt)
 
 
 def resize_array(arr: NDArrayFloat, axis: int, new_size: int) -> NDArrayFloat:
@@ -956,12 +1014,6 @@ class ForwardModel:
         self.fl_model.reinit()
         self.tr_model.reinit()
         self.time_params.reset_to_init()
-
-    def update_nt(self, new_nt: int) -> None:
-        """Apply a new number of timesteps to the array and resizes all arrays."""
-        self.time_params.nt = new_nt
-        self.fl_model.update_nt(new_nt + 1)
-        self.tr_model.update_nt(new_nt + 1)
 
 
 def remove_cst_bound_indices(
