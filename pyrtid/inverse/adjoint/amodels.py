@@ -52,7 +52,8 @@ class AdjointTransportModel:
         "a_conc",
         "a_conc_prev",
         "a_grade",
-        "a_sources",
+        "a_conc_sources",
+        "a_grade_sources",
         "q_prev_diffusion",
         "q_next_diffusion",
         "q_prev",
@@ -77,8 +78,10 @@ class AdjointTransportModel:
             (geometry.nx, geometry.ny, time_params.nt + 1), dtype=np.float64
         )
 
-        # TODO: see if we can use sparse matrices for that
-        self.a_sources = np.zeros(
+        self.a_conc_sources = np.zeros(
+            (geometry.nx, geometry.ny, time_params.nt + 1), dtype=np.float64
+        )
+        self.a_grade_sources = np.zeros(
             (geometry.nx, geometry.ny, time_params.nt + 1), dtype=np.float64
         )
 
@@ -94,7 +97,7 @@ class AdjointTransportModel:
 class AdjointModel:
     """Represent an adjoint model."""
 
-    __slots__ = ["geometry", "time_params", "gch_params", "fl_model", "tr_model"]
+    __slots__ = ["geometry", "time_params", "gch_params", "a_fl_model", "a_tr_model"]
 
     def __init__(
         self,
@@ -117,22 +120,29 @@ class AdjointModel:
         self.geometry: Geometry = geometry
         self.time_params: TimeParameters = time_params
         self.gch_params: GeochemicalParameters = gch_params
-        self.fl_model: AdjointFlowModel = AdjointFlowModel(geometry, time_params)
-        self.tr_model: AdjointTransportModel = AdjointTransportModel(
+        self.a_fl_model: AdjointFlowModel = AdjointFlowModel(geometry, time_params)
+        self.a_tr_model: AdjointTransportModel = AdjointTransportModel(
             geometry, time_params, gch_params
         )
 
     @property
     def is_head_obs(self) -> bool:
         """Return whether there are head observations."""
-        if np.any(self.fl_model.a_sources):
+        if np.any(self.a_fl_model.a_head_sources):
             return True
         return False
 
     @property
     def is_mob_obs(self) -> bool:
         """Return whether there are mobile concentrations observations."""
-        if np.any(self.tr_model.a_sources):
+        if np.any(self.a_tr_model.a_conc_sources):
+            return True
+        return False
+
+    @property
+    def is_immob_obs(self) -> bool:
+        """Return whether there are mobile concentrations observations."""
+        if np.any(self.a_tr_model.a_grade_sources):
             return True
         return False
 
@@ -153,12 +163,12 @@ class AdjointModel:
         """Set the adjoint sources to the correct model."""
         try:
             # case obs.location is a numpy array
-            self.tr_model.a_sources[obs.location, obs.timesteps] += (
+            self.a_tr_model.a_sources[obs.location, obs.timesteps] += (
                 obs.values - model.tr_model.conc[obs.location, obs.timesteps].ravel()
             ) / (obs.uncertainties**2)
         except IndexError:
             # case obs.location is a tuple of slices
-            self.tr_model.a_sources[(*obs.location, obs.timesteps)] += (
+            self.a_tr_model.a_sources[(*obs.location, obs.timesteps)] += (
                 obs.values - model.tr_model.conc[(*obs.location, obs.timesteps)].ravel()
             ) / (obs.uncertainties**2)
 
@@ -168,11 +178,11 @@ class AdjointModel:
         """Set the adjoint sources to the correct model."""
         try:
             # case obs.location is a numpy array
-            self.fl_model.a_sources[obs.location, obs.timesteps] += (
+            self.a_fl_model.a_sources[obs.location, obs.timesteps] += (
                 obs.values - model.fl_model.head[obs.location, obs.timesteps].ravel()
             ) / (obs.uncertainties**2)
         except IndexError:
             # case obs.location is a tuple of slices
-            self.fl_model.a_sources[(*obs.location, obs.timesteps)] += (
+            self.a_fl_model.a_sources[(*obs.location, obs.timesteps)] += (
                 obs.values - model.fl_model.head[(*obs.location, obs.timesteps)].ravel()
             ) / (obs.uncertainties**2)

@@ -15,19 +15,24 @@ def solve_geochem(
     time_params: TimeParameters,
     time_index: int,
 ) -> None:
-    """Compute the geochemistry part."""
+    r"""
+    Compute the mineral dissolution.
 
-    # Need to take into account boundary conditions:
-    # And then the reactive (chemistry) contribution with the updated conc
+    The equation reads:
 
-    # Note: the concentration has been modified by the transport so we need to use the
-    # updated one.
-    m0 = tr_model.grade[:, :, time_index - 1]
+    .. math::
+        \overline{c}_{i}^{n+1} = \overline{c}_{i}^{n} + \Delta t^{n} k_{v} A_{s}
+        \overline{c}_{i}^{n} \left( 1 - \dfrac{c_{i}^{n+1}}{K_{s}}\right)
+    """
+
+    m0 = tr_model.lgrade[time_index - 1]
+
+    # The mobile concentration is from the transport
     dMdt = (
         gch_params.kv
         * gch_params.As
         * m0
-        * (1.0 - tr_model.conc_post_tr[:, :, time_index] / gch_params.Ks)
+        * (1.0 - tr_model.lconc[time_index] / gch_params.Ks)
     )
 
     for condition in tr_model.boundary_conditions:
@@ -35,7 +40,5 @@ def solve_geochem(
             dMdt[condition.span] = 0.0
         # elif isinstance(condition, ZeroConcGradient):
 
-    tr_model.grade[:, :, time_index] = m0 + dMdt * time_params.dt
-    tr_model.conc[:, :, time_index] = (
-        tr_model.conc_post_tr[:, :, time_index] - dMdt * time_params.dt
-    )
+    # overwrite the grade
+    tr_model.lgrade[time_index] = m0 + dMdt * time_params.dt

@@ -320,7 +320,7 @@ def solve_adj_flow_stationary(
     tmp[fl_model.cst_head_nn] = 0.0
 
     # Add the source terms from head observations
-    tmp -= a_fl_model.a_sources[:, :, time_index].ravel("F") / geometry.mesh_area
+    tmp -= a_fl_model.a_sources[:, :, time_index].ravel("F") / geometry.mesh_a
 
     preconditioner = get_super_lu_preconditioner(a_fl_model.q_next.tocsc())
 
@@ -505,7 +505,7 @@ def solve_adj_flow_transient_semi_implicit(
     tmp -= (
         a_fl_model.a_sources[:, :, time_index].ravel("F")
         / fl_model.storage_coefficient
-        / geometry.mesh_area
+        / geometry.mesh_volume
     )
 
     # Add the source terms from mob observations (adjoint transport)
@@ -563,7 +563,7 @@ def _get_adjoint_transport_src_terms(
         kmean_x
         * a_fl_model.a_u_darcy_x[:, :, time_index]
         / geometry.dx
-        / geometry.mesh_area
+        / geometry.mesh_volume
     )
 
     # Backward
@@ -571,7 +571,7 @@ def _get_adjoint_transport_src_terms(
         kmean_x
         * a_fl_model.a_u_darcy_x[:, :, time_index]
         / geometry.dx
-        / geometry.mesh_area
+        / geometry.mesh_volume
     )
 
     # y contribution
@@ -586,7 +586,7 @@ def _get_adjoint_transport_src_terms(
             kmean_y
             * a_fl_model.a_u_darcy_y[:, :, time_index]
             / geometry.dy
-            / geometry.mesh_area
+            / geometry.mesh_volume
         )
 
         # Backward
@@ -594,7 +594,7 @@ def _get_adjoint_transport_src_terms(
             kmean_y
             * a_fl_model.a_u_darcy_y[:, :, time_index]
             / geometry.dy
-            / geometry.mesh_area
+            / geometry.mesh_volume
         )
 
     # Divide by the storage coefficient only if transient mode

@@ -1,6 +1,10 @@
 """Provide a reactive transport solver."""
 from __future__ import annotations
 
+import logging
+
+import numpy as np
+
 from .flow_solver import (
     make_stationary_flow_matrices,
     make_transient_flow_matrices,
@@ -8,11 +12,33 @@ from .flow_solver import (
     solve_flow_transient_semi_implicit,
 )
 from .geochem_solver import solve_geochem
-from .models import FlowRegime, ForwardModel
+from .models import FlowRegime, ForwardModel, TransportModel
 from .transport_solver import (
     make_transport_matrices_diffusion_only,
     solve_transport_semi_implicit,
 )
+
+
+def get_max_coupling_error(tr_model: TransportModel, time_index: int) -> float:
+    r"""
+    Return the maximum transport-chemistry coupling error.
+
+    The fixed point iteration convergence criteria reads:
+
+    .. math::
+        \text{max} \left\lVert 1 - \dfrac{\overline{c}^{n+1, k+1}}
+        {\overline{c}^{n+1, k}} \right\rVert  < \epsilon
+
+    with $k$ the number of fixed point iterations.
+
+    This error is evaluated from the immobile concentrations (mineral grades).
+    """
+    return float(
+        np.nan_to_num(
+            np.nanmax(np.abs(1 - tr_model.lgrade[time_index] / tr_model.grade_prev)),
+            nan=0.0,
+        )
+    )
 
 
 class ForwardSolver:
@@ -50,7 +76,7 @@ class ForwardSolver:
             self.model.geometry, self.model.tr_model, self.model.time_params
         )
 
-    def solve(self) -> None:
+    def solve(self, is_verbose: bool = False) -> None:
         """Solve the forward problem."""
         # Reinit all
         self.model.reinit()
@@ -73,22 +99,69 @@ class ForwardSolver:
         self.initialize_flow_matrices(FlowRegime.TRANSIENT)
         self.initialize_transport_matrices()
 
-        # Sequential iterative approach
-        # From here the flow is transient
-        for time_index in range(1, self.model.time_params.nt + 1):
-            solve_flow_transient_semi_implicit(
-                self.model.geometry,
-                self.model.fl_model,
-                self.model.time_params,
-                time_index,
-            )
+        time_index = 0  # iteration on time
+
+        # Sequential iterative approach with operator splitting
+        while self.model.time_params.time_elapsed < self.model.time_params.duration:
+            time_index += 1  # Update the number of time iterations
+
+            self._solve_system_for_timestep(time_index, is_verbose)
+
+    def _solve_system_for_timestep(
+        self, time_index: int, is_verbose: bool = False
+    ) -> None:
+        # Do not update the timestep for the first iteration
+        # update the timestep based on the convergence speed.
+        if time_index != 1:
+            self.model.time_params.update_dt(self.model.time_params.nfpi)
+        # Important: need to save the timestep after the update, otherwise, the
+        # wrong timestep is used in the adjoint
+        # Save the timesteps to the list of timesteps
+        self.model.time_params.save_dt()
+
+        # Solve the flow -> no iterations since we don't have variable permeability nor
+        # porosity/diffusion.
+        solve_flow_transient_semi_implicit(
+            self.model.geometry,
+            self.model.fl_model,
+            self.model.time_params,
+            time_index,
+        )
+
+        # Now the reactive-transport iterations begin...
+
+        # Reset the number of coupling (Fixed Point) iterations for the current time
+        self.model.time_params.nfpi = 1
+
+        # Convergence flag
+        has_converged = False
+
+        # Copy the grades (To place in another function afterwards)
+        self.model.tr_model.lgrade.append(self.model.tr_model.lgrade[time_index - 1])
+        self.model.tr_model.lconc.append(self.model.tr_model.lconc[time_index - 1])
+
+        # Iterate the chemistry transport system while the convergence is no meet
+        while not has_converged:
+            # Save the grade for the fix point iterations
+            self.model.tr_model.grade_prev = self.model.tr_model.lgrade[
+                time_index
+            ].copy()
+
+            # One more coupling iteration has been performed
+            # Update the number of FPI
+            self.model.time_params.nfpi += 1
+
+            # Solve the transport
             solve_transport_semi_implicit(
                 self.model.geometry,
                 self.model.fl_model,
                 self.model.tr_model,
                 self.model.time_params,
                 time_index,
+                self.model.time_params.nfpi,
             )
+
+            # Solve the chemistry
             solve_geochem(
                 self.model.tr_model,
                 self.model.gch_params,
@@ -96,5 +169,18 @@ class ForwardSolver:
                 time_index,
             )
 
-            # Update the timestep based on the previous iteration
-            self.model.time_params.update_dt(1)  # TODO: add fix point iterations
+            if is_verbose:
+                logging.info(
+                    f"max-coupling error at it = {time_index}"
+                    f"-{self.model.time_params.nfpi}:"
+                    f"{get_max_coupling_error(self.model.tr_model, time_index)}"
+                )
+            has_converged = (
+                get_max_coupling_error(self.model.tr_model, time_index)
+                < self.model.tr_model.fpi_eps
+            )
+            if is_verbose:
+                logging.info(f"has-converged ?: {has_converged}")
+
+        # Save the number of fixed point iterations required
+        self.model.time_params.save_nfpi()

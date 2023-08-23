@@ -387,7 +387,9 @@ def solve_adj_transport_transient_semi_implicit(
     tmp = a_tr_model.q_prev.dot(prev_vector)
 
     # Add the source terms -> from the previous timestep
-    tmp -= (a_tr_model.a_sources[:, :, time_index]).ravel("F") / geometry.mesh_area
+    tmp -= (a_tr_model.a_conc_sources[:, :, time_index]).ravel(
+        "F"
+    ) / geometry.mesh_volume
 
     # Build the LU preconditioning
     preconditioner = get_super_lu_preconditioner(a_tr_model.q_next)

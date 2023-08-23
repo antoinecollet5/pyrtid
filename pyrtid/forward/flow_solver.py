@@ -44,8 +44,12 @@ def make_stationary_flow_matrices(
             fl_model.cst_head_nn,
         )
 
-        q_next[idc_owner, idc_neigh] -= kmean[idc_owner] / geometry.dx**2
-        q_next[idc_owner, idc_owner] += kmean[idc_owner] / geometry.dx**2
+        q_next[idc_owner, idc_neigh] -= (
+            kmean[idc_owner] / geometry.dx**2 / geometry.dz
+        )
+        q_next[idc_owner, idc_owner] += (
+            kmean[idc_owner] / geometry.dx**2 / geometry.dz
+        )
 
         # Backward scheme
         idc_owner, idc_neigh = get_owner_neigh_indices(
@@ -55,8 +59,12 @@ def make_stationary_flow_matrices(
             fl_model.cst_head_nn,
         )
 
-        q_next[idc_owner, idc_neigh] -= kmean[idc_neigh] / geometry.dx**2
-        q_next[idc_owner, idc_owner] += kmean[idc_neigh] / geometry.dx**2
+        q_next[idc_owner, idc_neigh] -= (
+            kmean[idc_neigh] / geometry.dx**2 / geometry.dz
+        )
+        q_next[idc_owner, idc_owner] += (
+            kmean[idc_neigh] / geometry.dx**2 / geometry.dz
+        )
 
     # Y contribution
     if geometry.ny >= 2:
@@ -74,8 +82,12 @@ def make_stationary_flow_matrices(
             fl_model.cst_head_nn,
         )
 
-        q_next[idc_owner, idc_neigh] -= kmean[idc_owner] / geometry.dy**2
-        q_next[idc_owner, idc_owner] += kmean[idc_owner] / geometry.dy**2
+        q_next[idc_owner, idc_neigh] -= (
+            kmean[idc_owner] / geometry.dy**2 / geometry.dz
+        )
+        q_next[idc_owner, idc_owner] += (
+            kmean[idc_owner] / geometry.dy**2 / geometry.dz
+        )
 
         # Backward scheme
         idc_owner, idc_neigh = get_owner_neigh_indices(
@@ -85,8 +97,12 @@ def make_stationary_flow_matrices(
             fl_model.cst_head_nn,
         )
 
-        q_next[idc_owner, idc_neigh] -= kmean[idc_neigh] / geometry.dy**2
-        q_next[idc_owner, idc_owner] += kmean[idc_neigh] / geometry.dy**2
+        q_next[idc_owner, idc_neigh] -= (
+            kmean[idc_neigh] / geometry.dy**2 / geometry.dz
+        )
+        q_next[idc_owner, idc_owner] += (
+            kmean[idc_neigh] / geometry.dy**2 / geometry.dz
+        )
 
     # Take constant head into account
     q_next[fl_model.cst_head_nn, fl_model.cst_head_nn] = 1.0
@@ -130,24 +146,28 @@ def make_transient_flow_matrices(
             fl_model.crank_nicolson
             * kmean[idc_owner]
             / geometry.dx**2
+            / geometry.dz
             / fl_model.storage_coefficient
         )
         q_next[idc_owner, idc_owner] += (
             fl_model.crank_nicolson
             * kmean[idc_owner]
             / geometry.dx**2
+            / geometry.dz
             / fl_model.storage_coefficient
         )
         q_prev[idc_owner, idc_neigh] += (
             (1.0 - fl_model.crank_nicolson)
             * kmean[idc_owner]
             / geometry.dx**2
+            / geometry.dz
             / fl_model.storage_coefficient
         )
         q_prev[idc_owner, idc_owner] -= (
             (1.0 - fl_model.crank_nicolson)
             * kmean[idc_owner]
             / geometry.dx**2
+            / geometry.dz
             / fl_model.storage_coefficient
         )
 
@@ -163,24 +183,28 @@ def make_transient_flow_matrices(
             fl_model.crank_nicolson
             * kmean[idc_neigh]
             / geometry.dx**2
+            / geometry.dz
             / fl_model.storage_coefficient
         )
         q_next[idc_owner, idc_owner] += (
             fl_model.crank_nicolson
             * kmean[idc_neigh]
             / geometry.dx**2
+            / geometry.dz
             / fl_model.storage_coefficient
         )
         q_prev[idc_owner, idc_neigh] += (
             (1.0 - fl_model.crank_nicolson)
             * kmean[idc_neigh]
             / geometry.dx**2
+            / geometry.dz
             / fl_model.storage_coefficient
         )
         q_prev[idc_owner, idc_owner] -= (
             (1.0 - fl_model.crank_nicolson)
             * kmean[idc_neigh]
             / geometry.dx**2
+            / geometry.dz
             / fl_model.storage_coefficient
         )
 
@@ -204,24 +228,28 @@ def make_transient_flow_matrices(
             fl_model.crank_nicolson
             * kmean[idc_owner]
             / geometry.dy**2
+            / geometry.dz
             / fl_model.storage_coefficient
         )
         q_next[idc_owner, idc_owner] += (
             fl_model.crank_nicolson
             * kmean[idc_owner]
             / geometry.dy**2
+            / geometry.dz
             / fl_model.storage_coefficient
         )
         q_prev[idc_owner, idc_neigh] += (
             (1.0 - fl_model.crank_nicolson)
             * kmean[idc_owner]
             / geometry.dy**2
+            / geometry.dz
             / fl_model.storage_coefficient
         )
         q_prev[idc_owner, idc_owner] -= (
             (1.0 - fl_model.crank_nicolson)
             * kmean[idc_owner]
             / geometry.dy**2
+            / geometry.dz
             / fl_model.storage_coefficient
         )
 
@@ -237,24 +265,28 @@ def make_transient_flow_matrices(
             fl_model.crank_nicolson
             * kmean[idc_neigh]
             / geometry.dy**2
+            / geometry.dz
             / fl_model.storage_coefficient
         )
         q_next[idc_owner, idc_owner] += (
             fl_model.crank_nicolson
             * kmean[idc_neigh]
             / geometry.dy**2
+            / geometry.dz
             / fl_model.storage_coefficient
         )
         q_prev[idc_owner, idc_neigh] += (
             (1.0 - fl_model.crank_nicolson)
             * kmean[idc_neigh]
             / geometry.dy**2
+            / geometry.dz
             / fl_model.storage_coefficient
         )
         q_prev[idc_owner, idc_owner] -= (
             (1.0 - fl_model.crank_nicolson)
             * kmean[idc_neigh]
             / geometry.dy**2
+            / geometry.dz
             / fl_model.storage_coefficient
         )
 
@@ -273,7 +305,7 @@ def solve_flow_stationary(
     """
     # Multiply prev matrix by prev vector
     tmp = np.zeros(fl_model.q_next.shape[0], dtype=np.float64)
-    tmp[fl_model.cst_head_nn] = fl_model.head[:, :, time_index].flatten(order="F")[
+    tmp[fl_model.cst_head_nn] = fl_model.lhead[time_index].flatten(order="F")[
         fl_model.cst_head_nn
     ]
 
@@ -287,7 +319,7 @@ def solve_flow_stationary(
     res, exit_code = gmres(
         fl_model.q_next.tocsc(), tmp, M=preconditioner, atol=fl_model.tolerance
     )
-    fl_model.head[:, :, time_index] = res.reshape(geometry.ny, geometry.nx).T
+    fl_model.lhead.append(res.reshape(geometry.ny, geometry.nx).T)
 
     update_u_darcy(fl_model, geometry, time_index)
 
@@ -314,7 +346,7 @@ def find_ux_boundary(
     _type_
         _description_
     """
-    head = fl_model.head[:, :, time_index]
+    head = fl_model.lhead[time_index]
 
     kmean = harmonic_mean(fl_model.permeability[:-1, :], fl_model.permeability[1:, :])
 
@@ -339,7 +371,7 @@ def find_uy_boundary(
     _type_
         _description_
     """
-    head = fl_model.head[:, :, time_index]
+    head = fl_model.lhead[time_index]
 
     # X axis contribution
     kmean = harmonic_mean(fl_model.permeability[:, :-1], fl_model.permeability[:, 1:])
@@ -470,7 +502,7 @@ def solve_flow_transient_semi_implicit(
     preconditioner = get_super_lu_preconditioner(_q_next)
 
     # Multiply prev matrix by prev vector
-    tmp = _q_prev.dot(fl_model.head[:, :, time_index - 1].flatten(order="F"))
+    tmp = _q_prev.dot(fl_model.lhead[time_index - 1].flatten(order="F"))
 
     # Add the source terms
     sources = (
@@ -485,7 +517,7 @@ def solve_flow_transient_semi_implicit(
     res, exit_code = gmres(
         _q_next, tmp, x0=None, M=preconditioner, atol=fl_model.tolerance
     )
-    fl_model.head[:, :, time_index] = res.reshape(geometry.ny, geometry.nx).T
+    fl_model.lhead.append(res.reshape(geometry.ny, geometry.nx).T)
 
     update_u_darcy(fl_model, geometry, time_index)
 

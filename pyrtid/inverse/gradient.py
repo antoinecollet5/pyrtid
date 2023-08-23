@@ -28,7 +28,7 @@ class DerivationVariable(StrEnum):
     DIFFUSION = "diffusion"
 
 
-def _get_diffusion_term_adjoint_gradient(
+def get_diffusion_term_adjoint_gradient(
     fwd_model: ForwardModel, adj_model: AdjointModel, deriv_var: DerivationVariable
 ) -> NDArrayFloat:
     """
@@ -65,9 +65,9 @@ def _get_diffusion_term_adjoint_gradient(
     crank_diff = fwd_model.tr_model.crank_nicolson_diffusion
 
     conc = fwd_model.tr_model.conc
-    conc_post_tr = fwd_model.tr_model.conc_post_tr
+    conc_post_tr = fwd_model.tr_model.conc
     # conc = fwd_model.tr_model.conc_post_tr
-    aconc = adj_model.tr_model.a_conc
+    aconc = adj_model.a_tr_model.a_conc
 
     # Consider the x axis
     # Forward scheme
@@ -148,7 +148,7 @@ def _get_diffusion_term_adjoint_gradient(
     return -np.sum(grad, axis=-1)
 
 
-def _get_diffusion_adjoint_gradient(
+def get_diffusion_adjoint_gradient(
     fwd_model: ForwardModel, adj_model: AdjointModel
 ) -> NDArrayFloat:
     """
@@ -170,12 +170,12 @@ def _get_diffusion_adjoint_gradient(
     NDArrayFloat
         Gradient of the objective function with respect to the diffusion.
     """
-    return _get_diffusion_term_adjoint_gradient(
+    return get_diffusion_term_adjoint_gradient(
         fwd_model, adj_model, DerivationVariable.DIFFUSION
     )
 
 
-def _get_porosity_adjoint_gradient(
+def get_porosity_adjoint_gradient(
     fwd_model: ForwardModel, adj_model: AdjointModel
 ) -> NDArrayFloat:
     """
@@ -199,22 +199,22 @@ def _get_porosity_adjoint_gradient(
         Gradient of the objective function with respect to the porosity.
     """
     conc = fwd_model.tr_model.conc
-    conc_post_tr = fwd_model.tr_model.conc_post_tr
-    aconc = adj_model.tr_model.a_conc_post_gch
+    conc_post_tr = fwd_model.tr_model.conc
+    aconc = adj_model.a_tr_model.a_conc
 
     grad = (
         (conc_post_tr[:, :, 1:] - conc[:, :, :-1])
         / fwd_model.time_params.dt
         * aconc[:, :, 1:]
-    ) * fwd_model.geometry.mesh_area
+    ) * fwd_model.geometry.mesh_volume
 
     # We sum along the temporal axis + get the diffusion gradient
-    return -np.sum(grad, axis=-1) + _get_diffusion_term_adjoint_gradient(
+    return -np.sum(grad, axis=-1) + get_diffusion_term_adjoint_gradient(
         fwd_model, adj_model, DerivationVariable.POROSITY
     )
 
 
-def _get_permeability_adjoint_gradient(
+def get_permeability_adjoint_gradient(
     fwd_model: ForwardModel, adj_model: AdjointModel
 ) -> NDArrayFloat:
     """
@@ -274,7 +274,7 @@ def _get_perm_gradient_from_diffusivity_eq(
     crank_flow = fwd_model.fl_model.crank_nicolson
 
     head = fwd_model.fl_model.head
-    ahead = adj_model.fl_model.a_head
+    ahead = adj_model.a_fl_model.a_head
 
     # Consider the x axis
     # Forward scheme
@@ -393,7 +393,7 @@ def _get_perm_gradient_from_darcy_eq(
     permeability = fwd_model.fl_model.permeability
 
     head = fwd_model.fl_model.head
-    a_u_darcy_x = adj_model.fl_model.a_u_darcy_x
+    a_u_darcy_x = adj_model.a_fl_model.a_u_darcy_x
 
     # Consider the x axis
     # Forward scheme
@@ -417,7 +417,7 @@ def _get_perm_gradient_from_darcy_eq(
 
     # Consider the y axis for 2D cases
     if shape[1] != 1:
-        a_u_darcy_y = adj_model.fl_model.a_u_darcy_y
+        a_u_darcy_y = adj_model.a_fl_model.a_u_darcy_y
         # Forward scheme
         dhead_fy = np.zeros(shape)
         dhead_fy[:, :-1, :] += (
@@ -444,17 +444,23 @@ def _get_perm_gradient_from_darcy_eq(
     return -np.sum(grad, axis=-1)
 
 
-def _get_mineral_grade_adjoint_gradient(
+def get_initial_grade_adjoint_gradient(
     fwd_model: ForwardModel, adj_model: AdjointModel
 ) -> NDArrayFloat:
-    """Gradient with respect to initial mineral phase concentration.
+    r"""
+    Gradient with respect to mineral phase initial concentrations.
 
-    gradM = wdata * (acM0[:, :, 0] + acT0[:, :, 0]) / dt + acM0[:, :, 0] * kvAs * (
-        1 - cT0[:, :, 0] / Ks
-    )
-    # Regularisation
-    gradM[iymineral, ixmineral] += wmineral * (cM0[iymineral, ixmineral, 0] - vmineral)
-    return gradM
+    The gradient reads
+
+    .. math::
+
+        \dfrac{\partial \mathcal{L}}{\partial \overline{c}_{i}^{0}} =
+        \dfrac{\mathcal{A}_{i} \omega_{i}}{\Delta t^{0}} \lambda_{c_{i}}^{1}
+        + \lambda_{\overline{c}_{i}}^{1} \left( 1 + \Delta t^{0} k_{v} A_{s}
+        \left( 1 - \dfrac{c_{i}^{1}}{K_{s}}\right) \right)
+        - \dfrac{\overline{c}_{i}^{0, \mathrm{obs}}
+        - \overline{c}_{i}^{0, \mathrm{calc}}}{\left(
+            \sigma_{\overline{c}_{i}}^{0, \mathrm{obs}}\right)^{2}}
 
     Note
     ----
@@ -462,15 +468,45 @@ def _get_mineral_grade_adjoint_gradient(
     computed on the full domain (grid).
     """
     return (
-        (
-            adj_model.tr_model.a_grade[:, :, 1] / fwd_model.time_params.ldt[0]
-            + (adj_model.tr_model.a_grade[:, :, 1] - adj_model.tr_model.a_conc[:, :, 1])
-            * fwd_model.gch_params.kv
-            * fwd_model.gch_params.As
-            * (1.0 - fwd_model.tr_model.conc[:, :, 0] / fwd_model.gch_params.Ks)
-        )
-        * fwd_model.geometry.mesh_area
+        adj_model.a_tr_model.a_conc[:, :, 1]
+        / fwd_model.time_params.ldt[0]
         * fwd_model.tr_model.porosity
+        * fwd_model.geometry.mesh_volume
+    ) + adj_model.a_tr_model.a_grade[:, :, 1] * (
+        1
+        + fwd_model.time_params.ldt[0]
+        * fwd_model.gch_params.kv
+        * fwd_model.gch_params.As
+        * (1.0 - fwd_model.tr_model.lconc[1] / fwd_model.gch_params.Ks)
+    )
+
+
+def get_initial_conc_adjoint_gradient(
+    fwd_model: ForwardModel, adj_model: AdjointModel
+) -> NDArrayFloat:
+    r"""
+    Gradient with respect to aqueous phase initial concentrations.
+
+    The gradient reads
+
+    .. math::
+
+        \dfrac{\partial \mathcal{L}}{\partial c_{i}^{0}} =
+        \dfrac{\mathcal{A}_{i}\omega_{i}}{\Delta t^{0}} \lambda_{c_{i}}^{1}
+        - \dfrac{c_{i}^{0, \mathrm{obs}}
+        - c_{i}^{0, \mathrm{calc}}}{\left(\sigma_{c_{i}}^{0, \mathrm{obs}}\right)^{2}}
+
+    Note
+    ----
+    Parameter span is not taken into account which means that the gradient is
+    computed on the full domain (grid).
+    """
+    return (
+        -adj_model.a_tr_model.a_conc_sources[:, :, 0]
+        + adj_model.a_tr_model.a_conc[:, :, 1]
+        * fwd_model.geometry.mesh_volume
+        * fwd_model.tr_model.porosity
+        / fwd_model.time_params.ldt[0]
     )
 
 
@@ -502,17 +538,15 @@ def compute_param_adjoint_ls_loss_function_gradient(
         The computed ls loss function gradient.
     """
     if param.name == ParameterName.DIFFUSION:
-        return _get_diffusion_adjoint_gradient(fwd_model, adj_model)
+        return get_diffusion_adjoint_gradient(fwd_model, adj_model)
     if param.name == ParameterName.POROSITY:
-        return _get_porosity_adjoint_gradient(fwd_model, adj_model)
+        return get_porosity_adjoint_gradient(fwd_model, adj_model)
     if param.name == ParameterName.PERMEABILITY:
-        return _get_permeability_adjoint_gradient(fwd_model, adj_model)
+        return get_permeability_adjoint_gradient(fwd_model, adj_model)
     if param.name == ParameterName.INITIAL_CONCENTRATION:
-        raise (
-            NotImplementedError("Please contact the developer to handle this issue.")
-        )
+        return get_initial_conc_adjoint_gradient(fwd_model, adj_model)
     elif param.name == ParameterName.INITIAL_MINERAL_GRADE:
-        return _get_mineral_grade_adjoint_gradient(fwd_model, adj_model)
+        return get_initial_grade_adjoint_gradient(fwd_model, adj_model)
     raise (NotImplementedError("Please contact the developer to handle this issue."))
 
 

@@ -52,6 +52,11 @@ Provide adjoint model and solver for the estimated parameter gradient computatio
     AdjointSolver
     AdjointModel
     is_adjoint_gradient_correct
+    get_porosity_adjoint_gradient
+    get_diffusion_adjoint_gradient
+    get_permeability_adjoint_gradient
+    get_initial_conc_adjoint_gradient
+    get_initial_grade_adjoint_gradient
 
 .. currentmodule:: pyrtid.inverse
 
@@ -83,7 +88,14 @@ from pyrtid.inverse.executors import (
     StochopyInversionExecutor,
     StochopySolverConfig,
 )
-from pyrtid.inverse.gradient import is_adjoint_gradient_correct
+from pyrtid.inverse.gradient import (
+    get_diffusion_adjoint_gradient,
+    get_initial_conc_adjoint_gradient,
+    get_initial_grade_adjoint_gradient,
+    get_permeability_adjoint_gradient,
+    get_porosity_adjoint_gradient,
+    is_adjoint_gradient_correct,
+)
 from pyrtid.inverse.loss_function import ls_loss_function
 from pyrtid.inverse.model import InverseModel
 from pyrtid.inverse.obs import (
@@ -133,6 +145,11 @@ __all__ = [
     "AdjointSolver",
     "AdjointModel",
     "is_adjoint_gradient_correct",
+    "get_porosity_adjoint_gradient",
+    "get_diffusion_adjoint_gradient",
+    "get_permeability_adjoint_gradient",
+    "get_initial_conc_adjoint_gradient",
+    "get_initial_grade_adjoint_gradient",
     "get_backconditioned_adj_gradient",
     "get_backconditioned_fd_gradient",
     "get_gridded_archived_gradients",

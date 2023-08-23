@@ -48,6 +48,11 @@ class TimeParameters:
         List of successive timesteps (in seconds) used in the forward modelling.
     nt: int
         Number of timesteps in the simulation.
+    nfpi: int
+        Number of fixed point iterations used in the last time iteration.
+    lnfpi:
+        List of the number of fixed point iterations used for each time iteration.
+        This list should have the same length as `ldt`.
     """
 
     __slots__ = ["duration", "dt", "dt_init", "dt_min", "dt_max", "ldt"]
@@ -91,7 +96,9 @@ class TimeParameters:
         # Apply bounds
         self.dt_init: float = _dt_init
         self.dt = _dt_init
+        self.nfpi: int = 0
         self.ldt: List[float] = []
+        self.lnfpi: List[int] = []
 
     @property
     def time_elapsed(self) -> float:
@@ -112,6 +119,10 @@ class TimeParameters:
         "Save the current timestep to the list of timesteps."
         self.ldt.append(self.dt)
 
+    def save_nfpi(self) -> None:
+        "Save the current number of fixed point iterations."
+        self.lnfpi.append(self.nfpi)
+
     def update_dt(self, n_iter: int) -> None:
         """
         Update the timestep.
@@ -119,7 +130,7 @@ class TimeParameters:
         Parameters
         ----------
         n_iter: int
-            Number of iterations required to solve the current timestep.
+            Number of iterations required to solve the last timestep.
         """
         if n_iter < 20:
             # increase dt by 5%

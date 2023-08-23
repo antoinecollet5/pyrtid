@@ -48,8 +48,8 @@ class AdjointSolver:
         """Initialize matrices to solve the adjoint flow problem."""
         if flow_regime == FlowRegime.STATIONARY:
             (
-                self.adj_model.fl_model.q_next,
-                self.adj_model.fl_model.q_prev,
+                self.adj_model.a_fl_model.q_next,
+                self.adj_model.a_fl_model.q_prev,
             ) = make_stationary_adj_flow_matrices(
                 self.fwd_model.geometry,
                 self.fwd_model.fl_model,
@@ -57,8 +57,8 @@ class AdjointSolver:
             )
         if flow_regime == FlowRegime.TRANSIENT:
             (
-                self.adj_model.fl_model.q_next,
-                self.adj_model.fl_model.q_prev,
+                self.adj_model.a_fl_model.q_next,
+                self.adj_model.a_fl_model.q_prev,
             ) = make_transient_adj_flow_matrices(
                 self.fwd_model.geometry,
                 self.fwd_model.fl_model,
@@ -68,8 +68,8 @@ class AdjointSolver:
     def initialize_ajd_transport_matrices(self) -> None:
         """Initialize matrices to solve the adjoint transport problem."""
         (
-            self.adj_model.tr_model.q_next_diffusion,
-            self.adj_model.tr_model.q_prev_diffusion,
+            self.adj_model.a_tr_model.q_next_diffusion,
+            self.adj_model.a_tr_model.q_prev_diffusion,
         ) = make_transient_adj_transport_matrices(
             self.fwd_model.geometry,
             self.fwd_model.tr_model,
@@ -98,12 +98,12 @@ class AdjointSolver:
             self.fwd_model.time_params.nt, 0, -1
         ):  # Reverse order in time, and reverse order in operator sequence
             # 0) copy last transport state
-            _copy_tr_adj_prev_to_current(self.adj_model.tr_model, time_index)
+            _copy_tr_adj_prev_to_current(self.adj_model.a_tr_model, time_index)
 
             # 1) Solve the adjointchemistry
             solve_adj_geochem(
                 self.fwd_model.tr_model,
-                self.adj_model.tr_model,
+                self.adj_model.a_tr_model,
                 self.fwd_model.gch_params,
                 self.fwd_model.geometry,
                 self.fwd_model.time_params,
@@ -115,7 +115,7 @@ class AdjointSolver:
                 self.fwd_model.geometry,
                 self.fwd_model.fl_model,
                 self.fwd_model.tr_model,
-                self.adj_model.tr_model,
+                self.adj_model.a_tr_model,
                 self.fwd_model.time_params,
                 time_index,
             )
@@ -124,9 +124,9 @@ class AdjointSolver:
             update_adjoint_u_darcy(
                 self.fwd_model.geometry,
                 self.fwd_model.tr_model,
-                self.adj_model.tr_model,
+                self.adj_model.a_tr_model,
                 self.fwd_model.fl_model,
-                self.adj_model.fl_model,
+                self.adj_model.a_fl_model,
                 time_index,
             )
 
@@ -134,7 +134,7 @@ class AdjointSolver:
             solve_adj_flow_transient_semi_implicit(
                 self.fwd_model.geometry,
                 self.fwd_model.fl_model,
-                self.adj_model.fl_model,
+                self.adj_model.a_fl_model,
                 self.fwd_model.time_params,
                 time_index,
                 self.adj_model.is_mob_obs,
@@ -142,17 +142,17 @@ class AdjointSolver:
 
         # Transport: do not solve for the last timestep, simply copy the results
         # This is the right way to get consistent with the mineral gradient
-        _copy_tr_adj_prev_to_current(self.adj_model.tr_model, 0)
+        _copy_tr_adj_prev_to_current(self.adj_model.a_tr_model, 0)
 
         # Flow: solve for the last timestep, only if the flow was initially stationnary
         # Otherwise, just copy as for transport
-        _copy_fl_adj_prev_to_current(self.adj_model.fl_model, 0)
+        _copy_fl_adj_prev_to_current(self.adj_model.a_fl_model, 0)
         if self.fwd_model.fl_model.regime == FlowRegime.STATIONARY:
             self.initialize_ajd_flow_matrices(FlowRegime.STATIONARY)
             solve_adj_flow_stationary(
                 self.fwd_model.geometry,
                 self.fwd_model.fl_model,
-                self.adj_model.fl_model,
+                self.adj_model.a_fl_model,
                 0,  # time index
             )
 

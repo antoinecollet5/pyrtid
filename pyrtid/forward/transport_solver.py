@@ -53,20 +53,28 @@ def make_transport_matrices_diffusion_only(
         )
 
         q_next[idc_owner, idc_owner] += (
-            tr_model.crank_nicolson_diffusion * dmean[idc_owner] / geometry.dx**2
+            tr_model.crank_nicolson_diffusion
+            * dmean[idc_owner]
+            / geometry.dx**2
+            / geometry.dz
         )
         q_next[idc_owner, idc_neigh] -= (
-            tr_model.crank_nicolson_diffusion * dmean[idc_owner] / geometry.dx**2
+            tr_model.crank_nicolson_diffusion
+            * dmean[idc_owner]
+            / geometry.dx**2
+            / geometry.dz
         )
         q_prev[idc_owner, idc_owner] -= (
             (1.0 - tr_model.crank_nicolson_diffusion)
             * dmean[idc_owner]
             / geometry.dx**2
+            / geometry.dz
         )
         q_prev[idc_owner, idc_neigh] += (
             (1.0 - tr_model.crank_nicolson_diffusion)
             * dmean[idc_owner]
             / geometry.dx**2
+            / geometry.dz
         )
 
         # Backward scheme
@@ -78,20 +86,28 @@ def make_transport_matrices_diffusion_only(
         )
 
         q_next[idc_owner, idc_owner] += (
-            tr_model.crank_nicolson_diffusion * dmean[idc_neigh] / geometry.dx**2
+            tr_model.crank_nicolson_diffusion
+            * dmean[idc_neigh]
+            / geometry.dx**2
+            / geometry.dz
         )
         q_next[idc_owner, idc_neigh] -= (
-            tr_model.crank_nicolson_diffusion * dmean[idc_neigh] / geometry.dx**2
+            tr_model.crank_nicolson_diffusion
+            * dmean[idc_neigh]
+            / geometry.dx**2
+            / geometry.dz
         )
         q_prev[idc_owner, idc_owner] -= (
             (1.0 - tr_model.crank_nicolson_diffusion)
             * dmean[idc_neigh]
             / geometry.dx**2
+            / geometry.dz
         )
         q_prev[idc_owner, idc_neigh] += (
             (1.0 - tr_model.crank_nicolson_diffusion)
             * dmean[idc_neigh]
             / geometry.dx**2
+            / geometry.dz
         )
 
     # Y contribution
@@ -111,20 +127,28 @@ def make_transport_matrices_diffusion_only(
         )
 
         q_next[idc_owner, idc_owner] += (
-            tr_model.crank_nicolson_diffusion * dmean[idc_owner] / geometry.dy**2
+            tr_model.crank_nicolson_diffusion
+            * dmean[idc_owner]
+            / geometry.dy**2
+            / geometry.dz
         )
         q_next[idc_owner, idc_neigh] -= (
-            tr_model.crank_nicolson_diffusion * dmean[idc_owner] / geometry.dy**2
+            tr_model.crank_nicolson_diffusion
+            * dmean[idc_owner]
+            / geometry.dy**2
+            / geometry.dz
         )
         q_prev[idc_owner, idc_owner] -= (
             (1.0 - tr_model.crank_nicolson_diffusion)
             * dmean[idc_owner]
             / geometry.dy**2
+            / geometry.dz
         )
         q_prev[idc_owner, idc_neigh] += (
             (1.0 - tr_model.crank_nicolson_diffusion)
             * dmean[idc_owner]
             / geometry.dy**2
+            / geometry.dz
         )
 
         # Backward scheme
@@ -136,20 +160,28 @@ def make_transport_matrices_diffusion_only(
         )
 
         q_next[idc_owner, idc_owner] += (
-            tr_model.crank_nicolson_diffusion * dmean[idc_neigh] / geometry.dy**2
+            tr_model.crank_nicolson_diffusion
+            * dmean[idc_neigh]
+            / geometry.dy**2
+            / geometry.dz
         )
         q_next[idc_owner, idc_neigh] -= (
-            tr_model.crank_nicolson_diffusion * dmean[idc_neigh] / geometry.dy**2
+            tr_model.crank_nicolson_diffusion
+            * dmean[idc_neigh]
+            / geometry.dy**2
+            / geometry.dz
         )
         q_prev[idc_owner, idc_owner] -= (
             (1.0 - tr_model.crank_nicolson_diffusion)
             * dmean[idc_neigh]
             / geometry.dy**2
+            / geometry.dz
         )
         q_prev[idc_owner, idc_neigh] += (
             (1.0 - tr_model.crank_nicolson_diffusion)
             * dmean[idc_neigh]
             / geometry.dy**2
+            / geometry.dz
         )
 
     return q_next, q_prev
@@ -444,8 +476,26 @@ def solve_transport_semi_implicit(
     tr_model: TransportModel,
     time_params: TimeParameters,
     time_index: int,
+    nfpi: int,
 ) -> int:
-    """Compute the conc and grade fields by solving the flow problem."""
+    """
+    Compute the transport of the mobile concentrations.
+
+    Parameters
+    ----------
+    geometry: Geometry
+        Geometry of the system.
+    fl_model: FlowModel
+        The flow model.
+    tr_model: TransportModel
+        The transport model.
+    time_params: TimeParameters
+        Time parameters of the system.
+    time_index: int
+        The iteration, or timestep id.
+    nfpi:
+        Number of fixed point iterations.
+    """
 
     # Update q_next and q_prev with the advection term (must be copied)
     _add_advection_to_transport_matrices(
@@ -453,7 +503,16 @@ def solve_transport_semi_implicit(
     )
 
     # Multiply prev matrix by prev vector
-    tmp = tr_model.q_prev.dot(tr_model.conc[:, :, time_index - 1].flatten(order="F"))
+    tmp = tr_model.q_prev.dot(tr_model.lconc[time_index - 1].flatten(order="F"))
+
+    # Chemical source term
+    if tr_model.is_numerical_acceleration and nfpi == 1 and time_index != 1:
+        dmdt = tr_model.lgrade[time_index - 1] - tr_model.lgrade[time_index - 2]
+    else:
+        dmdt = tr_model.lgrade[time_index] - tr_model.lgrade[time_index - 1]
+
+    # The volume is included in the diffusion term
+    tmp -= (dmdt * tr_model.porosity / time_params.dt).ravel(order="F")
 
     # Add the source terms -> depends on the advection (positive flowrates = injection)
     # Crank-nicolson does not apply to source terms
@@ -462,24 +521,13 @@ def solve_transport_semi_implicit(
     # Build the LU preconditioning
     preconditioner = get_super_lu_preconditioner(tr_model.q_next)
 
-    # Use the last state as initial guess for the solver.
-    # Also takes the sources/sinks into account
-    # TODO: this is for the chemical source term
-    # if tr_model.is_numerical_acceleration:
-    #     x0 = (
-    #         tr_model.conc[:, :, time_index - 1].flatten(order="F")
-    #         + _get_transport_source_term(tr_model, time_index) * time_params.dt
-    #     )
-    # else:
-    x0 = None
-
     # Solve Ax = b with A sparse using LU preconditioner
     res, exit_code = gmres(
-        tr_model.q_next, tmp, x0=x0, M=preconditioner, atol=tr_model.tolerance
+        tr_model.q_next, tmp, M=preconditioner, atol=tr_model.tolerance
     )
 
     # In that regard, we save the intermediate concentrations for the non
     # iterative sequential apprach (adjoint state)
-    tr_model.conc_post_tr[:, :, time_index] = res.reshape(geometry.ny, geometry.nx).T
+    tr_model.lconc[time_index] = res.reshape(geometry.ny, geometry.nx).T
 
     return exit_code

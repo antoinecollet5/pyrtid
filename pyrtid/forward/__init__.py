@@ -54,15 +54,22 @@ Solver
 Class responsible to solve the reactive-transport problem. It does not hold any data
 and performs the calculation on a :class:`ForwardModel`.
 
-.. currentmodule:: pyrtid.forward.solver
+.. currentmodule:: pyrtid.forward
 
 .. autosummary::
    :toctree: _autosummary
 
     ForwardSolver
+    get_max_coupling_error
+    solve_flow_stationary
+    solve_flow_transient_semi_implicit
+    solve_transport_semi_implicit
+    solve_geochem
 
 """
 
+from .flow_solver import solve_flow_stationary, solve_flow_transient_semi_implicit
+from .geochem_solver import solve_geochem
 from .models import (
     ConstantConcentration,
     ConstantHead,
@@ -77,7 +84,8 @@ from .models import (
     VerticalAxis,
     ZeroConcGradient,
 )
-from .solver import ForwardSolver
+from .solver import ForwardSolver, get_max_coupling_error
+from .transport_solver import solve_transport_semi_implicit
 
 __all__ = [
     "Geometry",
@@ -93,4 +101,9 @@ __all__ = [
     "ZeroConcGradient",
     "FlowRegime",
     "VerticalAxis",
+    "get_max_coupling_error",
+    "solve_flow_stationary",
+    "solve_flow_transient_semi_implicit",
+    "solve_transport_semi_implicit",
+    "solve_geochem",
 ]
