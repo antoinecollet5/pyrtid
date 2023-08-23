@@ -1,8 +1,5 @@
 """Provide ACA."""
-from time import time
-
 import numpy as np
-from scipy.linalg import svdvals as svd
 
 __all__ = ["GenerateDenseMatrix", "ACA", "ACApp"]
 
@@ -223,41 +220,3 @@ def ACApp(pts, indx, indy, kernel, rkmax, eps):
             break
 
     return A[:, :kmax], B[:, :kmax]
-
-
-if __name__ == "__main__":
-    # Test for ACA
-    N = 1000
-    # pts = np.linspace(0,1,N)[:,np.newaxis]
-    pts = np.random.rand(N, 2)
-    pts[N / 2 :, 0] += 2.0
-    pts[N / 2 :, 1] += 2.0
-
-    indx = np.arange(N / 2)
-    indy = np.setdiff1d(np.arange(N), indx)
-
-    # Kernel
-    def kernel(R):
-        return np.exp(-R)
-
-    rkmax = int(N / 2)
-    eps = 1.0e-12
-    print(rkmax, eps)
-
-    start = time()
-    mat = GenerateDenseMatrix(pts, indx, indy, kernel)
-    print("Time for full construction is %g" % (time() - start))
-
-    start = time()
-    A, B = ACApp(pts, indx, indy, kernel, rkmax, eps)
-    print("Time for ACA construction is %g" % (time() - start))
-
-    s = svd(mat)
-    s = s / s[0]
-    ind = np.extract(s > 1.0e-6, s)
-
-    print(
-        "Error is ",
-        np.linalg.norm(mat - np.dot(A, B.transpose())) / np.linalg.norm(mat),
-    )
-    print(np.size(A, 1), ind.size)
