@@ -55,7 +55,16 @@ class TimeParameters:
         This list should have the same length as `ldt`.
     """
 
-    __slots__ = ["duration", "dt", "dt_init", "dt_min", "dt_max", "ldt"]
+    __slots__ = [
+        "duration",
+        "dt",
+        "dt_init",
+        "dt_min",
+        "dt_max",
+        "ldt",
+        "nfpi",
+        "lnfpi",
+    ]
 
     def __init__(
         self,
