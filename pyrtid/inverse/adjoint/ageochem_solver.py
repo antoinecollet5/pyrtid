@@ -18,35 +18,32 @@ def solve_adj_geochem(
     time_params: TimeParameters,
     time_index: int,
 ) -> None:
-    """Compute the geochemistry part."""
-    # Skip the last timestep (there is no transport between n=0 and n=1)
-    if time_index == time_params.nt:
-        return
+    # Adjoint variables
+    am_old = a_tr_model.a_grade[:, :, time_index + 1]
+    ac_old = a_tr_model.a_conc[:, :, time_index + 1]
+    ac_cur = a_tr_model.a_conc[:, :, time_index]
+    # Forward variables
+    c_old = tr_model.lconc[time_index + 1]
+    # Timesteps
+    dt_cur = time_params.ldt[time_index]
+    dt_next = time_params.ldt[time_index - 1]
 
-    # Forward variable at the current timestep going backward
-    # (timestep 2n -> we want to predict)
-    m_cur = tr_model.grade[:, :, time_index]
-    c_prev_post_tr = tr_model.conc_post_tr[:, :, time_index + 1]  # 2n + 1
-    dt_cur = time_params.ldt[time_index - 1]
-
-    # Adjoint variable at the previous timestep going backward (timestep 2n + 2)
-    am_prev = a_tr_model.a_grade[:, :, time_index + 1]
-    ac_prev = a_tr_model.a_conc[:, :, time_index + 1]
-    dt_prev = time_params.ldt[time_index]
-
-    # Update adjoint concentration
-    a_tr_model.a_conc_post_gch[:, :, time_index] = (
-        ac_prev / dt_prev
-        + (ac_prev - am_prev) * gch_params.kv * gch_params.As * m_cur / gch_params.Ks
-    ) * dt_cur
-
-    # Update adjoint mineral value
+    # Update mineral value
     a_tr_model.a_grade[:, :, time_index] = (
-        am_prev
-        * (
-            1 / dt_prev
-            + gch_params.kv * gch_params.As * (1.0 - c_prev_post_tr / gch_params.Ks)
-        )
-        # - a_tr_model.a_conc_post_gch[:, :, time_index] / dt_cur + ac_prev / dt_prev
-        - ac_prev * gch_params.kv * gch_params.As * (1 - c_prev_post_tr / gch_params.Ks)
-    ) * dt_cur
+        am_old
+        * (1 + dt_cur * gch_params.kv * gch_params.As * (1.0 - c_old / gch_params.Ks))
+        - (ac_cur / dt_next - ac_old / dt_cur)
+        * tr_model.porosity
+        * geometry.mesh_volume
+    )  # transport adjoint source term
+
+    # Compute the adjoint geochem source term: it is computed here to mimic the
+    # splitting operator approach in which the chemical parameters might not be
+    # available in the transport operator - and consequently its adjoint.
+    a_tr_model.a_gch_src_term = (
+        a_tr_model.a_grade[:, :, time_index]
+        * time_params.ldt[time_index - 1]
+        * gch_params.kv
+        * gch_params.As
+        * (tr_model.lgrade[time_index - 1] / gch_params.Ks)
+    )

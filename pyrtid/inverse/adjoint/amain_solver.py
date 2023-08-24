@@ -1,6 +1,10 @@
 """Provide an adjoint solver and model."""
 from __future__ import annotations
 
+import logging
+
+import numpy as np
+
 from pyrtid.forward.models import FlowRegime, ForwardModel
 from pyrtid.inverse.adjoint.aflow_solver import (
     make_stationary_adj_flow_matrices,
@@ -19,6 +23,32 @@ from pyrtid.inverse.adjoint.atransport_solver import (
     make_transient_adj_transport_matrices,
     solve_adj_transport_transient_semi_implicit,
 )
+
+
+def get_adjoint_max_coupling_error(
+    atr_model: AdjointTransportModel, time_index: int
+) -> float:
+    r"""
+    Return the maximum adjoint chemistry-transport coupling error.
+
+    The fixed point iteration convergence criteria reads:
+
+    .. math::
+        \text{max} \left\lVert 1 - \dfrac{\lambda_{c}^{n, k+1}}
+        {\lambda_{c}^{n, k}} \right\rVert  < \epsilon
+
+    with $k$ the number of fixed point iterations.
+
+    This error is evaluated from the mobile adjoint concentrations.
+    """
+    return float(
+        np.nan_to_num(
+            np.max(
+                np.abs(1 - atr_model.a_conc[:, :, time_index] / atr_model.a_conc_prev)
+            ),
+            nan=0.0,
+        )
+    )
 
 
 class AdjointSolver:
@@ -76,14 +106,23 @@ class AdjointSolver:
             self.fwd_model.time_params,
         )
 
-    def solve(self) -> None:
+    def solve(self, is_verbose: bool = False) -> None:
         """
-        Solve the adjoint diffusion equation.
-
-        daT/dt = - div D grad (aT) - dT
-        with aT(:,t=T) = 0 and daT/dn = 0 on the edges
-
+        Solve the adjoint system of equations.
         """
+
+        # Initiate adjoint concentrations and grades
+        # _init_adjoint_variables(
+        #     _tr_model,
+        #     a_tr_model,
+        #     _gch_params,
+        #     geometry,
+        #     _a_sources,
+        #     _time_params,
+        #     "direct",
+        #     True,
+        # )
+
         # Construct the flow matrices (not modified along the timesteps because
         # permeability and storage coefficients are constant).
         self.initialize_ajd_flow_matrices(FlowRegime.TRANSIENT)
@@ -92,15 +131,45 @@ class AdjointSolver:
         # Consequently, the preconditioner is built on the fly too.
         self.initialize_ajd_transport_matrices()
 
-        # TODO: for now there is no retroaction from the chemistry to the flow
-
         for time_index in range(
-            self.fwd_model.time_params.nt, 0, -1
+            self.fwd_model.time_params.nts - 1, 0, -1
         ):  # Reverse order in time, and reverse order in operator sequence
-            # 0) copy last transport state
-            _copy_tr_adj_prev_to_current(self.adj_model.a_tr_model, time_index)
+            self._solve_system_for_timestep(time_index, is_verbose)
 
-            # 1) Solve the adjointchemistry
+        # Flow: solve for the last timestep, only if the flow was initially stationnary
+        # Otherwise, just copy as for transport
+        _copy_fl_adj_prev_to_current(self.adj_model.a_fl_model, 0)
+        if self.fwd_model.fl_model.regime == FlowRegime.STATIONARY:
+            self.initialize_ajd_flow_matrices(FlowRegime.STATIONARY)
+            solve_adj_flow_stationary(
+                self.fwd_model.geometry,
+                self.fwd_model.fl_model,
+                self.adj_model.a_fl_model,
+                0,  # time index
+            )
+
+    def _solve_system_for_timestep(
+        self, time_index: int, is_verbose: bool = False
+    ) -> None:
+        # Some references.
+        a_tr_model = self.adj_model.a_tr_model
+
+        nafpi = 1  # number of coupling (Fixed Point) iterations
+        # Convergence flag for the adjoint
+
+        # Copy the grades (To place in another function afterwards)
+        a_tr_model.a_conc[:, :, time_index] = a_tr_model.a_conc[:, :, time_index + 1]
+
+        has_converged = False
+
+        # print(atr_model.a_conc[:, :, time_index])
+
+        # Iterate the chemistry transport system while the convergence is no meet
+        while not has_converged:
+            # Save the grade for the fix point iterations
+            a_tr_model.a_conc_prev = a_tr_model.a_conc[:, :, time_index].copy()
+
+            # 1) Start by solving adjoint geochemistry
             solve_adj_geochem(
                 self.fwd_model.tr_model,
                 self.adj_model.a_tr_model,
@@ -109,6 +178,10 @@ class AdjointSolver:
                 self.fwd_model.time_params,
                 time_index,
             )
+
+            # solve_adj_transport_transient_semi_implicit(
+            #     geometry, _tr_model, a_tr_model, _a_sources, time_params, time_index
+            # )
 
             # 2) Solve the adjoint transport
             solve_adj_transport_transient_semi_implicit(
@@ -140,21 +213,21 @@ class AdjointSolver:
                 self.adj_model.is_mob_obs,
             )
 
-        # Transport: do not solve for the last timestep, simply copy the results
-        # This is the right way to get consistent with the mineral gradient
-        _copy_tr_adj_prev_to_current(self.adj_model.a_tr_model, 0)
-
-        # Flow: solve for the last timestep, only if the flow was initially stationnary
-        # Otherwise, just copy as for transport
-        _copy_fl_adj_prev_to_current(self.adj_model.a_fl_model, 0)
-        if self.fwd_model.fl_model.regime == FlowRegime.STATIONARY:
-            self.initialize_ajd_flow_matrices(FlowRegime.STATIONARY)
-            solve_adj_flow_stationary(
-                self.fwd_model.geometry,
-                self.fwd_model.fl_model,
-                self.adj_model.a_fl_model,
-                0,  # time index
+            # One more coupling iteration has been performed
+            if is_verbose:
+                logging.info(
+                    f"max-coupling error at time_index = {time_index}-{nafpi}: "
+                    f"{get_adjoint_max_coupling_error(a_tr_model, time_index)}"
+                )
+            has_converged = (
+                get_adjoint_max_coupling_error(a_tr_model, time_index)
+                < self.adj_model.a_tr_model.afpi_eps
             )
+            if is_verbose:
+                logging.info(f"has-converged ?: {has_converged}")
+
+            # Update the number of FPI
+            nafpi += 1
 
 
 def _copy_tr_adj_prev_to_current(

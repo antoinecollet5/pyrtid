@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import List, Optional, Sequence, Tuple, Union
 
 import numpy as np
-from scipy.sparse import csc_matrix, lil_matrix
+from scipy.sparse import lil_matrix
 
 from pyrtid.utils import StrEnum, node_number_to_indices, span_to_node_numbers_2d
 from pyrtid.utils.types import (
@@ -115,14 +115,28 @@ class TimeParameters:
         return np.sum(self.ldt)
 
     @property
-    def nt(self) -> int:
-        """Number of timesteps."""
+    def nts(self) -> int:
+        """
+        Number of timesteps (dt).
+
+        It is the number of times (`nt`) - 1.
+        """
         return len(self.ldt)
+
+    @property
+    def nt(self) -> int:
+        """
+        Number of times (including t0).
+
+        It is the number of timesteps (`nts`) +1.
+        """
+        return self.nts + 1
 
     def reset_to_init(self) -> None:
         """Empty the list of timesteps and set dt to its initial value."""
         self.dt = self.dt_init
         self.ldt = []
+        self.lnfpi = []
 
     def save_dt(self) -> None:
         "Save the current timestep to the list of timesteps."
@@ -394,6 +408,8 @@ class SourceTerm:
         Concentration, used only if flowrates is positive.
     """
 
+    __slots__ = ["name", "node_ids", "times", "flowrates", "concentrations"]
+
     def __init__(
         self,
         name: str,
@@ -433,6 +449,30 @@ class SourceTerm:
             raise ValueError(
                 "Times, flowrates and concentrations must have the same dimension !"
             )
+
+    def get_node_indices(self, geometry: Geometry) -> NDArrayInt:
+        """Return the node indices."""
+        return np.array(
+            node_number_to_indices(self.node_ids, nx=geometry.nx, ny=geometry.ny)
+        ).reshape(3, -1)
+
+    @property
+    def n_nodes(self) -> int:
+        """Return the number of nodes."""
+        return np.size(self.node_ids)
+
+    def get_values(self, time: float) -> Tuple[float, float]:
+        """Return the concentrations and the flowrates for a given time."""
+        if time < self.times[0]:
+            return 0.0, 0.0
+        time_index = 0  # index in times
+        while time > self.times[time_index]:
+            time_index += 1
+            if time_index == len(self.times):
+                break
+        if time != self.times[min(time_index, len(self.times) - 1)]:
+            time_index -= 1
+        return self.flowrates[time_index], self.concentrations[time_index]
 
 
 @dataclass
@@ -507,7 +547,6 @@ class FlowModel:
         "boundary_conditions",
         "cst_head_nn",
         "regime",
-        "sources",
         "q_prev",
         "q_next",
         "tolerance",
@@ -529,17 +568,11 @@ class FlowModel:
         self.lhead: List[NDArrayFloat] = [
             np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
         ]
-        self.lu_darcy_x: List[NDArrayFloat] = [
-            np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
-        ]
-        self.lu_darcy_y: List[NDArrayFloat] = [
-            np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
-        ]
+        self.lu_darcy_x: List[NDArrayFloat] = []
+        self.lu_darcy_y: List[NDArrayFloat] = []
+        self.lu_darcy_div: List[NDArrayFloat] = []
 
         self.boundary_conditions: List[BoundaryCondition] = []
-        self.sources = np.zeros(
-            (geometry.nx, geometry.ny, time_params.nt + 1), dtype=np.float64
-        )
         self.q_prev = lil_matrix(geometry.nx * geometry.ny)
         self.q_next = lil_matrix(geometry.nx * geometry.ny)
         self.cst_head_nn: NDArrayInt = np.array([], dtype=np.int32)
@@ -554,7 +587,7 @@ class FlowModel:
     @property
     def head(self) -> NDArrayFloat:
         """
-        Return head as array with dimension (nx, ny, nz, nt + 1).
+        Return head as array with dimension (nx, ny, nz, nt).
 
         This is read-only.
         """
@@ -631,9 +664,9 @@ class FlowModel:
     def reinit(self) -> None:
         """Set all arrays to zero execpt for the initial conditions(first time)."""
         self.lhead = self.lhead[:1]
-        self.lu_darcy_x = self.lu_darcy_x[:1]
-        self.lu_darcy_y = self.lu_darcy_y[:1]
-        self.lu_darcy_div = self.lu_darcy_div[:1]
+        self.lu_darcy_x = []
+        self.lu_darcy_y = []
+        self.lu_darcy_div = []
         self.set_constant_head_indices()
 
     @property
@@ -723,7 +756,6 @@ class TransportModel:
         "grade_prev",
         "boundary_conditions",
         "cst_conc_indices",
-        "sources",
         "q_prev_diffusion",
         "q_next_diffusion",
         "q_prev",
@@ -759,14 +791,11 @@ class TransportModel:
 
         self.grade_prev = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
         self.boundary_conditions: List[BoundaryCondition] = []
-        self.sources = np.zeros(
-            (geometry.nx, geometry.ny, time_params.nt + 1), dtype=np.float64
-        )
         # q_prev is composed of q_prev_diffusion + advection term
         self.q_prev_diffusion = lil_matrix(geometry.nx * geometry.ny)
         self.q_next_diffusion = lil_matrix(geometry.nx * geometry.ny)
-        self.q_prev = csc_matrix(geometry.nx * geometry.ny)
-        self.q_next = csc_matrix(geometry.nx * geometry.ny)
+        self.q_prev = lil_matrix(geometry.nx * geometry.ny)
+        self.q_next = lil_matrix(geometry.nx * geometry.ny)
         self.cst_conc_indices: NDArrayInt = np.array([], dtype=np.int32)
         self.tolerance = tr_params.tolerance
         self.is_numerical_acceleration = tr_params.is_numerical_acceleration
@@ -947,69 +976,42 @@ class ForwardModel:
         for condition in object_or_object_sequence_to_list(boundary_conditions):
             self.add_boundary_conditions(condition)
 
-    @property
-    def shape(self) -> Tuple[int, int, int]:
-        """Return the shape of the model (nx, ny, nt)"""
-        return (self.geometry.nx, self.geometry.ny, self.time_params.nt + 1)
-
-    def get_fl_sources(self) -> NDArrayFloat:
+    def get_sources(
+        self, time: float, geometry: Geometry
+    ) -> Tuple[NDArrayFloat, NDArrayFloat]:
         """Get the flow sources and sink terms."""
-        # TODO: Replace with sparse array
-        src = np.zeros(self.shape, dtype=np.float64)
+
+        _fl_src = np.zeros((geometry.nx, geometry.ny))
+        _conc_src = np.zeros((geometry.nx, geometry.ny))
+
+        # iterate the source terms
         for source in self.source_terms:
-            span = np.array(
-                node_number_to_indices(
-                    source.node_ids, nx=self.geometry.nx, ny=self.geometry.ny
-                )
-            ).reshape(3, -1)
-            size = np.size(source.node_ids)
-            for i, time in enumerate(source.times):
-                # do not take into account if the source if after the simulation end
-                if time > self.time_params.duration:
-                    continue
-                src[span[0], span[1], int(time / self.time_params.dt)] += (
-                    source.flowrates[i] / size
-                )
+            # identify the source term applying
+            _fl, _conc = source.get_values(time)
+            nids = source.get_node_indices(geometry)
+
+            # Add the flowrates contribution
+            _fl_src[nids[0], nids[1]] += _fl / source.n_nodes
+
+            # Keep only non negative flowrates (remove sink terms)
+            if _fl > 0:
+                # if flw < 0
+                _conc_src[nids[0], nids[1]] += _fl * _conc / source.n_nodes
 
         for condition in self.fl_model.boundary_conditions:
             if isinstance(condition, ConstantHead):
                 # Set zero where there constant head
-                src[condition.span] = 0.0
-        return src / self.geometry.mesh_volume
-
-    def get_tr_sources(self) -> NDArrayFloat:
-        """
-        Get the transport sources.
-
-        We keep only positive flowrates.
-        """
-        src = np.zeros(self.shape, dtype=np.float64)
-        for source in self.source_terms:
-            span = np.array(
-                node_number_to_indices(
-                    source.node_ids, nx=self.geometry.nx, ny=self.geometry.ny
-                )
-            ).reshape(3, -1)
-            size = np.size(source.node_ids)
-            for i, time in enumerate(source.times):
-                # do not take into account if the source if after the simulation end
-                if time > self.time_params.duration:
-                    continue
-                # Keep only non negative flowrates (remove sink terms)
-                flw = np.where(source.flowrates[i] > 0, source.flowrates[i], 0.0)
-                # print(flw)
-                flw = source.flowrates[i]
-                # if flw < 0
-                src[span[0], span[1], int(time / self.time_params.dt)] += (
-                    flw * source.concentrations[i] / size
-                )
+                _fl_src[condition.span] = 0.0
 
         for condition in self.tr_model.boundary_conditions:
             if isinstance(condition, ConstantConcentration):
                 # Set zero where there constant concentration
-                src[condition.span] = 0.0
+                _conc_src[condition.span] = 0.0
 
-        return src / self.geometry.mesh_volume
+        return (
+            _fl_src / self.geometry.mesh_volume,
+            _conc_src / self.geometry.mesh_volume,
+        )
 
     def add_src_term(self, source_term: SourceTerm) -> None:
         """Add a source term."""

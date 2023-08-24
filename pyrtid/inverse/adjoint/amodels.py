@@ -2,11 +2,10 @@
 from __future__ import annotations
 
 import numpy as np
-from scipy.sparse import csc_matrix, lil_matrix
+from scipy.sparse import lil_matrix
 
 from pyrtid.forward.models import (  # ConstantHead,; ZeroConcGradient,
     ForwardModel,
-    GeochemicalParameters,
     Geometry,
     TimeParameters,
 )
@@ -21,7 +20,7 @@ class AdjointFlowModel:
         "a_head",
         "a_u_darcy_x",
         "a_u_darcy_y",
-        "a_sources",
+        "a_head_sources",
         "q_prev",
         "q_next",
     ]
@@ -29,24 +28,42 @@ class AdjointFlowModel:
     def __init__(self, geometry: Geometry, time_params: TimeParameters) -> None:
         """Initialize the instance."""
         self.a_head = np.zeros(
-            (geometry.nx, geometry.ny, time_params.nt + 1), dtype=np.float64
+            (geometry.nx, geometry.ny, time_params.nt), dtype=np.float64
         )
         self.a_u_darcy_x = np.zeros(
-            (geometry.nx - 1, geometry.ny, time_params.nt + 1), dtype=np.float64
+            (geometry.nx - 1, geometry.ny, time_params.nt), dtype=np.float64
         )
         self.a_u_darcy_y = np.zeros(
-            (geometry.nx, geometry.ny - 1, time_params.nt + 1), dtype=np.float64
+            (geometry.nx, geometry.ny - 1, time_params.nt), dtype=np.float64
         )
-        # TODO: see if we can use sparse matrices for that
-        self.a_sources = np.zeros(
-            (geometry.nx, geometry.ny, time_params.nt + 1), dtype=np.float64
+        # Generally, not so many observation, so use a sparse matrix
+        # instead of a dense array
+        self.a_head_sources: lil_matrix = lil_matrix(
+            (geometry.nx, geometry.ny, time_params.nt), dtype=np.float64
         )
         self.q_prev = lil_matrix(geometry.nx * geometry.ny)
         self.q_next = lil_matrix(geometry.nx * geometry.ny)
 
 
 class AdjointTransportModel:
-    """Represent an adjoint flow model."""
+    """
+    Represent an adjoint flow model.
+
+    Attributes
+    ----------
+    a_conc: NDArrayFloat
+    a_conc_prev: NDArrayFloat
+    a_grade: NDArrayFloat
+    a_conc_sources: NDArrayFloat
+    a_grade_sources: NDArrayFloat
+    q_prev_diffusion: lil_matrix
+    q_next_diffusion: lil_matrix
+    q_prev: lil_matrix
+    q_next: lil_matrix
+    a_gch_src_term: NDArrayFloat
+    afpi_eps: float
+    is_numerical_acceleration: bool
+    """
 
     __slots__ = [
         "a_conc",
@@ -59,30 +76,44 @@ class AdjointTransportModel:
         "q_prev",
         "q_next",
         "a_gch_src_term",
+        "afpi_eps",
+        "is_numerical_acceleration",
     ]
 
     def __init__(
         self,
         geometry: Geometry,
         time_params: TimeParameters,
-        gch_params: GeochemicalParameters,
     ) -> None:
-        """Initialize the instance."""
+        """
+        Initialize the instance.
+
+        Parameters
+        ----------
+        geometry: Geometry
+            Simulation geometry definition.
+        time_params: TimeParameters
+            Simulation time parameters (duration, timesteps, etc.)
+        afpi_eps: float
+
+        is_numerical_acceleration: bool
+
+        """
         self.a_conc: NDArrayFloat = np.zeros(
-            (geometry.nx, geometry.ny, time_params.nt + 1), dtype=np.float64
+            (geometry.nx, geometry.ny, time_params.nt), dtype=np.float64
         )
         self.a_conc_prev: NDArrayFloat = np.zeros(
             (geometry.nx, geometry.ny), dtype=np.float64
         )
         self.a_grade: NDArrayFloat = np.zeros(
-            (geometry.nx, geometry.ny, time_params.nt + 1), dtype=np.float64
+            (geometry.nx, geometry.ny, time_params.nt), dtype=np.float64
         )
 
         self.a_conc_sources = np.zeros(
-            (geometry.nx, geometry.ny, time_params.nt + 1), dtype=np.float64
+            (geometry.nx, geometry.ny, time_params.nt), dtype=np.float64
         )
         self.a_grade_sources = np.zeros(
-            (geometry.nx, geometry.ny, time_params.nt + 1), dtype=np.float64
+            (geometry.nx, geometry.ny, time_params.nt), dtype=np.float64
         )
 
         # Adjoint source term from the adjoint geochem to the adjoint transport
@@ -90,8 +121,8 @@ class AdjointTransportModel:
 
         self.q_prev_diffusion = lil_matrix(geometry.nx * geometry.ny)
         self.q_next_diffusion = lil_matrix(geometry.nx * geometry.ny)
-        self.q_prev = csc_matrix(geometry.nx * geometry.ny)
-        self.q_next = csc_matrix(geometry.nx * geometry.ny)
+        self.q_prev = lil_matrix(geometry.nx * geometry.ny)
+        self.q_next = lil_matrix(geometry.nx * geometry.ny)
 
 
 class AdjointModel:
@@ -103,32 +134,32 @@ class AdjointModel:
         self,
         geometry: Geometry,
         time_params: TimeParameters,
-        gch_params: GeochemicalParameters,
+        afpi_eps: float,
+        is_numerical_acceleration: float,
     ) -> None:
         """
         Initialize the instance.
 
         Parameters
         ----------
-        geometry : Geometry
-            _description_
-        time_params : TimeParameters
-            _description_
-        gch_params : GeochemicalParameters
-            _description_
+        geometry: Geometry
+            Simulation geometry definition.
+        time_params: TimeParameters
+            Simulation time parameters (duration, timesteps, etc.)
+        afpi_eps: float
+        is_numerical_acceleration: bool
         """
         self.geometry: Geometry = geometry
         self.time_params: TimeParameters = time_params
-        self.gch_params: GeochemicalParameters = gch_params
         self.a_fl_model: AdjointFlowModel = AdjointFlowModel(geometry, time_params)
         self.a_tr_model: AdjointTransportModel = AdjointTransportModel(
-            geometry, time_params, gch_params
+            geometry, time_params
         )
 
     @property
     def is_head_obs(self) -> bool:
         """Return whether there are head observations."""
-        if np.any(self.a_fl_model.a_head_sources):
+        if self.a_fl_model.a_head_sources.count_nonzero() != 0:
             return True
         return False
 
@@ -163,12 +194,12 @@ class AdjointModel:
         """Set the adjoint sources to the correct model."""
         try:
             # case obs.location is a numpy array
-            self.a_tr_model.a_sources[obs.location, obs.timesteps] += (
+            self.a_tr_model.a_conc_sources[obs.location, obs.timesteps] += (
                 obs.values - model.tr_model.conc[obs.location, obs.timesteps].ravel()
             ) / (obs.uncertainties**2)
         except IndexError:
             # case obs.location is a tuple of slices
-            self.a_tr_model.a_sources[(*obs.location, obs.timesteps)] += (
+            self.a_tr_model.a_conc_sources[(*obs.location, obs.timesteps)] += (
                 obs.values - model.tr_model.conc[(*obs.location, obs.timesteps)].ravel()
             ) / (obs.uncertainties**2)
 
@@ -178,11 +209,11 @@ class AdjointModel:
         """Set the adjoint sources to the correct model."""
         try:
             # case obs.location is a numpy array
-            self.a_fl_model.a_sources[obs.location, obs.timesteps] += (
+            self.a_fl_model.a_head_sources[obs.location, obs.timesteps] += (
                 obs.values - model.fl_model.head[obs.location, obs.timesteps].ravel()
             ) / (obs.uncertainties**2)
         except IndexError:
             # case obs.location is a tuple of slices
-            self.a_fl_model.a_sources[(*obs.location, obs.timesteps)] += (
+            self.a_fl_model.a_head_sources[(*obs.location, obs.timesteps)] += (
                 obs.values - model.fl_model.head[(*obs.location, obs.timesteps)].ravel()
             ) / (obs.uncertainties**2)

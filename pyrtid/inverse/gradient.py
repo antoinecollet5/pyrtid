@@ -52,7 +52,7 @@ def get_diffusion_term_adjoint_gradient(
     NDArrayFloat
         Gradient of the objective function with respect to the diffusion.
     """
-    shape = (fwd_model.geometry.nx, fwd_model.geometry.ny, fwd_model.time_params.nt + 1)
+    shape = (fwd_model.geometry.nx, fwd_model.geometry.ny, fwd_model.time_params.nt)
     eff_diffusion = fwd_model.tr_model.effective_diffusion
     porosity = fwd_model.tr_model.porosity
 
@@ -268,7 +268,7 @@ def _get_perm_gradient_from_diffusivity_eq(
     # if not adj_model.is_head_obs:
     #     return np.zeros((fwd_model.geometry.nx, fwd_model.geometry.ny))
 
-    shape = (fwd_model.geometry.nx, fwd_model.geometry.ny, fwd_model.time_params.nt + 1)
+    shape = (fwd_model.geometry.nx, fwd_model.geometry.ny, fwd_model.time_params.nt)
     permeability = fwd_model.fl_model.permeability
 
     crank_flow = fwd_model.fl_model.crank_nicolson
@@ -389,7 +389,7 @@ def _get_perm_gradient_from_darcy_eq(
     if not adj_model.is_mob_obs:
         return np.zeros((fwd_model.geometry.nx, fwd_model.geometry.ny))
 
-    shape = (fwd_model.geometry.nx, fwd_model.geometry.ny, fwd_model.time_params.nt + 1)
+    shape = (fwd_model.geometry.nx, fwd_model.geometry.ny, fwd_model.time_params.nt)
     permeability = fwd_model.fl_model.permeability
 
     head = fwd_model.fl_model.head

@@ -191,16 +191,14 @@ def _add_advection_to_transport_matrices(
     geometry: Geometry,
     fl_model: FlowModel,
     tr_model: TransportModel,
+    q_next: lil_matrix,
+    q_prev: lil_matrix,
+    conc_sources: NDArrayFloat,
+    conc_sources_old: NDArrayFloat,
     time_params: TimeParameters,
     time_index: int,
 ) -> None:
     crank_adv: float = tr_model.crank_nicolson_advection
-    q_next: lil_matrix = tr_model.q_next_diffusion.copy()
-    q_prev: lil_matrix = tr_model.q_prev_diffusion.copy()
-
-    # Add 1/dt for the left term contribution
-    q_next.setdiag(q_next.diagonal() + tr_model.porosity.flatten("F") / time_params.dt)
-    q_prev.setdiag(q_prev.diagonal() + tr_model.porosity.flatten("F") / time_params.dt)
 
     # X contribution
     if geometry.nx >= 2:
@@ -342,35 +340,28 @@ def _add_advection_to_transport_matrices(
             / geometry.dy
         )
 
-    _apply_transport_sink_term(fl_model, tr_model, q_next, q_prev, time_index)
+    _apply_transport_sink_term(tr_model, conc_sources, conc_sources_old, q_next, q_prev)
 
-    _apply_divergence_effect(fl_model, tr_model, q_next, q_prev, time_index)
+    _apply_divergence_effect(
+        fl_model, tr_model, conc_sources, conc_sources_old, q_next, q_prev, time_index
+    )
 
     # Handle boundary conditions
     _add_transport_boundary_conditions(
         geometry, fl_model, tr_model, q_next, q_prev, time_index
     )
 
-    tr_model.q_next = q_next.tocsc()
-    tr_model.q_prev = q_prev.tocsc()
-
-
-def _get_transport_source_term(
-    tr_model: TransportModel, time_index: int
-) -> NDArrayFloat:
-    return tr_model.sources[:, :, time_index].flatten(order="F")
-
 
 def _apply_transport_sink_term(
-    fl_model: FlowModel,
     tr_model: TransportModel,
+    conc_sources: NDArrayFloat,
+    conc_sources_old: NDArrayFloat,
     q_next: lil_matrix,
     q_prev: lil_matrix,
-    time_index: int,
 ) -> None:
-    flw = fl_model.sources[:, :, time_index].flatten(order="F")
+    flw = conc_sources.flatten(order="F")
     _flw = np.where(flw < 0, flw, 0.0)  # keep only negative flowrates
-    flw_old = fl_model.sources[:, :, time_index - 1].flatten(order="F")
+    flw_old = conc_sources_old.flatten(order="F")
     _flw_old = np.where(flw_old < 0, flw_old, 0.0)  # keep only negative flowrates
     q_next.setdiag(q_next.diagonal() - tr_model.crank_nicolson_advection * _flw)
     q_prev.setdiag(
@@ -381,6 +372,8 @@ def _apply_transport_sink_term(
 def _apply_divergence_effect(
     fl_model: FlowModel,
     tr_model: TransportModel,
+    conc_sources: NDArrayFloat,
+    conc_sources_old: NDArrayFloat,
     q_next: lil_matrix,
     q_prev: lil_matrix,
     time_index: int,
@@ -388,12 +381,10 @@ def _apply_divergence_effect(
     """
     Take into account the divergence: dcdt+U.grad(c)=L(u)."""
 
-    div = (
-        fl_model.u_darcy_div[:, :, time_index] - fl_model.sources[:, :, time_index]
-    ).flatten(order="F")
-    div_old = (
-        fl_model.u_darcy_div[:, :, time_index - 1] - fl_model.sources[:, :, time_index]
-    ).flatten(order="F")
+    div = (fl_model.lu_darcy_div[time_index] - conc_sources[:, :]).flatten(order="F")
+    div_old = (fl_model.lu_darcy_div[time_index - 1] - conc_sources[:, :]).flatten(
+        order="F"
+    )
 
     q_next.setdiag(q_next.diagonal() - tr_model.crank_nicolson_advection * div)
     q_prev.setdiag(
@@ -474,6 +465,8 @@ def solve_transport_semi_implicit(
     geometry: Geometry,
     fl_model: FlowModel,
     tr_model: TransportModel,
+    conc_sources: NDArrayFloat,
+    conc_sources_old: NDArrayFloat,
     time_params: TimeParameters,
     time_index: int,
     nfpi: int,
@@ -497,10 +490,41 @@ def solve_transport_semi_implicit(
         Number of fixed point iterations.
     """
 
-    # Update q_next and q_prev with the advection term (must be copied)
-    _add_advection_to_transport_matrices(
-        geometry, fl_model, tr_model, time_params, time_index
-    )
+    # The matrix with respect to the diffusion never changes.
+    # The matrix with respect to the advection only needs to be updated if the head
+    # have changed.
+    if nfpi == 1:
+        q_next: lil_matrix = tr_model.q_next_diffusion.copy()
+        q_prev: lil_matrix = tr_model.q_prev_diffusion.copy()
+
+        # Update q_next and q_prev with the advection term (must be copied)
+        # Note that this is required at the first fixed point iteration only,
+        # afterwards, only the chemical source term varies.
+        # if nfpi == 1:
+        _add_advection_to_transport_matrices(
+            geometry,
+            fl_model,
+            tr_model,
+            q_next,
+            q_prev,
+            conc_sources,
+            conc_sources_old,
+            time_params,
+            time_index,
+        )
+        # Add 1/dt for the left term contribution
+        q_next.setdiag(
+            q_next.diagonal() + tr_model.porosity.flatten("F") / time_params.dt
+        )
+        q_prev.setdiag(
+            q_prev.diagonal() + tr_model.porosity.flatten("F") / time_params.dt
+        )
+
+        tr_model.q_next = q_next
+        tr_model.q_prev = q_prev
+    else:
+        q_next = tr_model.q_next
+        q_prev = tr_model.q_prev
 
     # Multiply prev matrix by prev vector
     tmp = tr_model.q_prev.dot(tr_model.lconc[time_index - 1].flatten(order="F"))
@@ -516,14 +540,14 @@ def solve_transport_semi_implicit(
 
     # Add the source terms -> depends on the advection (positive flowrates = injection)
     # Crank-nicolson does not apply to source terms
-    tmp += _get_transport_source_term(tr_model, time_index)
+    tmp += conc_sources.ravel("F")
 
     # Build the LU preconditioning
-    preconditioner = get_super_lu_preconditioner(tr_model.q_next)
+    preconditioner = get_super_lu_preconditioner(q_next.tocsc())
 
     # Solve Ax = b with A sparse using LU preconditioner
     res, exit_code = gmres(
-        tr_model.q_next, tmp, M=preconditioner, atol=tr_model.tolerance
+        q_next.tocsc(), tmp, M=preconditioner, atol=tr_model.tolerance
     )
 
     # In that regard, we save the intermediate concentrations for the non

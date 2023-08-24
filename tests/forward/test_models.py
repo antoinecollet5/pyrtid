@@ -2,6 +2,7 @@
 
 import re
 from contextlib import contextmanager
+from typing import Tuple
 
 import numpy as np
 import pytest
@@ -20,6 +21,7 @@ from pyrtid.forward.models import (
     get_owner_neigh_indices,
     resize_array,
 )
+from pyrtid.utils.types import NDArrayFloat
 
 time_params = TimeParameters(duration=240000, dt_init=600.0)
 geometry = Geometry(nx=20, ny=20, dx=4.5, dy=7.5)
@@ -65,22 +67,30 @@ def test_time_params(
 
     time_params.reset_to_init()
     assert time_params.dt == expected_dt
-    # assert len(time_params.ldt) == 0
+    assert time_params.nts == 0
+    assert time_params.nt == 1
+    assert time_params.nfpi == 0
+    assert len(time_params.lnfpi) == 0
 
     assert time_params.time_elapsed == 0
 
     for i in range(20):
         time_params.save_dt()
+        time_params.save_nfpi()
         time_params.update_dt(30)
 
     assert time_params.dt == expected_dt_min
     assert len(time_params.ldt) == 20
+    assert time_params.nts == 20
+    assert time_params.nt == 21
+    assert time_params.nfpi == 0
     assert time_params.time_elapsed > 0
 
     time_params.reset_to_init()
 
     assert time_params.dt == expected_dt
-    assert len(time_params.ldt) == 0
+    assert time_params.nts == 0
+    assert time_params.nt == 1
 
     assert time_params.time_elapsed == 0
 
@@ -279,23 +289,183 @@ def test_get_owner_neigh_indices() -> None:
     )
 
 
-def test_model_shape(model: ForwardModel) -> None:
-    assert model.shape == (20, 20, 1)
+def test_source_term_et_node_indices() -> None:
+    st = SourceTerm(
+        "joe",
+        np.array([1, 5, 12, 24]),
+        np.array([0.5, 22.0, 56.0, 99.1]),
+        np.array([0.0, 2.0, 2.0, 4.0]),
+        np.array([1.0, 2.0, 0.0, 4.0]),
+    )
+    np.testing.assert_equal(
+        st.get_node_indices(Geometry(5, 5, 2.0, 2.0, 5.0)),
+        np.array([[1, 0, 2, 4], [0, 1, 2, 4], [0, 0, 0, 0]]),
+    )
+
+    assert st.n_nodes == 4
 
 
-# def test_model_reinit(model: ForwardModel) -> None:
-#     model.tr_model.conc[:, :, :] = 1.0
-#     model.tr_model.grade[:, :, :] = 1.0
+@pytest.mark.parametrize(
+    "time, expected_sources",
+    [
+        (0.0, (0.0, 0.0)),
+        (1.0, (0.0, 1.0)),
+        (22.0, (2.0, 2.0)),
+        (25.0, (2.0, 2.0)),
+        (60.0, (2.0, 0.0)),
+        (99.1, (4.0, 4.0)),
+        (500.0, (4.0, 4.0)),
+    ],
+)
+def test_source_term_get_values(
+    time: float, expected_sources: Tuple[float, float]
+) -> None:
+    st = SourceTerm(
+        "joe",
+        np.array([1, 5, 12, 24]),
+        np.array([0.5, 22.0, 56.0, 99.1]),
+        np.array([0.0, 2.0, 2.0, 4.0]),
+        np.array([1.0, 2.0, 0.0, 4.0]),
+    )
 
-#     model.fl_model.head[:, :, :] = 1.0
-#     model.fl_model.u_darcy_x[:, :, :] = 1.0
-#     model.fl_model.u_darcy_y[:, :, :] = 1.0
+    assert st.get_values(time) == expected_sources
 
-#     model.reinit()
 
-#     assert np.all(model.tr_model.conc[:, :, 1:] == 0)
-#     assert np.all(model.tr_model.grade[:, :, 1:] == 0)
+def test_model_effective_diffusion(model: ForwardModel) -> None:
+    np.testing.assert_array_equal(
+        model.tr_model.effective_diffusion, np.ones((20, 20)) * 2.3e-11
+    )
 
-#     assert np.all(model.fl_model.head[:, :, 1:] == 0)
-#     assert np.all(model.fl_model.u_darcy_x[:, :, :] == 0)
-#     assert np.all(model.fl_model.u_darcy_y[:, :, :] == 0)
+
+def test_model_set_values(model: ForwardModel) -> None:
+    arr = np.random.random(size=(20, 20, 1))
+
+    model.tr_model.set_initial_conc(arr[:, :, 0])
+    np.testing.assert_array_equal(model.tr_model.conc, arr)
+
+    model.tr_model.set_initial_conc(4.0)
+    np.testing.assert_array_equal(model.tr_model.conc, np.ones((20, 20, 1)) * 4.0)
+
+    model.tr_model.set_initial_grade(arr[:, :, 0] * 2.0)
+    np.testing.assert_array_equal(model.tr_model.grade, arr * 2.0)
+
+    model.tr_model.set_initial_grade(2.0)
+    np.testing.assert_array_equal(model.tr_model.grade, np.ones((20, 20, 1)) * 2.0)
+
+    model.fl_model.set_initial_head(arr[:, :, 0] * 3.0)
+    np.testing.assert_array_equal(model.fl_model.head, arr * 3.0)
+
+    model.fl_model.set_initial_head(100.0)
+    np.testing.assert_array_equal(model.fl_model.head, np.ones((20, 20, 1)) * 100.0)
+
+
+def test_model_reinit(model: ForwardModel) -> None:
+    model.tr_model.lconc.append(model.tr_model.lconc[-1])
+    assert len(model.tr_model.lconc) == 2
+
+    model.fl_model.lhead.append(model.fl_model.lhead[-1])
+    assert len(model.fl_model.lhead) == 2
+
+    model.reinit()
+
+    assert len(model.tr_model.lconc) == 1
+    assert len(model.tr_model.lgrade) == 1
+
+    np.testing.assert_array_equal(model.tr_model.lconc[0], model.tr_model.conc[:, :, 0])
+    np.testing.assert_array_equal(
+        model.tr_model.lgrade[0], model.tr_model.grade[:, :, 0]
+    )
+
+    assert len(model.fl_model.lhead) == 1
+    assert len(model.fl_model.lu_darcy_x) == 0
+    assert len(model.fl_model.lu_darcy_y) == 0
+    assert len(model.fl_model.lu_darcy_div) == 0
+
+    assert np.all(model.fl_model.head[:, :, 1:] == 0)
+    # assert np.all(model.fl_model.u_darcy_x[:, :, :] == 0)
+    # assert np.all(model.fl_model.u_darcy_y[:, :, :] == 0)
+
+    np.testing.assert_array_equal(model.fl_model.lhead[0], model.fl_model.head[:, :, 0])
+    # np.testing.assert_array_equal(
+    #     model.fl_model.lu_darcy_x[0], model.fl_model.u_darcy_x[:, :, 0]
+    # )
+    # np.testing.assert_array_equal(
+    #     model.fl_model.lu_darcy_y[0], model.fl_model.u_darcy_y[:, :, 0]
+    # )
+    # np.testing.assert_array_equal(
+    #     model.fl_model.lu_darcy_div[0], model.fl_model.u_darcy_div[:, :, 0]
+    # )
+
+
+@pytest.mark.parametrize(
+    "time, expected_src_flw, expected_src_conc",
+    [
+        (
+            0.0,
+            np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, -0.75, 1.0]]),
+            np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 1.0]]),
+        ),
+        (
+            0.5,
+            np.array([[0.0, 0.25, 0.0], [0.25, 0.0, 0.0], [0.0, -0.75, 1.0]]),
+            np.array([[0.0, 0.0, 0.0], [0.25, 0.0, 0.0], [0.0, 0.0, 1.0]]),
+        ),
+        (
+            50.0,
+            np.array([[0.0, 0.125, 0.0], [0.125, 0.0, 0.0], [0.0, 0.125, 0.25]]),
+            np.array([[0.0, 0.0, 0.25], [0.25, 0.0, 0.0], [0.0, 0.25, 0.5]]),
+        ),
+        (
+            500.0,
+            np.array([[0.0, 0.25, 0.0], [0.25, 0.0, 0.0], [0.0, 0.25, 0.5]]),
+            np.array([[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 2.0]]),
+        ),
+    ],
+)
+def test_get_sources(
+    time: float, expected_src_flw: NDArrayFloat, expected_src_conc: NDArrayFloat
+) -> None:
+    time_params = TimeParameters(duration=240000, dt_init=600.0)
+    geometry = Geometry(nx=3, ny=3, dx=2.0, dy=2.0, dz=2.0)
+    fl_params = FlowParameters(1e-5)
+    tr_params = TransportParameters(1e-10, 0.23)
+    gch_params = GeochemicalParameters(0.0, 0.0)
+
+    model = ForwardModel(geometry, time_params, fl_params, tr_params, gch_params)
+
+    model.add_boundary_conditions(ConstantConcentration((slice(0, 1), slice(1, 2))))
+
+    model.add_boundary_conditions(ConstantHead((slice(0, 1), slice(2, 3))))
+
+    model.add_src_term(
+        SourceTerm(
+            "inj",
+            np.array([1, 3]),
+            np.array([0.5, 22.0, 56.0, 99.0]),
+            np.array([4.0, 2.0, 2.0, 4.0]),
+            np.array([1.0, 2.0, 0.0, 4.0]),
+        )
+    )
+    model.add_src_term(
+        SourceTerm(
+            "inj2",
+            np.array([8]),
+            np.array([0.0, 22.0, 123.0, 99.0]),
+            np.array([8.0, 2.0, 2.0, 4.0]),
+            np.array([1.0, 2.0, 0.0, 4.0]),
+        )
+    )
+
+    model.add_src_term(
+        SourceTerm(
+            "prod",
+            np.array([6, 5]),
+            np.array([0.0, 20.0, 77.0, 120.0]),
+            np.array([-12.0, 2.0, -2.0, 4.0]),
+            np.array([1.0, 2.0, 0.0, 4.0]),
+        )
+    )
+
+    _flw_src, _conc_src = model.get_sources(time, geometry)
+    np.testing.assert_equal(_flw_src, expected_src_flw)
+    np.testing.assert_equal(_conc_src, expected_src_conc)

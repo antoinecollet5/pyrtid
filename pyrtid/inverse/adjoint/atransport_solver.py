@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Tuple
 
 import numpy as np
-from scipy.sparse import csc_matrix, lil_matrix
+from scipy.sparse import lil_matrix
 from scipy.sparse.linalg import gmres
 
 from pyrtid.forward.models import (
@@ -22,7 +22,7 @@ from pyrtid.utils.types import NDArrayFloat
 
 def make_transient_adj_transport_matrices(
     geometry: Geometry, tr_model: TransportModel, time_params: TimeParameters
-) -> Tuple[csc_matrix, csc_matrix]:
+) -> Tuple[lil_matrix, lil_matrix]:
     """
     Make matrices for the transient transport.
 
@@ -143,7 +143,7 @@ def make_transient_adj_transport_matrices(
             / geometry.dy**2
         )
 
-    return q_next.tocsc(), q_prev.tocsc()
+    return q_next, q_prev
 
 
 def _add_advection_to_adj_transport_matrices(

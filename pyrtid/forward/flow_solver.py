@@ -296,6 +296,7 @@ def make_transient_flow_matrices(
 def solve_flow_stationary(
     geometry: Geometry,
     fl_model: FlowModel,
+    flw_sources: NDArrayFloat,
     time_index: int,
 ) -> int:
     """
@@ -313,17 +314,19 @@ def solve_flow_stationary(
     preconditioner = get_super_lu_preconditioner(fl_model.q_next.tocsc())
 
     # Add the source terms
-    tmp += fl_model.sources[:, :, time_index].flatten(order="F")
+    tmp += flw_sources.flatten(order="F")
 
     # Solve Ax = b with A sparse using LU preconditioner
     res, exit_code = gmres(
         fl_model.q_next.tocsc(), tmp, M=preconditioner, atol=fl_model.tolerance
     )
-    fl_model.lhead.append(res.reshape(geometry.ny, geometry.nx).T)
 
-    update_u_darcy(fl_model, geometry, time_index)
+    # Here we don't append but we overwrite the already existing head for t0.
+    fl_model.lhead[0] = res.reshape(geometry.ny, geometry.nx).T
 
-    update_u_darcy_div(fl_model, geometry, time_index)
+    compute_u_darcy(fl_model, geometry, time_index)
+
+    compute_u_darcy_div(fl_model, geometry, time_index)
 
     return exit_code
 
@@ -346,11 +349,11 @@ def find_ux_boundary(
     _type_
         _description_
     """
+    out = np.zeros((geometry.nx + 1, geometry.ny))
     head = fl_model.lhead[time_index]
-
     kmean = harmonic_mean(fl_model.permeability[:-1, :], fl_model.permeability[1:, :])
-
-    return -kmean * (head[1:, :] - head[:-1, :]) / geometry.dx
+    out[1:-1, :] = -kmean * (head[1:, :] - head[:-1, :]) / geometry.dx
+    return out
 
 
 def find_uy_boundary(
@@ -371,22 +374,18 @@ def find_uy_boundary(
     _type_
         _description_
     """
+    out = np.zeros((geometry.nx, geometry.ny + 1))
     head = fl_model.lhead[time_index]
-
     # X axis contribution
     kmean = harmonic_mean(fl_model.permeability[:, :-1], fl_model.permeability[:, 1:])
+    out[:, 1:-1] = -kmean * (head[:, 1:] - head[:, :-1]) / geometry.dy
+    return out
 
-    return -kmean * (head[:, 1:] - head[:, :-1]) / geometry.dy
 
-
-def update_u_darcy(fl_model: FlowModel, geometry: Geometry, time_index: int) -> None:
+def compute_u_darcy(fl_model: FlowModel, geometry: Geometry, time_index: int) -> None:
     """Update the darcy velocities at the node boundaries."""
-    fl_model.u_darcy_x[1:-1, :, time_index] = find_ux_boundary(
-        fl_model, geometry, time_index
-    )
-    fl_model.u_darcy_y[:, 1:-1, time_index] = find_uy_boundary(
-        fl_model, geometry, time_index
-    )
+    fl_model.lu_darcy_x.append(find_ux_boundary(fl_model, geometry, time_index))
+    fl_model.lu_darcy_y.append(find_uy_boundary(fl_model, geometry, time_index))
     # Handle constant head
     # update_u_darcy_cst_head_nodes(fl_model, geometry, time_index)
 
@@ -444,41 +443,37 @@ def update_u_darcy_cst_head_nodes(
     # 2) For constant head, define the darcy velocities as -
 
 
-def update_u_darcy_div(
+def compute_u_darcy_div(
     fl_model: FlowModel, geometry: Geometry, time_index: int
 ) -> None:
     """Update the darcy velocities divergence (at the node centers)."""
 
     # Reset to zero
-    fl_model.u_darcy_div[:, :, time_index] = 0.0
+    u_darcy_div = np.zeros((geometry.nx, geometry.ny))
 
     # x contribution -> multiply by the frontier (dy and not dx)
-    fl_model.u_darcy_div[:, :, time_index] -= (
-        fl_model.u_darcy_x[:-1, :, time_index] * geometry.dy
-    )
-    fl_model.u_darcy_div[:, :, time_index] += (
-        fl_model.u_darcy_x[1:, :, time_index] * geometry.dy
-    )
+    u_darcy_div -= fl_model.lu_darcy_x[time_index][:-1, :] * geometry.dy
+    u_darcy_div += fl_model.lu_darcy_x[time_index][1:, :] * geometry.dy
 
     # y contribution  -> multiply by the frontier (dx and not dy)
-    fl_model.u_darcy_div[:, :, time_index] -= (
-        fl_model.u_darcy_y[:, :-1, time_index] * geometry.dx
-    )
-    fl_model.u_darcy_div[:, :, time_index] += (
-        fl_model.u_darcy_y[:, 1:, time_index] * geometry.dx
-    )
+    u_darcy_div -= fl_model.lu_darcy_y[time_index][:, :-1] * geometry.dx
+    u_darcy_div += fl_model.lu_darcy_y[time_index][:, 1:] * geometry.dx
 
     # Take the surface into account
-    fl_model.u_darcy_div[:, :, time_index] /= geometry.mesh_area
+    u_darcy_div /= geometry.mesh_area
 
     # Constant head handling - null divergence
     cst_idx = fl_model.cst_head_indices
-    fl_model.u_darcy_div[cst_idx[0], cst_idx[1], time_index] = 0
+    u_darcy_div[cst_idx[0], cst_idx[1]] = 0
+
+    fl_model.lu_darcy_div.append(u_darcy_div)
 
 
 def solve_flow_transient_semi_implicit(
     geometry: Geometry,
     fl_model: FlowModel,
+    flw_sources: NDArrayFloat,
+    flw_sources_old: NDArrayFloat,
     time_params: TimeParameters,
     time_index: int,
 ) -> int:
@@ -506,9 +501,8 @@ def solve_flow_transient_semi_implicit(
 
     # Add the source terms
     sources = (
-        fl_model.crank_nicolson * fl_model.sources[:, :, time_index].flatten(order="F")
-        + (1.0 - fl_model.crank_nicolson)
-        * fl_model.sources[:, :, time_index - 1].flatten(order="F")
+        fl_model.crank_nicolson * flw_sources.flatten(order="F")
+        + (1.0 - fl_model.crank_nicolson) * flw_sources_old.flatten(order="F")
     ) / fl_model.storage_coefficient
 
     tmp += sources
@@ -519,8 +513,8 @@ def solve_flow_transient_semi_implicit(
     )
     fl_model.lhead.append(res.reshape(geometry.ny, geometry.nx).T)
 
-    update_u_darcy(fl_model, geometry, time_index)
+    compute_u_darcy(fl_model, geometry, time_index)
 
-    update_u_darcy_div(fl_model, geometry, time_index)
+    compute_u_darcy_div(fl_model, geometry, time_index)
 
     return exit_code

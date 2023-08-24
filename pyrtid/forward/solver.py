@@ -6,6 +6,8 @@ import logging
 import numpy as np
 
 from .flow_solver import (
+    compute_u_darcy,
+    compute_u_darcy_div,
     make_stationary_flow_matrices,
     make_transient_flow_matrices,
     solve_flow_stationary,
@@ -80,19 +82,24 @@ class ForwardSolver:
         """Solve the forward problem."""
         # Reinit all
         self.model.reinit()
-        # Update sources
-        self.model.fl_model.sources = self.model.get_fl_sources()
-        self.model.tr_model.sources = self.model.get_tr_sources()
 
         # If stationary -> equilibrate the initial heads with sources
         # and boundary conditions
         if self.model.fl_model.regime == FlowRegime.STATIONARY:
             self.initialize_flow_matrices(FlowRegime.STATIONARY)
+            # Get sources for the stationary flow
+            flw_sources, _ = self.model.get_sources(
+                self.model.time_params.time_elapsed, self.model.geometry
+            )
             solve_flow_stationary(
                 self.model.geometry,
                 self.model.fl_model,
+                flw_sources,
                 0,
             )
+        else:
+            compute_u_darcy(self.model.fl_model, self.model.geometry, 0)
+            compute_u_darcy_div(self.model.fl_model, self.model.geometry, 0)
 
         # Update the flow matrices depending on the flow regime (not modified along
         # the timesteps because permeability and storage coefficients are constant).
@@ -119,11 +126,21 @@ class ForwardSolver:
         # Save the timesteps to the list of timesteps
         self.model.time_params.save_dt()
 
+        flw_sources_old, conc_sources_old = self.model.get_sources(
+            self.model.time_params.time_elapsed - self.model.time_params.dt,
+            self.model.geometry,
+        )
+        flw_sources, conc_sources = self.model.get_sources(
+            self.model.time_params.time_elapsed, self.model.geometry
+        )
+
         # Solve the flow -> no iterations since we don't have variable permeability nor
         # porosity/diffusion.
         solve_flow_transient_semi_implicit(
             self.model.geometry,
             self.model.fl_model,
+            flw_sources,
+            flw_sources_old,
             self.model.time_params,
             time_index,
         )
@@ -131,7 +148,7 @@ class ForwardSolver:
         # Now the reactive-transport iterations begin...
 
         # Reset the number of coupling (Fixed Point) iterations for the current time
-        self.model.time_params.nfpi = 1
+        self.model.time_params.nfpi = 0
 
         # Convergence flag
         has_converged = False
@@ -156,6 +173,8 @@ class ForwardSolver:
                 self.model.geometry,
                 self.model.fl_model,
                 self.model.tr_model,
+                conc_sources,
+                conc_sources_old,
                 self.model.time_params,
                 time_index,
                 self.model.time_params.nfpi,
