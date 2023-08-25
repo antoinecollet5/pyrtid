@@ -114,6 +114,12 @@ Provide functions to perform mean and their first derivative.
     dxi_arithmetic_mean
     harmonic_mean
     dxi_harmonic_mean
+    MeanType
+    get_mean_values_for_last_axis
+    amean_gradient,
+    gmean_gradient,
+    hmean_gradient
+    get_mean_values_gradient_for_last_axis
 
 .. currentmodule:: pyrtid.utils.spatial_filters
 
@@ -166,10 +172,16 @@ from pyrtid.utils.grid import (
     span_to_node_numbers_2d,
 )
 from pyrtid.utils.means import (
+    MeanType,
+    amean_gradient,
     arithmetic_mean,
     dxi_arithmetic_mean,
     dxi_harmonic_mean,
+    get_mean_values_for_last_axis,
+    get_mean_values_gradient_for_last_axis,
+    gmean_gradient,
     harmonic_mean,
+    hmean_gradient,
 )
 from pyrtid.utils.operators import (
     get_super_lu_preconditioner,
@@ -218,6 +230,12 @@ __all__ = [
     "dxi_arithmetic_mean",
     "harmonic_mean",
     "dxi_harmonic_mean",
+    "MeanType",
+    "get_mean_values_for_last_axis",
+    "amean_gradient",
+    "gmean_gradient",
+    "hmean_gradient",
+    "get_mean_values_gradient_for_last_axis",
     "object_or_object_sequence_to_list",
     "span_to_node_numbers_2d",
     "span_to_node_numbers_3d",
