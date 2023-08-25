@@ -1,10 +1,9 @@
 import numpy as np
 
 from pyrtid.inverse.preconditioner import expit, logit
-from pyrtid.utils import NDArrayFloat
 
 
-def test_logit() -> NDArrayFloat:
+def test_logit() -> None:
     # Example 1
     min1 = 0.51
     max1 = 5049
@@ -19,4 +18,4 @@ def test_logit() -> NDArrayFloat:
     y = logit(x, min2 - 0.1 * min2, max2 + 0.1 * min2)
     y2 = expit(x, min2 - 0.1 * min2, max2 + 0.1 * min2)
 
-    return y + y2
+    assert y + y2 is not None

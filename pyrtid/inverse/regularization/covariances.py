@@ -285,13 +285,15 @@ class FFTCovarianceMatrix(CovarianceMatrix):
     ) -> NDArrayFloat:
         """Solve Ax = b, with A, the current covariance matrix instance."""
         residual = CallBack()
-        x, info = lgmres(
+        x, info = gmres(
             self,
             b,
             tol=tol,
             maxiter=maxiter,
             callback=residual,
             M=self.preconditioner,
+            atol=0.0,
+            callback_type="legacy",
         )
         self.solvmatvecs += residual.itercount
         return x
@@ -354,6 +356,8 @@ class HCovarianceMatrix(CovarianceMatrix):
             maxiter=maxiter,
             callback=residual,
             M=self.preconditioner,
+            atol=0.0,
+            callback_type="legacy",
         )
         self.solvmatvecs += residual.itercount
         return x
@@ -465,8 +469,9 @@ class SparseInvCovarianceMatrix(CovarianceMatrix):
             tol=tol,
             maxiter=maxiter,
             callback=residual,
-            atol=tol,
+            atol=0.0,
             M=self.preconditioner,
+            callback_type="legacy",
         )
         self.solvmatvecs += residual.itercount
         return x

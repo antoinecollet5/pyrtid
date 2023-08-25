@@ -39,7 +39,7 @@ class AdjointFlowModel:
         # Generally, not so many observation, so use a sparse matrix
         # instead of a dense array
         self.a_head_sources: lil_matrix = lil_matrix(
-            (geometry.nx, geometry.ny, time_params.nt), dtype=np.float64
+            (geometry.nx * geometry.ny, time_params.nt), dtype=np.float64
         )
         self.q_prev = lil_matrix(geometry.nx * geometry.ny)
         self.q_next = lil_matrix(geometry.nx * geometry.ny)
@@ -62,7 +62,7 @@ class AdjointTransportModel:
     q_next: lil_matrix
     a_gch_src_term: NDArrayFloat
     afpi_eps: float
-    is_numerical_acceleration: bool
+    is_adj_numerical_acceleration: bool
     """
 
     __slots__ = [
@@ -77,13 +77,15 @@ class AdjointTransportModel:
         "q_next",
         "a_gch_src_term",
         "afpi_eps",
-        "is_numerical_acceleration",
+        "is_adj_numerical_acceleration",
     ]
 
     def __init__(
         self,
         geometry: Geometry,
         time_params: TimeParameters,
+        afpi_eps: float = 1e-5,
+        is_adj_numerical_acceleration: bool = False,
     ) -> None:
         """
         Initialize the instance.
@@ -123,6 +125,8 @@ class AdjointTransportModel:
         self.q_next_diffusion = lil_matrix(geometry.nx * geometry.ny)
         self.q_prev = lil_matrix(geometry.nx * geometry.ny)
         self.q_next = lil_matrix(geometry.nx * geometry.ny)
+        self.afpi_eps = afpi_eps
+        self.is_adj_numerical_acceleration = is_adj_numerical_acceleration
 
 
 class AdjointModel:
@@ -135,7 +139,7 @@ class AdjointModel:
         geometry: Geometry,
         time_params: TimeParameters,
         afpi_eps: float,
-        is_numerical_acceleration: float,
+        is_adj_numerical_acceleration: bool,
     ) -> None:
         """
         Initialize the instance.
@@ -153,7 +157,7 @@ class AdjointModel:
         self.time_params: TimeParameters = time_params
         self.a_fl_model: AdjointFlowModel = AdjointFlowModel(geometry, time_params)
         self.a_tr_model: AdjointTransportModel = AdjointTransportModel(
-            geometry, time_params
+            geometry, time_params, afpi_eps, is_adj_numerical_acceleration
         )
 
     @property
@@ -194,13 +198,13 @@ class AdjointModel:
         """Set the adjoint sources to the correct model."""
         try:
             # case obs.location is a numpy array
-            self.a_tr_model.a_conc_sources[obs.location, obs.timesteps] += (
-                obs.values - model.tr_model.conc[obs.location, obs.timesteps].ravel()
+            self.a_tr_model.a_conc_sources[obs.location, obs.times] += (
+                obs.values - model.tr_model.conc[obs.location, obs.times].ravel()
             ) / (obs.uncertainties**2)
         except IndexError:
             # case obs.location is a tuple of slices
-            self.a_tr_model.a_conc_sources[(*obs.location, obs.timesteps)] += (
-                obs.values - model.tr_model.conc[(*obs.location, obs.timesteps)].ravel()
+            self.a_tr_model.a_conc_sources[(*obs.location, obs.times)] += (
+                obs.values - model.tr_model.conc[(*obs.location, obs.times)].ravel()
             ) / (obs.uncertainties**2)
 
     def set_adjoint_sources_from_head_obs(
@@ -209,11 +213,11 @@ class AdjointModel:
         """Set the adjoint sources to the correct model."""
         try:
             # case obs.location is a numpy array
-            self.a_fl_model.a_head_sources[obs.location, obs.timesteps] += (
-                obs.values - model.fl_model.head[obs.location, obs.timesteps].ravel()
+            self.a_fl_model.a_head_sources[obs.location, obs.times] += (
+                obs.values - model.fl_model.head[obs.location, obs.times].ravel()
             ) / (obs.uncertainties**2)
         except IndexError:
             # case obs.location is a tuple of slices
-            self.a_fl_model.a_head_sources[(*obs.location, obs.timesteps)] += (
-                obs.values - model.fl_model.head[(*obs.location, obs.timesteps)].ravel()
+            self.a_fl_model.a_head_sources[(*obs.location, obs.times)] += (
+                obs.values - model.fl_model.head[(*obs.location, obs.times)].ravel()
             ) / (obs.uncertainties**2)

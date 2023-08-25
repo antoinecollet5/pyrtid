@@ -295,12 +295,15 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
     def adj_model(self, adj_model: Optional[AdjointModel]) -> None:
         self._adj_model = adj_model
 
-    def _init_adjoint_model(self) -> None:
+    def _init_adjoint_model(
+        self, afpi_eps: float, is_numerical_acceleration: bool = False
+    ) -> None:
         """Initialize a new adjoint model for the executor."""
         self.adj_model = AdjointModel(
             self.fwd_model.geometry,
             self.fwd_model.time_params,
-            self.fwd_model.gch_params,
+            afpi_eps,
+            is_numerical_acceleration,
         )
         # Add the sources
         for obs in object_or_object_sequence_to_list(self.inv_model.observables):
@@ -1118,6 +1121,8 @@ class ScipySolverConfig(BaseSolverConfig):
     is_use_adjoint: bool = True
     is_regularization_at_first_round: bool = True
     reg_factor: Union[float, str] = "auto"
+    afpi_eps: float = 1e-5
+    is_a_numerical_acceleratiion: bool = False
 
 
 class ScipyInversionExecutor(BaseInversionExecutor[ScipySolverConfig]):
@@ -1129,7 +1134,10 @@ class ScipyInversionExecutor(BaseInversionExecutor[ScipySolverConfig]):
         # Create an adjoint model only if needed
         self.adj_model = None
         if self.solver_config.is_use_adjoint:
-            self._init_adjoint_model()
+            self._init_adjoint_model(
+                self.solver_config.afpi_eps,
+                self.solver_config.is_a_numerical_acceleratiion,
+            )
 
     def _get_solver_name(self) -> str:
         """Return the solver name."""

@@ -16,10 +16,10 @@ from pyrtid.utils.spatial_filters import GaussianFilter
         ((1, 2, 3, 4), 5),
     ],
 )
-def test_gaussian_filter(sigmas, iteration) -> GaussianFilter:
+def test_gaussian_filter(sigmas, iteration) -> None:
     _filter = GaussianFilter(sigmas=sigmas)
     _filter.filter(np.random.random((200, 200)), iteration=iteration)
-    return _filter
+    assert _filter is not None
 
 
 def test_gaussian_filter_error() -> None:

@@ -293,6 +293,8 @@ class GeochemicalParameters:
         Specific area in [m2/mol]. The default is 13.5.
     Ks: float, optional
         Solubility constant (no unit). The default is 6.3e-4.
+    Ms: float, optional
+        Molar mass in g/mol.
     """
 
     def __init__(
@@ -302,6 +304,7 @@ class GeochemicalParameters:
         kv: float = -6.9e-9,
         As: float = 13.5,
         Ks: float = 6.3e-4,
+        Ms: float = 270,
     ) -> None:
         """Initialize the instance."""
         self.conc: float = conc
@@ -309,6 +312,7 @@ class GeochemicalParameters:
         self.kv: float = kv
         self.As: float = As
         self.Ks: float = Ks
+        self.Ms: float = Ms
 
 
 class Geometry:
@@ -620,6 +624,15 @@ class FlowModel:
         """
         return np.transpose(np.array(self.lu_darcy_div), axes=(1, 2, 0))
 
+    @property
+    def pressure(self) -> NDArrayFloat:
+        """
+        Return the pressure in pascals (Pa).
+
+        This is read-only (for now).
+        """
+        return self.head
+
     def set_initial_head(
         self, values: Union[float, int, NDArrayInt, NDArrayFloat]
     ) -> None:
@@ -763,6 +776,7 @@ class TransportModel:
         "tolerance",
         "is_numerical_acceleration",
         "fpi_eps",
+        "molar_mass",
     ]
 
     def __init__(
@@ -800,6 +814,7 @@ class TransportModel:
         self.tolerance = tr_params.tolerance
         self.is_numerical_acceleration = tr_params.is_numerical_acceleration
         self.fpi_eps = tr_params.fpi_eps
+        self.molar_mass = gch_params.Ms
 
     @property
     def conc(self) -> NDArrayFloat:
@@ -823,6 +838,11 @@ class TransportModel:
     def effective_diffusion(self) -> NDArrayFloat:
         """Return the effective diffusion (diffusion * porosity)."""
         return self.diffusion * self.porosity
+
+    @property
+    def density(self) -> NDArrayFloat:
+        """Return the density of the aqueous phase in g/l."""
+        return self.conc * self.molar_mass
 
     def set_initial_grade(
         self, values: Union[float, int, NDArrayInt, NDArrayFloat]

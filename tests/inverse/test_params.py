@@ -1,5 +1,5 @@
 """Tests for the adjustable parameter class."""
-from contextlib import contextmanager
+from contextlib import nullcontext as does_not_raise
 from typing import Any, Dict
 
 import numpy as np
@@ -10,11 +10,6 @@ from pyrtid.inverse.regularization import (
     TikhonovRegularizatorAnisotropic,
     TVRegularizatorIsotropic,
 )
-
-
-@contextmanager
-def does_not_raise():
-    yield
 
 
 def inverse_function(x: np.ndarray) -> np.ndarray:
@@ -143,7 +138,7 @@ def identify_function(x: np.ndarray) -> np.ndarray:
 )
 def test_init(kwargs, expected_exception):
     with expected_exception:
-        return AdjustableParameter(**kwargs)
+        assert AdjustableParameter(**kwargs) is not None
 
 
 @pytest.fixture
@@ -168,12 +163,12 @@ def example_kwargs2() -> Dict[str, Any]:
     }
 
 
-def test_to_string(example_kwargs):
+def test_to_string(example_kwargs) -> None:
     param = AdjustableParameter(**example_kwargs)
     str(param)
 
 
-def test_equals_and_update(example_kwargs, example_kwargs2):
+def test_equals_and_update(example_kwargs, example_kwargs2) -> None:
     param1 = AdjustableParameter(**example_kwargs)
     param2 = AdjustableParameter(**example_kwargs2)
 
@@ -183,7 +178,7 @@ def test_equals_and_update(example_kwargs, example_kwargs2):
     assert param1 == param2
 
 
-def test_get_min_max_values(example_kwargs, example_kwargs2):
+def test_get_min_max_values(example_kwargs, example_kwargs2) -> None:
     param1 = AdjustableParameter(**example_kwargs)
     param1.values[0, 0] = 15.0
     param2 = AdjustableParameter(**example_kwargs2)
@@ -194,7 +189,7 @@ def test_get_min_max_values(example_kwargs, example_kwargs2):
     assert np.isnan(param2.max_value)
 
 
-def test_get_bounds(example_kwargs):
+def test_get_bounds(example_kwargs) -> None:
     # default behavior
     param = AdjustableParameter("any_param_name", values=np.ones((5, 1)))
     np.testing.assert_array_equal(
@@ -210,7 +205,7 @@ def test_get_bounds(example_kwargs):
     )
 
 
-def test_get_sliced_field(example_kwargs):
+def test_get_sliced_field(example_kwargs) -> None:
     for span, expected in [
         [slice(None), np.ones([5, 5]) * np.log(2.0)],
         [(slice(2, 4), slice(1, 4)), np.ones([2, 3]) * np.log(2.0)],
@@ -223,7 +218,7 @@ def test_get_sliced_field(example_kwargs):
         )
 
 
-def test_get_values_from_model_field(example_kwargs):
+def test_get_values_from_model_field(example_kwargs) -> None:
     for span, expected in [
         [slice(None), np.ones([5, 5])],
         [(slice(2, 4), slice(1, 4)), np.ones([5, 5])],
@@ -234,7 +229,7 @@ def test_get_values_from_model_field(example_kwargs):
         np.testing.assert_array_equal(expected, param.values)
 
 
-def test_update_field_with_param_values(example_kwargs):
+def test_update_field_with_param_values(example_kwargs) -> None:
     for span, expected in [
         [slice(None), np.array([[1, 2, 3], [1, 2, 3], [1, 2, 3]])],
         [(slice(1, 3), slice(1, 3)), np.array([[0, 2, 3], [0, 2, 3], [1, 2, 3]])],
@@ -248,7 +243,7 @@ def test_update_field_with_param_values(example_kwargs):
         np.testing.assert_array_equal(expected, field)
 
 
-def test_get_j_and_g_reg(example_kwargs):
+def test_get_j_and_g_reg(example_kwargs) -> None:
     param = AdjustableParameter(**example_kwargs)
     assert param.get_regularization_loss_function() == 0.0
     np.testing.assert_array_equal(

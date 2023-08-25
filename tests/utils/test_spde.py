@@ -1,7 +1,6 @@
 """Unit tests for the spde utilities."""
 
-from contextlib import contextmanager
-from typing import Optional
+from contextlib import nullcontext as does_not_raise
 
 import numpy as np
 import pytest
@@ -17,12 +16,6 @@ from pyrtid.utils.spde import (
     simu_c,
     simu_nc,
 )
-from pyrtid.utils.types import NDArrayFloat
-
-
-@contextmanager
-def does_not_raise():
-    yield
 
 
 def _get_precision_matrix(alpha) -> csc_matrix:
@@ -89,9 +82,9 @@ def test_get_laplacian_matrix(kappa) -> None:
         ),
     ],
 )
-def test_get_precision_matrix(alpha, expected_exception) -> Optional[csc_matrix]:
+def test_get_precision_matrix(alpha, expected_exception) -> None:
     with expected_exception:
-        return _get_precision_matrix(alpha)
+        assert _get_precision_matrix(alpha).shape == (45, 45)
 
 
 @pytest.mark.parametrize(
@@ -103,8 +96,8 @@ def test_get_precision_matrix(alpha, expected_exception) -> Optional[csc_matrix]
         (5, None),  # no random_state given
     ],
 )
-def test_simu_nc(alpha, random_state) -> NDArrayFloat:
-    return simu_nc(_get_cholQ(alpha), random_state)
+def test_simu_nc(alpha, random_state) -> None:
+    assert simu_nc(_get_cholQ(alpha), random_state).shape == (45,)
 
 
 @pytest.mark.parametrize(
@@ -115,10 +108,10 @@ def test_simu_nc(alpha, random_state) -> NDArrayFloat:
         (_get_precision_matrix(3.0), None, np.array([0.1, 0.2, 0.7])),
     ],
 )
-def test_kriging(Q, cholQ, dat_var) -> NDArrayFloat:
+def test_kriging(Q, cholQ, dat_var) -> None:
     dat = np.array([5.5, 0.6, 7.9])
     dat_indices = np.array([5, 6, 10])
-    return kriging(Q, dat, dat_indices, cholQ, dat_var=dat_var)
+    assert kriging(Q, dat, dat_indices, cholQ, dat_var=dat_var).shape == (45,)
 
 
 def test_simu_c() -> None:

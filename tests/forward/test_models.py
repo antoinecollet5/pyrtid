@@ -1,7 +1,7 @@
 """Some basic tests for the forward model."""
 
 import re
-from contextlib import contextmanager
+from contextlib import nullcontext as does_not_raise
 from typing import Tuple
 
 import numpy as np
@@ -28,11 +28,6 @@ geometry = Geometry(nx=20, ny=20, dx=4.5, dy=7.5)
 fl_params = FlowParameters(1e-5)
 tr_params = TransportParameters(1e-10, 0.23)
 gch_params = GeochemicalParameters(0.0, 0.0)
-
-
-@contextmanager
-def does_not_raise():
-    yield
 
 
 @pytest.mark.parametrize(
