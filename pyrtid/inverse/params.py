@@ -273,7 +273,7 @@ class AdjustableParameter:
             raise ValueError("lbound should be strictly inferior to ubound.")
 
     def __str__(self) -> str:
-        """Represent the class object as a string."""
+        """Return a string representation of the instance."""
         return json.dumps(
             {
                 "name": self.name,

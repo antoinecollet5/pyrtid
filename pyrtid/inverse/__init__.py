@@ -67,10 +67,13 @@ Observables and utilities
    :toctree: _autosummary
 
     Observable
-    ls_loss_function
-    get_predictions_matching_observations
-    get_observables_values_as_1d_vector
+    StateVariable
     get_observables_uncertainties_as_1d_vector
+    get_observables_values_as_1d_vector
+    get_predictions_matching_observations
+    get_sorted_observable_times
+    get_sorted_observable_uncertainties
+    get_sorted_observable_values
     get_values_matching_node_indices
 
 """
@@ -105,6 +108,9 @@ from pyrtid.inverse.obs import (
     get_observables_uncertainties_as_1d_vector,
     get_observables_values_as_1d_vector,
     get_predictions_matching_observations,
+    get_sorted_observable_times,
+    get_sorted_observable_uncertainties,
+    get_sorted_observable_values,
     get_values_matching_node_indices,
 )
 from pyrtid.inverse.params import (
@@ -140,6 +146,9 @@ __all__ = [
     "get_parameters_bounds",
     "Observable",
     "StateVariable",
+    "get_sorted_observable_times",
+    "get_sorted_observable_values",
+    "get_sorted_observable_uncertainties",
     "get_predictions_matching_observations",
     "get_observables_values_as_1d_vector",
     "get_observables_uncertainties_as_1d_vector",

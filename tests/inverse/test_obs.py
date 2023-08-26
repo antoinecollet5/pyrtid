@@ -5,13 +5,103 @@ import pytest
 
 import pyrtid.forward as dmfwd
 from pyrtid.inverse.obs import (
+    Observable,
     StateVariable,
     get_array_from_state_variable,
+    get_interp_simu_values_matching_obs_times,
+    get_observables_uncertainties_as_1d_vector,
+    get_observables_values_as_1d_vector,
+    get_predictions_matching_observations,
+    get_sorted_observable_times,
+    get_sorted_observable_uncertainties,
+    get_sorted_observable_values,
     get_times_idx_before_after_obs,
     get_values_matching_node_indices,
     get_weights,
 )
+from pyrtid.utils.means import MeanType
 from pyrtid.utils.types import NDArrayFloat, NDArrayInt
+
+
+@pytest.mark.parametrize(
+    "state_variable, node_indices, times, "
+    "values, uncertainties, mean_type, expected_exception",
+    (
+        (
+            StateVariable.CONCENTRATION,
+            [1],
+            np.array([1.0, 2.0]),
+            np.array([1.0, 2.0]),
+            np.array([1.0, 2.0]),
+            None,
+            does_not_raise(),
+        ),
+        (
+            StateVariable.PERMEABILITY,
+            [1, 2],
+            np.array([1.0, 2.0]),
+            np.array([1.0, 2.0]),
+            None,
+            None,
+            does_not_raise(),
+        ),
+        (
+            StateVariable.CONCENTRATION,
+            np.array([1, 2, 4, 6]),
+            np.array([1.0, 2.0]),
+            np.array([1.0, 2.0]),
+            5.0,
+            MeanType.ARITHMETIC,
+            does_not_raise(),
+        ),
+        (
+            StateVariable.CONCENTRATION,
+            np.array([1, 2, 4, 6]),
+            np.array([1.0, 2.0]),
+            np.array([1.0, 2.0, 5.0]),
+            np.array([5.0, 5.0]),
+            MeanType.GEOMETRIC,
+            pytest.raises(
+                ValueError,
+                match="``uncertainties`` parameter should be a float value or a numpy "
+                "array with the same dimension as the ``values`` parameter.",
+            ),
+        ),
+        (
+            StateVariable.CONCENTRATION,
+            np.array([1, 2, 4, 6]),
+            np.array([1.0, 2.0, 5.0]),
+            np.array([1.0, 2.0]),
+            np.array([5.0, 5.0]),
+            None,
+            pytest.raises(
+                ValueError,
+                match="``times`` parameter should be a float value or a numpy "
+                "array with the same dimension as the ``values`` parameter.",
+            ),
+        ),
+    ),
+)
+def test_observable_init(
+    state_variable,
+    node_indices,
+    times,
+    values,
+    uncertainties,
+    mean_type,
+    expected_exception,
+) -> None:
+    with expected_exception:
+        str(
+            Observable(
+                state_variable,
+                node_indices,
+                times,
+                values,
+                uncertainties,
+                mean_type,
+            )
+        )
 
 
 def test_get_times_idx_before_after_obs() -> None:
@@ -62,7 +152,7 @@ def test_get_values_matching_node_indices(
 ) -> None:
     # 3D arrays -> with time axis
     input_values = np.repeat(
-        np.array([[1, 4], [2, 5], [3, 6]])[:, :, np.newaxis], 5, axis=-1
+        np.array([[1.0, 4.0], [2.0, 5.0], [3.0, 6.0]])[:, :, np.newaxis], 5, axis=-1
     )
     np.testing.assert_allclose(
         get_values_matching_node_indices(node_indices, input_values),
@@ -125,3 +215,232 @@ def test_get_array_from_state_variable(
             20,
             20,
         )
+
+
+@pytest.mark.parametrize(
+    "times, values, uncertainties, hm_end_time, expected_times,"
+    " expected_values, expected_uncertainties",
+    (
+        (
+            np.array([1.0, 2.0]),
+            np.array([1.0, 2.0]),
+            5.0,
+            None,
+            np.array([1.0, 2.0]),
+            np.array([1.0, 2.0]),
+            np.array([5.0, 5.0]),
+        ),
+        (
+            np.array([2.0, 5.23, 1.25, 6.9, 0.2]),
+            np.array([2.2, 5.23, 1.25, 6.1, 0.3]),
+            np.array([1.2, 1.2, 3.5, 3.6, 2.7]),
+            None,
+            np.array([0.2, 1.25, 2.0, 5.23, 6.9]),
+            np.array([0.3, 1.25, 2.2, 5.23, 6.1]),
+            np.array([2.7, 3.5, 1.2, 1.2, 3.6]),
+        ),
+        (
+            np.array([2.0, 5.23, 1.25, 6.9, 0.2]),
+            np.array([2.2, 5.23, 1.25, 6.1, 0.3]),
+            np.array([1.2, 1.2, 3.5, 3.6, 2.7]),
+            5.0,
+            np.array([0.2, 1.25, 2.0]),
+            np.array([0.3, 1.25, 2.2]),
+            np.array([2.7, 3.5, 1.2]),
+        ),
+    ),
+)
+def test_get_obs_attribute_sorted_by_ascending_times(
+    times,
+    values,
+    uncertainties,
+    hm_end_time,
+    expected_times,
+    expected_values,
+    expected_uncertainties,
+) -> None:
+    pass
+
+    obs = Observable(StateVariable.CONCENTRATION, [1], times, values, uncertainties)
+
+    np.testing.assert_allclose(
+        get_sorted_observable_times(obs, hm_end_time), expected_times
+    )
+    np.testing.assert_allclose(
+        get_sorted_observable_values(obs, hm_end_time), expected_values
+    )
+    np.testing.assert_allclose(
+        get_sorted_observable_uncertainties(obs, hm_end_time), expected_uncertainties
+    )
+
+
+@pytest.mark.parametrize(
+    "is_use_list_of_obs, hm_end_time, expected_values, expected_uncertainties",
+    (
+        (
+            False,
+            None,
+            np.array([0.3, 1.25, 2.2, 5.23, 6.1]),
+            np.array([0.3, 1.25, 2.4, 5.23, 6.1]),
+        ),
+        (False, 5.0, np.array([0.3, 1.25, 2.2]), np.array([0.3, 1.25, 2.4])),
+        (
+            True,
+            None,
+            np.array(
+                [
+                    0.3,
+                    1.25,
+                    2.2,
+                    5.23,
+                    6.1,
+                    0.3,
+                    1.25,
+                    2.2,
+                    5.23,
+                    6.1,
+                    0.3,
+                    1.25,
+                    2.2,
+                    5.23,
+                    6.1,
+                ]
+            ),
+            np.array(
+                [
+                    0.3,
+                    1.25,
+                    2.4,
+                    5.23,
+                    6.1,
+                    0.3,
+                    1.25,
+                    2.4,
+                    5.23,
+                    6.1,
+                    0.3,
+                    1.25,
+                    2.4,
+                    5.23,
+                    6.1,
+                ]
+            ),
+        ),
+        (
+            True,
+            5.0,
+            np.array([0.3, 1.25, 2.2, 0.3, 1.25, 2.2, 0.3, 1.25, 2.2]),
+            np.array([0.3, 1.25, 2.4, 0.3, 1.25, 2.4, 0.3, 1.25, 2.4]),
+        ),
+    ),
+)
+def test_get_observables_values_as_1d_vector(
+    is_use_list_of_obs, hm_end_time, expected_values, expected_uncertainties
+) -> None:
+    obs1 = Observable(
+        StateVariable.CONCENTRATION,
+        [1],
+        np.array([2.0, 5.23, 1.25, 6.9, 0.2]),
+        np.array([2.2, 5.23, 1.25, 6.1, 0.3]),
+        np.array([2.4, 5.23, 1.25, 6.1, 0.3]),  # first value different
+    )
+
+    if is_use_list_of_obs:
+        obs = (obs1, obs1, obs1)
+    else:
+        obs = obs1
+
+    np.testing.assert_allclose(
+        get_observables_values_as_1d_vector(obs, hm_end_time), expected_values
+    )
+
+    np.testing.assert_allclose(
+        get_observables_uncertainties_as_1d_vector(obs, hm_end_time),
+        expected_uncertainties,
+    )
+
+
+@pytest.mark.parametrize(
+    "obs_times,simu_times,simu_values,expected_output",
+    [
+        (
+            np.array([0.0, 2.0, 5.0, 5.6]),
+            np.array([0.0, 2.0, 5.0, 6.0]),
+            np.array([1.0, 2.0, 3.0, 4.0]),
+            np.array([1.0, 2.0, 3.0, 3.6]),
+        ),
+        (
+            np.array([1.5, 5.0]),
+            np.array([0.0, 2.0, 3.0, 4.0, 5.0]),
+            np.array([1.0, 2.0, 3.0, 6.0, 7.0]),
+            np.array([1.75, 7.0]),
+        ),
+    ],
+)
+def test_get_interp_simu_values_matching_obs_times(
+    obs_times: NDArrayFloat,
+    simu_times: NDArrayFloat,
+    simu_values: NDArrayFloat,
+    expected_output: NDArrayFloat,
+) -> None:
+    np.testing.assert_allclose(
+        get_interp_simu_values_matching_obs_times(obs_times, simu_times, simu_values),
+        expected_output,
+    )
+
+
+@pytest.mark.parametrize(
+    "hm_end_time, expected_output",
+    [
+        (
+            None,
+            np.array([1.0, 1.5, 2.0, 2.56, 1.0, 1.2, 1.3]),
+        ),
+        (
+            1.0,
+            np.array([1.0, 1.5, 2.0, 1.0, 1.2, 1.3]),
+        ),
+    ],
+)
+def test_get_predictions_matching_observations(hm_end_time, expected_output) -> None:
+    time_params = dmfwd.TimeParameters(duration=1.0, dt_init=1.0)
+    geometry = dmfwd.Geometry(nx=20, ny=20, dx=4.5, dy=7.5)
+    fl_params = dmfwd.FlowParameters(1e-5)
+    tr_params = dmfwd.TransportParameters(1.0, 0.23)
+    gch_params = dmfwd.GeochemicalParameters(1.0, 0.0)
+
+    model = dmfwd.ForwardModel(
+        geometry,
+        time_params,
+        fl_params,
+        tr_params,
+        gch_params,
+    )
+
+    # generate synthetic data
+    model.tr_model.lconc.append(np.ones((20, 20)) * 2.0)
+    model.tr_model.lconc.append(np.ones((20, 20)) * 3.0)
+    model.time_params.save_dt()
+    model.time_params.save_dt()
+
+    obs1 = Observable(
+        StateVariable.CONCENTRATION,
+        node_indices=[2, 4],
+        times=np.array([0.0, 0.5, 1.0, 1.56, 2.6]),
+        values=np.array([1, 1, 1, 1, 1]),
+        uncertainties=1.0,
+    )
+
+    obs2 = Observable(
+        StateVariable.CONCENTRATION,
+        node_indices=[9, 10, 11],
+        times=np.array([0.0, 0.2, 0.3, 4.3, 5.6]),
+        values=np.array([1, 1, 1, 1, 1]),
+        uncertainties=1.0,
+    )
+
+    np.testing.assert_allclose(
+        get_predictions_matching_observations(model, [obs1, obs2], hm_end_time),
+        expected_output,
+        rtol=1e-2,
+    )
