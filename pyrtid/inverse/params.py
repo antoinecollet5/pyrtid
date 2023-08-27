@@ -112,7 +112,7 @@ class AdjustableParameter:
         values: Optional[NDArrayFloat] = None,
         lbound: float = -1e20,
         ubound: float = 1e20,
-        regularizators: Optional[List[Regularizator]] = None,
+        regularizators: Optional[Union[Regularizator, List[Regularizator]]] = None,
         preconditioner: Callable = identify_function,
         preconditioner_1st_derivative: Callable = one,
         backconditioner: Callable = identify_function,
@@ -167,7 +167,11 @@ class AdjustableParameter:
         self.values = values if values is not None else np.array([])
         self.lbound = lbound
         self.ubound = ubound
-        self.regularizators = regularizators if regularizators is not None else []
+        self.regularizators = (
+            object_or_object_sequence_to_list(regularizators)
+            if regularizators is not None
+            else []
+        )
         self.preconditioner = preconditioner
         self.preconditioner_1st_derivative = preconditioner_1st_derivative
         self.backconditioner = backconditioner

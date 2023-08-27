@@ -204,7 +204,9 @@ def get_sorted_observable_times(
     NDArrayFloat
         Observation times sorted in ascending order.
     """
-    return obs.times[_get_obs_ascending_time_sorting_permutations(obs, max_time)]
+    return obs.times[
+        _get_obs_ascending_time_sorting_permutations(obs, max_time)
+    ].flatten()
 
 
 def get_sorted_observable_values(
@@ -225,7 +227,9 @@ def get_sorted_observable_values(
     NDArrayFloat
         Observation values sorted by ascending corresponding times.
     """
-    return obs.values[_get_obs_ascending_time_sorting_permutations(obs, max_time)]
+    return obs.values[
+        _get_obs_ascending_time_sorting_permutations(obs, max_time)
+    ].flatten()
 
 
 def get_sorted_observable_uncertainties(
@@ -248,7 +252,7 @@ def get_sorted_observable_uncertainties(
     """
     return obs.uncertainties[
         _get_obs_ascending_time_sorting_permutations(obs, max_time)
-    ]
+    ].flatten()
 
 
 def get_array_from_state_variable(
@@ -278,7 +282,7 @@ def get_array_from_state_variable(
 
 def get_observables_values_as_1d_vector(
     observables: Union[Observable, Sequence[Observable]],
-    hm_end_time: Optional[float] = None,
+    max_obs_time: Optional[float] = None,
 ) -> NDArrayFloat:
     """
     Return the values of all given observables as a 1D vector.
@@ -288,9 +292,9 @@ def get_observables_values_as_1d_vector(
     The observation values are sorted first by Observable instance (observation
     location) and by ascending time at a second level.
     """
-    return np.stack(
+    return np.hstack(
         [
-            get_sorted_observable_values(obs, hm_end_time)
+            get_sorted_observable_values(obs, max_obs_time)
             for obs in object_or_object_sequence_to_list(observables)
         ]
     ).ravel()
@@ -298,7 +302,7 @@ def get_observables_values_as_1d_vector(
 
 def get_observables_uncertainties_as_1d_vector(
     observables: Union[Observable, Sequence[Observable]],
-    hm_end_time: Optional[float] = None,
+    max_obs_time: Optional[float] = None,
 ) -> NDArrayFloat:
     """Return the uncertainties of all observables as a 1D vector.
 
@@ -307,9 +311,9 @@ def get_observables_uncertainties_as_1d_vector(
     The observation values are sorted first by Observable instance (observation
     location) and by ascending time at a second level.
     """
-    return np.stack(
+    return np.hstack(
         [
-            get_sorted_observable_uncertainties(obs, hm_end_time)
+            get_sorted_observable_uncertainties(obs, max_obs_time)
             for obs in object_or_object_sequence_to_list(observables)
         ]
     ).ravel()
@@ -454,7 +458,7 @@ def get_interp_simu_values_matching_obs_times(
 def get_simulated_values_matching_obs(
     model: ForwardModel,
     obs: Observable,
-    hm_end_time: Optional[float] = None,
+    max_obs_time: Optional[float] = None,
 ) -> NDArrayFloat:
     """
     Get the simulated values matching the given observable and the hm end time.
@@ -468,8 +472,8 @@ def get_simulated_values_matching_obs(
     ldt : List[float]
         The list of timesteps used to solve the forward model. The simulation times
         are derived from the list.
-    hm_end_time : Optional[float], optional
-        Maximum time for which to consider an obervation value, by default None
+    max_obs_time : Optional[float], optional
+        Maximum time for which to consider an obervation value, by default None.
 
     Returns
     -------
@@ -477,11 +481,11 @@ def get_simulated_values_matching_obs(
         Simulated values matching the given observable and the hm end time.
     """
     simu_times = np.cumsum([0] + model.time_params.ldt)
-    if hm_end_time is not None:
-        hm_end_time = min(np.max(simu_times), hm_end_time)
+    if max_obs_time is not None:
+        max_obs_time = min(np.max(simu_times), max_obs_time)
     else:
-        hm_end_time = np.max(simu_times)
-    obs_times = get_sorted_observable_times(obs, hm_end_time)
+        max_obs_time = np.max(simu_times)
+    obs_times = get_sorted_observable_times(obs, max_obs_time)
     _simu_values = get_mean_values_for_last_axis(
         get_values_matching_node_indices(
             obs.node_indices, get_array_from_state_variable(model, obs.state_variable)
@@ -497,7 +501,7 @@ def get_simulated_values_matching_obs(
 def get_predictions_matching_observations(
     model: ForwardModel,
     observables: Union[Observable, Sequence[Observable]],
-    hm_end_time: Optional[float] = None,
+    max_obs_time: Optional[float] = None,
 ) -> NDArrayFloat:
     """
     Return the 1D vector of predictions matching the observations.
@@ -508,8 +512,8 @@ def get_predictions_matching_observations(
         _description_
     observables : Union[Observable, Sequence[Observable]]
         _description_
-    hm_end_time : Optional[float], optional
-        _description_, by default None
+    max_obs_time : Optional[float], optional
+        Maximum time for which to consider an obervation value, by default None.
 
     Returns
     -------
@@ -518,5 +522,7 @@ def get_predictions_matching_observations(
     """
     res = []
     for obs in object_or_object_sequence_to_list(observables):
-        res.append(get_simulated_values_matching_obs(model, obs, hm_end_time).flatten())
+        res.append(
+            get_simulated_values_matching_obs(model, obs, max_obs_time).flatten()
+        )
     return np.hstack(res).ravel()

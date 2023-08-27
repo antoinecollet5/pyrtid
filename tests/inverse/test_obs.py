@@ -218,7 +218,7 @@ def test_get_array_from_state_variable(
 
 
 @pytest.mark.parametrize(
-    "times, values, uncertainties, hm_end_time, expected_times,"
+    "times, values, uncertainties, max_obs_time, expected_times,"
     " expected_values, expected_uncertainties",
     (
         (
@@ -254,7 +254,7 @@ def test_get_obs_attribute_sorted_by_ascending_times(
     times,
     values,
     uncertainties,
-    hm_end_time,
+    max_obs_time,
     expected_times,
     expected_values,
     expected_uncertainties,
@@ -264,18 +264,18 @@ def test_get_obs_attribute_sorted_by_ascending_times(
     obs = Observable(StateVariable.CONCENTRATION, [1], times, values, uncertainties)
 
     np.testing.assert_allclose(
-        get_sorted_observable_times(obs, hm_end_time), expected_times
+        get_sorted_observable_times(obs, max_obs_time), expected_times
     )
     np.testing.assert_allclose(
-        get_sorted_observable_values(obs, hm_end_time), expected_values
+        get_sorted_observable_values(obs, max_obs_time), expected_values
     )
     np.testing.assert_allclose(
-        get_sorted_observable_uncertainties(obs, hm_end_time), expected_uncertainties
+        get_sorted_observable_uncertainties(obs, max_obs_time), expected_uncertainties
     )
 
 
 @pytest.mark.parametrize(
-    "is_use_list_of_obs, hm_end_time, expected_values, expected_uncertainties",
+    "is_use_list_of_obs, max_obs_time, expected_values, expected_uncertainties",
     (
         (
             False,
@@ -335,7 +335,7 @@ def test_get_obs_attribute_sorted_by_ascending_times(
     ),
 )
 def test_get_observables_values_as_1d_vector(
-    is_use_list_of_obs, hm_end_time, expected_values, expected_uncertainties
+    is_use_list_of_obs, max_obs_time, expected_values, expected_uncertainties
 ) -> None:
     obs1 = Observable(
         StateVariable.CONCENTRATION,
@@ -351,11 +351,11 @@ def test_get_observables_values_as_1d_vector(
         obs = obs1
 
     np.testing.assert_allclose(
-        get_observables_values_as_1d_vector(obs, hm_end_time), expected_values
+        get_observables_values_as_1d_vector(obs, max_obs_time), expected_values
     )
 
     np.testing.assert_allclose(
-        get_observables_uncertainties_as_1d_vector(obs, hm_end_time),
+        get_observables_uncertainties_as_1d_vector(obs, max_obs_time),
         expected_uncertainties,
     )
 
@@ -390,7 +390,7 @@ def test_get_interp_simu_values_matching_obs_times(
 
 
 @pytest.mark.parametrize(
-    "hm_end_time, expected_output",
+    "max_obs_time, expected_output",
     [
         (
             None,
@@ -402,7 +402,7 @@ def test_get_interp_simu_values_matching_obs_times(
         ),
     ],
 )
-def test_get_predictions_matching_observations(hm_end_time, expected_output) -> None:
+def test_get_predictions_matching_observations(max_obs_time, expected_output) -> None:
     time_params = dmfwd.TimeParameters(duration=1.0, dt_init=1.0)
     geometry = dmfwd.Geometry(nx=20, ny=20, dx=4.5, dy=7.5)
     fl_params = dmfwd.FlowParameters(1e-5)
@@ -440,7 +440,7 @@ def test_get_predictions_matching_observations(hm_end_time, expected_output) -> 
     )
 
     np.testing.assert_allclose(
-        get_predictions_matching_observations(model, [obs1, obs2], hm_end_time),
+        get_predictions_matching_observations(model, [obs1, obs2], max_obs_time),
         expected_output,
         rtol=1e-2,
     )

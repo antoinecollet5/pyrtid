@@ -9,7 +9,7 @@ import numpy as np
 from pyrtid.forward import ForwardModel, ForwardSolver
 from pyrtid.forward.models import FlowRegime
 from pyrtid.inverse.adjoint import AdjointModel, AdjointSolver
-from pyrtid.inverse.loss_function import compute_model_loss_function
+from pyrtid.inverse.loss_function import get_model_loss_function
 from pyrtid.inverse.obs import Observable
 from pyrtid.inverse.params import (
     AdjustableParameter,
@@ -626,7 +626,7 @@ def _local_fun(
     )
     # Solve the forward model with the new parameters
     ForwardSolver(_model).solve()
-    return compute_model_loss_function(
+    return get_model_loss_function(
         _model, observables, parameters_to_adjust, jreg_weight
     )
 
