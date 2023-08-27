@@ -7,7 +7,11 @@ import numpy as np
 from pyrtid.forward import ForwardModel
 from pyrtid.utils import node_number_to_indices
 from pyrtid.utils.enum import StrEnum
-from pyrtid.utils.means import MeanType, get_mean_values_for_last_axis
+from pyrtid.utils.means import (
+    MeanType,
+    get_mean_values_for_last_axis,
+    get_mean_values_gradient_for_last_axis,
+)
 from pyrtid.utils.types import (
     NDArrayFloat,
     NDArrayInt,
@@ -496,6 +500,104 @@ def get_simulated_values_matching_obs(
     return get_interp_simu_values_matching_obs_times(
         obs_times, simu_times, _simu_values
     )
+
+
+def get_adjoint_sources_for_obs(
+    model: ForwardModel,
+    obs: Observable,
+    n_obs: int,
+    max_obs_time: Optional[float] = None,
+) -> NDArrayFloat:
+    """
+    Get derivative of the simulated values matching the given observable.
+
+    The derivative is not 1.0 because of the temporal and spatial averaging.
+
+    Parameters
+    ----------
+    model : ForwardModel
+        _description_
+    obs : Observable
+        _description_
+    max_obs_time : Optional[float], optional
+        _description_, by default None
+    n_obs
+
+    Returns
+    -------
+    NDArrayFloat
+        _description_
+    """
+
+    simu_times = np.cumsum([0] + model.time_params.ldt)
+    if max_obs_time is not None:
+        max_obs_time = min(np.max(simu_times), max_obs_time)
+    else:
+        max_obs_time = np.max(simu_times)
+    obs_times = get_sorted_observable_times(obs, max_obs_time)
+    obs_values = get_sorted_observable_values(obs, max_obs_time)
+    obs_std = get_sorted_observable_uncertainties(obs, max_obs_time)
+    simu_values = get_simulated_values_matching_obs(model, obs, max_obs_time)
+
+    # 1) Taking into account the derivative linked with the values averaging over the
+    # the grid (observations defined on more than one mesh)
+
+    _averaging_derivative = get_mean_values_gradient_for_last_axis(
+        get_values_matching_node_indices(
+            obs.node_indices, get_array_from_state_variable(model, obs.state_variable)
+        ),
+        mean_type=obs.mean_type,
+        weights=None,
+    )
+
+    adj_src = np.zeros(get_array_from_state_variable(model, obs.state_variable).shape)
+
+    # Location in the grid
+    X, Y, _ = node_number_to_indices(
+        obs.node_indices, nx=model.geometry.nx, ny=model.geometry.ny
+    )
+
+    # 2) Taking into account the derivative linked with the values time interpolation
+    # (observations defined between two times of the simulation)
+
+    # no time dimension, so normally, the adj_src are for the parameter at t=0
+    # (ex: permeability)
+    if len(adj_src.shape) == 2:
+        adj_src[X, Y] = (
+            -_averaging_derivative[X, Y]
+            * ((obs_values - simu_values))
+            / (obs_std**2)
+            / n_obs
+        )
+    else:
+        # Otherwise, we derive the weights of the linear interpolation
+        idx_before, idx_after = get_times_idx_before_after_obs(obs_times, simu_times)
+        weights_before, weights_after = get_weights(
+            obs_times, simu_times, idx_before, idx_after
+        )
+
+        # Note: ici, on a simu_values = w1 * av(c(n+1)) + w2 * av(c(n))
+        adj_src[X, Y, idx_before] = (
+            -weights_before
+            * _averaging_derivative[X, Y, idx_before]
+            * ((obs_values - simu_values))
+            / (obs_std**2)
+            / n_obs
+        )
+        adj_src[X, Y, idx_after] = (
+            -weights_after
+            * _averaging_derivative[X, Y, idx_after]
+            * ((obs_values - simu_values))
+            / (obs_std**2)
+            / n_obs
+        )
+
+    # Return the adjoint sources
+    return adj_src
+
+    # TODO: add a method to get all adjoint sources + reinit to zero, and build
+    # the adjoint sources with increement
+    # ne pas oublier de changer les signes là ou cela est nécessaire.
 
 
 def get_predictions_matching_observations(
