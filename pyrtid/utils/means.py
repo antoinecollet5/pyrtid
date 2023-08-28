@@ -65,7 +65,7 @@ def get_mean_values_for_last_axis(
     _arr = arr.reshape(-1, arr.shape[-1])
     if weights is not None:
         if _arr.shape[0] != weights.size:
-            raise ValueError("The weights must match the number of meshes.")
+            raise ValueError("The number of weights must match the number of meshes.")
 
     return np.apply_along_axis(
         {
@@ -132,7 +132,7 @@ def get_mean_values_gradient_for_last_axis(
     _arr = arr.reshape(-1, arr.shape[-1])
     if weights is not None:
         if _arr.shape[0] != weights.size:
-            raise ValueError("The weights must match the number of meshes.")
+            raise ValueError("The number of weights must match the number of meshes.")
 
     return np.apply_along_axis(
         {
