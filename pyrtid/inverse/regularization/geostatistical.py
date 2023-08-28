@@ -37,6 +37,8 @@ class GeostatisticalRegularizator(Regularizator):
         The default is False.
     """
 
+    __slots__ = ["cov_m", "prior", "transform", "transform_1st_derivative"]
+
     def __init__(
         self,
         cov_m: CovarianceMatrix,
@@ -67,11 +69,11 @@ class GeostatisticalRegularizator(Regularizator):
             It is stored here by convenience, to be used by the pyrtid inverse operator.
             The default is False.
         """
+        super().__init__(is_preconditioned)
         self.cov_m = cov_m
         self.prior: PriorTerm = prior
         self.transform: Callable = transform
         self.transform_1st_derivative: Callable = transform_1st_derivative
-        self.is_preconditioned = is_preconditioned
 
     def loss_function(self, values: NDArrayFloat) -> float:
         r"""

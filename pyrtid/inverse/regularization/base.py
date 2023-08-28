@@ -16,7 +16,19 @@ class Regularizator(ABC):
     This is an abstract class.
     """
 
-    is_preconditioned: bool = False
+    __slots__ = ["is_preconditioned"]
+
+    def __init__(self, is_preconditioned: bool = False) -> None:
+        """
+        Initialize the instance.
+
+        Parameters
+        ----------
+        is_preconditioned : bool, optional
+            Whether the regularization is applied to the preconditioned values
+            or not, by default False.
+        """
+        self.is_preconditioned: bool = is_preconditioned
 
     @abstractmethod
     def loss_function(self, param: NDArrayFloat) -> float:
