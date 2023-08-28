@@ -75,7 +75,14 @@ class Observable:
         uncertainties: Optional[Union[float, NDArrayFloat]] = None,
         mean_type: Optional[MeanType] = None,
     ) -> None:
-        """_summary_
+        """
+        Initiate the instance.
+
+        Warning
+        -------
+        For the control parameters such as porosity or permeability which are constant
+        in time, we consider that all observations are done at time 0, no matter
+        what is set by the user.
 
         Parameters
         ----------
@@ -490,14 +497,22 @@ def get_simulated_values_matching_obs(
         max_obs_time = min(np.max(simu_times), max_obs_time)
     else:
         max_obs_time = np.max(simu_times)
+
+    field = get_array_from_state_variable(model, obs.state_variable)
     obs_times = get_sorted_observable_times(obs, max_obs_time)
+
+    if len(field.shape) == 2:
+        field = field.reshape((*field.shape, 1))
     _simu_values = get_mean_values_for_last_axis(
-        get_values_matching_node_indices(
-            obs.node_indices, get_array_from_state_variable(model, obs.state_variable)
-        ),
+        get_values_matching_node_indices(obs.node_indices, field),
         mean_type=obs.mean_type,
         weights=None,
     )
+    # control parameter -> not varying in time
+    if len(get_array_from_state_variable(model, obs.state_variable).shape) == 2:
+        # The interpolated value is the same for all time
+        return np.repeat(_simu_values, obs_times.size)
+    # state variable varying in time
     return get_interp_simu_values_matching_obs_times(
         obs_times, simu_times, _simu_values
     )
@@ -588,6 +603,7 @@ def get_adjoint_sources_for_obs(
         max_obs_time = min(np.max(simu_times), max_obs_time)
     else:
         max_obs_time = np.max(simu_times)
+
     obs_times = get_sorted_observable_times(obs, max_obs_time)
     obs_values = get_sorted_observable_values(obs, max_obs_time)
     obs_std = get_sorted_observable_uncertainties(obs, max_obs_time)
@@ -595,16 +611,13 @@ def get_adjoint_sources_for_obs(
 
     # 1) Taking into account the derivative linked with the values averaging over the
     # the grid (observations defined on more than one mesh)
-
+    field = get_array_from_state_variable(model, obs.state_variable)
     _averaging_derivative = get_mean_values_gradient_for_last_axis(
-        get_values_matching_node_indices(
-            obs.node_indices, get_array_from_state_variable(model, obs.state_variable)
-        ),
+        get_values_matching_node_indices(obs.node_indices, field),
         mean_type=obs.mean_type,
         weights=None,
     )
-
-    adj_src = np.zeros(get_array_from_state_variable(model, obs.state_variable).shape)
+    adj_src = np.zeros(field.shape)
 
     # Location in the grid
     X, Y, _ = node_number_to_indices(
@@ -616,42 +629,41 @@ def get_adjoint_sources_for_obs(
 
     # no time dimension, so normally, the adj_src are for the parameter at t=0
     # (ex: permeability)
+    print(_averaging_derivative)
     if len(adj_src.shape) == 2:
-        adj_src[X, Y] = (
-            -_averaging_derivative[X, Y]
-            * ((obs_values - simu_values))
-            / (obs_std**2)
-            / n_obs
-        )
+        print(n_obs)
+        for n in range(len(obs_times)):
+            adj_src[X, Y] -= (
+                _averaging_derivative  # in this case
+                * (obs_values - simu_values)[n]
+                / (obs_std[n] ** 2)
+                / n_obs
+            )
     else:
         # Otherwise, we derive the weights of the linear interpolation
         idx_before, idx_after = get_times_idx_before_after_obs(obs_times, simu_times)
         weights_before, weights_after = get_weights(
             obs_times, simu_times, idx_before, idx_after
         )
-
-        # Note: ici, on a simu_values = w1 * av(c(n+1)) + w2 * av(c(n))
-        adj_src[X, Y, idx_before] = (
-            -weights_before
-            * _averaging_derivative[X, Y, idx_before]
-            * ((obs_values - simu_values))
-            / (obs_std**2)
-            / n_obs
-        )
-        adj_src[X, Y, idx_after] = (
-            -weights_after
-            * _averaging_derivative[X, Y, idx_after]
-            * ((obs_values - simu_values))
-            / (obs_std**2)
-            / n_obs
-        )
+        for n in range(len(obs_times)):
+            # Note: ici, on a simu_values = w1 * av(c(n+1)) + w2 * av(c(n))
+            adj_src[X, Y, idx_before[n]] -= (
+                _averaging_derivative[:, idx_before[n]].ravel("F")
+                / n_obs
+                * weights_before[n]
+                * ((obs_values - simu_values))[n]
+                / (obs_std[n] ** 2)
+            )
+            adj_src[X, Y, idx_after[n]] -= (
+                _averaging_derivative[:, idx_after[n]].ravel("F")
+                / n_obs
+                * weights_after[n]
+                * ((obs_values - simu_values))[n]
+                / (obs_std[n] ** 2)
+            )
 
     # Return the adjoint sources
     return adj_src
-
-    # TODO: add a method to get all adjoint sources + reinit to zero, and build
-    # the adjoint sources with increement
-    # ne pas oublier de changer les signes là ou cela est nécessaire.
 
 
 def get_predictions_matching_observations(

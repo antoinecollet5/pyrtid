@@ -4,9 +4,11 @@ import numpy as np
 import pytest
 
 import pyrtid.forward as dmfwd
+from pyrtid.inverse.loss_function import get_model_ls_loss_function
 from pyrtid.inverse.obs import (
     Observable,
     StateVariable,
+    get_adjoint_sources_for_obs,
     get_array_from_state_variable,
     get_interp_simu_values_matching_obs_times,
     get_observables_uncertainties_as_1d_vector,
@@ -19,6 +21,7 @@ from pyrtid.inverse.obs import (
     get_values_matching_node_indices,
     get_weights,
 )
+from pyrtid.utils import finite_gradient
 from pyrtid.utils.means import MeanType
 from pyrtid.utils.types import NDArrayFloat, NDArrayInt
 
@@ -394,11 +397,25 @@ def test_get_interp_simu_values_matching_obs_times(
     [
         (
             None,
-            np.array([1.0, 1.5, 2.0, 2.56, 1.0, 1.2, 1.3]),
+            np.array(
+                [
+                    1.0,
+                    1.5,
+                    2.0,
+                    2.56,
+                    1.0,
+                    1.2,
+                    1.3,
+                    8.666667,
+                    8.666667,
+                    8.666667,
+                    8.666667,
+                ]
+            ),
         ),
         (
             1.0,
-            np.array([1.0, 1.5, 2.0, 1.0, 1.2, 1.3]),
+            np.array([1.0, 1.5, 2.0, 1.0, 1.2, 1.3, 8.666667, 8.666667, 8.666667]),
         ),
     ],
 )
@@ -423,6 +440,8 @@ def test_get_predictions_matching_observations(max_obs_time, expected_output) ->
     model.time_params.save_dt()
     model.time_params.save_dt()
 
+    model.tr_model.porosity[:, :] = np.arange(20 * 20).reshape((20, 20), order="F")
+
     obs1 = Observable(
         StateVariable.CONCENTRATION,
         node_indices=[2, 4],
@@ -439,8 +458,109 @@ def test_get_predictions_matching_observations(max_obs_time, expected_output) ->
         uncertainties=1.0,
     )
 
+    obs3 = Observable(
+        StateVariable.POROSITY,
+        node_indices=[5, 10, 11],
+        times=np.array([0.0, 0.2, 0.3, 1.3, 5.6]),
+        values=np.array([0.289, 0.25, 0.27, 0.256, 0.25]),
+        uncertainties=3.5,
+    )
+
     np.testing.assert_allclose(
-        get_predictions_matching_observations(model, [obs1, obs2], max_obs_time),
+        get_predictions_matching_observations(model, [obs1, obs2, obs3], max_obs_time),
         expected_output,
         rtol=1e-2,
+    )
+
+
+@pytest.mark.parametrize(
+    "max_obs_time, mean_type",
+    [
+        (None, MeanType.ARITHMETIC),
+        (None, MeanType.GEOMETRIC),
+        (None, MeanType.HARMONIC),
+        (0.5, MeanType.ARITHMETIC),
+        (1.0, MeanType.GEOMETRIC),
+        (4.0, MeanType.HARMONIC),
+        (10.0, MeanType.ARITHMETIC),
+    ],
+)
+def test_get_adjoint_sources_for_obs(max_obs_time, mean_type) -> None:
+    """
+    Test if the adjoint sources are well built in the case:
+
+    - simulated values averaged from several meshes
+    - simulated values interpolated to match the observation time
+    """
+    time_params = dmfwd.TimeParameters(duration=1.0, dt_init=1.0)
+    geometry = dmfwd.Geometry(nx=5, ny=5, dx=4.5, dy=7.5)
+    fl_params = dmfwd.FlowParameters(1e-5)
+    tr_params = dmfwd.TransportParameters(1.0, 0.23)
+    gch_params = dmfwd.GeochemicalParameters(1.0, 0.0)
+
+    model = dmfwd.ForwardModel(
+        geometry,
+        time_params,
+        fl_params,
+        tr_params,
+        gch_params,
+    )
+
+    # generate synthetic data
+    model.tr_model.lconc.append(
+        np.random.default_rng(2023).random((geometry.nx, geometry.ny)) + 2.0
+    )
+    model.tr_model.lconc.append(
+        np.random.default_rng(2023).random((geometry.nx, geometry.ny)) + 3.0
+    )
+    model.time_params.save_dt()
+    model.time_params.save_dt()
+
+    model.fl_model.permeability = np.random.default_rng(2023).random(
+        (geometry.nx, geometry.ny)
+    )
+
+    obs1 = Observable(
+        StateVariable.CONCENTRATION,
+        node_indices=[2, 4, 6],
+        times=np.array([0.0, 0.5, 1.0, 1.56, 2.6]),
+        values=np.array([1, 1, 1, 1, 1]),
+        uncertainties=np.array([0.289, 0.25, 0.27, 0.256, 0.25]),
+        mean_type=mean_type,
+    )
+
+    obs2 = Observable(
+        StateVariable.PERMEABILITY,
+        node_indices=[5, 10, 11],
+        times=np.array([0.0, 0.2, 0.3, 1.3, 5.6]),
+        values=np.array([0.289, 0.25, 0.27, 0.256, 0.25]),
+        uncertainties=np.array([0.289, 0.25, 0.27, 0.256, 0.25]),
+        mean_type=mean_type,
+    )
+
+    if max_obs_time is not None:
+        _max_obs_time = min(model.time_params.time_elapsed, max_obs_time)
+    else:
+        _max_obs_time = model.time_params.time_elapsed
+
+    n_obs = get_observables_values_as_1d_vector([obs1], _max_obs_time).size
+
+    def wrapper_conc(arr: NDArrayFloat) -> float:
+        model.tr_model.lconc = [arr[:, :, i] for i in range(arr.shape[-1])]
+        return get_model_ls_loss_function(model, [obs1], max_obs_time)
+
+    np.testing.assert_allclose(
+        get_adjoint_sources_for_obs(model, obs1, n_obs, max_obs_time),
+        finite_gradient(model.tr_model.conc, wrapper_conc),
+    )
+
+    n_obs = get_observables_values_as_1d_vector([obs2], _max_obs_time).size
+
+    def wrapper_perm(arr: NDArrayFloat) -> float:
+        model.fl_model.permeability = arr
+        return get_model_ls_loss_function(model, [obs2], max_obs_time)
+
+    np.testing.assert_allclose(
+        get_adjoint_sources_for_obs(model, obs2, n_obs, max_obs_time),
+        finite_gradient(model.fl_model.permeability, wrapper_perm),
     )
