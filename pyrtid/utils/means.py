@@ -62,7 +62,12 @@ def get_mean_values_for_last_axis(
         Averaged values for the last axis.
 
     """
-    _arr = arr.reshape(-1, arr.shape[-1])
+    # ensure a second axis
+    if len(arr.shape) == 1:
+        _arr = arr[:, np.newaxis]
+    # or make 2D
+    else:
+        _arr = arr.reshape(-1, arr.shape[-1])
     if weights is not None:
         if _arr.shape[0] != weights.size:
             raise ValueError("The number of weights must match the number of meshes.")
@@ -129,7 +134,12 @@ def get_mean_values_gradient_for_last_axis(
         Averaged values for the last axis.
 
     """
-    _arr = arr.reshape(-1, arr.shape[-1])
+    # ensure a second axis
+    if len(arr.shape) == 1:
+        _arr = arr[:, np.newaxis]
+    # or make 2D
+    else:
+        _arr = arr.reshape(-1, arr.shape[-1])
     if weights is not None:
         if _arr.shape[0] != weights.size:
             raise ValueError("The number of weights must match the number of meshes.")
@@ -143,4 +153,4 @@ def get_mean_values_gradient_for_last_axis(
         axis=0,
         arr=_arr,
         weights=weights,
-    )
+    ).reshape(arr.shape)

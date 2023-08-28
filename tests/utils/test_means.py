@@ -135,6 +135,7 @@ def test_means_gradient(mean, mean_gradient) -> None:
         ((3, 2), MeanType.HARMONIC, 3, does_not_raise()),
         ((3, 1, 1), MeanType.HARMONIC, 3, does_not_raise()),
         ((3, 1), MeanType.HARMONIC, 3, does_not_raise()),
+        ((3), MeanType.HARMONIC, 3, does_not_raise()),
         (
             (3, 1),
             MeanType.HARMONIC,
@@ -174,10 +175,12 @@ def test_get_mean_values_gradient_for_last_axis(
 
         if len(arr.shape) == 3:
             deriv = np.zeros((arr.shape[0] * arr.shape[1], arr.shape[-1]))
-        else:
+        elif len(arr.shape) == 2:
             deriv = np.zeros((arr.shape[0], arr.shape[-1]))
+        else:
+            deriv = np.zeros((arr.shape[0], 1))
 
-        if arr.shape[-1] != 1:
+        if arr.shape[-1] != 1 and len(arr.shape) != 1:
             jac = nd.Jacobian(wrapper, step=1e-6)(arr.ravel())
             for i in range(arr.shape[-1]):
                 deriv[:, i] = jac[i][i :: arr.shape[-1]]
@@ -185,4 +188,4 @@ def test_get_mean_values_gradient_for_last_axis(
             jac = nd.Gradient(wrapper2, step=1e-6)(arr.ravel()).reshape(-1, 1)
             deriv = jac
 
-        np.testing.assert_allclose(res, deriv)
+        np.testing.assert_allclose(res, deriv.reshape(arr.shape))
