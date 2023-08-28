@@ -18,8 +18,16 @@ from .params import AdjustableParameter
 def ls_loss_function(
     x_obs: NDArrayFloat, x_calc: NDArrayFloat, x_sigma: NDArrayFloat
 ) -> float:
-    """
+    r"""
     Return the objective function with regard to `x`.
+
+    .. math::
+        \mathcal{J} = \dfrac{1}{2\lvert \bm{d}_{\mathrm{obs}} \rvert} \sum_{n=0}^{N}
+        \left(\dfrac{d_{\mathrm{obs}}^{n}
+        - d_{\mathrm{calc}}^{n}}{\sigma_{\mathrm{obs}}^{n}} \right)^{2}
+
+    with $n$, a time with an observation, and $\lvert \bm{d}_{\mathrm{obs}} \rvert$
+    the number of observation points.
 
     Parameters
     ----------

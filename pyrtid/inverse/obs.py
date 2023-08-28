@@ -391,10 +391,11 @@ def get_weights(
 def get_values_matching_node_indices(
     node_indices: NDArrayInt, input_values: NDArrayFloat
 ) -> NDArrayFloat:
-    """
+    r"""
     Return the values for the given node_indices with shape.
 
-    The output shape is (|node_indices|, [nt]), where |.| means cardinality.
+    The output shape is (:math:`\lvert \mathrm{node_indices} \rvert|, [nt]),
+    where :math:`\lvert . \rvert` means cardinality.
 
     Parameters
     ----------
@@ -508,10 +509,62 @@ def get_adjoint_sources_for_obs(
     n_obs: int,
     max_obs_time: Optional[float] = None,
 ) -> NDArrayFloat:
-    """
-    Get derivative of the simulated values matching the given observable.
+    r"""
+    Get the adjoint sources for a given observable instance.
 
-    The derivative is not 1.0 because of the temporal and spatial averaging.
+    The objective function with respect to the vector of observed
+    state variables and control parameters :math:`(\mathbf{d})`
+    is defined as:
+
+    .. math::
+        \mathcal{J}(\mathbf{d}_{\mathrm{calc}}) = \dfrac{1}{2N} \sum_{n=0}^{N}
+        \left(\dfrac{d_{\mathrm{obs}}^{t}
+        - d_{\mathrm{calc}}^{t}}{\sigma_{\mathrm{obs}}^{t}} \right)^{2}
+        = \dfrac{1}{2N} \sum_{n=0}^{N}
+        \left(\dfrac{d_{\mathrm{obs}}^{t}
+        - \left(\omega_{n}av(d_{\mathrm{calc}}^{n})
+        + \omega_{n+1}av(d_{\mathrm{calc}}^{n+1})\right)}{
+            \sigma_{\mathrm{obs}}^{t}} \right)^{2}
+
+    with :math:`d_{\mathrm{obs}}^{t}` an observation at a time :math:`t`
+    comprised between simulation iterations :math:`n` and :math:`n+1`,
+    :math:`N = \lvert \mathbf{d}_{\mathrm{obs}} \rvert`
+    the number of observation points, and :math:`\omega` the weights for the linear
+    interpolation of the calculated value which read:
+
+    - :math:`\omega_{n} = 1 - \dfrac{t - t(n)}{t(n+1) - t(n)}`
+    - :math:`\omega_{n+1} =  1 - \dfrac{(t(n+1) - t)}{t(n+1) - t(n)}`
+
+    And :math:`av` a spatial averaging operator required if the observation is done on
+    several meshes. Consequently, the objective function depends both on
+    :math:`d_{\mathrm{calc}}^{n}` and :math:`d_{\mathrm{calc}}^{n+1}`,
+    and the derivatives read:
+
+    .. math::
+
+        \begin{eqnarray}
+        \dfrac{\partial\mathcal{J}}{\partial d_{\mathrm{calc}}^{n}} & = &
+        \dfrac{\partial}{\partial d_{\mathrm{calc}}^{n}} \left(\dfrac{1}{2 \lvert
+        \mathbf{d}_{\mathrm{obs}} \rvert } \sum_{n=0}^{N}
+        \left(\dfrac{d_{\mathrm{obs}}^{t} - \left(\omega_{n}av(d_{\mathrm{calc}}^{n})
+        + \omega_{n+1}av(d_{\mathrm{calc}}^{n+1})\right)}{
+            \sigma_{\mathrm{obs}}^{t}} \right)^{2}\right) \\
+        & = &  - \dfrac{\omega_{n}}{N }
+        \dfrac{\partial av(d_{\mathrm{calc}}^{n})}{\partial d_{\mathrm{calc}}^{n}}
+        \dfrac{d_{\mathrm{obs}}^{t} - \left(\omega_{n}av(d_{\mathrm{calc}}^{n})
+        + \omega_{n+1}av(d_{\mathrm{calc}}^{n+1})\right)}{
+            \left(\sigma_{\mathrm{obs}}^{t}\right)^{2}}
+        \end{eqnarray}
+
+    And
+
+    .. math::
+        \dfrac{\partial\mathcal{J}}{\partial d_{\mathrm{calc}}^{n+1}} =
+        - \dfrac{\omega_{n+1}}{N}
+        \dfrac{\partial av(d_{\mathrm{calc}}^{n+1})}{\partial d_{\mathrm{calc}}^{n}}
+        \dfrac{d_{\mathrm{obs}}^{t} - \left(\omega_{n}av(d_{\mathrm{calc}}^{n})
+        + \omega_{n+1}av(d_{\mathrm{calc}}^{n+1})\right)}{
+            \left(\sigma_{\mathrm{obs}}^{t}\right)^{2}}
 
     Parameters
     ----------
@@ -521,12 +574,13 @@ def get_adjoint_sources_for_obs(
         _description_
     max_obs_time : Optional[float], optional
         _description_, by default None
-    n_obs
+    n_obs: float
+        The number of observation point to consider.
 
     Returns
     -------
     NDArrayFloat
-        _description_
+        The adjoint sources for the given Observable instance.
     """
 
     simu_times = np.cumsum([0] + model.time_params.ldt)

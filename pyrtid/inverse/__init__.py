@@ -75,6 +75,7 @@ Observables and utilities
     get_sorted_observable_uncertainties
     get_sorted_observable_values
     get_values_matching_node_indices
+    get_adjoint_sources_for_obs
 
 """
 
@@ -105,6 +106,7 @@ from pyrtid.inverse.model import InverseModel
 from pyrtid.inverse.obs import (
     Observable,
     StateVariable,
+    get_adjoint_sources_for_obs,
     get_observables_uncertainties_as_1d_vector,
     get_observables_values_as_1d_vector,
     get_predictions_matching_observations,
@@ -153,6 +155,7 @@ __all__ = [
     "get_observables_values_as_1d_vector",
     "get_observables_uncertainties_as_1d_vector",
     "get_values_matching_node_indices",
+    "get_adjoint_sources_for_obs",
     "InverseModel",
     "AdjointSolver",
     "AdjointModel",

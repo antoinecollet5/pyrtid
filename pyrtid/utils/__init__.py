@@ -116,8 +116,8 @@ Provide functions to perform mean and their first derivative.
     dxi_harmonic_mean
     MeanType
     get_mean_values_for_last_axis
-    amean_gradient,
-    gmean_gradient,
+    amean_gradient
+    gmean_gradient
     hmean_gradient
     get_mean_values_gradient_for_last_axis
 
@@ -170,6 +170,7 @@ from pyrtid.utils.grid import (
     indices_to_node_number,
     node_number_to_indices,
     span_to_node_numbers_2d,
+    span_to_node_numbers_3d,
 )
 from pyrtid.utils.means import (
     MeanType,
