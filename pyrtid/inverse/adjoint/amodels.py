@@ -152,16 +152,16 @@ class AdjointTransportModel:
         # NOTE: rows are meshes, and columns are time indices
         # We use csc format for fast column (time) slicing
         self.a_conc_sources = csc_matrix(
-            (geometry.nx, geometry.ny, time_params.nt), dtype=np.float64
+            (geometry.nx * geometry.ny, time_params.nt), dtype=np.float64
         )
         self.a_grade_sources = csc_matrix(
-            (geometry.nx, geometry.ny, time_params.nt), dtype=np.float64
+            (geometry.nx * geometry.ny, time_params.nt), dtype=np.float64
         )
         self.a_porosity_sources = csc_matrix(
-            (geometry.nx, geometry.ny, 1), dtype=np.float64
+            (geometry.nx * geometry.ny, 1), dtype=np.float64
         )
         self.a_diffusion_sources = csc_matrix(
-            (geometry.nx, geometry.ny, 1), dtype=np.float64
+            (geometry.nx * geometry.ny, 1), dtype=np.float64
         )
 
         # Adjoint source term from the adjoint geochem to the adjoint transport
@@ -191,8 +191,8 @@ class AdjointModel:
         self,
         geometry: Geometry,
         time_params: TimeParameters,
-        afpi_eps: float,
-        is_adj_numerical_acceleration: bool,
+        afpi_eps: float = 1e-5,
+        is_adj_numerical_acceleration: bool = False,
     ) -> None:
         """
         Initialize the instance.
@@ -222,29 +222,41 @@ class AdjointModel:
 
     def init_adjoint_sources(
         self,
-        model: ForwardModel,
+        fwd_model: ForwardModel,
         observables: Observables,
         hm_end_time: Optional[float] = None,
     ) -> None:
-        """"""
+        """
+        Initiate the adjoint variables.
+
+        Parameters
+        ----------
+        model : ForwardModel
+            The forward model.
+        observables : Observables
+            Sequence of observable instances for which to derive the adjoint sources.
+        hm_end_time : Optional[float], optional
+            Threshold time from which the observation are ignored, by default None.
+        """
 
         # First set all to zero
         self.clear_adjoint_sources()
 
+        if hm_end_time is not None:
+            max_obs_time = min(fwd_model.time_params.time_elapsed, hm_end_time)
+        else:
+            max_obs_time = fwd_model.time_params.time_elapsed
+
         # get the number of observations used to scale the objective function
         n_obs = get_observables_values_as_1d_vector(
-            observables, max_obs_time=hm_end_time
+            observables, max_obs_time=max_obs_time
         ).size
 
         # get the adjoint variable for each observable
         for obs in object_or_object_sequence_to_list(observables):
             # adjoint sources for this observable to a sparse matrix
-            res = csc_matrix(
-                get_adjoint_sources_for_obs(model, obs, n_obs, hm_end_time)
-            )
 
-            # Add the sparse array to the correct attribute
-            {
+            array = {
                 StateVariable.CONCENTRATION: self.a_tr_model.a_conc_sources,
                 StateVariable.DENSITY: self.a_fl_model.a_density_sources,
                 StateVariable.DIFFUSION: self.a_tr_model.a_diffusion_sources,
@@ -253,4 +265,28 @@ class AdjointModel:
                 StateVariable.PERMEABILITY: self.a_fl_model.a_permeability_sources,
                 StateVariable.POROSITY: self.a_tr_model.a_porosity_sources,
                 StateVariable.PRESSURE: self.a_fl_model.a_pressure_sources,
-            }[obs.state_variable] += res
+            }[obs.state_variable]
+
+            # Add the sparse array to the correct attribute
+            res = csc_matrix(
+                get_adjoint_sources_for_obs(
+                    fwd_model, obs, n_obs, max_obs_time
+                ).reshape(array.shape, order="F")
+            )
+
+            if obs.state_variable == StateVariable.CONCENTRATION:
+                self.a_tr_model.a_conc_sources += res
+            elif obs.state_variable == StateVariable.DENSITY:
+                self.a_fl_model.a_density_sources += res
+            elif obs.state_variable == StateVariable.DIFFUSION:
+                self.a_tr_model.a_diffusion_sources += res
+            elif obs.state_variable == StateVariable.HEAD:
+                self.a_fl_model.a_head_sources += res
+            elif obs.state_variable == StateVariable.MINERAL_GRADE:
+                self.a_tr_model.a_grade_sources += res
+            elif obs.state_variable == StateVariable.PERMEABILITY:
+                self.a_fl_model.a_permeability_sources += res
+            elif obs.state_variable == StateVariable.POROSITY:
+                self.a_tr_model.a_porosity_sources += res
+            elif obs.state_variable == StateVariable.PRESSURE:
+                self.a_fl_model.a_pressure_sources += res

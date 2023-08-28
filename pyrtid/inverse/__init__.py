@@ -77,6 +77,7 @@ Observables and utilities
     get_sorted_observable_values
     get_values_matching_node_indices
     get_adjoint_sources_for_obs
+    get_model_ls_loss_function
 
 """
 
@@ -102,7 +103,12 @@ from pyrtid.inverse.gradient import (
     get_porosity_adjoint_gradient,
     is_adjoint_gradient_correct,
 )
-from pyrtid.inverse.loss_function import ls_loss_function
+from pyrtid.inverse.loss_function import (
+    get_model_loss_function,
+    get_model_ls_loss_function,
+    get_model_reg_loss_function,
+    ls_loss_function,
+)
 from pyrtid.inverse.model import InverseModel
 from pyrtid.inverse.obs import (
     Observable,
@@ -171,4 +177,7 @@ __all__ = [
     "get_backconditioned_adj_gradient",
     "get_backconditioned_fd_gradient",
     "get_gridded_archived_gradients",
+    "get_model_ls_loss_function",
+    "get_model_reg_loss_function",
+    "get_model_loss_function",
 ]
