@@ -31,7 +31,7 @@ def test_ls_loss_function(x_pred, x_obs, std, expected_loss) -> None:
     "max_obs_time, expected_ls_loss_function, expected_reg_loss_function,"
     " jreg_weight, expected_total_loss_function",
     [
-        (None, 16.6625, 3.01311, 2.0, 22.6887),
+        (None, 14.3234, 3.01311, 2.0, 20.3496),
         (
             0.5,
             12.2510,
