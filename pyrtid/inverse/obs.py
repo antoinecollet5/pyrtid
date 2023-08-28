@@ -637,7 +637,6 @@ def get_adjoint_sources_for_obs(
     # (ex: permeability)
     print(_averaging_derivative)
     if len(adj_src.shape) == 2:
-        print(n_obs)
         for n in range(len(obs_times)):
             adj_src[X, Y] -= (
                 _averaging_derivative  # in this case
