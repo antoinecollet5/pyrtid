@@ -468,7 +468,6 @@ def solve_adj_flow_transient_semi_implicit(
     a_fl_model: AdjointFlowModel,
     time_params: TimeParameters,
     time_index: int,
-    is_mob_obs: bool,
 ) -> int:
     """
     Solving the adjoint diffusivity equation:

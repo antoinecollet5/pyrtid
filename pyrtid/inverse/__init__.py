@@ -67,6 +67,7 @@ Observables and utilities
    :toctree: _autosummary
 
     Observable
+    Observables
     StateVariable
     get_observables_uncertainties_as_1d_vector
     get_observables_values_as_1d_vector
@@ -105,6 +106,7 @@ from pyrtid.inverse.loss_function import ls_loss_function
 from pyrtid.inverse.model import InverseModel
 from pyrtid.inverse.obs import (
     Observable,
+    Observables,
     StateVariable,
     get_adjoint_sources_for_obs,
     get_observables_uncertainties_as_1d_vector,
@@ -147,6 +149,7 @@ __all__ = [
     "update_model_with_parameters_values",
     "get_parameters_bounds",
     "Observable",
+    "Observables",
     "StateVariable",
     "get_sorted_observable_times",
     "get_sorted_observable_values",

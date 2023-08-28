@@ -210,7 +210,6 @@ class AdjointSolver:
                 self.adj_model.a_fl_model,
                 self.fwd_model.time_params,
                 time_index,
-                self.adj_model.is_mob_obs,
             )
 
             # One more coupling iteration has been performed

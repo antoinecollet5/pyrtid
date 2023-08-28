@@ -58,7 +58,7 @@ from pyrtid.inverse.params import (
     update_parameters_from_model,
 )
 from pyrtid.utils import is_all_close
-from pyrtid.utils.types import NDArrayFloat, object_or_object_sequence_to_list
+from pyrtid.utils.types import NDArrayFloat
 
 
 @dataclass
@@ -305,9 +305,12 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
             afpi_eps,
             is_numerical_acceleration,
         )
-        # Add the sources
-        for obs in object_or_object_sequence_to_list(self.inv_model.observables):
-            self.adj_model.set_adjoint_sources_from_obs(obs, self.fwd_model)
+        # Compute the adjoint sources
+        self.adj_model.init_adjoint_sources(
+            self.fwd_model,
+            self.inv_model.observables,
+            hm_end_time=self.solver_config.hm_end_time,
+        )
 
     @abstractmethod
     def _init_solver(self, s_init: Optional[NDArrayFloat]) -> None:

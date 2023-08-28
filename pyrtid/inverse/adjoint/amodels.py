@@ -1,15 +1,23 @@
 """Provide the models for the adjoint states."""
 from __future__ import annotations
 
+from typing import Optional
+
 import numpy as np
-from scipy.sparse import lil_matrix
+from scipy.sparse import csc_matrix, lil_matrix
 
 from pyrtid.forward.models import (  # ConstantHead,; ZeroConcGradient,
     ForwardModel,
     Geometry,
     TimeParameters,
 )
-from pyrtid.inverse.obs import Observable, StateVariable
+from pyrtid.inverse.obs import (
+    Observables,
+    StateVariable,
+    get_adjoint_sources_for_obs,
+    get_observables_values_as_1d_vector,
+)
+from pyrtid.utils import object_or_object_sequence_to_list
 from pyrtid.utils.types import NDArrayFloat
 
 
@@ -21,6 +29,9 @@ class AdjointFlowModel:
         "a_u_darcy_x",
         "a_u_darcy_y",
         "a_head_sources",
+        "a_pressure_sources",
+        "a_density_sources",
+        "a_permeability_sources",
         "q_prev",
         "q_next",
     ]
@@ -36,13 +47,35 @@ class AdjointFlowModel:
         self.a_u_darcy_y = np.zeros(
             (geometry.nx, geometry.ny - 1, time_params.nt), dtype=np.float64
         )
-        # Generally, not so many observation, so use a sparse matrix
-        # instead of a dense array
-        self.a_head_sources: lil_matrix = lil_matrix(
+        # Generally, not so many observations, so only a few adjoint variable,
+        # so use a sparse matrix instead of a dense array
+        # NOTE: rows are meshes, and columns are time indices
+        # We use csc format for fast column (time) slicing
+        self.a_head_sources: csc_matrix = csc_matrix(
             (geometry.nx * geometry.ny, time_params.nt), dtype=np.float64
         )
+        self.a_pressure_sources: csc_matrix = csc_matrix(
+            (geometry.nx * geometry.ny, time_params.nt), dtype=np.float64
+        )
+        self.a_density_sources: csc_matrix = csc_matrix(
+            (geometry.nx * geometry.ny, time_params.nt), dtype=np.float64
+        )
+        # does not vary in time
+        self.a_permeability_sources: csc_matrix = csc_matrix(
+            (geometry.nx * geometry.ny, 1), dtype=np.float64
+        )
+
         self.q_prev = lil_matrix(geometry.nx * geometry.ny)
         self.q_next = lil_matrix(geometry.nx * geometry.ny)
+
+    def clear_adjoint_sources(self) -> None:
+        """
+        Reset all adjoint sources to zero.
+        """
+        self.a_head_sources = csc_matrix(self.a_head_sources.shape)
+        self.a_pressure_sources = csc_matrix(self.a_pressure_sources.shape)
+        self.a_density_sources = csc_matrix(self.a_density_sources.shape)
+        self.a_permeability_sources = csc_matrix(self.a_permeability_sources.shape)
 
 
 class AdjointTransportModel:
@@ -71,6 +104,9 @@ class AdjointTransportModel:
         "a_grade",
         "a_conc_sources",
         "a_grade_sources",
+        "a_porosity_sources",
+        "a_diffusion_sources",
+        "a_density_sources",
         "q_prev_diffusion",
         "q_next_diffusion",
         "q_prev",
@@ -111,11 +147,21 @@ class AdjointTransportModel:
             (geometry.nx, geometry.ny, time_params.nt), dtype=np.float64
         )
 
-        self.a_conc_sources = np.zeros(
+        # Generally, not so many observations, so only a few adjoint variable,
+        # so use a sparse matrix instead of a dense array
+        # NOTE: rows are meshes, and columns are time indices
+        # We use csc format for fast column (time) slicing
+        self.a_conc_sources = csc_matrix(
             (geometry.nx, geometry.ny, time_params.nt), dtype=np.float64
         )
-        self.a_grade_sources = np.zeros(
+        self.a_grade_sources = csc_matrix(
             (geometry.nx, geometry.ny, time_params.nt), dtype=np.float64
+        )
+        self.a_porosity_sources = csc_matrix(
+            (geometry.nx, geometry.ny, 1), dtype=np.float64
+        )
+        self.a_diffusion_sources = csc_matrix(
+            (geometry.nx, geometry.ny, 1), dtype=np.float64
         )
 
         # Adjoint source term from the adjoint geochem to the adjoint transport
@@ -127,6 +173,13 @@ class AdjointTransportModel:
         self.q_next = lil_matrix(geometry.nx * geometry.ny)
         self.afpi_eps = afpi_eps
         self.is_adj_numerical_acceleration = is_adj_numerical_acceleration
+
+    def clear_adjoint_sources(self) -> None:
+        """Reset all adjoint sources to zero."""
+        self.a_conc_sources = csc_matrix(self.a_conc_sources.shape)
+        self.a_grade_sources = csc_matrix(self.a_grade_sources.shape)
+        self.a_porosity_sources = csc_matrix(self.a_porosity_sources.shape)
+        self.a_diffusion_sources = csc_matrix(self.a_diffusion_sources.shape)
 
 
 class AdjointModel:
@@ -160,64 +213,44 @@ class AdjointModel:
             geometry, time_params, afpi_eps, is_adj_numerical_acceleration
         )
 
-    @property
-    def is_head_obs(self) -> bool:
-        """Return whether there are head observations."""
-        if self.a_fl_model.a_head_sources.count_nonzero() != 0:
-            return True
-        return False
+    def clear_adjoint_sources(self) -> None:
+        """
+        Reset all adjoint sources to zero.
+        """
+        self.a_fl_model.clear_adjoint_sources()
+        self.a_tr_model.clear_adjoint_sources()
 
-    @property
-    def is_mob_obs(self) -> bool:
-        """Return whether there are mobile concentrations observations."""
-        if np.any(self.a_tr_model.a_conc_sources):
-            return True
-        return False
-
-    @property
-    def is_immob_obs(self) -> bool:
-        """Return whether there are mobile concentrations observations."""
-        if np.any(self.a_tr_model.a_grade_sources):
-            return True
-        return False
-
-    def set_adjoint_sources_from_obs(
-        self, obs: Observable, model: ForwardModel
+    def init_adjoint_sources(
+        self,
+        model: ForwardModel,
+        observables: Observables,
+        hm_end_time: Optional[float] = None,
     ) -> None:
-        """Set the adjoint sources to the correct model."""
-        if obs.state_variable == StateVariable.CONCENTRATION:
-            self.set_adjoint_sources_from_mob_obs(obs, model)
-        elif obs.state_variable == StateVariable.HEAD:
-            self.set_adjoint_sources_from_head_obs(obs, model)
-        else:
-            raise ValueError("Not a valid state variable type!")
+        """"""
 
-    def set_adjoint_sources_from_mob_obs(
-        self, obs: Observable, model: ForwardModel
-    ) -> None:
-        """Set the adjoint sources to the correct model."""
-        try:
-            # case obs.location is a numpy array
-            self.a_tr_model.a_conc_sources[obs.location, obs.times] += (
-                obs.values - model.tr_model.conc[obs.location, obs.times].ravel()
-            ) / (obs.uncertainties**2)
-        except IndexError:
-            # case obs.location is a tuple of slices
-            self.a_tr_model.a_conc_sources[(*obs.location, obs.times)] += (
-                obs.values - model.tr_model.conc[(*obs.location, obs.times)].ravel()
-            ) / (obs.uncertainties**2)
+        # First set all to zero
+        self.clear_adjoint_sources()
 
-    def set_adjoint_sources_from_head_obs(
-        self, obs: Observable, model: ForwardModel
-    ) -> None:
-        """Set the adjoint sources to the correct model."""
-        try:
-            # case obs.location is a numpy array
-            self.a_fl_model.a_head_sources[obs.location, obs.times] += (
-                obs.values - model.fl_model.head[obs.location, obs.times].ravel()
-            ) / (obs.uncertainties**2)
-        except IndexError:
-            # case obs.location is a tuple of slices
-            self.a_fl_model.a_head_sources[(*obs.location, obs.times)] += (
-                obs.values - model.fl_model.head[(*obs.location, obs.times)].ravel()
-            ) / (obs.uncertainties**2)
+        # get the number of observations used to scale the objective function
+        n_obs = get_observables_values_as_1d_vector(
+            observables, max_obs_time=hm_end_time
+        ).size
+
+        # get the adjoint variable for each observable
+        for obs in object_or_object_sequence_to_list(observables):
+            # adjoint sources for this observable to a sparse matrix
+            res = csc_matrix(
+                get_adjoint_sources_for_obs(model, obs, n_obs, hm_end_time)
+            )
+
+            # Add the sparse array to the correct attribute
+            {
+                StateVariable.CONCENTRATION: self.a_tr_model.a_conc_sources,
+                StateVariable.DENSITY: self.a_fl_model.a_density_sources,
+                StateVariable.DIFFUSION: self.a_tr_model.a_diffusion_sources,
+                StateVariable.HEAD: self.a_fl_model.a_head_sources,
+                StateVariable.MINERAL_GRADE: self.a_tr_model.a_grade_sources,
+                StateVariable.PERMEABILITY: self.a_fl_model.a_permeability_sources,
+                StateVariable.POROSITY: self.a_tr_model.a_porosity_sources,
+                StateVariable.PRESSURE: self.a_fl_model.a_pressure_sources,
+            }[obs.state_variable] += res

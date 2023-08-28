@@ -265,9 +265,6 @@ def _get_perm_gradient_from_diffusivity_eq(
     NDArrayFloat
         Gradient with respect to the permeability using head observations.
     """
-    # if not adj_model.is_head_obs:
-    #     return np.zeros((fwd_model.geometry.nx, fwd_model.geometry.ny))
-
     shape = (fwd_model.geometry.nx, fwd_model.geometry.ny, fwd_model.time_params.nt)
     permeability = fwd_model.fl_model.permeability
 
@@ -386,9 +383,6 @@ def _get_perm_gradient_from_darcy_eq(
     NDArrayFloat
         Gradient with respect to the permeability using mob observations.
     """
-    if not adj_model.is_mob_obs:
-        return np.zeros((fwd_model.geometry.nx, fwd_model.geometry.ny))
-
     shape = (fwd_model.geometry.nx, fwd_model.geometry.ny, fwd_model.time_params.nt)
     permeability = fwd_model.fl_model.permeability
 

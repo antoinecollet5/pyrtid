@@ -1,4 +1,6 @@
 """Provide a representation of observables."""
+from __future__ import annotations
+
 import json
 from typing import List, Optional, Sequence, Tuple, Union
 
@@ -22,14 +24,14 @@ from pyrtid.utils.types import (
 class StateVariable(StrEnum):
     """Type of observable existing."""
 
-    DIFFUSION = "diffusion"
-    POROSITY = "porosity"
-    PERMEABILITY = "permeability"
-    HEAD = "head"
-    PRESSURE = "pressure"
     CONCENTRATION = "concentration"
-    MINERAL_GRADE = "grade"
     DENSITY = "density"
+    DIFFUSION = "diffusion"
+    HEAD = "head"
+    MINERAL_GRADE = "grade"
+    PERMEABILITY = "permeability"
+    POROSITY = "porosity"
+    PRESSURE = "pressure"
 
 
 class Observable:
@@ -170,6 +172,10 @@ class Observable:
             sort_keys=False,
             default=str,
         ).replace("null", "None")
+
+
+# new type
+Observables = Union[Observable, Sequence[Observable]]
 
 
 def _get_obs_ascending_time_sorting_permutations(
