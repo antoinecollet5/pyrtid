@@ -70,9 +70,9 @@ def get_model_ls_loss_function(
         The objective function.
     """
     if max_obs_time is not None:
-        max_obs_time = min(np.max(model.time_params.ldt), max_obs_time)
+        max_obs_time = min(model.time_params.time_elapsed, max_obs_time)
     else:
-        max_obs_time = np.max(model.time_params.ldt)
+        max_obs_time = model.time_params.time_elapsed
 
     return ls_loss_function(
         get_observables_values_as_1d_vector(observables, max_obs_time),
