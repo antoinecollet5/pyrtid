@@ -320,7 +320,7 @@ def solve_adj_flow_stationary(
     tmp[fl_model.cst_head_nn] = 0.0
 
     # Add the source terms from head observations
-    tmp -= a_fl_model.a_sources[:, :, time_index].ravel("F") / geometry.mesh_a
+    tmp += a_fl_model.a_head_sources.getcol(time_index) / geometry.mesh_volume
 
     preconditioner = get_super_lu_preconditioner(a_fl_model.q_next.tocsc())
 
@@ -501,8 +501,8 @@ def solve_adj_flow_transient_semi_implicit(
     # Add the source terms
     # Note: there is no crank-nicolson scheme on the residuals (only applies to
     # forward variables)
-    tmp -= (
-        a_fl_model.a_sources[:, :, time_index].ravel("F")
+    tmp += (
+        a_fl_model.a_head_sources.getcol(time_index)
         / fl_model.storage_coefficient
         / geometry.mesh_volume
     )

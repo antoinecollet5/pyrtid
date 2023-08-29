@@ -179,35 +179,12 @@ class AdjointSolver:
                 time_index,
             )
 
-            # solve_adj_transport_transient_semi_implicit(
-            #     geometry, _tr_model, a_tr_model, _a_sources, time_params, time_index
-            # )
-
             # 2) Solve the adjoint transport
             solve_adj_transport_transient_semi_implicit(
                 self.fwd_model.geometry,
                 self.fwd_model.fl_model,
                 self.fwd_model.tr_model,
                 self.adj_model.a_tr_model,
-                self.fwd_model.time_params,
-                time_index,
-            )
-
-            # 3) Need to compute the adjoint darcy velocities
-            update_adjoint_u_darcy(
-                self.fwd_model.geometry,
-                self.fwd_model.tr_model,
-                self.adj_model.a_tr_model,
-                self.fwd_model.fl_model,
-                self.adj_model.a_fl_model,
-                time_index,
-            )
-
-            # 4) Solve the flow last -> requires the previous
-            solve_adj_flow_transient_semi_implicit(
-                self.fwd_model.geometry,
-                self.fwd_model.fl_model,
-                self.adj_model.a_fl_model,
                 self.fwd_model.time_params,
                 time_index,
             )
@@ -227,6 +204,25 @@ class AdjointSolver:
 
             # Update the number of FPI
             nafpi += 1
+
+        # 3) Need to compute the adjoint darcy velocities
+        update_adjoint_u_darcy(
+            self.fwd_model.geometry,
+            self.fwd_model.tr_model,
+            self.adj_model.a_tr_model,
+            self.fwd_model.fl_model,
+            self.adj_model.a_fl_model,
+            time_index,
+        )
+
+        # 4) Solve the flow last -> requires the previous
+        solve_adj_flow_transient_semi_implicit(
+            self.fwd_model.geometry,
+            self.fwd_model.fl_model,
+            self.adj_model.a_fl_model,
+            self.fwd_model.time_params,
+            time_index,
+        )
 
 
 def _copy_tr_adj_prev_to_current(
