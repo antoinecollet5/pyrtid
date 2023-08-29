@@ -635,7 +635,6 @@ def get_adjoint_sources_for_obs(
 
     # no time dimension, so normally, the adj_src are for the parameter at t=0
     # (ex: permeability)
-    print(_averaging_derivative)
     if len(adj_src.shape) == 2:
         for n in range(len(obs_times)):
             adj_src[X, Y] -= (

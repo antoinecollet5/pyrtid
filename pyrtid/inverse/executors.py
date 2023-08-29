@@ -39,7 +39,7 @@ from typing_extensions import Literal
 
 from pyrtid.forward import ForwardModel, ForwardSolver
 from pyrtid.inverse.adjoint import AdjointModel, AdjointSolver
-from pyrtid.inverse.gradient import (
+from pyrtid.inverse.adjoint.gradients import (
     compute_adjoint_gradient,
     compute_fd_gradient,
     is_adjoint_gradient_correct,
@@ -1241,7 +1241,10 @@ class ScipyInversionExecutor(BaseInversionExecutor[ScipySolverConfig]):
         fd_grad = np.array([], dtype=np.float64)
         if self.solver_config.is_use_adjoint or self.solver_config.is_check_gradient:
             # Reinitialize the adjoint model
-            self._init_adjoint_model()
+            self._init_adjoint_model(
+                self.solver_config.afpi_eps,
+                self.solver_config.is_a_numerical_acceleratiion,
+            )
             # Solve the adjoint system
             solver = AdjointSolver(self.fwd_model, self.adj_model)
             solver.solve()

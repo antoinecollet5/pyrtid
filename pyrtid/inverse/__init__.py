@@ -44,19 +44,12 @@ Sub module providing regularization tools.
 Adjoint
 ^^^^^^^
 
-Provide adjoint model and solver for the estimated parameter gradient computation.
+Sub module providing an adjoint opertaor and the associated gradients.
 
 .. autosummary::
    :toctree: _autosummary
 
-    AdjointSolver
-    AdjointModel
-    is_adjoint_gradient_correct
-    get_porosity_adjoint_gradient
-    get_diffusion_adjoint_gradient
-    get_permeability_adjoint_gradient
-    get_initial_conc_adjoint_gradient
-    get_initial_grade_adjoint_gradient
+    adjoint
 
 .. currentmodule:: pyrtid.inverse
 
@@ -94,14 +87,6 @@ from pyrtid.inverse.executors import (
     ScipySolverConfig,
     StochopyInversionExecutor,
     StochopySolverConfig,
-)
-from pyrtid.inverse.gradient import (
-    get_diffusion_adjoint_gradient,
-    get_initial_conc_adjoint_gradient,
-    get_initial_grade_adjoint_gradient,
-    get_permeability_adjoint_gradient,
-    get_porosity_adjoint_gradient,
-    is_adjoint_gradient_correct,
 )
 from pyrtid.inverse.loss_function import (
     get_model_loss_function,
@@ -168,12 +153,6 @@ __all__ = [
     "InverseModel",
     "AdjointSolver",
     "AdjointModel",
-    "is_adjoint_gradient_correct",
-    "get_porosity_adjoint_gradient",
-    "get_diffusion_adjoint_gradient",
-    "get_permeability_adjoint_gradient",
-    "get_initial_conc_adjoint_gradient",
-    "get_initial_grade_adjoint_gradient",
     "get_backconditioned_adj_gradient",
     "get_backconditioned_fd_gradient",
     "get_gridded_archived_gradients",

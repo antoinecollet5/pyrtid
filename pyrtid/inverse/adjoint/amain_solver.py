@@ -3,8 +3,6 @@ from __future__ import annotations
 
 import logging
 
-import numpy as np
-
 from pyrtid.forward.models import FlowRegime, ForwardModel
 from pyrtid.inverse.adjoint.aflow_solver import (
     make_stationary_adj_flow_matrices,
@@ -14,41 +12,14 @@ from pyrtid.inverse.adjoint.aflow_solver import (
     update_adjoint_u_darcy,
 )
 from pyrtid.inverse.adjoint.ageochem_solver import solve_adj_geochem
-from pyrtid.inverse.adjoint.amodels import (
-    AdjointFlowModel,
-    AdjointModel,
-    AdjointTransportModel,
-)
+from pyrtid.inverse.adjoint.amodels import AdjointFlowModel, AdjointModel
 from pyrtid.inverse.adjoint.atransport_solver import (
+    get_adjoint_max_coupling_error,
+    init_adjoint_tr_variables_explicit,
+    init_adjoint_tr_variables_fpi,
     make_transient_adj_transport_matrices,
     solve_adj_transport_transient_semi_implicit,
 )
-
-
-def get_adjoint_max_coupling_error(
-    atr_model: AdjointTransportModel, time_index: int
-) -> float:
-    r"""
-    Return the maximum adjoint chemistry-transport coupling error.
-
-    The fixed point iteration convergence criteria reads:
-
-    .. math::
-        \text{max} \left\lVert 1 - \dfrac{\lambda_{c}^{n, k+1}}
-        {\lambda_{c}^{n, k}} \right\rVert  < \epsilon
-
-    with $k$ the number of fixed point iterations.
-
-    This error is evaluated from the mobile adjoint concentrations.
-    """
-    return float(
-        np.nan_to_num(
-            np.max(
-                np.abs(1 - atr_model.a_conc[:, :, time_index] / atr_model.a_conc_prev)
-            ),
-            nan=0.0,
-        )
-    )
 
 
 class AdjointSolver:
@@ -106,22 +77,20 @@ class AdjointSolver:
             self.fwd_model.time_params,
         )
 
-    def solve(self, is_verbose: bool = False) -> None:
+    def solve(
+        self, is_verbose: bool = False, tr_av_init_method: str = "explicit"
+    ) -> None:
         """
         Solve the adjoint system of equations.
         """
 
         # Initiate adjoint concentrations and grades
-        # _init_adjoint_variables(
-        #     _tr_model,
-        #     a_tr_model,
-        #     _gch_params,
-        #     geometry,
-        #     _a_sources,
-        #     _time_params,
-        #     "direct",
-        #     True,
-        # )
+        self.init_adjoint_variables(
+            self.fwd_model,
+            self.adj_model,
+            tr_av_init_method,
+            is_verbose,
+        )
 
         # Construct the flow matrices (not modified along the timesteps because
         # permeability and storage coefficients are constant).
@@ -148,6 +117,36 @@ class AdjointSolver:
                 0,  # time index
             )
 
+    def init_adjoint_variables(
+        self,
+        fwd_model: ForwardModel,
+        adj_model: AdjointModel,
+        tr_av_init_method: str = "explicit",
+        is_verbose: bool = False,
+    ) -> None:
+        if tr_av_init_method == "explicit":
+            init_adjoint_tr_variables_explicit(
+                fwd_model.tr_model,
+                adj_model.a_tr_model,
+                fwd_model.gch_params,
+                fwd_model.geometry,
+                fwd_model.time_params,
+                is_verbose,
+            )
+        else:
+            init_adjoint_tr_variables_fpi(
+                fwd_model.tr_model,
+                adj_model.a_tr_model,
+                fwd_model.gch_params,
+                fwd_model.geometry,
+                fwd_model.time_params,
+                is_verbose,
+            )
+        if is_verbose:
+            logging.info(" - Done!")
+
+    # Here we should initiate the other adjoint variables
+
     def _solve_system_for_timestep(
         self, time_index: int, is_verbose: bool = False
     ) -> None:
@@ -161,8 +160,6 @@ class AdjointSolver:
         a_tr_model.a_conc[:, :, time_index] = a_tr_model.a_conc[:, :, time_index + 1]
 
         has_converged = False
-
-        # print(atr_model.a_conc[:, :, time_index])
 
         # Iterate the chemistry transport system while the convergence is no meet
         while not has_converged:
@@ -225,18 +222,7 @@ class AdjointSolver:
         )
 
 
-def _copy_tr_adj_prev_to_current(
-    a_tr_model: AdjointTransportModel, time_index: int
-) -> None:
-    try:
-        # Copy the last index
-        a_tr_model.a_conc[:, :, time_index] = a_tr_model.a_conc[:, :, time_index + 1]
-        a_tr_model.a_grade[:, :, time_index] = a_tr_model.a_grade[:, :, time_index + 1]
-    except IndexError:
-        # Do nothing for the first timestep (keep 0)
-        pass
-
-
+# TODO: delete this ???
 def _copy_fl_adj_prev_to_current(a_fl_model: AdjointFlowModel, time_index: int) -> None:
     try:
         # Copy the last index
