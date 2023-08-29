@@ -49,12 +49,31 @@ def test_init_adjoint_sources(max_obs_time, mean_type) -> None:
     )
 
     # generate synthetic data
+    model.tr_model.ldensity.append(
+        np.random.default_rng(2023).random((geometry.nx, geometry.ny)) + 2.0
+    )
+    model.tr_model.ldensity.append(
+        np.random.default_rng(2023).random((geometry.nx, geometry.ny)) + 3.0
+    )
     model.tr_model.lconc.append(
         np.random.default_rng(2023).random((geometry.nx, geometry.ny)) + 2.0
     )
     model.tr_model.lconc.append(
         np.random.default_rng(2023).random((geometry.nx, geometry.ny)) + 3.0
     )
+    model.tr_model.lgrade.append(
+        np.random.default_rng(2023).random((geometry.nx, geometry.ny)) + 2.0
+    )
+    model.tr_model.lgrade.append(
+        np.random.default_rng(2023).random((geometry.nx, geometry.ny)) + 3.0
+    )
+    model.fl_model.lhead.append(
+        np.random.default_rng(2023).random((geometry.nx, geometry.ny)) + 2.0
+    )
+    model.fl_model.lhead.append(
+        np.random.default_rng(2023).random((geometry.nx, geometry.ny)) + 3.0
+    )
+
     model.time_params.save_dt()
     model.time_params.save_dt()
 
@@ -90,17 +109,17 @@ def test_init_adjoint_sources(max_obs_time, mean_type) -> None:
     ]
 
     # Add all possible obervable instance
-    # for state_var in dminv.StateVariable:
-    #     observables.append(
-    #         dminv.Observable(
-    #             state_var,
-    #             node_indices=[5, 10, 11],
-    #             times=np.array([0.0, 0.2, 0.3, 1.3, 5.6]),
-    #             values=np.array([0.289, 0.25, 0.27, 0.256, 0.25]),
-    #             uncertainties=np.array([0.289, 0.25, 0.27, 0.256, 0.25]),
-    #             mean_type=mean_type,
-    #         )
-    #     )
+    for state_var in dminv.StateVariable:
+        observables.append(
+            dminv.Observable(
+                state_var,
+                node_indices=[5, 10, 11],
+                times=np.array([0.0, 0.2, 0.3, 1.3, 5.6]),
+                values=np.array([0.289, 0.25, 0.27, 0.256, 0.25]),
+                uncertainties=np.array([0.289, 0.25, 0.27, 0.256, 0.25]),
+                mean_type=mean_type,
+            )
+        )
 
     adj_model = dminv.AdjointModel(geometry, time_params)
     adj_model.init_adjoint_sources(model, observables, hm_end_time=max_obs_time)
