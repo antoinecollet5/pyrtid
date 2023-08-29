@@ -46,13 +46,18 @@ class TimeParameters:
         Maximum timestep in seconds.
     ldt: List[float]
         List of successive timesteps (in seconds) used in the forward modelling.
-    nt: int
+    nts: int
         Number of timesteps in the simulation.
+    nt: int
+        Number of times in the simulation (nt + 1).
     nfpi: int
         Number of fixed point iterations used in the last time iteration.
     lnfpi:
         List of the number of fixed point iterations used for each time iteration.
         This list should have the same length as `ldt`.
+    times: NDArrayFloat
+        Array of times in second from 0 to t_max."
+
     """
 
     __slots__ = [
@@ -131,6 +136,11 @@ class TimeParameters:
         It is the number of timesteps (`nts`) +1.
         """
         return self.nts + 1
+
+    @property
+    def times(self) -> NDArrayFloat:
+        """Return all the times in second from 0 to t_max."""
+        return np.cumsum([0] + self.ldt)
 
     def reset_to_init(self) -> None:
         """Empty the list of timesteps and set dt to its initial value."""
@@ -380,6 +390,11 @@ class Geometry:
         # "from 1 and ny equal to 1!")
         #     )
         self._ny = value
+
+    @property
+    def shape(self) -> Tuple[int, int]:
+        """Return the shape of the grid as (nx, ny)."""
+        return (self.nx, self.ny)
 
     @property
     def mesh_area(self) -> float:
@@ -685,7 +700,7 @@ class FlowModel:
     @property
     def u_darcy_x_center(self) -> NDArrayFloat:
         """The darcy x-velocities estimated at the mesh centers."""
-        tmp = np.zeros((self.lhead[0].shape))
+        tmp = np.zeros((self.head.shape))
         tmp += self.u_darcy_x[:-1, :, :]
         tmp += self.u_darcy_x[1:, :, :]
         tmp /= 2
@@ -694,7 +709,7 @@ class FlowModel:
     @property
     def u_darcy_y_center(self) -> NDArrayFloat:
         """The darcy y-velocities estimated at the mesh centers."""
-        tmp = np.zeros((self.lhead[0].shape))
+        tmp = np.zeros((self.head.shape))
         tmp += self.u_darcy_y[:, :-1, :]
         tmp += self.u_darcy_y[:, 1:, :]
         tmp /= 2
