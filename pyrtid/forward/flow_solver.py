@@ -46,10 +46,10 @@ def make_stationary_flow_matrices(
 
         q_next[idc_owner, idc_neigh] -= (
             kmean[idc_owner] / geometry.dx**2 / geometry.dz
-        )
+        )  # type: ignore
         q_next[idc_owner, idc_owner] += (
             kmean[idc_owner] / geometry.dx**2 / geometry.dz
-        )
+        )  # type: ignore
 
         # Backward scheme
         idc_owner, idc_neigh = get_owner_neigh_indices(
@@ -61,10 +61,10 @@ def make_stationary_flow_matrices(
 
         q_next[idc_owner, idc_neigh] -= (
             kmean[idc_neigh] / geometry.dx**2 / geometry.dz
-        )
+        )  # type: ignore
         q_next[idc_owner, idc_owner] += (
             kmean[idc_neigh] / geometry.dx**2 / geometry.dz
-        )
+        )  # type: ignore
 
     # Y contribution
     if geometry.ny >= 2:
@@ -84,10 +84,10 @@ def make_stationary_flow_matrices(
 
         q_next[idc_owner, idc_neigh] -= (
             kmean[idc_owner] / geometry.dy**2 / geometry.dz
-        )
+        )  # type: ignore
         q_next[idc_owner, idc_owner] += (
             kmean[idc_owner] / geometry.dy**2 / geometry.dz
-        )
+        )  # type: ignore
 
         # Backward scheme
         idc_owner, idc_neigh = get_owner_neigh_indices(
@@ -99,10 +99,10 @@ def make_stationary_flow_matrices(
 
         q_next[idc_owner, idc_neigh] -= (
             kmean[idc_neigh] / geometry.dy**2 / geometry.dz
-        )
+        )  # type: ignore
         q_next[idc_owner, idc_owner] += (
             kmean[idc_neigh] / geometry.dy**2 / geometry.dz
-        )
+        )  # type: ignore
 
     # Take constant head into account
     q_next[fl_model.cst_head_nn, fl_model.cst_head_nn] = 1.0
@@ -148,28 +148,28 @@ def make_transient_flow_matrices(
             / geometry.dx**2
             / geometry.dz
             / fl_model.storage_coefficient
-        )
+        )  # type: ignore
         q_next[idc_owner, idc_owner] += (
             fl_model.crank_nicolson
             * kmean[idc_owner]
             / geometry.dx**2
             / geometry.dz
             / fl_model.storage_coefficient
-        )
+        )  # type: ignore
         q_prev[idc_owner, idc_neigh] += (
             (1.0 - fl_model.crank_nicolson)
             * kmean[idc_owner]
             / geometry.dx**2
             / geometry.dz
             / fl_model.storage_coefficient
-        )
+        )  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
             (1.0 - fl_model.crank_nicolson)
             * kmean[idc_owner]
             / geometry.dx**2
             / geometry.dz
             / fl_model.storage_coefficient
-        )
+        )  # type: ignore
 
         # Backward scheme
         idc_owner, idc_neigh = get_owner_neigh_indices(
@@ -185,28 +185,28 @@ def make_transient_flow_matrices(
             / geometry.dx**2
             / geometry.dz
             / fl_model.storage_coefficient
-        )
+        )  # type: ignore
         q_next[idc_owner, idc_owner] += (
             fl_model.crank_nicolson
             * kmean[idc_neigh]
             / geometry.dx**2
             / geometry.dz
             / fl_model.storage_coefficient
-        )
+        )  # type: ignore
         q_prev[idc_owner, idc_neigh] += (
             (1.0 - fl_model.crank_nicolson)
             * kmean[idc_neigh]
             / geometry.dx**2
             / geometry.dz
             / fl_model.storage_coefficient
-        )
+        )  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
             (1.0 - fl_model.crank_nicolson)
             * kmean[idc_neigh]
             / geometry.dx**2
             / geometry.dz
             / fl_model.storage_coefficient
-        )
+        )  # type: ignore
 
     # Y contribution
     if geometry.ny >= 2:
@@ -230,28 +230,28 @@ def make_transient_flow_matrices(
             / geometry.dy**2
             / geometry.dz
             / fl_model.storage_coefficient
-        )
+        )  # type: ignore
         q_next[idc_owner, idc_owner] += (
             fl_model.crank_nicolson
             * kmean[idc_owner]
             / geometry.dy**2
             / geometry.dz
             / fl_model.storage_coefficient
-        )
+        )  # type: ignore
         q_prev[idc_owner, idc_neigh] += (
             (1.0 - fl_model.crank_nicolson)
             * kmean[idc_owner]
             / geometry.dy**2
             / geometry.dz
             / fl_model.storage_coefficient
-        )
+        )  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
             (1.0 - fl_model.crank_nicolson)
             * kmean[idc_owner]
             / geometry.dy**2
             / geometry.dz
             / fl_model.storage_coefficient
-        )
+        )  # type: ignore
 
         # Backward scheme
         idc_owner, idc_neigh = get_owner_neigh_indices(
@@ -267,28 +267,28 @@ def make_transient_flow_matrices(
             / geometry.dy**2
             / geometry.dz
             / fl_model.storage_coefficient
-        )
+        )  # type: ignore
         q_next[idc_owner, idc_owner] += (
             fl_model.crank_nicolson
             * kmean[idc_neigh]
             / geometry.dy**2
             / geometry.dz
             / fl_model.storage_coefficient
-        )
+        )  # type: ignore
         q_prev[idc_owner, idc_neigh] += (
             (1.0 - fl_model.crank_nicolson)
             * kmean[idc_neigh]
             / geometry.dy**2
             / geometry.dz
             / fl_model.storage_coefficient
-        )
+        )  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
             (1.0 - fl_model.crank_nicolson)
             * kmean[idc_neigh]
             / geometry.dy**2
             / geometry.dz
             / fl_model.storage_coefficient
-        )
+        )  # type: ignore
 
     return q_next, q_prev
 
