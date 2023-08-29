@@ -170,8 +170,12 @@ def get_diffusion_adjoint_gradient(
     NDArrayFloat
         Gradient of the objective function with respect to the diffusion.
     """
-    return get_diffusion_term_adjoint_gradient(
+    grad = get_diffusion_term_adjoint_gradient(
         fwd_model, adj_model, DerivationVariable.DIFFUSION
+    )
+    # Add the adjoint sources for initial time (t0)
+    return grad + adj_model.a_tr_model.a_diffusion_sources.getcol(0).reshape(
+        grad.shape, order="F"
     )
 
 
@@ -209,8 +213,12 @@ def get_porosity_adjoint_gradient(
     ) * fwd_model.geometry.mesh_volume
 
     # We sum along the temporal axis + get the diffusion gradient
-    return -np.sum(grad, axis=-1) + get_diffusion_term_adjoint_gradient(
+    grad = -np.sum(grad, axis=-1) + get_diffusion_term_adjoint_gradient(
         fwd_model, adj_model, DerivationVariable.POROSITY
+    )
+    # Add the adjoint sources for initial time (t0)
+    return grad + adj_model.a_tr_model.a_porosity_sources.getcol(0).reshape(
+        grad.shape, order="F"
     )
 
 
@@ -237,9 +245,13 @@ def get_permeability_adjoint_gradient(
     NDArrayFloat
         Gradient of the objective function with respect to the permeability.
     """
-    return _get_perm_gradient_from_diffusivity_eq(
+    grad = _get_perm_gradient_from_diffusivity_eq(
         fwd_model, adj_model
     ) + _get_perm_gradient_from_darcy_eq(fwd_model, adj_model)
+    # Add the adjoint sources for initial time (t0)
+    return grad + adj_model.a_fl_model.a_permeability_sources.getcol(0).reshape(
+        grad.shape, order="F"
+    )
 
 
 def _get_perm_gradient_from_diffusivity_eq(
@@ -461,17 +473,24 @@ def get_initial_grade_adjoint_gradient(
     Parameter span is not taken into account which means that the gradient is
     computed on the full domain (grid).
     """
-    return (
+    grad = (
         adj_model.a_tr_model.a_conc[:, :, 1]
         / fwd_model.time_params.ldt[0]
-        * fwd_model.tr_model.porosity
-        * fwd_model.geometry.mesh_volume
-    ) + adj_model.a_tr_model.a_grade[:, :, 1] * (
-        1
-        + fwd_model.time_params.ldt[0]
-        * fwd_model.gch_params.kv
-        * fwd_model.gch_params.As
-        * (1.0 - fwd_model.tr_model.lconc[1] / fwd_model.gch_params.Ks)
+        * (
+            fwd_model.tr_model.porosity * fwd_model.geometry.mesh_volume
+            + adj_model.a_tr_model.a_grade[:, :, 1]
+            * (
+                1
+                + fwd_model.time_params.ldt[0]
+                * fwd_model.gch_params.kv
+                * fwd_model.gch_params.As
+                * (1.0 - fwd_model.tr_model.lconc[1] / fwd_model.gch_params.Ks)
+            )
+        )
+    )
+    # Add adjoint sources for time t=0
+    return grad + adj_model.a_tr_model.a_grade_sources.getcol(0).reshape(
+        grad.shape, order="F"
     )
 
 
@@ -495,12 +514,15 @@ def get_initial_conc_adjoint_gradient(
     Parameter span is not taken into account which means that the gradient is
     computed on the full domain (grid).
     """
-    return (
-        -adj_model.a_tr_model.a_conc_sources[:, :, 0]
-        + adj_model.a_tr_model.a_conc[:, :, 1]
+    grad = (
+        adj_model.a_tr_model.a_conc[:, :, 1]
         * fwd_model.geometry.mesh_volume
         * fwd_model.tr_model.porosity
         / fwd_model.time_params.ldt[0]
+    )
+
+    return grad + adj_model.a_tr_model.a_conc_sources.getcol(0).reshape(
+        grad.shape, order="F"
     )
 
 
@@ -539,7 +561,7 @@ def compute_param_adjoint_ls_loss_function_gradient(
         return get_permeability_adjoint_gradient(fwd_model, adj_model)
     if param.name == ParameterName.INITIAL_CONCENTRATION:
         return get_initial_conc_adjoint_gradient(fwd_model, adj_model)
-    elif param.name == ParameterName.INITIAL_MINERAL_GRADE:
+    if param.name == ParameterName.INITIAL_MINERAL_GRADE:
         return get_initial_grade_adjoint_gradient(fwd_model, adj_model)
     raise (NotImplementedError("Please contact the developer to handle this issue."))
 
