@@ -19,7 +19,6 @@ from pyrtid.forward.models import (
     TransportParameters,
     ZeroConcGradient,
     get_owner_neigh_indices,
-    resize_array,
 )
 from pyrtid.utils.types import NDArrayFloat
 
@@ -132,18 +131,6 @@ def test_geometry(nx, ny, dx, dy, expected_exception) -> None:
         geom = Geometry(nx, ny, dx, dy)
         assert geom.mesh_area == dx * dy
         assert geom.mesh_volume == geom.mesh_area
-
-
-def test_resize_array() -> None:
-    test_arr = np.ones((5, 5, 7))
-    for axis, shape in zip(range(3), [(1, 5, 7), (5, 1, 7), (5, 5, 1)]):
-        np.testing.assert_array_equal(resize_array(test_arr, axis, 1), np.ones((shape)))
-
-    with pytest.raises(
-        IndexError,
-        match=r"Axis 4 does not exists for the provided array of shape \(5, 5, 7\)!",
-    ):
-        resize_array(test_arr, 4, 1)
 
 
 def get_source_term() -> SourceTerm:

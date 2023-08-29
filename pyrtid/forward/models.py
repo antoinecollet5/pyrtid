@@ -766,6 +766,7 @@ class TransportModel:
         "porosity",
         "lconc",
         "lgrade",
+        "ldensity",
         "grade_prev",
         "boundary_conditions",
         "cst_conc_indices",
@@ -803,6 +804,10 @@ class TransportModel:
             np.ones((geometry.nx, geometry.ny), dtype=np.float64) * gch_params.grade
         ]
 
+        self.ldensity: List[NDArrayFloat] = [
+            np.ones((geometry.nx, geometry.ny), dtype=np.float64) * gch_params.grade
+        ]
+
         self.grade_prev = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
         self.boundary_conditions: List[BoundaryCondition] = []
         # q_prev is composed of q_prev_diffusion + advection term
@@ -835,14 +840,18 @@ class TransportModel:
         return np.transpose(np.array(self.lgrade), axes=(1, 2, 0))
 
     @property
+    def density(self) -> NDArrayFloat:
+        """
+        Return densities in g/l as array with dimension (nx, ny, nz, nt + 1).
+
+        This is read-only.
+        """
+        return np.transpose(np.array(self.ldensity), axes=(1, 2, 0))
+
+    @property
     def effective_diffusion(self) -> NDArrayFloat:
         """Return the effective diffusion (diffusion * porosity)."""
         return self.diffusion * self.porosity
-
-    @property
-    def density(self) -> NDArrayFloat:
-        """Return the density of the aqueous phase in g/l."""
-        return self.conc * self.molar_mass
 
     def set_initial_grade(
         self, values: Union[float, int, NDArrayInt, NDArrayFloat]
@@ -887,46 +896,8 @@ class TransportModel:
         self.lconc = self.lconc[:1]
         self.lgrade = self.lgrade[:1]
         self.grade_prev = self.lgrade[0]
+        self.ldensity = self.ldensity[:1]
         self.set_constant_conc_indices()
-
-
-def resize_array(arr: NDArrayFloat, axis: int, new_size: int) -> NDArrayFloat:
-    """
-    Resize an existing array on a given dimension, keeping existing data.
-
-    Parameters
-    ----------
-    arr : NDArrayFloat
-        Input array to be resized.
-    new_dim : int
-        Axis to resize.
-    new_size : int
-        New size of the given axis.
-
-    Returns
-    -------
-    NDArrayFloat
-        Resized array.
-
-    Raises
-    ------
-    ValueError
-        _description_
-    """
-    _shape = arr.shape
-    _new_shape = list(_shape)
-    try:
-        _new_shape[axis] = new_size
-    except IndexError:
-        raise IndexError(
-            f"Axis {axis} does not exists for the provided array of shape {_shape}!"
-        )
-    slices = tuple(
-        [slice(0, min(_shape[i], _new_shape[i])) for i in range(len(_shape))]
-    )
-    new_arr = np.zeros(_new_shape)
-    new_arr[slices] = arr[slices]
-    return new_arr
 
 
 class ForwardModel:
