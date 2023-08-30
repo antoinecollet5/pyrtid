@@ -107,8 +107,12 @@ def init_adjoint_tr_variables_explicit(
         time_params.ldt[-1]
         / (tr_model.porosity * geometry.mesh_volume)
         * (
-            a_tr_model.a_conc_sources.getcol(-1).reshape(geometry.shape, order="F")
-            - a_tr_model.a_grade_sources.getcol(-1).reshape(geometry.shape, order="F")
+            a_tr_model.a_conc_sources.getcol(-1)
+            .todense()
+            .reshape(geometry.shape, order="F")
+            - a_tr_model.a_grade_sources.getcol(-1)
+            .todense()
+            .reshape(geometry.shape, order="F")
             * tmp
         )
         / (1 - tmp)
@@ -117,7 +121,9 @@ def init_adjoint_tr_variables_explicit(
         -a_tr_model.a_conc[:, :, -1]
         * (tr_model.porosity * geometry.mesh_volume)
         / time_params.ldt[-1]
-    ) + a_tr_model.a_grade_sources.getcol(-1).reshape(geometry.shape, order="F")
+    ) + a_tr_model.a_grade_sources.getcol(-1).todense().reshape(
+        geometry.shape, order="F"
+    )
 
 
 def init_adjoint_tr_variables_fpi(
@@ -183,6 +189,14 @@ def init_adjoint_tr_variables_fpi(
     # for the first time (end of the first loop)
     a_tr_model.a_conc[:, :, -1] = VERY_SMALL_NUMBER
 
+    tmp = (
+        time_params.ldt[-1]
+        * gch_params.kv
+        * gch_params.As
+        * tr_model.lgrade[-2]
+        / gch_params.Ks
+    )
+
     while not has_converged:
         nafpi += 1
         # Copy for the convergence check
@@ -194,14 +208,7 @@ def init_adjoint_tr_variables_fpi(
             / (tr_model.porosity * geometry.mesh_volume)
             * (
                 a_tr_model.a_conc_sources.getcol(-1).reshape(geometry.shape, order="F")
-                - (
-                    a_tr_model.a_grade[:, :, -1]
-                    * time_params.ldt[-1]
-                    * gch_params.kv
-                    * gch_params.As
-                    * tr_model.lgrade[-2]
-                    / gch_params.Ks
-                )
+                - (a_tr_model.a_grade[:, :, -1] * tmp)
             )
         )
 
@@ -359,21 +366,11 @@ def _add_advection_to_adj_transport_matrices(
     fl_model: FlowModel,
     tr_model: TransportModel,
     a_tr_model: AdjointTransportModel,
-    time_params: TimeParameters,
+    q_next: lil_matrix,
+    q_prev: lil_matrix,
     time_index: int,
 ) -> None:
     crank_adv = tr_model.crank_nicolson_advection
-    q_next = a_tr_model.q_next_diffusion.copy().tolil()
-    q_prev = a_tr_model.q_prev_diffusion.copy().tolil()
-
-    q_next.setdiag(
-        q_next.diagonal()
-        + tr_model.porosity.flatten("F") / time_params.ldt[time_index - 2]
-    )
-    q_prev.setdiag(
-        q_prev.diagonal()
-        + tr_model.porosity.flatten("F") / time_params.ldt[time_index - 1]
-    )
 
     # X contribution
     tmp = np.zeros((geometry.nx, geometry.ny))
@@ -482,9 +479,6 @@ def _add_advection_to_adj_transport_matrices(
     _add_adj_transport_boundary_conditions(
         geometry, fl_model, tr_model, q_next, q_prev, time_index
     )
-
-    a_tr_model.q_next = q_next.tocsc()
-    a_tr_model.q_prev = q_prev.tocsc()
 
 
 def _apply_adj_transport_sink_term(
@@ -596,36 +590,61 @@ def solve_adj_transport_transient_semi_implicit(
     a_tr_model: AdjointTransportModel,
     time_params: TimeParameters,
     time_index: int,
+    nafpi: int,
 ) -> int:
-    """
-    Solving the adjoint diffusivity equation:
+    """Solving the adjoint transport equation."""
 
-    dc/dt = div D grad c + ...
-    """
+    # The matrix with respect to the diffusion never changes.
+    # The matrix with respect to the advection only needs to be updated at the first
+    # fix point iteration
+    if nafpi == 1:
+        q_next: lil_matrix = tr_model.q_next_diffusion.copy()
+        q_prev: lil_matrix = tr_model.q_prev_diffusion.copy()
 
-    # Skip the last timestep (there is no transport between n=0 and n=1)
-    if time_index == 0:
-        return 0
+        # Update q_next and q_prev with the advection term (must be copied)
+        # Note that this is required at the first fixed point iteration only,
+        # afterwards, only the chemical source term varies.
+        # if nfpi == 1:
+        # _add_advection_to_adj_transport_matrices(
+        #     geometry, fl_model, tr_model, a_tr_model, q_next, q_prev, time_index
+        # )
 
-    # Update q_next and q_prev with the advection term (must be copied)
-    _add_advection_to_adj_transport_matrices(
-        geometry, fl_model, tr_model, a_tr_model, time_params, time_index
-    )
+        # Add 1/dt * \omgea for the left term contribution
+        # Note; if the porosity and the timesteps are added here, it is to get the
+        # highest values as possible on the diagonal of the matrices
+        # -> better conditionning and easier LU preconditioning.
+        q_next.setdiag(
+            q_next.diagonal()
+            + tr_model.porosity.flatten("F") / time_params.ldt[time_index - 1]
+        )
+        q_prev.setdiag(
+            q_prev.diagonal()
+            + tr_model.porosity.flatten("F") / time_params.ldt[time_index]
+        )
+
+        a_tr_model.q_next = q_next
+        a_tr_model.q_prev = q_prev
+    else:
+        q_next = a_tr_model.q_next
+        q_prev = a_tr_model.q_prev
 
     # Get the previous vector
     prev_vector = a_tr_model.a_conc[:, :, time_index].ravel("F")
 
     # Multiply prev matrix by prev vector
-    tmp = a_tr_model.q_prev.dot(prev_vector)
+    tmp: NDArrayFloat = a_tr_model.q_prev.dot(prev_vector)
 
-    # Add the source terms -> from the previous timestep
+    # Add the source terms
     tmp += a_tr_model.a_conc_sources.getcol(time_index) / geometry.mesh_volume
+
+    # Add the adjoint geochem source term
+    tmp -= a_tr_model.a_gch_src_term.ravel(order="F") / geometry.mesh_volume
 
     # Build the LU preconditioning
     preconditioner = get_super_lu_preconditioner(a_tr_model.q_next.tocsc())
 
     # Solve Ax = b with A sparse using LU preconditioner
-    res, exit_code = gmres(a_tr_model.q_next, tmp, M=preconditioner, atol=1e-15)
+    res, exit_code = gmres(a_tr_model.q_next.tocsc(), tmp, M=preconditioner, atol=1e-15)
     # Note: we go backward in time, so time_index -1...
     a_tr_model.a_conc[:, :, time_index] = res.reshape(geometry.ny, geometry.nx).T
 

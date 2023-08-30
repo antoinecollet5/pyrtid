@@ -174,7 +174,7 @@ def get_diffusion_adjoint_gradient(
         fwd_model, adj_model, DerivationVariable.DIFFUSION
     )
     # Add the adjoint sources for initial time (t0)
-    return grad + adj_model.a_tr_model.a_diffusion_sources.getcol(0).reshape(
+    return grad + adj_model.a_tr_model.a_diffusion_sources.getcol(0).todense().reshape(
         grad.shape, order="F"
     )
 
@@ -217,7 +217,7 @@ def get_porosity_adjoint_gradient(
         fwd_model, adj_model, DerivationVariable.POROSITY
     )
     # Add the adjoint sources for initial time (t0)
-    return grad + adj_model.a_tr_model.a_porosity_sources.getcol(0).reshape(
+    return grad + adj_model.a_tr_model.a_porosity_sources.getcol(0).todense().reshape(
         grad.shape, order="F"
     )
 
@@ -249,9 +249,9 @@ def get_permeability_adjoint_gradient(
         fwd_model, adj_model
     ) + _get_perm_gradient_from_darcy_eq(fwd_model, adj_model)
     # Add the adjoint sources for initial time (t0)
-    return grad + adj_model.a_fl_model.a_permeability_sources.getcol(0).reshape(
-        grad.shape, order="F"
-    )
+    return grad + adj_model.a_fl_model.a_permeability_sources.getcol(
+        0
+    ).todense().reshape(grad.shape, order="F")
 
 
 def _get_perm_gradient_from_diffusivity_eq(
@@ -489,7 +489,7 @@ def get_initial_grade_adjoint_gradient(
         )
     )
     # Add adjoint sources for time t=0
-    return grad + adj_model.a_tr_model.a_grade_sources.getcol(0).reshape(
+    return grad + adj_model.a_tr_model.a_grade_sources.getcol(0).todense().reshape(
         grad.shape, order="F"
     )
 
@@ -521,7 +521,7 @@ def get_initial_conc_adjoint_gradient(
         / fwd_model.time_params.ldt[0]
     )
 
-    return grad + adj_model.a_tr_model.a_conc_sources.getcol(0).reshape(
+    return grad + adj_model.a_tr_model.a_conc_sources.getcol(0).todense().reshape(
         grad.shape, order="F"
     )
 

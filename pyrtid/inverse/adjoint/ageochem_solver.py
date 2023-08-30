@@ -17,11 +17,18 @@ def solve_adj_geochem(
     geometry: Geometry,
     time_params: TimeParameters,
     time_index: int,
+    nafpi: int,
 ) -> None:
     # Adjoint variables
     am_old = a_tr_model.a_grade[:, :, time_index + 1]
     ac_old = a_tr_model.a_conc[:, :, time_index + 1]
-    ac_cur = a_tr_model.a_conc[:, :, time_index]
+
+    # Adjoint concentration at current timestep
+    if tr_model.is_numerical_acceleration and nafpi == 1:
+        ac_cur = a_tr_model.a_conc[:, :, time_index + 1]
+    else:
+        ac_cur = a_tr_model.a_conc[:, :, time_index]
+
     # Forward variables
     c_old = tr_model.lconc[time_index + 1]
     # Timesteps
@@ -35,7 +42,7 @@ def solve_adj_geochem(
         - (ac_cur / dt_next - ac_old / dt_cur)
         * tr_model.porosity
         * geometry.mesh_volume
-    )  # transport adjoint source term
+    ) + a_tr_model.a_grade_sources.getcol(time_index).reshape(am_old.shape, order="F")
 
     # Compute the adjoint geochem source term: it is computed here to mimic the
     # splitting operator approach in which the chemical parameters might not be

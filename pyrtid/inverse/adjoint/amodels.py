@@ -165,7 +165,7 @@ class AdjointTransportModel:
         )
 
         # Adjoint source term from the adjoint geochem to the adjoint transport
-        self.a_gch_src_term = np.zeros((geometry.nx, geometry.ny))
+        self.a_gch_src_term = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
 
         self.q_prev_diffusion = lil_matrix(geometry.nx * geometry.ny)
         self.q_next_diffusion = lil_matrix(geometry.nx * geometry.ny)

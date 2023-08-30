@@ -174,6 +174,7 @@ class AdjointSolver:
                 self.fwd_model.geometry,
                 self.fwd_model.time_params,
                 time_index,
+                nafpi=nafpi,
             )
 
             # 2) Solve the adjoint transport
