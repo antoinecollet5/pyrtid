@@ -6,6 +6,7 @@ import pytest
 from pyrtid.inverse.regularization import (  # DriftMatrix,; LinearDriftMatrix,
     ConstantPriorTerm,
     DenseCovarianceMatrix,
+    EnsembleCovarianceMatrix,
     FFTCovarianceMatrix,
     GeostatisticalRegularizator,
     MeanPriorTerm,
@@ -100,6 +101,14 @@ def get_param_values() -> NDArrayFloat:
                     k=30,
                 ),
                 n_pc=32,
+            ),
+            1e-4,
+        ),
+        (
+            EnsembleCovarianceMatrix(
+                np.random.default_rng(2023).random(
+                    size=(200, np.prod(get_domain_shape()))
+                )
             ),
             1e-4,
         ),

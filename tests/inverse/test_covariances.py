@@ -1,5 +1,25 @@
 """Some tests to refactor."""
 
+import numpy as np
+
+from pyrtid.inverse.regularization import EnsembleCovarianceMatrix
+
+
+def test_get_shape() -> None:
+    """A test to see if all matrice handle the shape and npts correctly."""
+
+
+def test_ensemble_covariance_matrix() -> None:
+    """Test the inversion."""
+
+    cov = EnsembleCovarianceMatrix(np.random.default_rng(2023).random((200, 77)))
+    x = np.random.default_rng(2023).random(77)
+
+    np.testing.assert_allclose(cov.solve(x), np.linalg.inv(cov.todense()).dot(x))
+
+    np.testing.assert_allclose(np.trace(cov.todense()), cov.get_trace(), rtol=1e-12)
+
+
 # import numpy as np
 
 # from pyrtid.inverse.regularization.covariances import (

@@ -58,35 +58,26 @@ class CovarianceMatrix(LinearOperator):
     This is an abstract class.
     """
 
-    __slots__: List[str] = ["kernel", "pts", "nugget", "dtype", "count", "solvmatvecs"]
+    __slots__: List[str] = ["dtype", "count", "solvmatvecs"]
 
-    def __init__(
-        self, pts: NDArrayFloat, kernel: Callable, nugget: float = 0.0
-    ) -> None:
+    def __init__(self, shape) -> None:
         """
         Initialize the instance.
 
         Parameters
         ----------
-        pts : NDArrayFloat
-            _description_
-        kernel : Callable
-            _description_
-        nugget : float, optional
-            _description_, by default 0.0
+        shape: Tuple[int, int]
+            Shape of the matrix.
         """
-        self.kernel: Callable = kernel
-        self.pts: NDArrayFloat = pts
-        self.nugget: float = nugget
         # counters
         self.count: int = 0
         self.solvmatvecs: int = 0
-        super().__init__(dtype="d", shape=(self.number_pts, self.number_pts))
+        super().__init__(dtype="d", shape=shape)
 
     @property
     def number_pts(self) -> int:
         """Number of points in the domain (n)."""
-        return self.pts.shape[0]
+        return self.shape[0]
 
     def reset_comptors(self) -> None:
         """Set the comptors to zero."""
@@ -112,6 +103,33 @@ class CovarianceMatrix(LinearOperator):
     @abstractmethod
     def get_trace(self) -> NDArrayFloat:
         """Return the trace of the covariance matrix."""
+
+
+class KernelCovarianceMatrix(CovarianceMatrix):
+    __slots__: List[str] = ["kernel", "pts", "nugget"]
+
+    def __init__(
+        self, pts: NDArrayFloat, kernel: Callable, nugget: float = 0.0
+    ) -> None:
+        """
+        Initialize the instance.
+
+        Parameters
+        ----------
+        pts : NDArrayFloat
+            _description_
+        kernel : Callable
+            _description_
+        nugget : float, optional
+            _description_, by default 0.0
+        """
+        super().__init__((pts.shape[0], pts.shape[0]))
+        self.kernel: Callable = kernel
+        self.pts: NDArrayFloat = pts
+        self.nugget: float = nugget
+        # counters
+        self.count: int = 0
+        self.solvmatvecs: int = 0
 
 
 def build_preconditioner(
@@ -195,7 +213,7 @@ def build_preconditioner(
     return csr_matrix((data, ij.transpose()), shape=(nb_pts, nb_pts), dtype="d")
 
 
-class DenseCovarianceMatrix(CovarianceMatrix):
+class DenseCovarianceMatrix(KernelCovarianceMatrix):
     """Represents a dense covariance matrix."""
 
     def __init__(
@@ -229,7 +247,110 @@ class DenseCovarianceMatrix(CovarianceMatrix):
         return self.mat.trace()
 
 
-class FFTCovarianceMatrix(CovarianceMatrix):
+class EnsembleCovarianceMatrix(CovarianceMatrix):
+    r"""
+    Represents a covariance matrix as an ensemble of realizations.
+
+    For a given ensemble with shape (:math:`N_{s}`, :math:`N_{e}`), the number of
+    points and the number of members in the ensemble respectively, the covariance
+    matrix :math:`\mathbf{\Sigma_{ss}}` is approximated from the ensemble
+    in the standard way of EnKF
+    :cite:p:`evensenDataAssimilationEnsemble2007,aanonsenEnsembleKalmanFilter2009`:
+
+    .. math::
+        \mathbf{\Sigma_{ss}} = \frac{1}{N_{e} - 1} \sum_{j=1}^{N_{e}}\left(s_{j} -
+        \overline{s}\right)\left(s_{j}
+        - \overline{s^{l}} \right)^{T}
+
+    Or by defining a matrix of anomalies
+    :math:`\mathbf{A} = \mathbf{S} - \overline{\mathbf{S}}`
+    with shape  (:math:`N_{s}`, :math:`N_{e}`):
+
+    .. math::
+        \mathbf{\Sigma_{ss}} = \frac{1}{N_{e} - 1} \mathbf{A}^{T}\mathbf{A}
+
+    Note
+    ----
+    Practically, the dense covariance matrix is never built,
+    only the anomalies matrix :math:`\mathbf{A}` is used. The product between the
+    inverse of the covariance matrix and a vector
+    :math:`\mathbf{x} = \mathbf{\Sigma_{ss}}^{-1}\mathbf{b}`
+    is obtained solving the system :math:`\mathbf{A}^{T}\mathbf{Ax} = \mathbf{b}`,
+    using gmres, where only anomalies matrix vector products are required.
+    """
+
+    def __init__(
+        self,
+        ensemble: NDArrayFloat,
+    ) -> None:
+        """
+        Initiate the instance.
+
+        Parameters
+        ----------
+        ensemble : NDArrayFloat
+            Ensemble of realization with shape (:math:`N_{s}`, :math:`N_{e}`).
+        """
+        # on axis 1, the number of parameters
+        super().__init__((ensemble.shape[1], ensemble.shape[1]))
+        self.ensemble = ensemble
+
+    @property
+    def anomalies(self) -> NDArrayFloat:
+        """
+        Return the matrix of anomalies.
+
+        """
+        return self.ensemble - np.mean(self.ensemble, axis=0, keepdims=True)
+
+    @property
+    def n_ens(self) -> int:
+        """Return the number of members in the ensemble."""
+        return self.ensemble.shape[0]
+
+    def matvec(self, x: NDArrayFloat) -> NDArrayFloat:
+        """Return the covariance matrix times the vector x (dot product)."""
+        return np.linalg.multi_dot([self.anomalies.T, self.anomalies, x]) / (
+            self.n_ens - 1
+        )  # type: ignore
+
+    def todense(self) -> NDArrayFloat:
+        """
+        Return a dense representation of the matrix.
+        """
+        return self.anomalies.T @ self.anomalies / (self.n_ens - 1)
+
+    def solve(
+        self, b: NDArrayFloat, tol: float = 1e-12, maxiter: int = 1000
+    ) -> NDArrayFloat:
+        """
+        Solve A^{T}Ax = b, with A, the anomalies matrix instance.
+
+        Note that the dense covariance matrix is never built.
+        """
+        residual = CallBack()
+        x, info = gmres(
+            self,
+            b,
+            tol=tol,
+            maxiter=maxiter,
+            callback=residual,
+            atol=0.0,
+            callback_type="legacy",
+        )
+        self.solvmatvecs += residual.itercount
+        return x
+
+    def get_diagonal(self) -> NDArrayFloat:
+        """Return the diagonal entries of the matrix (variances)."""
+        return np.sum((self.anomalies**2), axis=0) / (self.n_ens - 1.0)
+
+    def get_trace(self) -> float:
+        """Return the trace of the covariance matrix."""
+        return float(np.sum(self.get_diagonal()))
+
+
+class FFTCovarianceMatrix(KernelCovarianceMatrix):
     """
     Represents a fast fourier transform covariance matrix.
 
@@ -302,12 +423,12 @@ class FFTCovarianceMatrix(CovarianceMatrix):
         """Return the diagonal entries of the matrix (variances)."""
         return self.kernel(np.zeros(len(self.pts)))
 
-    def get_trace(self) -> NDArrayFloat:
-        """Return the trace of the covariance matrix."""
-        return np.sum(self.get_diagonal())
+    def get_trace(self) -> float:
+        """Return the trace (sum of the diagonal) of the covariance matrix."""
+        return float(np.sum(self.get_diagonal()))
 
 
-class HCovarianceMatrix(CovarianceMatrix):
+class HCovarianceMatrix(KernelCovarianceMatrix):
     """
     Represents a hierarchical covariance matrix.
 
@@ -366,9 +487,9 @@ class HCovarianceMatrix(CovarianceMatrix):
         """Return the diagonal entries of the matrix (variances)."""
         return self.kernel(np.zeros(len(self.pts)))
 
-    def get_trace(self) -> NDArrayFloat:
+    def get_trace(self) -> float:
         """Return the trace of the covariance matrix."""
-        return np.sum(self.get_diagonal())
+        return float(np.sum(self.get_diagonal()))
 
 
 class CovarianceMatrixbyUd(CovarianceMatrix):
@@ -378,12 +499,9 @@ class CovarianceMatrixbyUd(CovarianceMatrix):
         self,
         prior_d: NDArrayFloat,
         prior_u: NDArrayFloat,
-        pts: NDArrayFloat,
-        kernel: Callable,
-        nugget: float = 0.0,
     ) -> None:
         """Initialize the instance."""
-        super().__init__(pts, kernel, nugget)
+        super().__init__((prior_d.size, prior_d.size))
         self.prior_d: NDArrayFloat = prior_d
         self.prior_u: NDArrayFloat = prior_u
 
@@ -439,12 +557,7 @@ class SparseInvCovarianceMatrix(CovarianceMatrix):
         """
         self.inv_mat: csc_matrix = inv_mat
         self.preconditioner = get_super_lu_preconditioner(self.inv_mat)
-        super().__init__(np.array([]), lambda x: x, 0.0)
-
-    @property
-    def number_pts(self) -> int:
-        """Number of points in the domain (n)."""
-        return self.inv_mat.shape[0]
+        super().__init__(inv_mat.shape)
 
     def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
         """Return the covariance matrix times the vector x."""
@@ -597,7 +710,7 @@ def cov_mat_to_ud_mat(
     prior_d, prior_u = get_prior_eigen_factorization(
         cov_mat, n_pc, method, random_state
     )
-    return CovarianceMatrixbyUd(prior_d, prior_u, cov_mat.pts, cov_mat.kernel)
+    return CovarianceMatrixbyUd(prior_d, prior_u)
 
 
 def get_explained_var(

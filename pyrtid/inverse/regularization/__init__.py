@@ -60,6 +60,7 @@ To represent covariance matrices.
 
     CovarianceMatrix
     DenseCovarianceMatrix
+    EnsembleCovarianceMatrix
     FFTCovarianceMatrix
     CovarianceMatrixbyUd
     SparseInvCovarianceMatrix
@@ -106,6 +107,7 @@ from pyrtid.inverse.regularization.covariances import (
     CovarianceMatrix,
     CovarianceMatrixbyUd,
     DenseCovarianceMatrix,
+    EnsembleCovarianceMatrix,
     FFTCovarianceMatrix,
     HCovarianceMatrix,
     SparseInvCovarianceMatrix,
@@ -137,6 +139,7 @@ __all__ = [
     "TVRegularizatorAnisotropic",
     "TVRegularizatorIsotropic",
     "DenseCovarianceMatrix",
+    "EnsembleCovarianceMatrix",
     "FFTCovarianceMatrix",
     "HCovarianceMatrix",
     "CovarianceMatrix",
