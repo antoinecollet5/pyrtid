@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import List, Optional, Sequence, Tuple, Union
 
 import numpy as np
-from scipy.sparse import lil_matrix
+from scipy.sparse import lil_array
 
 from pyrtid.utils import StrEnum, node_number_to_indices, span_to_node_numbers_2d
 from pyrtid.utils.types import (
@@ -592,8 +592,8 @@ class FlowModel:
         self.lu_darcy_div: List[NDArrayFloat] = []
 
         self.boundary_conditions: List[BoundaryCondition] = []
-        self.q_prev = lil_matrix(geometry.nx * geometry.ny)
-        self.q_next = lil_matrix(geometry.nx * geometry.ny)
+        self.q_prev = lil_array(geometry.nx * geometry.ny)
+        self.q_next = lil_array(geometry.nx * geometry.ny)
         self.cst_head_nn: NDArrayInt = np.array([], dtype=np.int32)
         self.tolerance = fl_params.tolerance
         self.vertical_axis = fl_params.vertical_axis
@@ -826,10 +826,10 @@ class TransportModel:
         self.grade_prev = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
         self.boundary_conditions: List[BoundaryCondition] = []
         # q_prev is composed of q_prev_diffusion + advection term
-        self.q_prev_diffusion = lil_matrix(geometry.nx * geometry.ny)
-        self.q_next_diffusion = lil_matrix(geometry.nx * geometry.ny)
-        self.q_prev = lil_matrix(geometry.nx * geometry.ny)
-        self.q_next = lil_matrix(geometry.nx * geometry.ny)
+        self.q_prev_diffusion = lil_array(geometry.nx * geometry.ny)
+        self.q_next_diffusion = lil_array(geometry.nx * geometry.ny)
+        self.q_prev = lil_array(geometry.nx * geometry.ny)
+        self.q_next = lil_array(geometry.nx * geometry.ny)
         self.cst_conc_indices: NDArrayInt = np.array([], dtype=np.int32)
         self.tolerance = tr_params.tolerance
         self.is_numerical_acceleration = tr_params.is_numerical_acceleration

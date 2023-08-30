@@ -4,7 +4,7 @@ from contextlib import nullcontext as does_not_raise
 
 import numpy as np
 import pytest
-from scipy.sparse import csc_matrix
+from scipy.sparse import csc_array
 from sksparse.cholmod import Factor, cholesky
 
 from pyrtid.utils.spde import (
@@ -18,7 +18,7 @@ from pyrtid.utils.spde import (
 )
 
 
-def _get_precision_matrix(alpha) -> csc_matrix:
+def _get_precision_matrix(alpha) -> csc_array:
     """Return a precision matrix."""
     kappa = 1.56
     nx = 9

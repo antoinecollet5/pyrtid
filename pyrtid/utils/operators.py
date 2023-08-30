@@ -3,7 +3,7 @@
 from typing import Optional
 
 import numpy as np
-from scipy.sparse import csc_matrix
+from scipy.sparse import csc_array
 from scipy.sparse.linalg import LinearOperator, splu
 
 from pyrtid.utils.types import NDArrayFloat
@@ -116,7 +116,7 @@ def hessian_cfd(param: NDArrayFloat, dx: float, axis: int = 0) -> NDArrayFloat:
     return hess
 
 
-def get_super_lu_preconditioner(mat: csc_matrix) -> Optional[LinearOperator]:
+def get_super_lu_preconditioner(mat: csc_array) -> Optional[LinearOperator]:
     """Get the preconditioner for the given matrix."""
     try:
         op = splu(mat)

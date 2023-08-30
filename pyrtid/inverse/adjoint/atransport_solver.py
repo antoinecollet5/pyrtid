@@ -5,7 +5,7 @@ import logging
 from typing import Tuple
 
 import numpy as np
-from scipy.sparse import lil_matrix
+from scipy.sparse import lil_array
 from scipy.sparse.linalg import gmres
 
 from pyrtid.forward.models import (
@@ -237,7 +237,7 @@ def init_adjoint_tr_variables_fpi(
 
 def make_transient_adj_transport_matrices(
     geometry: Geometry, tr_model: TransportModel, time_params: TimeParameters
-) -> Tuple[lil_matrix, lil_matrix]:
+) -> Tuple[lil_array, lil_array]:
     """
     Make matrices for the transient transport.
 
@@ -248,8 +248,8 @@ def make_transient_adj_transport_matrices(
     """
 
     dim = geometry.nx * geometry.ny
-    q_prev = lil_matrix((dim, dim), dtype=np.float64)
-    q_next = lil_matrix((dim, dim), dtype=np.float64)
+    q_prev = lil_array((dim, dim), dtype=np.float64)
+    q_next = lil_array((dim, dim), dtype=np.float64)
 
     # X contribution
     dmean: NDArrayFloat = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
@@ -366,8 +366,8 @@ def _add_advection_to_adj_transport_matrices(
     fl_model: FlowModel,
     tr_model: TransportModel,
     a_tr_model: AdjointTransportModel,
-    q_next: lil_matrix,
-    q_prev: lil_matrix,
+    q_next: lil_array,
+    q_prev: lil_array,
     time_index: int,
 ) -> None:
     crank_adv = tr_model.crank_nicolson_advection
@@ -484,8 +484,8 @@ def _add_advection_to_adj_transport_matrices(
 def _apply_adj_transport_sink_term(
     fl_model: FlowModel,
     tr_model: TransportModel,
-    q_next: lil_matrix,
-    q_prev: lil_matrix,
+    q_next: lil_array,
+    q_prev: lil_array,
     time_index: int,
 ) -> None:
     flw = fl_model.sources[:, :, time_index].flatten(order="F")
@@ -497,8 +497,8 @@ def _apply_adj_transport_sink_term(
 def _apply_adj_divergence_effect(
     fl_model: FlowModel,
     tr_model: TransportModel,
-    q_next: lil_matrix,
-    q_prev: lil_matrix,
+    q_next: lil_array,
+    q_prev: lil_array,
     time_index: int,
 ) -> None:
     """Take into account the divergence: dcdt+U.grad(c)=L(u)."""
@@ -521,8 +521,8 @@ def _add_adj_transport_boundary_conditions(
     geometry: Geometry,
     fl_model: FlowModel,
     tr_model: TransportModel,
-    q_next: lil_matrix,
-    q_prev: lil_matrix,
+    q_next: lil_array,
+    q_prev: lil_array,
     time_index: int,
 ) -> None:
     """Add the boundary conditions to the matrix."""
@@ -598,8 +598,8 @@ def solve_adj_transport_transient_semi_implicit(
     # The matrix with respect to the advection only needs to be updated at the first
     # fix point iteration
     if nafpi == 1:
-        q_next: lil_matrix = tr_model.q_next_diffusion.copy()
-        q_prev: lil_matrix = tr_model.q_prev_diffusion.copy()
+        q_next: lil_array = tr_model.q_next_diffusion.copy()
+        q_prev: lil_array = tr_model.q_prev_diffusion.copy()
 
         # Update q_next and q_prev with the advection term (must be copied)
         # Note that this is required at the first fixed point iteration only,
@@ -635,7 +635,10 @@ def solve_adj_transport_transient_semi_implicit(
     tmp: NDArrayFloat = a_tr_model.q_prev.dot(prev_vector)
 
     # Add the source terms
-    tmp += a_tr_model.a_conc_sources.getcol(time_index) / geometry.mesh_volume
+    tmp += (
+        a_tr_model.a_conc_sources.getcol(time_index).todense().ravel()
+        / geometry.mesh_volume
+    )
 
     # Add the adjoint geochem source term
     tmp -= a_tr_model.a_gch_src_term.ravel(order="F") / geometry.mesh_volume

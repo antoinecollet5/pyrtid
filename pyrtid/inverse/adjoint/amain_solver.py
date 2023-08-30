@@ -185,6 +185,7 @@ class AdjointSolver:
                 self.adj_model.a_tr_model,
                 self.fwd_model.time_params,
                 time_index,
+                nafpi=nafpi,
             )
 
             # One more coupling iteration has been performed

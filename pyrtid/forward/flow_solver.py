@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Tuple
 
 import numpy as np
-from scipy.sparse import lil_matrix
+from scipy.sparse import lil_array
 from scipy.sparse.linalg import gmres
 
 from pyrtid.utils import get_super_lu_preconditioner, harmonic_mean
@@ -13,9 +13,7 @@ from pyrtid.utils.types import NDArrayFloat
 from .models import FlowModel, Geometry, TimeParameters, get_owner_neigh_indices
 
 
-def make_stationary_flow_matrices(
-    geometry: Geometry, fl_model: FlowModel
-) -> lil_matrix:
+def make_stationary_flow_matrices(geometry: Geometry, fl_model: FlowModel) -> lil_array:
     """
     Make matrices for the transient flow.
 
@@ -26,7 +24,7 @@ def make_stationary_flow_matrices(
     """
 
     dim = geometry.nx * geometry.ny
-    q_next = lil_matrix((dim, dim), dtype=np.float64)
+    q_next = lil_array((dim, dim), dtype=np.float64)
 
     # X contribution
     if geometry.nx >= 2:
@@ -112,7 +110,7 @@ def make_stationary_flow_matrices(
 
 def make_transient_flow_matrices(
     geometry: Geometry, fl_model: FlowModel, time_params: TimeParameters
-) -> Tuple[lil_matrix, lil_matrix]:
+) -> Tuple[lil_array, lil_array]:
     """
     Make matrices for the transient flow.
 
@@ -123,8 +121,8 @@ def make_transient_flow_matrices(
     """
 
     dim = geometry.nx * geometry.ny
-    q_prev = lil_matrix((dim, dim), dtype=np.float64)
-    q_next = lil_matrix((dim, dim), dtype=np.float64)
+    q_prev = lil_array((dim, dim), dtype=np.float64)
+    q_next = lil_array((dim, dim), dtype=np.float64)
 
     # X contribution
     kmean: NDArrayFloat = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)

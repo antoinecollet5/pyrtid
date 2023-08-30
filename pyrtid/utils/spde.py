@@ -4,7 +4,7 @@ from typing import Optional, Union
 import numpy as np
 import scipy as sp
 from scipy._lib._util import check_random_state  # To handle random_state
-from scipy.sparse import csc_matrix, lil_matrix
+from scipy.sparse import csc_array, lil_array
 from sksparse.cholmod import Factor, cholesky
 
 from pyrtid.utils.grid import indices_to_node_number, span_to_node_numbers_3d
@@ -19,7 +19,7 @@ def get_laplacian_matrix_for_loops(
     dy: float,
     dz: float,
     kappa: Union[NDArrayFloat, float],
-) -> csc_matrix:
+) -> csc_array:
     """
     Return a sparse matrix of the discretization of the Laplacian.
 
@@ -48,7 +48,7 @@ def get_laplacian_matrix_for_loops(
 
     Returns
     -------
-    csc_matrix
+    csc_array
         Sparse matrix with dimension (nx * ny)x(nx * ny) representing the  discretized
         laplacian.
 
@@ -60,7 +60,7 @@ def get_laplacian_matrix_for_loops(
         _kappa = np.array(kappa).ravel("F")
     # construct an empty sparse matrix (lil_format because it supports indexing and
     # slicing).
-    lap = lil_matrix((n_nodes, n_nodes), dtype=np.float64)
+    lap = lil_array((n_nodes, n_nodes), dtype=np.float64)
 
     # Looping on all nodes and considering neighbours
     for ix in range(nx):
@@ -120,7 +120,7 @@ def get_laplacian_matrix(
     dy: float,
     dz: float,
     kappa: Union[NDArrayFloat, float],
-) -> csc_matrix:
+) -> csc_array:
     """
     Return a sparse matrix of the discretization of the Laplacian.
 
@@ -147,7 +147,7 @@ def get_laplacian_matrix(
 
     Returns
     -------
-    csc_matrix
+    csc_array
         Sparse matrix with dimension (nx * ny)x(nx * ny) representing the  discretized
         laplacian.
 
@@ -159,7 +159,7 @@ def get_laplacian_matrix(
         _kappa = np.array(kappa).ravel("F")
     # construct an empty sparse matrix (lil_format because it supports indexing and
     # slicing).
-    lap = lil_matrix((n_nodes, n_nodes), dtype=np.float64)
+    lap = lil_array((n_nodes, n_nodes), dtype=np.float64)
 
     # Add kappa on the diagonal
     lap.setdiag(lap.diagonal() + _kappa**2)
@@ -225,7 +225,7 @@ def get_precision_matrix(
     spatial_dim: int,
     sigma: Union[float, NDArrayFloat] = 1.0,
     is_use_mass_lumping: bool = True,
-) -> csc_matrix:
+) -> csc_array:
     """
     Get the precision matrix for the given SPDE field parameters.
 
@@ -258,7 +258,7 @@ def get_precision_matrix(
 
     Returns
     -------
-    csc_matrix
+    csc_array
         The sparse precision matrix.
     """
 
@@ -269,7 +269,7 @@ def get_precision_matrix(
         )
     # Discretization of (kappa^2 - Delta)^(alpha)
     # Build the laplacian matrix: (kappa^2 - Delta)
-    A: csc_matrix = get_laplacian_matrix(nx, ny, nz, dx, dy, dz, kappa)
+    A: csc_array = get_laplacian_matrix(nx, ny, nz, dx, dy, dz, kappa)
 
     # Apply alpha (we deal only with integers alpha)
     Af = sp.sparse.identity(A.shape[0])
@@ -329,14 +329,14 @@ def simu_nc(
 
 
 def condition_precision_matrix(
-    Q: csc_matrix, dat_indices: NDArrayInt, dat_var: NDArrayFloat
-) -> csc_matrix:
+    Q: csc_array, dat_indices: NDArrayInt, dat_var: NDArrayFloat
+) -> csc_array:
     """
     Condition the precision matrix with the variance of known data points.
 
     Parameters
     ----------
-    Q : csc_matrix
+    Q : csc_array
         _description_
     dat_indices : NDArrayInt
         _description_
@@ -345,19 +345,19 @@ def condition_precision_matrix(
 
     Returns
     -------
-    csc_matrix
+    csc_array
         The conditioned precision matrix.
     """
     # Build the diagonal matrix containing the inverse of the error variance at known
     # data points
 
-    diag_var = lil_matrix(Q.shape)
+    diag_var = lil_array(Q.shape)
     diag_var[dat_indices, dat_indices] = 1 / dat_var
     return (diag_var + Q).tocsc()
 
 
 def kriging(
-    Q: csc_matrix,
+    Q: csc_array,
     dat: NDArrayFloat,
     dat_indices: NDArrayInt,
     cholQ: Optional[Factor] = None,
@@ -376,7 +376,7 @@ def kriging(
 
 def simu_c(
     cholQ: Factor,
-    Q_cond: csc_matrix,
+    Q_cond: csc_array,
     cholQ_cond: Factor,
     dat: NDArrayFloat,
     dat_indices: NDArrayInt,
@@ -389,7 +389,7 @@ def simu_c(
     ----------
     cholQ : Factor
         _description_
-    Q_cond : csc_matrix
+    Q_cond : csc_array
         _description_
     cholQ_cond : Factor
         _description_

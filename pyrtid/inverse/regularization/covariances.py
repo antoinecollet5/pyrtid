@@ -17,7 +17,7 @@ import numpy as np
 from numpy.random import Generator, RandomState
 from scipy._lib._util import check_random_state  # To handle random_state
 from scipy.linalg import solve
-from scipy.sparse import csc_matrix, csr_matrix
+from scipy.sparse import csc_array, csr_array
 from scipy.sparse.linalg import LinearOperator, eigsh, gmres, lgmres
 from scipy.spatial import cKDTree
 from scipy.spatial.distance import cdist
@@ -134,7 +134,7 @@ class KernelCovarianceMatrix(CovarianceMatrix):
 
 def build_preconditioner(
     pts: NDArrayFloat, kernel: Callable, k: int = 100
-) -> csr_matrix:
+) -> csr_array:
     """
     Implementation of the preconditioner based on changing basis.
 
@@ -149,7 +149,7 @@ def build_preconditioner(
 
     Returns
     -------
-    csr_matrix
+    csr_array
         _description_
 
     Raises
@@ -210,7 +210,7 @@ def build_preconditioner(
     ij[:, 1] = np.copy(np.reshape(col, nb_pts * k, order="F").transpose())
 
     data = np.copy(np.reshape(nu, nb_pts * k, order="F").transpose())
-    return csr_matrix((data, ij.transpose()), shape=(nb_pts, nb_pts), dtype="d")
+    return csr_array((data, ij.transpose()), shape=(nb_pts, nb_pts), dtype="d")
 
 
 class DenseCovarianceMatrix(KernelCovarianceMatrix):
@@ -391,7 +391,7 @@ class FFTCovarianceMatrix(KernelCovarianceMatrix):
             np.array(mesh_dim, dtype=np.int8), self.param_shape, kernel, len_scale
         )
         super().__init__(pts, kernel, nugget)
-        self.preconditioner: csr_matrix = build_preconditioner(pts, kernel, k=k)
+        self.preconditioner: csr_array = build_preconditioner(pts, kernel, k=k)
 
     def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
         """Return the covariance matrix times the vector x."""
@@ -453,7 +453,7 @@ class HCovarianceMatrix(KernelCovarianceMatrix):
 
         super().__init__(pts, kernel, nugget)
         self.is_verbose = is_verbose
-        self.preconditioner: csr_matrix = build_preconditioner(pts, kernel, k=k)
+        self.preconditioner: csr_array = build_preconditioner(pts, kernel, k=k)
 
     def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
         """Return the covariance matrix times the vector x."""
@@ -545,17 +545,17 @@ class SparseInvCovarianceMatrix(CovarianceMatrix):
 
     def __init__(
         self,
-        inv_mat: csc_matrix,
+        inv_mat: csc_array,
     ) -> None:
         """
         Initialize the instance.
 
         Parameters
         ----------
-        inv_mat : csc_matrix
+        inv_mat : csc_array
             Sparse precision matrix (inverse of the covariance matrix).
         """
-        self.inv_mat: csc_matrix = inv_mat
+        self.inv_mat: csc_array = inv_mat
         self.preconditioner = get_super_lu_preconditioner(self.inv_mat)
         super().__init__(inv_mat.shape)
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Tuple
 
 import numpy as np
-from scipy.sparse import lil_matrix
+from scipy.sparse import lil_array
 from scipy.sparse.linalg import gmres
 
 from pyrtid.forward.models import (  # ConstantHead,; ZeroConcGradient,
@@ -21,7 +21,7 @@ from pyrtid.utils.types import NDArrayFloat
 
 def make_stationary_adj_flow_matrices(
     geometry: Geometry, fl_model: FlowModel, time_params: TimeParameters
-) -> Tuple[lil_matrix, lil_matrix]:
+) -> Tuple[lil_array, lil_array]:
     """
     Make matrices for the transient flow.
 
@@ -32,8 +32,8 @@ def make_stationary_adj_flow_matrices(
     """
 
     dim = geometry.nx * geometry.ny
-    q_prev = lil_matrix((dim, dim), dtype=np.float64)
-    q_next = lil_matrix((dim, dim), dtype=np.float64)
+    q_prev = lil_array((dim, dim), dtype=np.float64)
+    q_next = lil_array((dim, dim), dtype=np.float64)
 
     # X contribution
     kmean: NDArrayFloat = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
@@ -142,7 +142,7 @@ def make_stationary_adj_flow_matrices(
 
 def make_transient_adj_flow_matrices(
     geometry: Geometry, fl_model: FlowModel, time_params: TimeParameters
-) -> Tuple[lil_matrix, lil_matrix]:
+) -> Tuple[lil_array, lil_array]:
     """
     Make matrices for the transient flow.
 
@@ -153,8 +153,8 @@ def make_transient_adj_flow_matrices(
     """
 
     dim = geometry.nx * geometry.ny
-    q_prev = lil_matrix((dim, dim), dtype=np.float64)
-    q_next = lil_matrix((dim, dim), dtype=np.float64)
+    q_prev = lil_array((dim, dim), dtype=np.float64)
+    q_next = lil_array((dim, dim), dtype=np.float64)
 
     # # X contribution
     # kmean = harmonic_mean(fl_model.permeability[:-1, :], fl_model.permeability[1:, :])
@@ -327,7 +327,10 @@ def solve_adj_flow_stationary(
     tmp[fl_model.cst_head_nn] = 0.0
 
     # Add the source terms from head observations
-    tmp += a_fl_model.a_head_sources.getcol(time_index) / geometry.mesh_volume
+    tmp += (
+        a_fl_model.a_head_sources.getcol(time_index).todense().ravel("F")
+        / geometry.mesh_volume
+    )
 
     preconditioner = get_super_lu_preconditioner(a_fl_model.q_next.tocsc())
 
@@ -509,7 +512,7 @@ def solve_adj_flow_transient_semi_implicit(
     # Note: there is no crank-nicolson scheme on the residuals (only applies to
     # forward variables)
     tmp += (
-        a_fl_model.a_head_sources.getcol(time_index)
+        a_fl_model.a_head_sources.getcol(time_index).todense().ravel("F")
         / fl_model.storage_coefficient
         / geometry.mesh_volume
     )

@@ -2,7 +2,7 @@
 
 import numpy as np
 import pytest
-from scipy.sparse import csc_matrix
+from scipy.sparse import csc_array
 from scipy.sparse.linalg import gmres
 
 from pyrtid.utils import (
@@ -14,7 +14,7 @@ from pyrtid.utils import (
 
 
 def test_get_super_lu_preconditioner() -> None:
-    A = csc_matrix([[1.0, 0.0, 0.0], [5.0, 0.0, 2.0], [0.0, -1.0, 0.0]], dtype=float)
+    A = csc_array([[1.0, 0.0, 0.0], [5.0, 0.0, 2.0], [0.0, -1.0, 0.0]], dtype=float)
     B = get_super_lu_preconditioner(A)
     x = np.array([1.0, 2.0, 3.0], dtype=float)
     np.testing.assert_allclose(
@@ -25,7 +25,7 @@ def test_get_super_lu_preconditioner() -> None:
 
 def test_factor_excatly_singular() -> None:
     # all partial derivatives are zero
-    A = csc_matrix([[1.0, 1.0, 1.0], [1.0, 1.0, 1.0], [1.0, 1.0, 1.0]], dtype=float)
+    A = csc_array([[1.0, 1.0, 1.0], [1.0, 1.0, 1.0], [1.0, 1.0, 1.0]], dtype=float)
     B = get_super_lu_preconditioner(A)
     assert B is None
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Tuple
 
 import numpy as np
-from scipy.sparse import lil_matrix
+from scipy.sparse import lil_array
 from scipy.sparse.linalg import gmres
 
 from pyrtid.utils import harmonic_mean
@@ -22,7 +22,7 @@ from .models import (
 
 def make_transport_matrices_diffusion_only(
     geometry: Geometry, tr_model: TransportModel, time_params: TimeParameters
-) -> Tuple[lil_matrix, lil_matrix]:
+) -> Tuple[lil_array, lil_array]:
     """
     Make matrices for the transport.
 
@@ -33,8 +33,8 @@ def make_transport_matrices_diffusion_only(
     """
 
     dim = geometry.nx * geometry.ny
-    q_prev = lil_matrix((dim, dim), dtype=np.float64)
-    q_next = lil_matrix((dim, dim), dtype=np.float64)
+    q_prev = lil_array((dim, dim), dtype=np.float64)
+    q_next = lil_array((dim, dim), dtype=np.float64)
 
     # X contribution
     if geometry.nx >= 2:
@@ -191,8 +191,8 @@ def _add_advection_to_transport_matrices(
     geometry: Geometry,
     fl_model: FlowModel,
     tr_model: TransportModel,
-    q_next: lil_matrix,
-    q_prev: lil_matrix,
+    q_next: lil_array,
+    q_prev: lil_array,
     conc_sources: NDArrayFloat,
     conc_sources_old: NDArrayFloat,
     time_params: TimeParameters,
@@ -356,8 +356,8 @@ def _apply_transport_sink_term(
     tr_model: TransportModel,
     conc_sources: NDArrayFloat,
     conc_sources_old: NDArrayFloat,
-    q_next: lil_matrix,
-    q_prev: lil_matrix,
+    q_next: lil_array,
+    q_prev: lil_array,
 ) -> None:
     flw = conc_sources.flatten(order="F")
     _flw = np.where(flw < 0, flw, 0.0)  # keep only negative flowrates
@@ -374,8 +374,8 @@ def _apply_divergence_effect(
     tr_model: TransportModel,
     conc_sources: NDArrayFloat,
     conc_sources_old: NDArrayFloat,
-    q_next: lil_matrix,
-    q_prev: lil_matrix,
+    q_next: lil_array,
+    q_prev: lil_array,
     time_index: int,
 ) -> None:
     """
@@ -396,8 +396,8 @@ def _add_transport_boundary_conditions(
     geometry: Geometry,
     fl_model: FlowModel,
     tr_model: TransportModel,
-    q_next: lil_matrix,
-    q_prev: lil_matrix,
+    q_next: lil_array,
+    q_prev: lil_array,
     time_index: int,
 ) -> None:
     """Add the boundary conditions to the matrix."""
@@ -494,8 +494,8 @@ def solve_transport_semi_implicit(
     # The matrix with respect to the advection only needs to be updated if the head
     # have changed.
     if nfpi == 1:
-        q_next: lil_matrix = tr_model.q_next_diffusion.copy()
-        q_prev: lil_matrix = tr_model.q_prev_diffusion.copy()
+        q_next: lil_array = tr_model.q_next_diffusion.copy()
+        q_prev: lil_array = tr_model.q_prev_diffusion.copy()
 
         # Update q_next and q_prev with the advection term (must be copied)
         # Note that this is required at the first fixed point iteration only,

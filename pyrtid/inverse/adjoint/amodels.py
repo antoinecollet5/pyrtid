@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Optional
 
 import numpy as np
-from scipy.sparse import csc_matrix, lil_matrix
+from scipy.sparse import csc_array, lil_array
 
 from pyrtid.forward.models import (  # ConstantHead,; ZeroConcGradient,
     ForwardModel,
@@ -51,31 +51,31 @@ class AdjointFlowModel:
         # so use a sparse matrix instead of a dense array
         # NOTE: rows are meshes, and columns are time indices
         # We use csc format for fast column (time) slicing
-        self.a_head_sources: csc_matrix = csc_matrix(
+        self.a_head_sources: csc_array = csc_array(
             (geometry.nx * geometry.ny, time_params.nt), dtype=np.float64
         )
-        self.a_pressure_sources: csc_matrix = csc_matrix(
+        self.a_pressure_sources: csc_array = csc_array(
             (geometry.nx * geometry.ny, time_params.nt), dtype=np.float64
         )
-        self.a_density_sources: csc_matrix = csc_matrix(
+        self.a_density_sources: csc_array = csc_array(
             (geometry.nx * geometry.ny, time_params.nt), dtype=np.float64
         )
         # does not vary in time
-        self.a_permeability_sources: csc_matrix = csc_matrix(
+        self.a_permeability_sources: csc_array = csc_array(
             (geometry.nx * geometry.ny, 1), dtype=np.float64
         )
 
-        self.q_prev = lil_matrix(geometry.nx * geometry.ny)
-        self.q_next = lil_matrix(geometry.nx * geometry.ny)
+        self.q_prev = lil_array(geometry.nx * geometry.ny)
+        self.q_next = lil_array(geometry.nx * geometry.ny)
 
     def clear_adjoint_sources(self) -> None:
         """
         Reset all adjoint sources to zero.
         """
-        self.a_head_sources = csc_matrix(self.a_head_sources.shape)
-        self.a_pressure_sources = csc_matrix(self.a_pressure_sources.shape)
-        self.a_density_sources = csc_matrix(self.a_density_sources.shape)
-        self.a_permeability_sources = csc_matrix(self.a_permeability_sources.shape)
+        self.a_head_sources = csc_array(self.a_head_sources.shape)
+        self.a_pressure_sources = csc_array(self.a_pressure_sources.shape)
+        self.a_density_sources = csc_array(self.a_density_sources.shape)
+        self.a_permeability_sources = csc_array(self.a_permeability_sources.shape)
 
 
 class AdjointTransportModel:
@@ -89,10 +89,10 @@ class AdjointTransportModel:
     a_grade: NDArrayFloat
     a_conc_sources: NDArrayFloat
     a_grade_sources: NDArrayFloat
-    q_prev_diffusion: lil_matrix
-    q_next_diffusion: lil_matrix
-    q_prev: lil_matrix
-    q_next: lil_matrix
+    q_prev_diffusion: lil_array
+    q_next_diffusion: lil_array
+    q_prev: lil_array
+    q_next: lil_array
     a_gch_src_term: NDArrayFloat
     afpi_eps: float
     is_adj_numerical_acceleration: bool
@@ -151,35 +151,35 @@ class AdjointTransportModel:
         # so use a sparse matrix instead of a dense array
         # NOTE: rows are meshes, and columns are time indices
         # We use csc format for fast column (time) slicing
-        self.a_conc_sources = csc_matrix(
+        self.a_conc_sources = csc_array(
             (geometry.nx * geometry.ny, time_params.nt), dtype=np.float64
         )
-        self.a_grade_sources = csc_matrix(
+        self.a_grade_sources = csc_array(
             (geometry.nx * geometry.ny, time_params.nt), dtype=np.float64
         )
-        self.a_porosity_sources = csc_matrix(
+        self.a_porosity_sources = csc_array(
             (geometry.nx * geometry.ny, 1), dtype=np.float64
         )
-        self.a_diffusion_sources = csc_matrix(
+        self.a_diffusion_sources = csc_array(
             (geometry.nx * geometry.ny, 1), dtype=np.float64
         )
 
         # Adjoint source term from the adjoint geochem to the adjoint transport
         self.a_gch_src_term = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
 
-        self.q_prev_diffusion = lil_matrix(geometry.nx * geometry.ny)
-        self.q_next_diffusion = lil_matrix(geometry.nx * geometry.ny)
-        self.q_prev = lil_matrix(geometry.nx * geometry.ny)
-        self.q_next = lil_matrix(geometry.nx * geometry.ny)
+        self.q_prev_diffusion = lil_array(geometry.nx * geometry.ny)
+        self.q_next_diffusion = lil_array(geometry.nx * geometry.ny)
+        self.q_prev = lil_array(geometry.nx * geometry.ny)
+        self.q_next = lil_array(geometry.nx * geometry.ny)
         self.afpi_eps = afpi_eps
         self.is_adj_numerical_acceleration = is_adj_numerical_acceleration
 
     def clear_adjoint_sources(self) -> None:
         """Reset all adjoint sources to zero."""
-        self.a_conc_sources = csc_matrix(self.a_conc_sources.shape)
-        self.a_grade_sources = csc_matrix(self.a_grade_sources.shape)
-        self.a_porosity_sources = csc_matrix(self.a_porosity_sources.shape)
-        self.a_diffusion_sources = csc_matrix(self.a_diffusion_sources.shape)
+        self.a_conc_sources = csc_array(self.a_conc_sources.shape)
+        self.a_grade_sources = csc_array(self.a_grade_sources.shape)
+        self.a_porosity_sources = csc_array(self.a_porosity_sources.shape)
+        self.a_diffusion_sources = csc_array(self.a_diffusion_sources.shape)
 
 
 class AdjointModel:
@@ -268,7 +268,7 @@ class AdjointModel:
             }[obs.state_variable]
 
             # Add the sparse array to the correct attribute
-            res = csc_matrix(
+            res = csc_array(
                 get_adjoint_sources_for_obs(
                     fwd_model, obs, n_obs, max_obs_time
                 ).reshape(array.shape, order="F")
