@@ -14,8 +14,8 @@ import numdifftools as nd
 import numpy as np
 
 from pyrtid.forward import ForwardModel
+from pyrtid.inverse.obs import StateVariable, get_array_from_state_variable
 from pyrtid.inverse.regularization import Regularizator
-from pyrtid.utils.enum import StrEnum
 from pyrtid.utils.finite_differences import is_all_close
 from pyrtid.utils.spatial_filters import Filter
 from pyrtid.utils.types import (
@@ -36,14 +36,8 @@ def one(x: NDArrayFloat) -> NDArrayFloat:
     return np.ones(x.shape)
 
 
-class ParameterName(StrEnum):
-    """Name of supported parameters."""
-
-    DIFFUSION = "diffusion"
-    POROSITY = "porosity"
-    PERMEABILITY = "permeability"
-    INITIAL_CONCENTRATION = "initial_concentration"
-    INITIAL_MINERAL_GRADE = "initial_mineral_grade"
+# alias for state variable
+ParameterName = StateVariable
 
 
 class AdjustableParameter:
@@ -356,12 +350,6 @@ class AdjustableParameter:
         tmp = np.where(tmp < self.lbound, self.lbound, tmp)
         self.values[self.span] = np.where(tmp > self.ubound, self.ubound, tmp)
 
-    def update_field_with_param_values(self, field_to_update: NDArrayFloat) -> None:
-        """Update the input field with the Adjustable parameter current values."""
-        # sub_field = field_to_update[self.span]
-        # values = np.reshape(self.values, sub_field.shape)
-        field_to_update[self.span] = self.values[self.span]
-
     def get_bounds(self, is_preconditioned: bool = False) -> NDArrayFloat:
         """
         Return a 2*n bounds matrix.
@@ -442,17 +430,7 @@ def get_parameter_values_from_model(
             f"{param.name} is not an adjustable parameter !\n"
             f"Supported parameters are {ParameterName.to_list()}"
         )
-    if param.name == ParameterName.DIFFUSION:
-        return model.tr_model.diffusion
-    if param.name == ParameterName.POROSITY:
-        return model.tr_model.porosity
-    if param.name == ParameterName.PERMEABILITY:
-        return model.fl_model.permeability
-    if param.name == ParameterName.INITIAL_CONCENTRATION:
-        return model.tr_model.conc[:, :, 0]
-    if param.name == ParameterName.INITIAL_MINERAL_GRADE:
-        return model.tr_model.grade[:, :, 0]
-    raise (NotImplementedError("Please contact the developer to handle this issue."))
+    return get_array_from_state_variable(model, param.name)
 
 
 def update_parameters_from_model(
@@ -540,9 +518,7 @@ def update_model_with_parameters_values(
             parameters_values[first_index:last_index], is_preconditioned
         )
         # Update the model from param
-        param.update_field_with_param_values(
-            get_parameter_values_from_model(model, param)
-        )
+        update_model_with_param_values(model, param)
         first_index = last_index
         # Store the values
         if is_to_save:
@@ -632,3 +608,27 @@ def get_param_values(
     if is_preconditioned:
         return param.preconditioner(_values)
     return _values
+
+
+def update_model_with_param_values(
+    model: ForwardModel, param: AdjustableParameter
+) -> None:
+    """Update the input field with the Adjustable parameter current values."""
+    if param.name == StateVariable.CONCENTRATION:
+        model.tr_model.set_initial_conc(param.values[param.span], param.span)
+    if param.name == StateVariable.HEAD:
+        model.fl_model.set_initial_head(param.values[param.span], param.span)
+    if param.name == StateVariable.PRESSURE:
+        model.fl_model.set_initial_pressure(param.values[param.span], param.span)
+    if param.name == StateVariable.MINERAL_GRADE:
+        model.tr_model.set_initial_grade(param.values[param.span], param.span)
+    if param.name == StateVariable.PERMEABILITY:
+        model.fl_model.permeability[param.span] = param.values[param.span]
+    if param.name == StateVariable.POROSITY:
+        model.tr_model.porosity[param.span] = param.values[param.span]
+    if param.name == StateVariable.DIFFUSION:
+        model.tr_model.diffusion[param.span] = param.values[param.span]
+    else:
+        raise ValueError(
+            f'"{param.name}" is not a valid state variable or parameter type!'
+        )

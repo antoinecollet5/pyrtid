@@ -308,6 +308,13 @@ def get_observables_values_as_1d_vector(
     ----
     The observation values are sorted first by Observable instance (observation
     location) and by ascending time at a second level.
+
+    Parameters
+    ----------
+    observables
+        Sequence of observable instances.
+    max_obs_time : Optional[float], optional
+        Maximum time for which to consider an obervation value, by default None.
     """
     return np.hstack(
         [
@@ -327,6 +334,14 @@ def get_observables_uncertainties_as_1d_vector(
     ----
     The observation values are sorted first by Observable instance (observation
     location) and by ascending time at a second level.
+
+    Parameters
+    ----------
+    observables
+        Sequence of observable instances.
+    max_obs_time : Optional[float], optional
+        Maximum time for which to consider an obervation value, by default None.
+
     """
     return np.hstack(
         [
@@ -594,7 +609,7 @@ def get_adjoint_sources_for_obs(
     obs : Observable
         _description_
     max_obs_time : Optional[float], optional
-        _description_, by default None
+        Maximum time for which to consider an obervation value, by default None.
     n_obs: float
         The number of observation point to consider.
 

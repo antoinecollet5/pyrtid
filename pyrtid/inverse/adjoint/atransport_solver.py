@@ -21,7 +21,20 @@ from pyrtid.utils import harmonic_mean
 from pyrtid.utils.operators import get_super_lu_preconditioner
 from pyrtid.utils.types import NDArrayFloat
 
-VERY_SMALL_NUMBER = 1e-30
+VERY_SMALL_NUMBER = 1e-25
+
+
+def get_max_coupling_error(current_arr, prev_arr) -> float:
+    num = np.where(
+        np.abs(current_arr) <= VERY_SMALL_NUMBER, VERY_SMALL_NUMBER, current_arr
+    )
+    den = np.where(np.abs(prev_arr) <= VERY_SMALL_NUMBER, VERY_SMALL_NUMBER, prev_arr)
+    return float(
+        np.nan_to_num(
+            np.max(np.abs(1 - num / den)),
+            nan=0.0,
+        )
+    )
 
 
 def get_adjoint_max_coupling_error(
@@ -40,13 +53,8 @@ def get_adjoint_max_coupling_error(
 
     This error is evaluated from the mobile adjoint concentrations.
     """
-    return float(
-        np.nan_to_num(
-            np.max(
-                np.abs(1 - atr_model.a_conc[:, :, time_index] / atr_model.a_conc_prev)
-            ),
-            nan=0.0,
-        )
+    return get_max_coupling_error(
+        atr_model.a_conc[:, :, time_index], atr_model.a_conc_prev
     )
 
 
@@ -629,10 +637,10 @@ def solve_adj_transport_transient_semi_implicit(
         q_prev = a_tr_model.q_prev
 
     # Get the previous vector
-    prev_vector = a_tr_model.a_conc[:, :, time_index].ravel("F")
+    prev_vector = a_tr_model.a_conc[:, :, time_index + 1].ravel("F")
 
     # Multiply prev matrix by prev vector
-    tmp: NDArrayFloat = a_tr_model.q_prev.dot(prev_vector)
+    tmp: NDArrayFloat = q_prev.dot(prev_vector)
 
     # Add the source terms
     tmp += (
@@ -644,10 +652,10 @@ def solve_adj_transport_transient_semi_implicit(
     tmp -= a_tr_model.a_gch_src_term.ravel(order="F") / geometry.mesh_volume
 
     # Build the LU preconditioning
-    preconditioner = get_super_lu_preconditioner(a_tr_model.q_next.tocsc())
+    preconditioner = get_super_lu_preconditioner(q_next.tocsc())
 
     # Solve Ax = b with A sparse using LU preconditioner
-    res, exit_code = gmres(a_tr_model.q_next.tocsc(), tmp, M=preconditioner, atol=1e-15)
+    res, exit_code = gmres(q_next.tocsc(), tmp, M=preconditioner, atol=1e-15)
     # Note: we go backward in time, so time_index -1...
     a_tr_model.a_conc[:, :, time_index] = res.reshape(geometry.ny, geometry.nx).T
 

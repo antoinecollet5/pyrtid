@@ -24,10 +24,13 @@ def solve_adj_geochem(
     ac_old = a_tr_model.a_conc[:, :, time_index + 1]
 
     # Adjoint concentration at current timestep
-    if tr_model.is_numerical_acceleration and nafpi == 1:
+    if a_tr_model.is_adj_numerical_acceleration and nafpi == 1:
         ac_cur = a_tr_model.a_conc[:, :, time_index + 1]
     else:
         ac_cur = a_tr_model.a_conc[:, :, time_index]
+
+    # Save the grade for the fix point iterations
+    a_tr_model.a_conc_prev = ac_cur.copy()
 
     # Forward variables
     c_old = tr_model.lconc[time_index + 1]

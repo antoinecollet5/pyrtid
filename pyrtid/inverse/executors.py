@@ -405,9 +405,8 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         # Solve the forward model with the new parameters
         ForwardSolver(self.fwd_model).solve()
 
-        # TODO: add hm_end_time
         d_pred = get_predictions_matching_observations(
-            self.fwd_model, self.inv_model.observables
+            self.fwd_model, self.inv_model.observables, self.solver_config.hm_end_time
         )
 
         # Save the predictions
@@ -465,8 +464,12 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         for i in range(d_pred.shape[0]):
             ls_loss = ls_loss_function(
                 d_pred[i, :],
-                get_observables_values_as_1d_vector(self.inv_model.observables),
-                get_observables_uncertainties_as_1d_vector(self.inv_model.observables),
+                get_observables_values_as_1d_vector(
+                    self.inv_model.observables, self.solver_config.hm_end_time
+                ),
+                get_observables_uncertainties_as_1d_vector(
+                    self.inv_model.observables, self.solver_config.hm_end_time
+                ),
             )
             self.inv_model.list_f_res.append(ls_loss)
 
@@ -597,7 +600,10 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         raise Exception(msg)
 
     def is_adjoint_gradient_correct(
-        self, eps: Optional[float] = None, max_workers: int = 1
+        self,
+        eps: Optional[float] = None,
+        max_workers: int = 1,
+        is_verbose: bool = False,
     ) -> bool:
         """
         Return whether the adjoint gradient is correct or not.
@@ -618,6 +624,11 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
             Number of workers used for the gradient approximation by finite
             differences. If different from one, the calculation relies on
             multi-processing to decrease the computation time. The default is 1.
+        is_verbose : bool, optional
+            Whether to display computation infrmation, by default False
+        tr_av_init_method : str, optional
+            Whether to initiate the adjoint transport variables explicitly or with
+            a fixed point iteration, by default "explicit".
         """
         return is_adjoint_gradient_correct(
             self.fwd_model,
@@ -626,6 +637,7 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
             self.inv_model.observables,
             eps=eps,
             max_workers=max_workers,
+            is_verbose=is_verbose,
         )
 
 

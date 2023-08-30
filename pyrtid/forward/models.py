@@ -17,6 +17,7 @@ from scipy.sparse import lil_array
 
 from pyrtid.utils import StrEnum, node_number_to_indices, span_to_node_numbers_2d
 from pyrtid.utils.types import (
+    NDArrayBool,
     NDArrayFloat,
     NDArrayInt,
     object_or_object_sequence_to_list,
@@ -649,10 +650,26 @@ class FlowModel:
         return self.head
 
     def set_initial_head(
-        self, values: Union[float, int, NDArrayInt, NDArrayFloat]
+        self,
+        values: Union[float, int, NDArrayInt, NDArrayFloat],
+        span: Union[NDArrayInt, Tuple[slice, slice], NDArrayBool] = (
+            slice(None),
+            slice(None),
+        ),
     ) -> None:
         """Set the initial head field."""
-        self.lhead[0][:, :] = values
+        self.lhead[0][span] = values
+
+    def set_initial_pressure(
+        self,
+        values: Union[float, int, NDArrayInt, NDArrayFloat],
+        span: Union[NDArrayInt, Tuple[slice, slice], NDArrayBool] = (
+            slice(None),
+            slice(None),
+        ),
+    ) -> None:
+        """Set the initial pressure field in Pa."""
+        self.lhead[0][span] = values
 
     def add_boundary_conditions(self, condition: BoundaryCondition) -> None:
         """Add a boundary condition to the flow model."""
@@ -724,7 +741,7 @@ class FlowModel:
         else:
             return 1
 
-    def _get_mesh_center_vertical_pos(self) -> Union[NDArrayFloat, float]:
+    def _get_mesh_center_vertical_pos(self) -> NDArrayFloat:
         """Return the vertical position of the meshes centers."""
         xv, yv = np.meshgrid(range(self.head.shape[0]), range(self.head.shape[1]))
         if self.vertical_axis == VerticalAxis.DX:
@@ -732,7 +749,7 @@ class FlowModel:
         elif self.vertical_axis == VerticalAxis.DY:
             return (yv + 0.5) * self.vertical_mesh_size
         else:
-            return 0.5 * self.vertical_mesh_size
+            return np.array([[0.5 * self.vertical_mesh_size]])
 
     def get_pressure_pa(self) -> NDArrayFloat:
         """Return the pressure in Pa."""
@@ -869,16 +886,26 @@ class TransportModel:
         return self.diffusion * self.porosity
 
     def set_initial_grade(
-        self, values: Union[float, int, NDArrayInt, NDArrayFloat]
+        self,
+        values: Union[float, int, NDArrayInt, NDArrayFloat],
+        span: Union[NDArrayInt, Tuple[slice, slice], NDArrayBool] = (
+            slice(None),
+            slice(None),
+        ),
     ) -> None:
         """Set the initial grades."""
-        self.lgrade[0][:, :] = values
+        self.lgrade[0][span] = values
 
     def set_initial_conc(
-        self, values: Union[float, int, NDArrayInt, NDArrayFloat]
+        self,
+        values: Union[float, int, NDArrayInt, NDArrayFloat],
+        span: Union[NDArrayInt, Tuple[slice, slice], NDArrayBool] = (
+            slice(None),
+            slice(None),
+        ),
     ) -> None:
         """Set the initial concentrations."""
-        self.lconc[0][:, :] = values
+        self.lconc[0][span] = values
 
     def add_boundary_conditions(self, condition: BoundaryCondition) -> None:
         """Add a boundary condition to the transport model."""

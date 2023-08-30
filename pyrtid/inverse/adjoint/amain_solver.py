@@ -82,8 +82,15 @@ class AdjointSolver:
     ) -> None:
         """
         Solve the adjoint system of equations.
-        """
 
+        Parameters
+        ----------
+        is_verbose : bool, optional
+            Whether to display computation infrmation, by default False
+        tr_av_init_method : str, optional
+            Whether to initiate the adjoint transport variables explicitly or with
+            a fixed point iteration, by default "explicit".
+        """
         # Initiate adjoint concentrations and grades
         self.init_adjoint_variables(
             self.fwd_model,
@@ -152,20 +159,11 @@ class AdjointSolver:
     ) -> None:
         # Some references.
         a_tr_model = self.adj_model.a_tr_model
-
         nafpi = 1  # number of coupling (Fixed Point) iterations
-        # Convergence flag for the adjoint
-
-        # Copy the grades (To place in another function afterwards)
-        a_tr_model.a_conc[:, :, time_index] = a_tr_model.a_conc[:, :, time_index + 1]
-
         has_converged = False
 
         # Iterate the chemistry transport system while the convergence is no meet
         while not has_converged:
-            # Save the grade for the fix point iterations
-            a_tr_model.a_conc_prev = a_tr_model.a_conc[:, :, time_index].copy()
-
             # 1) Start by solving adjoint geochemistry
             solve_adj_geochem(
                 self.fwd_model.tr_model,

@@ -634,6 +634,7 @@ def _local_fun(
     observables: List[Observable],
     parameters_to_adjust: List[AdjustableParameter],
     jreg_weight: float,
+    max_obs_time: Optional[float] = None,
 ) -> float:
     # Update the model with the new values of x (preconditioned)
     # Do not save parameters values (useless)
@@ -642,8 +643,13 @@ def _local_fun(
     )
     # Solve the forward model with the new parameters
     ForwardSolver(_model).solve()
+
     return get_model_loss_function(
-        _model, observables, parameters_to_adjust, jreg_weight
+        _model,
+        observables,
+        parameters_to_adjust,
+        max_obs_time=max_obs_time,
+        jreg_weight=jreg_weight,
     )
 
 
@@ -654,6 +660,7 @@ def compute_fd_gradient(
     jreg_weight=1.0,
     eps: Optional[float] = None,
     max_workers: int = 1,
+    max_obs_time: Optional[float] = None,
 ) -> NDArrayFloat:
     """Compute the gradient of the given parameters by finite difference approximation.
 
@@ -672,6 +679,8 @@ def compute_fd_gradient(
         Number of workers used  if the gradient is approximated by finite
         differences. If different from one, the calculation relies on
         multi-processing to decrease the computation time. The default is 1.
+    max_obs_time : Optional[float], optional
+        Maximum time for which to consider an obervation value, by default None.
 
     """
     _model = copy.deepcopy(model)
@@ -698,7 +707,14 @@ def compute_fd_gradient(
                 get_parameter_values_from_model(_model, param), is_preconditioned=True
             ),
             _local_fun,
-            fm_args=(param, _model, observables, parameters_to_adjust, jreg_weight),
+            fm_args=(
+                param,
+                _model,
+                observables,
+                parameters_to_adjust,
+                jreg_weight,
+                max_obs_time,
+            ),
             eps=eps,
             max_workers=max_workers,
         )
@@ -722,6 +738,7 @@ def is_adjoint_gradient_correct(
     observables: Union[Observable, Sequence[Observable]],
     eps: Optional[float] = None,
     max_workers: int = 1,
+    is_verbose: bool = False,
 ) -> bool:
     """
     Check if the gradient computed with the adjoint state is equal with FD.
@@ -743,7 +760,8 @@ def is_adjoint_gradient_correct(
         Number of workers used  if the gradient is approximated by finite
         differences. If different from one, the calculation relies on
         multi-processing to decrease the computation time. The default is 1.
-
+    is_verbose: bool
+        Whether to display info. The default is False.
     Returns
     -------
     bool
@@ -759,7 +777,7 @@ def is_adjoint_gradient_correct(
 
     # Solve the adjoint problem
     asolver: AdjointSolver = AdjointSolver(fwd_model, adj_model)
-    asolver.solve()
+    asolver.solve(is_verbose=is_verbose, tr_av_init_method="direct")
 
     adj_grad = compute_adjoint_gradient(
         fwd_model, asolver.adj_model, parameters_to_adjust
