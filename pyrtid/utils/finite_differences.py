@@ -218,11 +218,10 @@ def finite_gradient(
         3 (4 points). The default is 0 which corresponds to the central
         difference scheme (2 points).
     eps: float, optional
-        The epsilon for the computation (h). The default value has been
-        taken from the C++ implementation of
-        :cite:`wieschollek2016cppoptimizationlibrary`, and should correspond
-        to the optimal h taking into account the roundoff errors due to
-        the machine precision. The default is 2.2204e-6.
+        The epsilon for the computation (h). By default, it take 1e-7 times
+        the Frobenius norm of the input vector. The norm is defined as
+        :math:`||A||_F = [\\sum_{i,j} abs(a_{i,j})^2]^{1/2}`
+        :cite:`golubMatrixComputations1996`.
     max_workers: int
         Number of workers used. If different from one, the calculation relies on
         multi-processing to decrease the computation time. The default is 1.
@@ -233,11 +232,12 @@ def finite_gradient(
         The finite difference gradient vector.
 
     """
+    x0 = np.array(x).astype(np.float64)
     if eps is None:
-        eps = sys.float_info.epsilon * 1e10
+        #  eps = sys.float_info.epsilon * 1e10
+        eps = float(np.linalg.norm(x0, "fro")) * 1e-7
     if accuracy not in [0, 1, 2, 3]:
         raise ValueError("The accuracy should be 0, 1, 2 or 3!")
-    x0 = np.array(x).astype(np.float64)
     grad = np.zeros(x0.size)
     dd = [2.0, 12.0, 60.0, 840.0]
 
