@@ -20,8 +20,23 @@ from .transport_solver import (
     solve_transport_semi_implicit,
 )
 
+VERY_SMALL_NUMBER = 1e-25
 
-def get_max_coupling_error(tr_model: TransportModel, time_index: int) -> float:
+
+def get_max_coupling_error(current_arr, prev_arr) -> float:
+    num = np.where(
+        np.abs(current_arr) <= VERY_SMALL_NUMBER, VERY_SMALL_NUMBER, current_arr
+    )
+    den = np.where(np.abs(prev_arr) <= VERY_SMALL_NUMBER, VERY_SMALL_NUMBER, prev_arr)
+    return float(
+        np.nan_to_num(
+            np.max(np.abs(1 - num / den)),
+            nan=0.0,
+        )
+    )
+
+
+def get_max_coupling_error_forward(tr_model: TransportModel, time_index: int) -> float:
     r"""
     Return the maximum transport-chemistry coupling error.
 
@@ -35,12 +50,7 @@ def get_max_coupling_error(tr_model: TransportModel, time_index: int) -> float:
 
     This error is evaluated from the immobile concentrations (mineral grades).
     """
-    return float(
-        np.nan_to_num(
-            np.nanmax(np.abs(1 - tr_model.lgrade[time_index] / tr_model.grade_prev)),
-            nan=0.0,
-        )
-    )
+    return get_max_coupling_error(tr_model.lgrade[time_index], tr_model.grade_prev)
 
 
 class ForwardSolver:
@@ -85,12 +95,16 @@ class ForwardSolver:
 
         # If stationary -> equilibrate the initial heads with sources
         # and boundary conditions
+
+        # Get the flow and concentration sources
+        flw_sources, conc_sources = self.model.get_sources(
+            self.model.time_params.time_elapsed, self.model.geometry
+        )
+        self.model.fl_model.lsources.append(flw_sources)
+        self.model.tr_model.lsources.append(conc_sources)
+
         if self.model.fl_model.regime == FlowRegime.STATIONARY:
             self.initialize_flow_matrices(FlowRegime.STATIONARY)
-            # Get sources for the stationary flow
-            flw_sources, _ = self.model.get_sources(
-                self.model.time_params.time_elapsed, self.model.geometry
-            )
             solve_flow_stationary(
                 self.model.geometry,
                 self.model.fl_model,
@@ -126,6 +140,9 @@ class ForwardSolver:
         # Save the timesteps to the list of timesteps
         self.model.time_params.save_dt()
 
+        # Get the sources
+        # flw_sources_old = self.model.fl_model.lsources[time_index - 1]
+        # conc_sources_old = self.model.tr_model.lsources[time_index - 1]
         flw_sources_old, conc_sources_old = self.model.get_sources(
             self.model.time_params.time_elapsed - self.model.time_params.dt,
             self.model.geometry,
@@ -133,6 +150,9 @@ class ForwardSolver:
         flw_sources, conc_sources = self.model.get_sources(
             self.model.time_params.time_elapsed, self.model.geometry
         )
+
+        self.model.fl_model.lsources.append(flw_sources)
+        self.model.tr_model.lsources.append(conc_sources)
 
         # Solve the flow -> no iterations since we don't have variable permeability nor
         # porosity/diffusion.
@@ -192,10 +212,10 @@ class ForwardSolver:
                 logging.info(
                     f"max-coupling error at it = {time_index}"
                     f"-{self.model.time_params.nfpi}:"
-                    f"{get_max_coupling_error(self.model.tr_model, time_index)}"
+                    f"{get_max_coupling_error_forward(self.model.tr_model, time_index)}"
                 )
             has_converged = (
-                get_max_coupling_error(self.model.tr_model, time_index)
+                get_max_coupling_error_forward(self.model.tr_model, time_index)
                 < self.model.tr_model.fpi_eps
             )
             if is_verbose:

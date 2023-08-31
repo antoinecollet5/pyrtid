@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Tuple
 
 import numpy as np
-from scipy.sparse import lil_array
+from scipy.sparse import lil_array, lil_matrix
 from scipy.sparse.linalg import gmres
 
 from pyrtid.utils import harmonic_mean
@@ -22,7 +22,7 @@ from .models import (
 
 def make_transport_matrices_diffusion_only(
     geometry: Geometry, tr_model: TransportModel, time_params: TimeParameters
-) -> Tuple[lil_array, lil_array]:
+) -> Tuple[lil_matrix, lil_matrix]:
     """
     Make matrices for the transport.
 
@@ -52,29 +52,19 @@ def make_transport_matrices_diffusion_only(
             tr_model.cst_conc_indices,
         )
 
+        tmp = geometry.dy / geometry.dx / geometry.mesh_volume
+
         q_next[idc_owner, idc_owner] += (
-            tr_model.crank_nicolson_diffusion
-            * dmean[idc_owner]
-            / geometry.dx**2
-            / geometry.dz
+            tr_model.crank_nicolson_diffusion * dmean[idc_owner] * tmp
         )  # type: ignore
         q_next[idc_owner, idc_neigh] -= (
-            tr_model.crank_nicolson_diffusion
-            * dmean[idc_owner]
-            / geometry.dx**2
-            / geometry.dz
+            tr_model.crank_nicolson_diffusion * dmean[idc_owner] * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
-            (1.0 - tr_model.crank_nicolson_diffusion)
-            * dmean[idc_owner]
-            / geometry.dx**2
-            / geometry.dz
+            (1.0 - tr_model.crank_nicolson_diffusion) * dmean[idc_owner] * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_neigh] += (
-            (1.0 - tr_model.crank_nicolson_diffusion)
-            * dmean[idc_owner]
-            / geometry.dx**2
-            / geometry.dz
+            (1.0 - tr_model.crank_nicolson_diffusion) * dmean[idc_owner] * tmp
         )  # type: ignore
 
         # Backward scheme
@@ -86,28 +76,16 @@ def make_transport_matrices_diffusion_only(
         )
 
         q_next[idc_owner, idc_owner] += (
-            tr_model.crank_nicolson_diffusion
-            * dmean[idc_neigh]
-            / geometry.dx**2
-            / geometry.dz
+            tr_model.crank_nicolson_diffusion * dmean[idc_neigh] * tmp
         )  # type: ignore
         q_next[idc_owner, idc_neigh] -= (
-            tr_model.crank_nicolson_diffusion
-            * dmean[idc_neigh]
-            / geometry.dx**2
-            / geometry.dz
+            tr_model.crank_nicolson_diffusion * dmean[idc_neigh] * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
-            (1.0 - tr_model.crank_nicolson_diffusion)
-            * dmean[idc_neigh]
-            / geometry.dx**2
-            / geometry.dz
+            (1.0 - tr_model.crank_nicolson_diffusion) * dmean[idc_neigh] * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_neigh] += (
-            (1.0 - tr_model.crank_nicolson_diffusion)
-            * dmean[idc_neigh]
-            / geometry.dx**2
-            / geometry.dz
+            (1.0 - tr_model.crank_nicolson_diffusion) * dmean[idc_neigh] * tmp
         )  # type: ignore
 
     # Y contribution
@@ -126,29 +104,19 @@ def make_transport_matrices_diffusion_only(
             tr_model.cst_conc_indices,
         )
 
+        tmp = geometry.dx / geometry.dy / geometry.mesh_volume
+
         q_next[idc_owner, idc_owner] += (
-            tr_model.crank_nicolson_diffusion
-            * dmean[idc_owner]
-            / geometry.dy**2
-            / geometry.dz
+            tr_model.crank_nicolson_diffusion * dmean[idc_owner] * tmp
         )  # type: ignore
         q_next[idc_owner, idc_neigh] -= (
-            tr_model.crank_nicolson_diffusion
-            * dmean[idc_owner]
-            / geometry.dy**2
-            / geometry.dz
+            tr_model.crank_nicolson_diffusion * dmean[idc_owner] * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
-            (1.0 - tr_model.crank_nicolson_diffusion)
-            * dmean[idc_owner]
-            / geometry.dy**2
-            / geometry.dz
+            (1.0 - tr_model.crank_nicolson_diffusion) * dmean[idc_owner] * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_neigh] += (
-            (1.0 - tr_model.crank_nicolson_diffusion)
-            * dmean[idc_owner]
-            / geometry.dy**2
-            / geometry.dz
+            (1.0 - tr_model.crank_nicolson_diffusion) * dmean[idc_owner] * tmp
         )  # type: ignore
 
         # Backward scheme
@@ -160,28 +128,16 @@ def make_transport_matrices_diffusion_only(
         )
 
         q_next[idc_owner, idc_owner] += (
-            tr_model.crank_nicolson_diffusion
-            * dmean[idc_neigh]
-            / geometry.dy**2
-            / geometry.dz
+            tr_model.crank_nicolson_diffusion * dmean[idc_neigh] * tmp
         )  # type: ignore
         q_next[idc_owner, idc_neigh] -= (
-            tr_model.crank_nicolson_diffusion
-            * dmean[idc_neigh]
-            / geometry.dy**2
-            / geometry.dz
+            tr_model.crank_nicolson_diffusion * dmean[idc_neigh] * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
-            (1.0 - tr_model.crank_nicolson_diffusion)
-            * dmean[idc_neigh]
-            / geometry.dy**2
-            / geometry.dz
+            (1.0 - tr_model.crank_nicolson_diffusion) * dmean[idc_neigh] * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_neigh] += (
-            (1.0 - tr_model.crank_nicolson_diffusion)
-            * dmean[idc_neigh]
-            / geometry.dy**2
-            / geometry.dz
+            (1.0 - tr_model.crank_nicolson_diffusion) * dmean[idc_neigh] * tmp
         )  # type: ignore
 
     return q_next, q_prev
@@ -191,8 +147,8 @@ def _add_advection_to_transport_matrices(
     geometry: Geometry,
     fl_model: FlowModel,
     tr_model: TransportModel,
-    q_next: lil_array,
-    q_prev: lil_array,
+    q_next: lil_matrix,
+    q_prev: lil_matrix,
     conc_sources: NDArrayFloat,
     conc_sources_old: NDArrayFloat,
     time_params: TimeParameters,
@@ -210,6 +166,8 @@ def _add_advection_to_transport_matrices(
         un_x = tmp_x.flatten(order="F")
         un_x_old = tmp_x_old.flatten(order="F")
 
+        tmp = geometry.dy / geometry.mesh_volume
+
         # Forward scheme:
         normal = 1.0
         idc_owner, idc_neigh = get_owner_neigh_indices(
@@ -222,22 +180,22 @@ def _add_advection_to_transport_matrices(
         q_next[idc_owner, idc_neigh] += (
             crank_adv
             * np.where(normal * un_x <= 0.0, normal * un_x, 0.0)[idc_owner]
-            / geometry.dx
+            * tmp
         )  # type: ignore
         q_next[idc_owner, idc_owner] += (
             crank_adv
             * np.where(normal * un_x > 0.0, normal * un_x, 0.0)[idc_owner]
-            / geometry.dx
+            * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_neigh] -= (
             (1 - crank_adv)
             * np.where(normal * un_x_old <= 0.0, normal * un_x_old, 0.0)[idc_owner]
-            / geometry.dx
+            * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
             (1 - crank_adv)
             * np.where(normal * un_x_old > 0.0, normal * un_x_old, 0.0)[idc_owner]
-            / geometry.dx
+            * tmp
         )  # type: ignore
 
         # Backward scheme
@@ -252,22 +210,22 @@ def _add_advection_to_transport_matrices(
         q_next[idc_owner, idc_neigh] += (
             crank_adv
             * np.where(normal * un_x <= 0.0, normal * un_x, 0.0)[idc_neigh]
-            / geometry.dx
+            * tmp
         )  # type: ignore
         q_next[idc_owner, idc_owner] += (
             crank_adv
             * np.where(normal * un_x > 0.0, normal * un_x, 0.0)[idc_neigh]
-            / geometry.dx
+            * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_neigh] -= (
             (1 - crank_adv)
             * np.where(normal * un_x_old <= 0.0, normal * un_x_old, 0.0)[idc_neigh]
-            / geometry.dx
+            * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
             (1 - crank_adv)
             * np.where(normal * un_x_old > 0.0, normal * un_x_old, 0.0)[idc_neigh]
-            / geometry.dx
+            * tmp
         )  # type: ignore
 
     # Y contribution
@@ -289,25 +247,27 @@ def _add_advection_to_transport_matrices(
             tr_model.cst_conc_indices,
         )
 
+        tmp = geometry.dx / geometry.mesh_volume
+
         q_next[idc_owner, idc_neigh] += (
             crank_adv
             * np.where(normal * un_y <= 0.0, normal * un_y, 0.0)[idc_owner]
-            / geometry.dy
+            * tmp
         )  # type: ignore
         q_next[idc_owner, idc_owner] += (
             crank_adv
             * np.where(normal * un_y > 0.0, normal * un_y, 0.0)[idc_owner]
-            / geometry.dy
+            * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_neigh] -= (
             (1 - crank_adv)
             * np.where(normal * un_y_old <= 0.0, normal * un_y_old, 0.0)[idc_owner]
-            / geometry.dy
+            * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
             (1 - crank_adv)
             * np.where(normal * un_y_old > 0.0, normal * un_y_old, 0.0)[idc_owner]
-            / geometry.dy
+            * tmp
         )  # type: ignore
 
         # Backward scheme
@@ -322,22 +282,22 @@ def _add_advection_to_transport_matrices(
         q_next[idc_owner, idc_neigh] += (
             crank_adv
             * np.where(normal * un_y <= 0.0, normal * un_y, 0.0)[idc_neigh]
-            / geometry.dy
+            * tmp
         )  # type: ignore
         q_next[idc_owner, idc_owner] += (
             crank_adv
             * np.where(normal * un_y > 0.0, normal * un_y, 0.0)[idc_neigh]
-            / geometry.dy
+            * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_neigh] -= (
             (1 - crank_adv)
             * np.where(normal * un_y_old <= 0.0, normal * un_y_old, 0.0)[idc_neigh]
-            / geometry.dy
+            * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
             (1 - crank_adv)
             * np.where(normal * un_y_old > 0.0, normal * un_y_old, 0.0)[idc_neigh]
-            / geometry.dy
+            * tmp
         )  # type: ignore
 
     _apply_transport_sink_term(tr_model, conc_sources, conc_sources_old, q_next, q_prev)
@@ -356,8 +316,8 @@ def _apply_transport_sink_term(
     tr_model: TransportModel,
     conc_sources: NDArrayFloat,
     conc_sources_old: NDArrayFloat,
-    q_next: lil_array,
-    q_prev: lil_array,
+    q_next: lil_matrix,
+    q_prev: lil_matrix,
 ) -> None:
     flw = conc_sources.flatten(order="F")
     _flw = np.where(flw < 0, flw, 0.0)  # keep only negative flowrates
@@ -374,8 +334,8 @@ def _apply_divergence_effect(
     tr_model: TransportModel,
     conc_sources: NDArrayFloat,
     conc_sources_old: NDArrayFloat,
-    q_next: lil_array,
-    q_prev: lil_array,
+    q_next: lil_matrix,
+    q_prev: lil_matrix,
     time_index: int,
 ) -> None:
     """
@@ -396,38 +356,41 @@ def _add_transport_boundary_conditions(
     geometry: Geometry,
     fl_model: FlowModel,
     tr_model: TransportModel,
-    q_next: lil_array,
-    q_prev: lil_array,
+    q_next: lil_matrix,
+    q_prev: lil_matrix,
     time_index: int,
 ) -> None:
     """Add the boundary conditions to the matrix."""
     # We get the indices of the four borders and we apply a zero-conc gradient.
-    idc_left, idc_right = get_owner_neigh_indices(
-        geometry,
-        (slice(0, 1), slice(None)),
-        (slice(geometry.nx - 1, geometry.nx), slice(None)),
-        np.array([]),
-    )
 
     if geometry.nx >= 2:
+        idc_left, idc_right = get_owner_neigh_indices(
+            geometry,
+            (slice(0, 1), slice(None)),
+            (slice(geometry.nx - 1, geometry.nx), slice(None)),
+            np.array([]),
+        )
+        tmp = geometry.dy / geometry.mesh_volume
+
         _un = fl_model.u_darcy_x[:-1, :, time_index].ravel("F")[idc_left]
         _un_old = fl_model.u_darcy_x[:-1, :, time_index - 1].ravel("F")[idc_left]
         normal = -1.0
+
         q_next[idc_left, idc_left] += (
-            tr_model.crank_nicolson_advection * _un / geometry.dx * normal
+            tr_model.crank_nicolson_advection * _un * tmp * normal
         )  # type: ignore
         q_prev[idc_left, idc_left] -= (
-            (1 - tr_model.crank_nicolson_advection) * _un_old / geometry.dx * normal
+            (1 - tr_model.crank_nicolson_advection) * _un_old * tmp * normal
         )  # type: ignore
 
         _un = fl_model.u_darcy_x[1:, :, time_index].ravel("F")[idc_right]
         _un_old = fl_model.u_darcy_x[1:, :, time_index - 1].ravel("F")[idc_right]
         normal = 1.0
         q_next[idc_right, idc_right] += (
-            tr_model.crank_nicolson_advection * _un / geometry.dx * normal
+            tr_model.crank_nicolson_advection * _un * tmp * normal
         )  # type: ignore
         q_prev[idc_right, idc_right] -= (
-            (1 - tr_model.crank_nicolson_advection) * _un_old / geometry.dx * normal
+            (1 - tr_model.crank_nicolson_advection) * _un_old * tmp * normal
         )  # type: ignore
 
     # # Y contribution
@@ -439,25 +402,26 @@ def _add_transport_boundary_conditions(
             (slice(None), slice(geometry.ny - 1, geometry.ny)),
             np.array([]),
         )
+        tmp = geometry.dx / geometry.mesh_volume
 
         _un = fl_model.u_darcy_y[:, :-1, time_index].ravel("F")[idc_left]
         _un_old = fl_model.u_darcy_y[:, :-1, time_index - 1].ravel("F")[idc_left]
         normal = -1.0
         q_next[idc_left, idc_left] += (
-            tr_model.crank_nicolson_advection * _un / geometry.dy * normal
+            tr_model.crank_nicolson_advection * _un * tmp * normal
         )  # type: ignore
         q_prev[idc_left, idc_left] -= (
-            (1 - tr_model.crank_nicolson_advection) * _un_old / geometry.dy * normal
+            (1 - tr_model.crank_nicolson_advection) * _un_old * tmp * normal
         )  # type: ignore
 
         _un = fl_model.u_darcy_y[:, 1:, time_index].ravel("F")[idc_right]
         _un_old = fl_model.u_darcy_y[:, 1:, time_index - 1].ravel("F")[idc_right]
         normal = 1.0
         q_next[idc_right, idc_right] += (
-            tr_model.crank_nicolson_advection * _un / geometry.dy * normal
+            tr_model.crank_nicolson_advection * _un * tmp * normal
         )  # type: ignore
         q_prev[idc_right, idc_right] -= (
-            (1 - tr_model.crank_nicolson_advection) * _un_old / geometry.dy * normal
+            (1 - tr_model.crank_nicolson_advection) * _un_old * tmp * normal
         )  # type: ignore
 
 
@@ -494,13 +458,12 @@ def solve_transport_semi_implicit(
     # The matrix with respect to the advection only needs to be updated if the head
     # have changed.
     if nfpi == 1:
-        q_next: lil_array = tr_model.q_next_diffusion.copy()
-        q_prev: lil_array = tr_model.q_prev_diffusion.copy()
+        q_next: lil_matrix = tr_model.q_next_diffusion.copy()
+        q_prev: lil_matrix = tr_model.q_prev_diffusion.copy()
 
         # Update q_next and q_prev with the advection term (must be copied)
         # Note that this is required at the first fixed point iteration only,
         # afterwards, only the chemical source term varies.
-        # if nfpi == 1:
         _add_advection_to_transport_matrices(
             geometry,
             fl_model,

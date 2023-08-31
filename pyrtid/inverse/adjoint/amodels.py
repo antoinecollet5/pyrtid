@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Optional
 
 import numpy as np
-from scipy.sparse import csc_array, lil_array
+from scipy.sparse import csc_array, lil_array, lil_matrix
 
 from pyrtid.forward.models import (  # ConstantHead,; ZeroConcGradient,
     ForwardModel,
@@ -65,8 +65,8 @@ class AdjointFlowModel:
             (geometry.nx * geometry.ny, 1), dtype=np.float64
         )
 
-        self.q_prev = lil_array(geometry.nx * geometry.ny)
-        self.q_next = lil_array(geometry.nx * geometry.ny)
+        self.q_prev: lil_matrix = lil_array(geometry.nx * geometry.ny)
+        self.q_next: lil_matrix = lil_array(geometry.nx * geometry.ny)
 
     def clear_adjoint_sources(self) -> None:
         """
@@ -169,8 +169,8 @@ class AdjointTransportModel:
 
         self.q_prev_diffusion = lil_array(geometry.nx * geometry.ny)
         self.q_next_diffusion = lil_array(geometry.nx * geometry.ny)
-        self.q_prev = lil_array(geometry.nx * geometry.ny)
-        self.q_next = lil_array(geometry.nx * geometry.ny)
+        self.q_prev: lil_matrix = lil_array(geometry.nx * geometry.ny)
+        self.q_next: lil_matrix = lil_array(geometry.nx * geometry.ny)
         self.afpi_eps = afpi_eps
         self.is_adj_numerical_acceleration = is_adj_numerical_acceleration
 
