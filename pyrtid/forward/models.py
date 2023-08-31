@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import List, Optional, Sequence, Tuple, Union
 
 import numpy as np
-from scipy.sparse import lil_array
+from scipy.sparse import lil_array, lil_matrix
 
 from pyrtid.utils import StrEnum, node_number_to_indices, span_to_node_numbers_2d
 from pyrtid.utils.types import (
@@ -564,6 +564,7 @@ class FlowModel:
         "lu_darcy_x",
         "lu_darcy_y",
         "lu_darcy_div",
+        "lsources",
         "boundary_conditions",
         "cst_head_nn",
         "regime",
@@ -591,6 +592,7 @@ class FlowModel:
         self.lu_darcy_x: List[NDArrayFloat] = []
         self.lu_darcy_y: List[NDArrayFloat] = []
         self.lu_darcy_div: List[NDArrayFloat] = []
+        self.lsources: List[NDArrayFloat] = []
 
         self.boundary_conditions: List[BoundaryCondition] = []
         self.q_prev = lil_array(geometry.nx * geometry.ny)
@@ -639,6 +641,15 @@ class FlowModel:
         This is read-only.
         """
         return np.transpose(np.array(self.lu_darcy_div), axes=(1, 2, 0))
+
+    @property
+    def sources(self) -> NDArrayFloat:
+        """
+        Return flow sources sources as array with dimension (nx, ny, nz, nt + 1).
+
+        This is read-only.
+        """
+        return np.transpose(np.array(self.lsources), axes=(1, 2, 0))
 
     @property
     def pressure(self) -> NDArrayFloat:
@@ -712,6 +723,7 @@ class FlowModel:
         self.lu_darcy_x = []
         self.lu_darcy_y = []
         self.lu_darcy_div = []
+        self.lsources = []
         self.set_constant_head_indices()
 
     @property
@@ -798,6 +810,7 @@ class TransportModel:
         "porosity",
         "lconc",
         "lgrade",
+        "lsources",  # this is needed for the adjoint state
         "ldensity",
         "grade_prev",
         "boundary_conditions",
@@ -839,14 +852,14 @@ class TransportModel:
         self.ldensity: List[NDArrayFloat] = [
             np.ones((geometry.nx, geometry.ny), dtype=np.float64) * gch_params.grade
         ]
-
+        self.lsources: List[NDArrayFloat] = []
         self.grade_prev = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
         self.boundary_conditions: List[BoundaryCondition] = []
         # q_prev is composed of q_prev_diffusion + advection term
-        self.q_prev_diffusion = lil_array(geometry.nx * geometry.ny)
-        self.q_next_diffusion = lil_array(geometry.nx * geometry.ny)
-        self.q_prev = lil_array(geometry.nx * geometry.ny)
-        self.q_next = lil_array(geometry.nx * geometry.ny)
+        self.q_prev_diffusion: lil_matrix = lil_array(geometry.nx * geometry.ny)
+        self.q_next_diffusion: lil_matrix = lil_array(geometry.nx * geometry.ny)
+        self.q_prev: lil_matrix = lil_array(geometry.nx * geometry.ny)
+        self.q_next: lil_matrix = lil_array(geometry.nx * geometry.ny)
         self.cst_conc_indices: NDArrayInt = np.array([], dtype=np.int32)
         self.tolerance = tr_params.tolerance
         self.is_numerical_acceleration = tr_params.is_numerical_acceleration
@@ -879,6 +892,15 @@ class TransportModel:
         This is read-only.
         """
         return np.transpose(np.array(self.ldensity), axes=(1, 2, 0))
+
+    @property
+    def sources(self) -> NDArrayFloat:
+        """
+        Return concentration sources as array with dimension (nx, ny, nz, nt + 1).
+
+        This is read-only.
+        """
+        return np.transpose(np.array(self.lsources), axes=(1, 2, 0))
 
     @property
     def effective_diffusion(self) -> NDArrayFloat:
@@ -939,6 +961,7 @@ class TransportModel:
         self.lgrade = self.lgrade[:1]
         self.grade_prev = self.lgrade[0]
         self.ldensity = self.ldensity[:1]
+        self.lsources = []
         self.set_constant_conc_indices()
 
 
