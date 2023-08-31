@@ -9,7 +9,7 @@ from abc import abstractmethod
 from dataclasses import dataclass
 from typing import Sequence, Union
 
-from scipy.ndimage import gaussian_filter
+import scipy as sp
 from typing_extensions import Literal
 
 from pyrtid.utils.types import NDArrayFloat, object_or_object_sequence_to_list
@@ -100,7 +100,7 @@ class GaussianFilter(Filter):
             Filtered values.
         """
 
-        return gaussian_filter(
+        return sp.ndimage.gaussian_filter(
             param,
             get_sigma(self.sigmas, iteration - 1, param.ndim),
             self.order,

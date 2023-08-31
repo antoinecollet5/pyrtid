@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from pyrtid.utils import (
     indices_to_node_number,
@@ -33,26 +34,26 @@ def test_indices_to_node_number() -> None:
     )
 
 
-def test_node_number_to_test_indices():
-    assert node_number_to_indices(0, nx=1) == (0, 0, 0)
-    assert node_number_to_indices(0, nx=1, ny=1) == (0, 0, 0)
-    assert node_number_to_indices(0, nx=89, ny=78) == (0, 0, 0)
-    assert node_number_to_indices(11123, nx=89, ny=78) == (87, 46, 1)
-    assert node_number_to_indices(11123, nx=89, ny=78, indices_start_at_one=True) == (
-        88,
-        47,
-        2,
-    )
-    assert node_number_to_indices(173619, nx=89, ny=78, indices_start_at_one=False) == (
-        69,
-        0,
-        25,
-    )
-    assert node_number_to_indices(326273, nx=89, ny=78, indices_start_at_one=True) == (
-        89,
-        78,
-        47,
-    )
+@pytest.mark.parametrize(
+    "indices,kwargs, expected",
+    [
+        (0, {"nx": 1}, (0, 0, 0)),
+        (0, {"nx": 1, "ny": 1}, (0, 0, 0)),
+        (0, {"nx": 89, "ny": 78}, (0, 0, 0)),
+        (11123, {"nx": 89, "ny": 78}, (87, 46, 1)),
+        (11123, {"nx": 89, "ny": 78, "indices_start_at_one": True}, (88, 47, 2)),
+        (173619, {"nx": 89, "ny": 78, "indices_start_at_one": False}, (69, 0, 25)),
+        (326273, {"nx": 89, "ny": 78, "indices_start_at_one": True}, (89, 78, 47)),
+        (
+            [173619, 326273],
+            {"nx": 89, "ny": 78, "indices_start_at_one": False},
+            (np.array([69, 88]), np.array([0, 77]), np.array([25, 46])),
+        ),
+    ],
+)
+def test_node_number_to_test_indices(indices, kwargs, expected) -> None:
+    res = node_number_to_indices(indices, **kwargs)
+    np.testing.assert_equal(res, expected)
 
 
 def test_span_to_node_numbers_1d() -> None:

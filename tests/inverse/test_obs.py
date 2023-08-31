@@ -194,7 +194,7 @@ def model() -> dmfwd.ForwardModel:
         (StateVariable.DENSITY, does_not_raise()),
         (StateVariable.DIFFUSION, does_not_raise()),
         (StateVariable.HEAD, does_not_raise()),
-        (StateVariable.MINERAL_GRADE, does_not_raise()),
+        (StateVariable.GRADE, does_not_raise()),
         (StateVariable.PERMEABILITY, does_not_raise()),
         (StateVariable.POROSITY, does_not_raise()),
         (StateVariable.PRESSURE, does_not_raise()),

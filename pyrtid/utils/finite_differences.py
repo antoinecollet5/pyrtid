@@ -108,10 +108,12 @@ def is_gradient_correct(
 
     """
     if grad_args is None:
-        grad_args = []
+        _grad_args = []
+    else:
+        _grad_args = grad_args
     if grad_kwargs is None:
         grad_kwargs = {}
-    actual_grad = grad(x, *grad_args, **grad_kwargs)
+    actual_grad = grad(x, *_grad_args, **grad_kwargs)
     expected_grad = finite_gradient(
         x, fm, fm_args, fm_kwargs, accuracy, eps, max_workers
     )
@@ -218,10 +220,8 @@ def finite_gradient(
         3 (4 points). The default is 0 which corresponds to the central
         difference scheme (2 points).
     eps: float, optional
-        The epsilon for the computation (h). By default, it take 1e-7 times
-        the Frobenius norm of the input vector. The norm is defined as
-        :math:`||A||_F = [\\sum_{i,j} abs(a_{i,j})^2]^{1/2}`
-        :cite:`golubMatrixComputations1996`.
+        The epsilon for the computation (h). By default, it take 1e-6 times
+        the maximum absolute value of the input data.
     max_workers: int
         Number of workers used. If different from one, the calculation relies on
         multi-processing to decrease the computation time. The default is 1.
@@ -234,12 +234,11 @@ def finite_gradient(
     """
     x0 = np.array(x).astype(np.float64)
     if eps is None:
-        #  eps = sys.float_info.epsilon * 1e10
-        eps = float(np.linalg.norm(x0, "fro")) * 1e-7
+        eps = float(np.max(np.abs(x0))) * 1e-6
     if accuracy not in [0, 1, 2, 3]:
         raise ValueError("The accuracy should be 0, 1, 2 or 3!")
     grad = np.zeros(x0.size)
-    dd = [2.0, 12.0, 60.0, 840.0]
+    dd = np.array([2.0, 12.0, 60.0, 840.0])
 
     fd_params = FDParams(
         x0=x0.ravel(),

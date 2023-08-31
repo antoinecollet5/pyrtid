@@ -261,7 +261,7 @@ class AdjointModel:
                 StateVariable.DENSITY: self.a_fl_model.a_density_sources,
                 StateVariable.DIFFUSION: self.a_tr_model.a_diffusion_sources,
                 StateVariable.HEAD: self.a_fl_model.a_head_sources,
-                StateVariable.MINERAL_GRADE: self.a_tr_model.a_grade_sources,
+                StateVariable.GRADE: self.a_tr_model.a_grade_sources,
                 StateVariable.PERMEABILITY: self.a_fl_model.a_permeability_sources,
                 StateVariable.POROSITY: self.a_tr_model.a_porosity_sources,
                 StateVariable.PRESSURE: self.a_fl_model.a_pressure_sources,
@@ -282,7 +282,7 @@ class AdjointModel:
                 self.a_tr_model.a_diffusion_sources += res
             elif obs.state_variable == StateVariable.HEAD:
                 self.a_fl_model.a_head_sources += res
-            elif obs.state_variable == StateVariable.MINERAL_GRADE:
+            elif obs.state_variable == StateVariable.GRADE:
                 self.a_tr_model.a_grade_sources += res
             elif obs.state_variable == StateVariable.PERMEABILITY:
                 self.a_fl_model.a_permeability_sources += res

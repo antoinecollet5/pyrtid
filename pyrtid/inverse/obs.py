@@ -28,7 +28,7 @@ class StateVariable(StrEnum):
     DENSITY = "density"
     DIFFUSION = "diffusion"
     HEAD = "head"
-    MINERAL_GRADE = "grade"
+    GRADE = "grade"
     PERMEABILITY = "permeability"
     POROSITY = "porosity"
     PRESSURE = "pressure"
@@ -108,12 +108,12 @@ class Observable:
 
         self.state_variable = state_variable
         self.node_indices = np.sort(np.array(node_indices).ravel())
-        self.times = times
-        self.values = values
+        self.times = times.ravel()
+        self.values = values.ravel()
 
         _uncertainties = (
             np.array(uncertainties) if uncertainties is not None else np.array([])
-        )
+        ).ravel()
 
         if _uncertainties.size == 0:
             self.uncertainties = np.ones(self.values.shape)
@@ -281,7 +281,7 @@ def get_array_from_state_variable(
         return model.fl_model.head
     if state_variable == StateVariable.PRESSURE:
         return model.fl_model.pressure
-    if state_variable == StateVariable.MINERAL_GRADE:
+    if state_variable == StateVariable.GRADE:
         return model.tr_model.grade
     if state_variable == StateVariable.PERMEABILITY:
         return model.fl_model.permeability

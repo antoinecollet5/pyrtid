@@ -193,7 +193,7 @@ class InverseModel:
                 param.get_values_from_model_field(model.fl_model.permeability)
             elif param.name == ParameterName.INITIAL_CONCENTRATION:
                 param.get_values_from_model_field(model.tr_model.conc[:, :, 0])
-            elif param.name == ParameterName.INITIAL_MINERAL_GRADE:
+            elif param.name == ParameterName.INITIAL_GRADE:
                 param.get_values_from_model_field(model.tr_model.grade[:, :, 0])
             else:
                 raise (

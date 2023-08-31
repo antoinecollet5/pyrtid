@@ -6,13 +6,13 @@ Provide functions to work with regular grids.
 
 # pylint: disable=C0103  # Do not conform to snake-case naming style
 # pylint: disable=R0913  # Too many arguments
-from typing import Tuple, Union
+from typing import Sequence, Tuple, Union
 
 import numpy as np
 
 from pyrtid.utils.types import NDArrayInt
 
-Int = Union[int, NDArrayInt]
+Int = Union[int, NDArrayInt, Sequence[int]]
 
 
 def indices_to_node_number(
@@ -58,10 +58,10 @@ def indices_to_node_number(
 
     """
     if indices_start_at_one:
-        ix = np.max((ix - 1, 0))
-        iy = np.max((iy - 1, 0))
-        iz = np.max((iz - 1, 0))
-    return ix + (iy * nx) + (iz * ny * nx)
+        ix = np.max((np.array(ix) - 1, 0))
+        iy = np.max((np.array(iy) - 1, 0))
+        iz = np.max((np.array(iz) - 1, 0))
+    return np.array(ix) + (np.array(iy) * nx) + (np.array(iz) * ny * nx)
 
 
 def node_number_to_indices(
@@ -98,9 +98,10 @@ def node_number_to_indices(
         The node number.
 
     """
-    ix = (node_number) % nx
-    iz = (node_number - ix) // (nx * ny)
-    iy = (node_number - ix - (nx * ny) * iz) // nx
+    _node_number = np.array(node_number)
+    ix = (_node_number) % nx
+    iz = (_node_number - ix) // (nx * ny)
+    iy = (_node_number - ix - (nx * ny) * iz) // nx
 
     if indices_start_at_one:
         ix += 1

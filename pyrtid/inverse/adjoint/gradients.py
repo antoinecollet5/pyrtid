@@ -476,17 +476,14 @@ def get_initial_grade_adjoint_gradient(
     grad = (
         adj_model.a_tr_model.a_conc[:, :, 1]
         / fwd_model.time_params.ldt[0]
-        * (
-            fwd_model.tr_model.porosity * fwd_model.geometry.mesh_volume
-            + adj_model.a_tr_model.a_grade[:, :, 1]
-            * (
-                1
-                + fwd_model.time_params.ldt[0]
-                * fwd_model.gch_params.kv
-                * fwd_model.gch_params.As
-                * (1.0 - fwd_model.tr_model.lconc[1] / fwd_model.gch_params.Ks)
-            )
-        )
+        * fwd_model.tr_model.porosity
+        * fwd_model.geometry.mesh_volume
+    ) + adj_model.a_tr_model.a_grade[:, :, 1] * (
+        1
+        + fwd_model.time_params.ldt[0]
+        * fwd_model.gch_params.kv
+        * fwd_model.gch_params.As
+        * (1.0 - fwd_model.tr_model.lconc[1] / fwd_model.gch_params.Ks)
     )
     # Add adjoint sources for time t=0
     return grad + adj_model.a_tr_model.a_grade_sources.getcol(0).todense().reshape(
@@ -561,7 +558,7 @@ def compute_param_adjoint_ls_loss_function_gradient(
         return get_permeability_adjoint_gradient(fwd_model, adj_model)
     if param.name == ParameterName.INITIAL_CONCENTRATION:
         return get_initial_conc_adjoint_gradient(fwd_model, adj_model)
-    if param.name == ParameterName.INITIAL_MINERAL_GRADE:
+    if param.name == ParameterName.INITIAL_GRADE:
         return get_initial_grade_adjoint_gradient(fwd_model, adj_model)
     raise (NotImplementedError("Please contact the developer to handle this issue."))
 

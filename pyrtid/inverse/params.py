@@ -16,14 +16,15 @@ import numpy as np
 from pyrtid.forward import ForwardModel
 from pyrtid.inverse.obs import StateVariable, get_array_from_state_variable
 from pyrtid.inverse.regularization import Regularizator
-from pyrtid.utils.finite_differences import is_all_close
-from pyrtid.utils.spatial_filters import Filter
-from pyrtid.utils.types import (
+from pyrtid.utils import (
     NDArrayBool,
     NDArrayFloat,
     NDArrayInt,
+    StrEnum,
     object_or_object_sequence_to_list,
 )
+from pyrtid.utils.finite_differences import is_all_close
+from pyrtid.utils.spatial_filters import Filter
 
 
 def identify_function(x: NDArrayFloat) -> NDArrayFloat:
@@ -36,8 +37,27 @@ def one(x: NDArrayFloat) -> NDArrayFloat:
     return np.ones(x.shape)
 
 
-# alias for state variable
-ParameterName = StateVariable
+class ParameterName(StrEnum):
+    """Type of parameter invertible."""
+
+    INITIAL_CONCENTRATION = "concentration"
+    DIFFUSION = "diffusion"
+    INITIAL_HEAD = "head"
+    INITIAL_GRADE = "grade"
+    PERMEABILITY = "permeability"
+    POROSITY = "porosity"
+    INITIAL_PRESSURE = "pressure"
+
+
+PARAM_TO_STATE_VAR = {
+    ParameterName.INITIAL_CONCENTRATION: StateVariable.CONCENTRATION,
+    ParameterName.DIFFUSION: StateVariable.DIFFUSION,
+    ParameterName.INITIAL_HEAD: StateVariable.HEAD,
+    ParameterName.INITIAL_GRADE: StateVariable.GRADE,
+    ParameterName.PERMEABILITY: StateVariable.PERMEABILITY,
+    ParameterName.POROSITY: StateVariable.POROSITY,
+    ParameterName.INITIAL_PRESSURE: StateVariable.PRESSURE,
+}
 
 
 class AdjustableParameter:
@@ -430,7 +450,10 @@ def get_parameter_values_from_model(
             f"{param.name} is not an adjustable parameter !\n"
             f"Supported parameters are {ParameterName.to_list()}"
         )
-    return get_array_from_state_variable(model, param.name)
+    arr = get_array_from_state_variable(model, PARAM_TO_STATE_VAR[param.name])
+    if len(arr.shape) == 2:  # porosity, diffusion, perm, etc.
+        return arr
+    return arr[:, :, 0]  # initial head, pressure, concentrations and grade
 
 
 def update_parameters_from_model(
@@ -614,19 +637,19 @@ def update_model_with_param_values(
     model: ForwardModel, param: AdjustableParameter
 ) -> None:
     """Update the input field with the Adjustable parameter current values."""
-    if param.name == StateVariable.CONCENTRATION:
+    if param.name == ParameterName.INITIAL_CONCENTRATION:
         model.tr_model.set_initial_conc(param.values[param.span], param.span)
-    if param.name == StateVariable.HEAD:
+    elif param.name == ParameterName.INITIAL_HEAD:
         model.fl_model.set_initial_head(param.values[param.span], param.span)
-    if param.name == StateVariable.PRESSURE:
+    elif param.name == ParameterName.INITIAL_PRESSURE:
         model.fl_model.set_initial_pressure(param.values[param.span], param.span)
-    if param.name == StateVariable.MINERAL_GRADE:
+    elif param.name == ParameterName.INITIAL_GRADE:
         model.tr_model.set_initial_grade(param.values[param.span], param.span)
-    if param.name == StateVariable.PERMEABILITY:
+    elif param.name == ParameterName.PERMEABILITY:
         model.fl_model.permeability[param.span] = param.values[param.span]
-    if param.name == StateVariable.POROSITY:
+    elif param.name == ParameterName.POROSITY:
         model.tr_model.porosity[param.span] = param.values[param.span]
-    if param.name == StateVariable.DIFFUSION:
+    elif param.name == ParameterName.DIFFUSION:
         model.tr_model.diffusion[param.span] = param.values[param.span]
     else:
         raise ValueError(
