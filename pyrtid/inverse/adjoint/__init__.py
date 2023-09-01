@@ -72,6 +72,7 @@ Functions to solve the adjoint flow.
 .. autosummary::
    :toctree: _autosummary
 
+    init_adjoint_fl_variables
     make_stationary_adj_flow_matrices
     make_transient_adj_flow_matrices
     solve_adj_flow_stationary
@@ -88,7 +89,6 @@ Functions to solve the adjoint flow.
 .. autosummary::
    :toctree: _autosummary
 
-    init_adjoint_tr_variables_explicit
     init_adjoint_tr_variables_fpi
     get_adjoint_max_coupling_error
     make_transient_adj_transport_matrices
@@ -108,6 +108,7 @@ Adjoint chemistry
     """
 
 from pyrtid.inverse.adjoint.aflow_solver import (
+    init_adjoint_fl_variables,
     make_stationary_adj_flow_matrices,
     make_transient_adj_flow_matrices,
     solve_adj_flow_stationary,
@@ -123,7 +124,6 @@ from pyrtid.inverse.adjoint.amodels import (
 )
 from pyrtid.inverse.adjoint.atransport_solver import (
     get_adjoint_max_coupling_error,
-    init_adjoint_tr_variables_explicit,
     init_adjoint_tr_variables_fpi,
     make_transient_adj_transport_matrices,
     solve_adj_transport_transient_semi_implicit,
@@ -144,10 +144,10 @@ __all__ = [
     "AdjointTransportModel",
     "make_stationary_adj_flow_matrices",
     "make_transient_adj_flow_matrices",
+    "init_adjoint_fl_variables",
     "solve_adj_flow_stationary",
     "solve_adj_flow_transient_semi_implicit",
     "update_adjoint_u_darcy",
-    "init_adjoint_tr_variables_explicit",
     "init_adjoint_tr_variables_fpi",
     "get_adjoint_max_coupling_error",
     "make_transient_adj_transport_matrices",

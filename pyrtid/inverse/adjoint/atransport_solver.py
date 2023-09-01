@@ -44,83 +44,72 @@ def get_adjoint_max_coupling_error(
     )
 
 
-def init_adjoint_tr_variables_explicit(
+def solve_adj_initial_transport(
+    geometry: Geometry,
+    fl_model: FlowModel,
     tr_model: TransportModel,
     a_tr_model: AdjointTransportModel,
-    gch_params: GeochemicalParameters,
-    geometry: Geometry,
     time_params: TimeParameters,
-    is_verbose: bool = False,
-) -> None:
-    r"""
-    Initiate the initial (at tmax) adjoint transport variable in an explicit way.
+    time_index: int,
+    nafpi: int,
+) -> int:
+    """
+    Solving the adjoint diffusivity equation:
 
-    .. math::
-
-        \begin{cases}
-            \lambda_{c_{i}}^{N+1} = - \dfrac{\Delta t^{N}}{\mathcal{A}_{i} \omega_{i}}
-            \Bigg( \dfrac{c_{i}^{N+1, \mathrm{obs}} - c_{i}^{N+1, \mathrm{calc}}}{
-                \left(\sigma_{c_{i}}^{N+1, \mathrm{obs}}\right)^{2}} - \dfrac{
-                    \overline{c}_{i}^{N+1, \mathrm{obs}} - \overline{c}_{i}^{N+1,
-                    \mathrm{calc}}}{\left(\sigma_{\overline{c}_{i}}^{N+1,
-                    \mathrm{obs}}\right)^{2}} \Delta t^{N} k_{v} A_{s}
-                    \dfrac{\overline{c}_{i}^{N}}{Ks} \Bigg) \dfrac{1}{1
-                    - \Delta t^{N} k_{v} A_{s} \dfrac{\overline{c}_{i}^{N}}{Ks}},
-                    & \text{Initial condition}
-            \\\\
-            \lambda_{\overline{c}_{i}}^{N+1} =  - \dfrac{\mathcal{A}_{i}
-            \omega_{i}}{\Delta t^{N}} \lambda_{c_{i}}^{N+1} - \dfrac{\overline{c}_{i}^{
-                N+1, \mathrm{obs}} - \overline{c}_{i}^{N+1, \mathrm{calc}}}{\left(
-                    \sigma_{\overline{c}_{i}}^{N+1, \mathrm{obs}}\right)^{2}},
-                    & \text{Initial condition}
-            \\\\
-        \end{cases}
-
-    Parameters
-    ----------
-    fwd_model : ForwardModel
-        _description_
-    adj_model : AdjointModel
-        _description_
-    is_verbose : bool, optional
-        _description_, by default False
+    dc/dt = div D grad c + ...
     """
 
-    if is_verbose:
-        logging.info(" - Adjoint transport direct initialization!")
+    tr_model.crank_nicolson_advection
 
-    tmp = (
-        time_params.ldt[-1]
-        * gch_params.kv
-        * gch_params.As
-        * tr_model.lgrade[-2]
-        / gch_params.Ks
-    )
+    if nafpi == 1:
+        q_next = a_tr_model.q_next_diffusion.copy().tolil()
+        q_prev = a_tr_model.q_prev_diffusion.copy().tolil()
 
-    a_tr_model.a_conc[:, :, -1] = (
-        time_params.ldt[-1]
-        / (tr_model.porosity * geometry.mesh_volume)
-        * (
-            a_tr_model.a_conc_sources.getcol(-1)
-            .todense()
-            .reshape(geometry.shape, order="F")
-            - a_tr_model.a_grade_sources.getcol(-1)
-            .todense()
-            .reshape(geometry.shape, order="F")
-            * tmp
+        # Update q_next and q_prev with the advection term (must be copied)
+        # Note that this is required at the first fixed point iteration only,
+        # afterwards, only the chemical source term varies.
+        _add_advection_to_adj_transport_matrices(
+            geometry, fl_model, tr_model, a_tr_model, q_next, q_prev, time_index
         )
-        / (1 - tmp)
+
+        # Add 1/dt * \omgea for the left term contribution
+        # Note; if the porosity and the timesteps are added here, it is to get the
+        # highest values as possible on the diagonal of the matrices
+        # -> better conditionning and easier LU preconditioning.
+        q_next.setdiag(
+            q_next.diagonal() + tr_model.porosity.flatten("F") / time_params.ldt[-1]
+        )
+
+        a_tr_model.q_next = q_next
+    else:
+        q_next = a_tr_model.q_next
+
+    # Multiply prev matrix by prev vector
+    tmp = np.zeros(geometry.nx * geometry.ny)
+
+    # Add the adjoint source terms
+    # Add the source terms
+    tmp += (
+        a_tr_model.a_conc_sources.getcol(time_index).todense().ravel()
+        / geometry.mesh_volume
     )
-    a_tr_model.a_grade[:, :, -1] = (
-        -a_tr_model.a_conc[:, :, -1]
-        * (tr_model.porosity * geometry.mesh_volume)
-        / time_params.ldt[-1]
-    ) + a_tr_model.a_grade_sources.getcol(-1).todense().reshape(
-        geometry.shape, order="F"
-    )
+
+    # Add the adjoint geochem source term
+    tmp -= (a_tr_model.a_gch_src_term / geometry.mesh_volume).ravel("F")
+
+    # Build the LU preconditioning
+    preconditioner = get_super_lu_preconditioner(q_next.tocsc())
+
+    # Solve Ax = b with A sparse using LU preconditioner
+    res, exit_code = gmres(q_next.tocsc(), tmp, M=preconditioner, atol=1e-15)
+    # Note: we go backward in time, so time_index -1...
+    a_tr_model.a_conc[:, :, time_index] = res.reshape(geometry.ny, geometry.nx).T
+
+    return exit_code
 
 
 def init_adjoint_tr_variables_fpi(
+    fl_model: FlowModel,
     tr_model: TransportModel,
     a_tr_model: AdjointTransportModel,
     gch_params: GeochemicalParameters,
@@ -196,22 +185,20 @@ def init_adjoint_tr_variables_fpi(
         # Copy for the convergence check
         a_tr_model.a_conc_prev = a_tr_model.a_conc[:, :, -1].copy()
 
-        # Compute adjoint concentrations
-        a_tr_model.a_conc[:, :, -1] = (
-            time_params.ldt[-1]
-            / (tr_model.porosity * geometry.mesh_volume)
-            * (
-                a_tr_model.a_conc_sources.getcol(-1).reshape(geometry.shape, order="F")
-                - (a_tr_model.a_grade[:, :, -1] * tmp)
-            )
-        )
-
         # Compute adjoint grades
         a_tr_model.a_grade[:, :, -1] = (
             -a_tr_model.a_conc[:, :, -1]
             * (tr_model.porosity * geometry.mesh_volume)
             / time_params.ldt[-1]
         ) + a_tr_model.a_grade_sources.getcol(-1).reshape(geometry.shape, order="F")
+
+        # Source term for the transport
+        a_tr_model.a_gch_src_term = a_tr_model.a_grade[:, :, -1] * tmp
+
+        # Solve adjoint transport
+        solve_adj_initial_transport(
+            geometry, fl_model, tr_model, a_tr_model, time_params, -1, nafpi
+        )
 
         has_converged = (
             get_adjoint_max_coupling_error(a_tr_model, -1) < tr_model.fpi_eps

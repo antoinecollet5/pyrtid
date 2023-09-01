@@ -626,9 +626,6 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
             multi-processing to decrease the computation time. The default is 1.
         is_verbose : bool, optional
             Whether to display computation infrmation, by default False
-        tr_av_init_method : str, optional
-            Whether to initiate the adjoint transport variables explicitly or with
-            a fixed point iteration, by default "explicit".
         """
         return is_adjoint_gradient_correct(
             self.fwd_model,

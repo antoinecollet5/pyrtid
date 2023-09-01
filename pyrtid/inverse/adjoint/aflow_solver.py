@@ -19,6 +19,15 @@ from pyrtid.utils import get_super_lu_preconditioner, harmonic_mean
 from pyrtid.utils.types import NDArrayFloat
 
 
+def init_adjoint_fl_variables(
+    geometry: Geometry,
+    fl_model: FlowModel,
+    a_fl_model: AdjointFlowModel,
+    time_params: TimeParameters,
+) -> None:
+    a_fl_model.a_head[:, :, -1] = a_fl_model.a_head_sources
+
+
 def make_stationary_adj_flow_matrices(
     geometry: Geometry, fl_model: FlowModel, time_params: TimeParameters
 ) -> Tuple[lil_array, lil_array]:

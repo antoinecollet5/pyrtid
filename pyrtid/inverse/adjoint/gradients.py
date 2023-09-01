@@ -774,7 +774,7 @@ def is_adjoint_gradient_correct(
 
     # Solve the adjoint problem
     asolver: AdjointSolver = AdjointSolver(fwd_model, adj_model)
-    asolver.solve(is_verbose=is_verbose, tr_av_init_method="direct")
+    asolver.solve(is_verbose=is_verbose)
 
     adj_grad = compute_adjoint_gradient(
         fwd_model, asolver.adj_model, parameters_to_adjust

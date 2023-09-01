@@ -15,7 +15,6 @@ from pyrtid.inverse.adjoint.ageochem_solver import solve_adj_geochem
 from pyrtid.inverse.adjoint.amodels import AdjointFlowModel, AdjointModel
 from pyrtid.inverse.adjoint.atransport_solver import (
     get_adjoint_max_coupling_error,
-    init_adjoint_tr_variables_explicit,
     init_adjoint_tr_variables_fpi,
     make_transient_adj_transport_matrices,
     solve_adj_transport_transient_semi_implicit,
@@ -77,28 +76,15 @@ class AdjointSolver:
             self.fwd_model.time_params,
         )
 
-    def solve(
-        self, is_verbose: bool = False, tr_av_init_method: str = "explicit"
-    ) -> None:
+    def solve(self, is_verbose: bool = False) -> None:
         """
         Solve the adjoint system of equations.
 
         Parameters
         ----------
         is_verbose : bool, optional
-            Whether to display computation infrmation, by default False
-        tr_av_init_method : str, optional
-            Whether to initiate the adjoint transport variables explicitly or with
-            a fixed point iteration, by default "explicit".
+            Whether to display computation infrmation, by default False.
         """
-        # Initiate adjoint concentrations and grades
-        self.init_adjoint_variables(
-            self.fwd_model,
-            self.adj_model,
-            tr_av_init_method,
-            is_verbose,
-        )
-
         # Construct the flow matrices (not modified along the timesteps because
         # permeability and storage coefficients are constant).
         self.initialize_ajd_flow_matrices(FlowRegime.TRANSIENT)
@@ -106,6 +92,13 @@ class AdjointSolver:
         # Initialize transport matrices with diffusion (advection is added on the fly)
         # Consequently, the preconditioner is built on the fly too.
         self.initialize_ajd_transport_matrices()
+
+        # Initiate adjoint concentrations and grades
+        self.init_adjoint_variables(
+            self.fwd_model,
+            self.adj_model,
+            is_verbose,
+        )
 
         for time_index in range(
             self.fwd_model.time_params.nts - 1, 0, -1
@@ -128,29 +121,20 @@ class AdjointSolver:
         self,
         fwd_model: ForwardModel,
         adj_model: AdjointModel,
-        tr_av_init_method: str = "explicit",
         is_verbose: bool = False,
     ) -> None:
-        if tr_av_init_method == "explicit":
-            init_adjoint_tr_variables_explicit(
-                fwd_model.tr_model,
-                adj_model.a_tr_model,
-                fwd_model.gch_params,
-                fwd_model.geometry,
-                fwd_model.time_params,
-                is_verbose,
-            )
-        else:
-            init_adjoint_tr_variables_fpi(
-                fwd_model.tr_model,
-                adj_model.a_tr_model,
-                fwd_model.gch_params,
-                fwd_model.geometry,
-                fwd_model.time_params,
-                is_verbose,
-            )
+        init_adjoint_tr_variables_fpi(
+            fwd_model.fl_model,
+            fwd_model.tr_model,
+            adj_model.a_tr_model,
+            fwd_model.gch_params,
+            fwd_model.geometry,
+            fwd_model.time_params,
+            is_verbose,
+        )
         if is_verbose:
             logging.info(" - Done!")
+        # init_adjoint_fl_variables()
 
     # Here we should initiate the other adjoint variables
 
