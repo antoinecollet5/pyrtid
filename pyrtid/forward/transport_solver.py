@@ -149,9 +149,6 @@ def _add_advection_to_transport_matrices(
     tr_model: TransportModel,
     q_next: lil_matrix,
     q_prev: lil_matrix,
-    conc_sources: NDArrayFloat,
-    conc_sources_old: NDArrayFloat,
-    time_params: TimeParameters,
     time_index: int,
 ) -> None:
     crank_adv: float = tr_model.crank_nicolson_advection
@@ -300,11 +297,9 @@ def _add_advection_to_transport_matrices(
             * tmp
         )  # type: ignore
 
-    _apply_transport_sink_term(tr_model, conc_sources, conc_sources_old, q_next, q_prev)
+    _apply_transport_sink_term(fl_model, tr_model, q_next, q_prev, time_index)
 
-    _apply_divergence_effect(
-        fl_model, tr_model, conc_sources, conc_sources_old, q_next, q_prev, time_index
-    )
+    _apply_divergence_effect(fl_model, tr_model, q_next, q_prev, time_index)
 
     # Handle boundary conditions
     _add_transport_boundary_conditions(
@@ -313,15 +308,15 @@ def _add_advection_to_transport_matrices(
 
 
 def _apply_transport_sink_term(
+    fl_model: FlowModel,
     tr_model: TransportModel,
-    conc_sources: NDArrayFloat,
-    conc_sources_old: NDArrayFloat,
     q_next: lil_matrix,
     q_prev: lil_matrix,
+    time_index: int,
 ) -> None:
-    flw = conc_sources.flatten(order="F")
+    flw = fl_model.lsources[time_index].flatten(order="F")
     _flw = np.where(flw < 0, flw, 0.0)  # keep only negative flowrates
-    flw_old = conc_sources_old.flatten(order="F")
+    flw_old = fl_model.lsources[time_index - 1].flatten(order="F")
     _flw_old = np.where(flw_old < 0, flw_old, 0.0)  # keep only negative flowrates
     q_next.setdiag(q_next.diagonal() - tr_model.crank_nicolson_advection * _flw)
     q_prev.setdiag(
@@ -332,8 +327,6 @@ def _apply_transport_sink_term(
 def _apply_divergence_effect(
     fl_model: FlowModel,
     tr_model: TransportModel,
-    conc_sources: NDArrayFloat,
-    conc_sources_old: NDArrayFloat,
     q_next: lil_matrix,
     q_prev: lil_matrix,
     time_index: int,
@@ -341,10 +334,12 @@ def _apply_divergence_effect(
     """
     Take into account the divergence: dcdt+U.grad(c)=L(u)."""
 
-    div = (fl_model.lu_darcy_div[time_index] - conc_sources[:, :]).flatten(order="F")
-    div_old = (fl_model.lu_darcy_div[time_index - 1] - conc_sources[:, :]).flatten(
+    div = (fl_model.lu_darcy_div[time_index] - fl_model.lsources[time_index]).flatten(
         order="F"
     )
+    div_old = (
+        fl_model.lu_darcy_div[time_index - 1] - fl_model.lsources[time_index]
+    ).flatten(order="F")
 
     q_next.setdiag(q_next.diagonal() - tr_model.crank_nicolson_advection * div)
     q_prev.setdiag(
@@ -470,9 +465,6 @@ def solve_transport_semi_implicit(
             tr_model,
             q_next,
             q_prev,
-            conc_sources,
-            conc_sources_old,
-            time_params,
             time_index,
         )
         # Add 1/dt for the left term contribution
