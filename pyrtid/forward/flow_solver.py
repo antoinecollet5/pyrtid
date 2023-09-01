@@ -393,8 +393,7 @@ def update_u_darcy_cst_head_nodes(
     flow[:, :] += fl_model.u_darcy_y[:, :-1, time_index] * geometry.dy
     flow[:, :] -= fl_model.u_darcy_y[:, 1:, time_index] * geometry.dy
 
-    # Divide by the cell volume (surface here in 2D)
-    flow /= geometry.mesh_area
+    flow /= geometry.mesh_volume
 
     # Trick: Set the flow to zero where the head is not constant
     _flow[fl_model.cst_head_indices[0], fl_model.cst_head_indices[1]] = flow[
@@ -434,7 +433,7 @@ def compute_u_darcy_div(
     u_darcy_div += fl_model.lu_darcy_y[time_index][:, 1:] * geometry.dx
 
     # Take the surface into account
-    u_darcy_div /= geometry.mesh_area
+    u_darcy_div /= geometry.mesh_volume
 
     # Constant head handling - null divergence
     cst_idx = fl_model.cst_head_indices
