@@ -1051,7 +1051,6 @@ class ForwardModel:
 
             # Keep only non negative flowrates (remove sink terms)
             if _fl > 0:
-                # if flw < 0
                 _conc_src[nids[0], nids[1]] += _fl * _conc / source.n_nodes
 
         for condition in self.fl_model.boundary_conditions:
