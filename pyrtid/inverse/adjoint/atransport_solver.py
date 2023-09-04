@@ -165,7 +165,7 @@ def init_adjoint_tr_variables_fpi(
     if is_verbose:
         logging.info(" - Adjoint transport FPI initialization!")
     has_converged = False
-    nafpi = 1
+    nafpi = 0
 
     # Initiate the concentrations to a very small number so that
     # a_conc_prev is not zero when calling get_adjoint_max_coupling_error
