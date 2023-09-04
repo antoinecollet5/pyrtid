@@ -19,7 +19,7 @@ from pyrtid.inverse.params import (
     update_parameters_from_model,
 )
 from pyrtid.utils import StrEnum, finite_gradient, is_all_close
-from pyrtid.utils.means import dxi_harmonic_mean
+from pyrtid.utils.means import dxi_harmonic_mean, harmonic_mean
 from pyrtid.utils.types import NDArrayFloat, object_or_object_sequence_to_list
 
 
@@ -69,45 +69,49 @@ def get_diffusion_term_adjoint_gradient(
     # conc = fwd_model.tr_model.conc_post_tr
     aconc = adj_model.a_tr_model.a_conc
 
-    # Consider the x axis
-    # Forward scheme
-    dconc_fx = np.zeros(shape)
-    dconc_fx[:-1, :, 1:] += (
-        crank_diff * (conc_post_tr[1:, :, 1:] - conc_post_tr[:-1, :, 1:])
-        + (1.0 - crank_diff) * (conc[1:, :, :-1] - conc[:-1, :, :-1])
-    ) * (
-        dxi_harmonic_mean(eff_diffusion[:-1, :], eff_diffusion[1:, :])
-        * term_in_effdiff_deriv[:-1, :]
-    )[
-        :, :, np.newaxis
-    ]
+    grad = np.zeros(shape)
 
-    daconc_fx = np.zeros(shape)
-    daconc_fx[:-1, :, 1:] += aconc[1:, :, 1:] - aconc[:-1, :, 1:]
+    # X axis contribution
+    if shape[0] > 1:
+        # Consider the x axis
+        # Forward scheme
+        dconc_fx = np.zeros(shape)
+        dconc_fx[:-1, :, 1:] += (
+            crank_diff * (conc_post_tr[1:, :, 1:] - conc_post_tr[:-1, :, 1:])
+            + (1.0 - crank_diff) * (conc[1:, :, :-1] - conc[:-1, :, :-1])
+        ) * (
+            dxi_harmonic_mean(eff_diffusion[:-1, :], eff_diffusion[1:, :])
+            * term_in_effdiff_deriv[:-1, :]
+        )[
+            :, :, np.newaxis
+        ]
 
-    # Backward scheme
-    dconc_bx = np.zeros(shape)
-    dconc_bx[1:, :, 1:] += (
-        crank_diff * (conc_post_tr[:-1, :, 1:] - conc_post_tr[1:, :, 1:])
-        + (1.0 - crank_diff) * (conc[:-1, :, :-1] - conc[1:, :, :-1])
-    ) * (
-        dxi_harmonic_mean(eff_diffusion[1:, :], eff_diffusion[:-1, :])
-        * term_in_effdiff_deriv[1:, :]
-    )[
-        :, :, np.newaxis
-    ]
+        daconc_fx = np.zeros(shape)
+        daconc_fx[:-1, :, 1:] += aconc[1:, :, 1:] - aconc[:-1, :, 1:]
 
-    daconc_bx = np.zeros(shape)
-    daconc_bx[1:, :, 1:] += aconc[:-1, :, 1:] - aconc[1:, :, 1:]
+        # Backward scheme
+        dconc_bx = np.zeros(shape)
+        dconc_bx[1:, :, 1:] += (
+            crank_diff * (conc_post_tr[:-1, :, 1:] - conc_post_tr[1:, :, 1:])
+            + (1.0 - crank_diff) * (conc[:-1, :, :-1] - conc[1:, :, :-1])
+        ) * (
+            dxi_harmonic_mean(eff_diffusion[1:, :], eff_diffusion[:-1, :])
+            * term_in_effdiff_deriv[1:, :]
+        )[
+            :, :, np.newaxis
+        ]
 
-    # Gather the two schemes
-    grad = (
-        (dconc_fx * daconc_fx + dconc_bx * daconc_bx)
-        * fwd_model.geometry.dy
-        / fwd_model.geometry.dx
-    )
+        daconc_bx = np.zeros(shape)
+        daconc_bx[1:, :, 1:] += aconc[:-1, :, 1:] - aconc[1:, :, 1:]
 
-    # Consider the y axis for 2D cases
+        # Gather the two schemes
+        grad = (
+            (dconc_fx * daconc_fx + dconc_bx * daconc_bx)
+            * fwd_model.geometry.dy
+            / fwd_model.geometry.dx
+        )
+
+    # Y axis contribution
     if shape[1] > 1:
         # Forward scheme
         dconc_fy = np.zeros(shape)
@@ -505,18 +509,57 @@ def get_initial_conc_adjoint_gradient(
         \dfrac{\mathcal{A}_{i}\omega_{i}}{\Delta t^{0}} \lambda_{c_{i}}^{1}
         - \dfrac{c_{i}^{0, \mathrm{obs}}
         - c_{i}^{0, \mathrm{calc}}}{\left(\sigma_{c_{i}}^{0, \mathrm{obs}}\right)^{2}}
+        + \sum_{neigh \;j} \left\lVert \Gamma_{ij} \right\rVert D_{e, ij}
+        (1 - \alpha_{\mathrm{d}})\dfrac{\lambda_{c_{j}}^{1} - \lambda_{c_{i}}^{1}}{
+            \left\lVert \overrightarrow{P_{i}P_{j}} \right\rVert}
 
     Note
     ----
     Parameter span is not taken into account which means that the gradient is
     computed on the full domain (grid).
     """
+    a_tr_model = adj_model.a_tr_model
+    tr_model = fwd_model.tr_model
+
     grad = (
         adj_model.a_tr_model.a_conc[:, :, 1]
         * fwd_model.geometry.mesh_volume
         * fwd_model.tr_model.porosity
         / fwd_model.time_params.ldt[0]
     )
+
+    crank_diff = fwd_model.tr_model.crank_nicolson_diffusion
+    a_conc = adj_model.a_tr_model.a_conc[:, :, 1]
+
+    # X axis contribution
+    if a_tr_model.a_conc.shape[0] > 1:
+        dmean = harmonic_mean(
+            tr_model.effective_diffusion[:-1, :], tr_model.effective_diffusion[1:, :]
+        )
+        tmp = fwd_model.geometry.dy / fwd_model.geometry.dx
+        # Forward scheme
+        grad[:-1, :] += (
+            +(1.0 - crank_diff) * (a_conc[1:, :] - a_conc[:-1, :]) * dmean
+        ) * tmp
+        # Backward scheme
+        grad[1:, :] += (
+            +(1.0 - crank_diff) * (a_conc[:-1, :] - a_conc[1:, :]) * dmean
+        ) * tmp
+
+    # Y axis contribution
+    if a_tr_model.a_conc.shape[1] > 1:
+        dmean = harmonic_mean(
+            tr_model.effective_diffusion[:, :-1], tr_model.effective_diffusion[:, 1:]
+        )
+        tmp = fwd_model.geometry.dx / fwd_model.geometry.dy
+        # Forward scheme
+        grad[:, :-1] += (
+            +(1.0 - crank_diff) * (a_conc[:, 1:] - a_conc[:, :-1]) * dmean
+        ) * tmp
+        # Backward scheme
+        grad[:, 1:] += (
+            +(1.0 - crank_diff) * (a_conc[:, :-1] - a_conc[:, 1:]) * dmean
+        ) * tmp
 
     return grad + adj_model.a_tr_model.a_conc_sources.getcol(0).todense().reshape(
         grad.shape, order="F"
