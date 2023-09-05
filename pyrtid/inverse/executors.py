@@ -503,7 +503,8 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         logging.info(f"Loss (scaled)         = {scaled_loss}\n")
 
         # Save the loss
-        self.inv_model.list_f_res.append(scaled_loss)
+        if is_save_state:
+            self.inv_model.list_f_res.append(scaled_loss)
 
         return scaled_loss
 
@@ -1223,6 +1224,7 @@ class ScipyInversionExecutor(BaseInversionExecutor[ScipySolverConfig]):
             max_fun: int = min(
                 solver_config.max_fun_per_round, options.get("maxfun", 15000) - nfev
             )
+        print(max_fun)
         options["maxfun"] = max_fun
         return options
 
