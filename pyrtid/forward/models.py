@@ -486,12 +486,13 @@ class SourceTerm:
         if time < self.times[0]:
             return 0.0, 0.0
         time_index = 0  # index in times
-        while time > self.times[time_index]:
-            time_index += 1
-            if time_index == len(self.times):
+
+        # This is matching the "modify" process behavior of HYTEC
+        for time_index, _time in enumerate(self.times):
+            if _time >= time:
+                if time_index > 0:
+                    time_index -= 1
                 break
-        if time != self.times[min(time_index, len(self.times) - 1)]:
-            time_index -= 1
         return self.flowrates[time_index], self.concentrations[time_index]
 
 
