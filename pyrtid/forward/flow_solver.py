@@ -436,7 +436,7 @@ def compute_u_darcy_div(
     """Update the darcy velocities divergence (at the node centers)."""
 
     # Reset to zero
-    u_darcy_div = np.zeros((geometry.nx, geometry.ny))
+    u_darcy_div = np.zeros(geometry.shape)
 
     # x contribution -> multiply by the frontier (dy and not dx)
     u_darcy_div -= fl_model.lu_darcy_x[time_index][:-1, :] * geometry.dy
