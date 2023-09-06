@@ -565,7 +565,7 @@ class FlowModel:
         "lu_darcy_x",
         "lu_darcy_y",
         "lu_darcy_div",
-        "lsources",
+        "lunitflow",
         "boundary_conditions",
         "cst_head_nn",
         "regime",
@@ -593,7 +593,7 @@ class FlowModel:
         self.lu_darcy_x: List[NDArrayFloat] = []
         self.lu_darcy_y: List[NDArrayFloat] = []
         self.lu_darcy_div: List[NDArrayFloat] = []
-        self.lsources: List[NDArrayFloat] = []
+        self.lunitflow: List[NDArrayFloat] = []
 
         self.boundary_conditions: List[BoundaryCondition] = []
         self.q_prev = lil_array(geometry.nx * geometry.ny)
@@ -644,13 +644,13 @@ class FlowModel:
         return np.transpose(np.array(self.lu_darcy_div), axes=(1, 2, 0))
 
     @property
-    def sources(self) -> NDArrayFloat:
+    def unitflow(self) -> NDArrayFloat:
         """
         Return flow sources sources as array with dimension (nx, ny, nz, nt + 1).
 
         This is read-only.
         """
-        return np.transpose(np.array(self.lsources), axes=(1, 2, 0))
+        return np.transpose(np.array(self.lunitflow), axes=(1, 2, 0))
 
     @property
     def pressure(self) -> NDArrayFloat:
@@ -724,7 +724,7 @@ class FlowModel:
         self.lu_darcy_x = []
         self.lu_darcy_y = []
         self.lu_darcy_div = []
-        self.lsources = []
+        self.lunitflow = []
         self.set_constant_head_indices()
 
     @property

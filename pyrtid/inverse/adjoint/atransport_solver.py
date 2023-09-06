@@ -461,7 +461,7 @@ def _apply_adj_transport_sink_term(
     q_prev: lil_matrix,
     time_index: int,
 ) -> None:
-    flw = fl_model.lsources[time_index].flatten(order="F")
+    flw = fl_model.lunitflow[time_index].flatten(order="F")
     _flw = np.where(flw < 0, flw, 0.0)  # keep only negative flowrates
     q_next.setdiag(q_next.diagonal() - tr_model.crank_nicolson_advection * _flw)
     q_prev.setdiag(q_prev.diagonal() + (1 - tr_model.crank_nicolson_advection) * _flw)
@@ -475,8 +475,8 @@ def _apply_adj_divergence_effect(
     time_index: int,
 ) -> None:
     """Take into account the divergence: dcdt+U.grad(c)=L(u)."""
-    src = fl_model.lsources[time_index]
-    src_old = fl_model.lsources[time_index + 1]
+    src = fl_model.lunitflow[time_index]
+    src_old = fl_model.lunitflow[time_index + 1]
 
     div = (fl_model.u_darcy_div[:, :, time_index] - src).flatten(order="F")
     div_old = (fl_model.u_darcy_div[:, :, time_index] - src_old).flatten(order="F")

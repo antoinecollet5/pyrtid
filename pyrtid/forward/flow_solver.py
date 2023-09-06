@@ -7,7 +7,11 @@ import numpy as np
 from scipy.sparse import lil_array
 from scipy.sparse.linalg import gmres
 
-from pyrtid.utils import get_super_lu_preconditioner, harmonic_mean
+from pyrtid.utils import (
+    get_array_borders_selection,
+    get_super_lu_preconditioner,
+    harmonic_mean,
+)
 from pyrtid.utils.types import NDArrayFloat
 
 from .models import FlowModel, Geometry, TimeParameters, get_owner_neigh_indices
@@ -350,7 +354,6 @@ def find_uy_boundary(
     """
     out = np.zeros((geometry.nx, geometry.ny + 1))
     head = fl_model.lhead[time_index]
-    # X axis contribution
     kmean = harmonic_mean(fl_model.permeability[:, :-1], fl_model.permeability[:, 1:])
     out[:, 1:-1] = -kmean * (head[:, 1:] - head[:, :-1]) / geometry.dy
     return out
@@ -361,10 +364,10 @@ def compute_u_darcy(fl_model: FlowModel, geometry: Geometry, time_index: int) ->
     fl_model.lu_darcy_x.append(find_ux_boundary(fl_model, geometry, time_index))
     fl_model.lu_darcy_y.append(find_uy_boundary(fl_model, geometry, time_index))
     # Handle constant head
-    # update_u_darcy_cst_head_nodes(fl_model, geometry, time_index)
+    update_unitflow_cst_head_nodes(fl_model, geometry, time_index)
 
 
-def update_u_darcy_cst_head_nodes(
+def update_unitflow_cst_head_nodes(
     fl_model: FlowModel, geometry: Geometry, time_index: int
 ) -> None:
     """
@@ -386,34 +389,45 @@ def update_u_darcy_cst_head_nodes(
 
     # 1) Compute the flow in each cell -> oriented darcy times the node centers
     # distances
-    flow = np.zeros((geometry.nx, geometry.ny))
-    _flow = np.zeros((geometry.nx, geometry.ny))
-    flow[:, :] += fl_model.u_darcy_x[:-1, :, time_index] * geometry.dx
-    flow[:, :] -= fl_model.u_darcy_x[1:, :, time_index] * geometry.dx
-    flow[:, :] += fl_model.u_darcy_y[:, :-1, time_index] * geometry.dy
-    flow[:, :] -= fl_model.u_darcy_y[:, 1:, time_index] * geometry.dy
-
-    flow /= geometry.mesh_volume
+    flow = np.zeros(geometry.shape)
+    _flow = np.zeros(geometry.shape)
+    flow[:, :] += fl_model.lu_darcy_x[time_index][:-1, :] * geometry.dy
+    flow[:, :] -= fl_model.lu_darcy_x[time_index][1:, :] * geometry.dy
+    flow[:, :] += fl_model.lu_darcy_y[time_index][:, :-1] * geometry.dx
+    flow[:, :] -= fl_model.lu_darcy_y[time_index][:, 1:] * geometry.dx
 
     # Trick: Set the flow to zero where the head is not constant
     _flow[fl_model.cst_head_indices[0], fl_model.cst_head_indices[1]] = flow[
         fl_model.cst_head_indices[0], fl_model.cst_head_indices[1]
     ]
-    _flow[fl_model.cst_head_indices[0], fl_model.cst_head_indices[1]] = flow[
+    # 2) Update unitflow for the constant-head nodes
+    fl_model.lunitflow[time_index][
         fl_model.cst_head_indices[0], fl_model.cst_head_indices[1]
-    ]
+    ] = (
+        _flow[fl_model.cst_head_indices[0], fl_model.cst_head_indices[1]]
+        / geometry.mesh_volume
+    )
 
-    # Adjust the darcy velocities for constant node at borders
-    fl_model.u_darcy_x[0, :, time_index] = -_flow[0, :] * geometry.dy
-    fl_model.u_darcy_x[-1, :, time_index] = _flow[-1, :] * geometry.dy
-    fl_model.u_darcy_y[:, 0, time_index] = -_flow[:, 0] * geometry.dx
-    fl_model.u_darcy_y[:, -1, time_index] = _flow[:, -1] * geometry.dx
+    # 3) Now creates an artificial flow on the domain boundaries
+    # to evacuate the overflow
 
-    # fl_model.
+    # For constant head on the borders -> unitflow is null
+    cst_head_border_mask = _flow != 0 & get_array_borders_selection(*geometry.shape)
+    fl_model.lunitflow[time_index][cst_head_border_mask] = 0.0
 
-    # fl_model.u_darcy_x[fl_model.cst_head_indices, time_index] = -flow / 2
+    # on the border, one neighbour maximum on each axis
+    ltot = 0
+    if geometry.nx > 1:
+        ltot += geometry.dy
+    if geometry.ny > 1:
+        ltot += geometry.dx
 
-    # 2) For constant head, define the darcy velocities as -
+    # Note: so far, at borders, all flows are 0, so we can apply this to all nodes,
+    # constant head or not.
+    fl_model.lu_darcy_x[time_index][0, :] = -_flow[0, :] / ltot
+    fl_model.lu_darcy_x[time_index][-1, :] = _flow[-1, :] / ltot
+    fl_model.lu_darcy_y[time_index][:, 0] = -_flow[:, 0] / ltot
+    fl_model.lu_darcy_y[time_index][:, -1] = _flow[:, -1] / ltot
 
 
 def compute_u_darcy_div(

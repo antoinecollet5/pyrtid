@@ -100,7 +100,7 @@ class ForwardSolver:
         flw_sources, conc_sources = self.model.get_sources(
             self.model.time_params.time_elapsed, self.model.geometry
         )
-        self.model.fl_model.lsources.append(flw_sources)
+        self.model.fl_model.lunitflow.append(flw_sources)
         self.model.tr_model.lsources.append(conc_sources)
 
         if self.model.fl_model.regime == FlowRegime.STATIONARY:
@@ -151,7 +151,7 @@ class ForwardSolver:
             self.model.time_params.time_elapsed, self.model.geometry
         )
 
-        self.model.fl_model.lsources.append(flw_sources)
+        self.model.fl_model.lunitflow.append(flw_sources)
         self.model.tr_model.lsources.append(conc_sources)
 
         # Solve the flow -> no iterations since we don't have variable permeability nor
