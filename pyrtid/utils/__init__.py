@@ -28,6 +28,7 @@ Provide utilities to work with regular grids.
     node_number_to_indices
     span_to_node_numbers_2d
     span_to_node_numbers_3d
+    get_array_borders_selection
 
 
 .. currentmodule:: pyrtid.utils.wellfield
@@ -167,6 +168,7 @@ from pyrtid.utils.finite_differences import (
     is_gradient_correct,
 )
 from pyrtid.utils.grid import (
+    get_array_borders_selection,
     indices_to_node_number,
     node_number_to_indices,
     span_to_node_numbers_2d,
@@ -240,6 +242,7 @@ __all__ = [
     "object_or_object_sequence_to_list",
     "span_to_node_numbers_2d",
     "span_to_node_numbers_3d",
+    "get_array_borders_selection",
     "extract_hess_inv_diag",
     "NDArrayFloat",
     "NDArrayInt",

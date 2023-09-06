@@ -2,10 +2,12 @@ import numpy as np
 import pytest
 
 from pyrtid.utils import (
+    get_array_borders_selection,
     indices_to_node_number,
     node_number_to_indices,
     span_to_node_numbers_2d,
 )
+from pyrtid.utils.types import NDArrayBool
 
 
 def test_indices_to_node_number() -> None:
@@ -68,3 +70,18 @@ def test_span_to_node_numbers_2d() -> None:
         span_to_node_numbers_2d((slice(0, 4), slice(0, 3)), nx=21, ny=5),
         np.array([0, 21, 42, 1, 22, 43, 2, 23, 44, 3, 24, 45]),
     )
+
+
+@pytest.mark.parametrize(
+    "nx, ny, expected_array",
+    [
+        (1, 1, np.array([[False]])),
+        (5, 1, np.array([[True], [False], [False], [False], [True]])),
+        (1, 5, np.array([[True, False, False, False, True]])),
+        (3, 3, np.array([[True, True, True], [True, False, True], [True, True, True]])),
+    ],
+)
+def test_get_array_borders_selection(
+    nx: int, ny: int, expected_array: NDArrayBool
+) -> None:
+    np.testing.assert_array_equal(get_array_borders_selection(nx, ny), expected_array)

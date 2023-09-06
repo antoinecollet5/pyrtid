@@ -10,7 +10,7 @@ from typing import Sequence, Tuple, Union
 
 import numpy as np
 
-from pyrtid.utils.types import NDArrayInt
+from pyrtid.utils.types import NDArrayBool, NDArrayInt
 
 Int = Union[int, NDArrayInt, Sequence[int]]
 
@@ -133,4 +133,27 @@ def span_to_node_numbers_3d(
     ix, iy, iz = np.nonzero(_a)
     return np.array(
         indices_to_node_number(ix, nx=nx, iy=iy, ny=ny, iz=iz), dtype=np.int32
+    )
+
+
+def get_array_borders_selection(nx: int, ny: int) -> NDArrayBool:
+    """
+    Get a selection of the array border as a bool array.
+
+    Note
+    ----
+    There is no border for an awis of dim 1.
+
+    Parameters
+    ----------
+    nx: int
+        Number of meshes along the x axis.
+    ny: int
+        Number of meshes along the y axis.
+    """
+    return np.pad(
+        np.zeros((max(1, nx - 2), max(1, ny - 2)), dtype=np.bool_),
+        ((min(max(nx - 2, 0), 1),), ((min(max(ny - 2, 0), 1),))),
+        "constant",
+        constant_values=1,
     )
