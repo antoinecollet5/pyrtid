@@ -25,6 +25,7 @@ from pyrtid.utils.types import (
 
 GRAVITY = 9.81
 WATER_DENSITY = 997
+VERY_SMALL_NUMBER = 1e-30
 
 
 class TimeParameters:
@@ -45,6 +46,19 @@ class TimeParameters:
         Minimum timestep in seconds.
     dt_max : Optional[float]
         Maximum timestep in seconds.
+    courant_factor: float
+        The timestep is generally limited to some maximum value by the flow and
+        transport models, to assure numerical stability. The Courant-Friedlichs-
+        Lewy-Factor is a relaxation parameter for the maximum timestep.
+        Reactive systems often allow to relax the (very restrictive) maximum timestep,
+        imposed by the transport model. For values greater than 1, the timestep re-
+        striction will be relaxed. On the contrary, the restriction will be tightened
+        for values inferior to 1.
+        Reactive systems often allow to relax the maximum timestep by a factor 5,
+        10 or even 20. Using this option, however, may be dangerous and possibly
+        lead to failure of the model. Always test the results obtained against a case
+        without this parameter set.
+        The default is 1.0.
     ldt: List[float]
         List of successive timesteps (in seconds) used in the forward modelling.
     nts: int
@@ -70,6 +84,7 @@ class TimeParameters:
         "ldt",
         "nfpi",
         "lnfpi",
+        "courant_factor",
     ]
 
     def __init__(
@@ -78,6 +93,7 @@ class TimeParameters:
         dt_init: float,
         dt_min: Optional[float] = None,
         dt_max: Optional[float] = None,
+        courant_factor: float = 1.0,
     ) -> None:
         """Initialize the instance."""
         self.duration = duration
@@ -108,6 +124,7 @@ class TimeParameters:
         if self.dt_min > self.dt_max:
             raise ValueError(f"dt_min ({self.dt_min}) is above dt_max ({self.dt_max})!")
 
+        self.courant_factor: float = courant_factor
         # Apply bounds
         self.dt_init: float = _dt_init
         self.dt = _dt_init
@@ -157,7 +174,7 @@ class TimeParameters:
         "Save the current number of fixed point iterations."
         self.lnfpi.append(self.nfpi)
 
-    def update_dt(self, n_iter: int) -> None:
+    def update_dt(self, n_iter: float, dt_max_cfl: float) -> None:
         """
         Update the timestep.
 
@@ -167,8 +184,8 @@ class TimeParameters:
             Number of iterations required to solve the last timestep.
         """
         if n_iter < 20:
-            # increase dt by 5%
-            self.dt *= 1.05
+            # increase dt by 2%
+            self.dt *= 1.02
         else:
             # decrease dt by 30%
             self.dt *= 0.7
@@ -177,6 +194,18 @@ class TimeParameters:
             self.dt = self.dt_min
         if self.dt > self.dt_max:
             self.dt = self.dt_max
+
+        if self.dt > dt_max_cfl:
+            self.dt = dt_max_cfl
+
+    def get_dt_max_cfl(self, model: ForwardModel, time_index: int) -> float:
+        """Get the maximum timestep to respect the CFL condition."""
+        dt_cfl = np.min(
+            self.courant_factor
+            * model.tr_model.porosity
+            * model.get_ij_over_u(time_index)
+        )
+        return float(np.min(dt_cfl))
 
 
 class FlowRegime(StrEnum):
@@ -1092,6 +1121,21 @@ class ForwardModel:
         self.fl_model.reinit()
         self.tr_model.reinit()
         self.time_params.reset_to_init()
+
+    def get_ij_over_u(self, time_index: int) -> NDArrayFloat:
+        """Get the ij/Unorm for the CFL condition."""
+        num = 1e300
+        if self.geometry.nx > 1:
+            num = min(self.geometry.dx, num)
+        if self.geometry.ny > 1:
+            num = min(self.geometry.dy, num)
+        den = np.sqrt(
+            self.fl_model.u_darcy_x_center[:, :, time_index] ** 2
+            + self.fl_model.u_darcy_y_center[:, :, time_index] ** 2
+        )
+        # VERY_SMALL_NUMBER to avoid division by zero.
+        den = np.where(den < VERY_SMALL_NUMBER, VERY_SMALL_NUMBER, den)
+        return num / den
 
 
 def remove_cst_bound_indices(

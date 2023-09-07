@@ -134,7 +134,11 @@ class ForwardSolver:
         # Do not update the timestep for the first iteration
         # update the timestep based on the convergence speed.
         if time_index != 1:
-            self.model.time_params.update_dt(self.model.time_params.nfpi)
+            # The CFL criterion is evaluated based on the previous timestep
+            dt_max_cfl = self.model.time_params.get_dt_max_cfl(
+                self.model, time_index - 1
+            )
+            self.model.time_params.update_dt(self.model.time_params.nfpi, dt_max_cfl)
         # Important: need to save the timestep after the update, otherwise, the
         # wrong timestep is used in the adjoint
         # Save the timesteps to the list of timesteps
