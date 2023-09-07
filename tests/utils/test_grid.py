@@ -76,6 +76,7 @@ def test_span_to_node_numbers_2d() -> None:
     "nx, ny, expected_array",
     [
         (1, 1, np.array([[False]])),
+        (2, 2, np.array([[True, True], [True, True]])),
         (5, 1, np.array([[True], [False], [False], [False], [True]])),
         (1, 5, np.array([[True, False, False, False, True]])),
         (3, 3, np.array([[True, True, True], [True, False, True], [True, True, True]])),

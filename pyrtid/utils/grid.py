@@ -151,9 +151,15 @@ def get_array_borders_selection(nx: int, ny: int) -> NDArrayBool:
     ny: int
         Number of meshes along the y axis.
     """
+    _nx = nx - 2
+    if _nx < 0:
+        _nx = nx
+    _ny = ny - 2
+    if _ny < 0:
+        _ny = ny
     return np.pad(
-        np.zeros((max(1, nx - 2), max(1, ny - 2)), dtype=np.bool_),
-        ((min(max(nx - 2, 0), 1),), ((min(max(ny - 2, 0), 1),))),
+        np.zeros((_nx, _ny), dtype=np.bool_),
+        ((min(max(nx - 1, 0), 1),), ((min(max(ny - 1, 0), 1),))),
         "constant",
         constant_values=1,
     )
