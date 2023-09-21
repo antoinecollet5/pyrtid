@@ -1,6 +1,6 @@
 import copy
 from collections import deque
-from typing import Callable, Deque, Optional, Tuple
+from typing import Callable, Deque, Optional, Tuple, Union
 
 import numpy as np
 from scipy.optimize import minpack2
@@ -625,7 +625,13 @@ def minimize_lbfgsb(
     x0: NDArrayFloat,
     fun: Callable[[NDArrayFloat, ...], float],
     args: Tuple = (),
-    jac=Optional[Callable[[NDArrayFloat, ...], NDArrayFloat]],
+    jac: Optional[Union[Callable[[NDArrayFloat, ...], NDArrayFloat], str, bool]],
+    update_fun_def: Optional[
+        Callable[
+            [float, NDArrayFloat, Deque[NDArrayFloat], Deque[NDArrayFloat]],
+            Tuple[float, NDArrayFloat, Deque[NDArrayFloat]],
+        ]
+    ] = None,
     bounds: Optional[NDArrayFloat] = None,
     maxcor: int = 10,
     gtol: float = 1e-5,
@@ -680,6 +686,18 @@ def minimize_lbfgsb(
         to select a finite difference scheme for numerical estimation of the
         gradient with a relative step size. These finite difference schemes
         obey any specified `bounds`.
+    update_fun_def: Optional[Callable[[Deque[NDArrayFloat], Deque[NDArrayFloat]],
+    Deque[NDArrayFloat]]]
+        Method to update the gradient sequence. This is an experimental feature to
+        allow changing the objective function definition on the fly. In the first place
+        this functionality is dedicated to regularized problems for which the
+        regularization weight is computed while optimizing the cost function. In order
+        to get a hessian matching the new definition of `fun`, the gradient sequence
+        must be updated.
+
+            ``update_fun_def(f0, grad, x_deque, grad_deque)
+            -> f0, grad, updated grad_deque``
+
     bounds : sequence or `Bounds`, optional
         Bounds on variables for Nelder-Mead, L-BFGS-B, TNC, SLSQP, Powell, and
         trust-constr methods. There are two ways to specify the bounds:
@@ -863,8 +881,15 @@ def minimize_lbfgsb(
                 M = np.zeros([1, 1])
                 theta = 1
         else:
+            # x update
             x += steplength * d
+
             f0, grad = sf.fun_and_grad(x)
+
+            # perform a potential update of the objective function definition and
+            # upgrade the gradient and the past sequence of gradients accordingly
+            if update_fun_def is not None:
+                f0, grad, G = update_fun_def(f0, grad, X, G)
 
             W, M, theta = get_lbfgs_matrices(
                 x.copy(),  # copy otherwise x might be changed in X when updated
