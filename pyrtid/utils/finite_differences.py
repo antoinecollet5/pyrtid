@@ -235,6 +235,8 @@ def finite_gradient(
     x0 = np.array(x).astype(np.float64)
     if eps is None:
         eps = float(np.max(np.abs(x0))) * 1e-6
+        if eps == 0:
+            eps = sys.float_info.epsilon * 1e10
     if accuracy not in [0, 1, 2, 3]:
         raise ValueError("The accuracy should be 0, 1, 2 or 3!")
     grad = np.zeros(x0.size)

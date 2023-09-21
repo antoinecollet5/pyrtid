@@ -8,7 +8,8 @@ from pyrtid.utils.finite_differences import rosen, rosen_gradient, rosen_hessian
 
 
 @pytest.mark.parametrize(
-    "values, max_workers", [([1.0, 1.0], 1), ([10.0, 10.0], 2), ([0.0, 79.9], 4)]
+    "values, max_workers",
+    [([1.0, 1.0], 1), ([10.0, 10.0], 2), ([0.0, 79.9], 4), ([0.0, 0.0], 1)],
 )
 def test_gradient(values, max_workers) -> None:
     np.testing.assert_allclose(
