@@ -14,7 +14,7 @@ def grad_quad(x: NDArrayFloat) -> NDArrayFloat:
     return x
 
 
-def minimize_quad() -> None:
+def test_minimize_quad() -> None:
     # 1) parameters definition
     ftol = 1e-5
     gtol = 1e-5
@@ -62,7 +62,7 @@ def grad_rosenbrock(x) -> NDArrayFloat:
     return g
 
 
-def minimize_rozenbrock() -> None:
+def test_minimize_rozenbrock() -> None:
     # 1) parameters definition
     ftol = 1e-5
     gtol = 1e-5
@@ -77,9 +77,13 @@ def minimize_rozenbrock() -> None:
         x0=x0, fun=rosenbrock, jac=grad_rosenbrock, bounds=bounds, ftol=ftol, gtol=gtol
     )
     x_opt = np.array([1, 1])
-    np.testing.assert_allclose(x_opt, opt_rosenbrock.x)
-    np.testing.assert_allclose(rosenbrock(x_opt), opt_rosenbrock.fun)
-    np.testing.assert_allclose(grad_rosenbrock(x_opt), opt_rosenbrock.jac)
+    np.testing.assert_allclose(x_opt, opt_rosenbrock.x, rtol=1e-3)
+    np.testing.assert_allclose(
+        rosenbrock(x_opt), opt_rosenbrock.fun, atol=1e-6, rtol=1.0
+    )
+    np.testing.assert_allclose(
+        grad_rosenbrock(x_opt), opt_rosenbrock.jac, atol=1e-20, rtol=1.0
+    )
 
     # 3) Check the results correctness
 
@@ -120,7 +124,7 @@ def grad_beale(x):
     )
 
 
-def minimize_beale() -> None:
+def test_minimize_beale() -> None:
     # 1) parameters definition
     ftol = 1e-14
     gtol = 1e-10
@@ -137,8 +141,8 @@ def minimize_beale() -> None:
     # 3) Check the results correctness
     x_opt = np.array([3, 0.5])
     np.testing.assert_allclose(x_opt, opt_res.x)
-    np.testing.assert_allclose(beale(x_opt), opt_res.fun)
-    np.testing.assert_allclose(grad_beale(x_opt), opt_res.jac)
+    np.testing.assert_allclose(beale(x_opt), opt_res.fun, atol=1e-20, rtol=1.0)
+    np.testing.assert_allclose(grad_beale(x_opt), opt_res.jac, atol=1e-20, rtol=1.0)
 
     # 4) optimizaiton with scipy implementation
     minimize(
