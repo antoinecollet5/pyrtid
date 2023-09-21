@@ -1,6 +1,6 @@
 import copy
 from collections import deque
-from typing import Callable, Deque, Dict, Optional, Tuple
+from typing import Callable, Deque, Optional, Tuple
 
 import numpy as np
 from scipy.optimize import minpack2
@@ -12,7 +12,7 @@ from scipy.optimize._optimize import OptimizeResult, _prepare_scalar_function
 from pyrtid.utils import NDArrayFloat
 
 
-def compute_Cauchy_point(
+def compute_cauchy_point(
     x: NDArrayFloat,
     grad: NDArrayFloat,
     lb: NDArrayFloat,
@@ -147,7 +147,8 @@ def compute_Cauchy_point(
     return {"xc": x_cp, "c": c, "F": F}
 
 
-def minimize_model(
+# There are three methods for this one and we need to find the correct one.
+def direct_primal_subspace_minimization(
     x: NDArrayFloat,
     xc: NDArrayFloat,
     c: NDArrayFloat,
@@ -157,9 +158,11 @@ def minimize_model(
     W: NDArrayFloat,
     M: NDArrayFloat,
     theta: float,
-) -> Dict:
+) -> NDArrayFloat:
     """
     Computes an approximate solution of the subspace problem.
+
+    This is following section 5.1 in Byrd et al. (1995).
 
     .. math::
         :nowrap:
@@ -199,9 +202,8 @@ def minimize_model(
 
     Returns
     -------
-    Dict
-        dict containing a computed value of:
-        - 'xbar' the minimizer
+    NDArrayFloat
+        xbar
 
     References
     ----------
@@ -215,8 +217,7 @@ def minimize_model(
       FORTRAN routines for large scale bound constrained optimization (2011),
       ACM Transactions on Mathematical Software, 38, 1.
     """
-
-    ### Début de la multiplication avec le Hessien ?
+    # Direct primal method
 
     invThet = 1.0 / theta
 
@@ -232,7 +233,7 @@ def minimize_model(
         unit[i] = 0
 
     if len(free_vars) == 0:
-        return {"xbar": xc}
+        return xc
 
     Z = np.asarray(Z).T
     WTZ = W.T.dot(Z)
@@ -243,11 +244,11 @@ def minimize_model(
 
     N = invThet * WTZ.dot(np.transpose(WTZ))
     N = np.eye(N.shape[0]) - M.dot(N)
+    # This is not working, we should try to factorize the sub matrices
+    # v: NDArrayFloat = sp.linalg.cho_solve(*sp.linalg.cho_factor(N), v)
     v = np.linalg.solve(N, v)
 
     dHat = -invThet * (rHat + invThet * np.transpose(WTZ).dot(v))
-
-    ### Fin de la multiplication avec le Hessien ?
 
     # Find alpha
     alpha_star = 1
@@ -264,7 +265,7 @@ def minimize_model(
         idx = free_vars[i]
         xbar[idx] += d_star[i]
 
-    return {"xbar": xbar}
+    return xbar
 
 
 def max_allowed_steplength(
@@ -329,7 +330,7 @@ def line_search(
     beta: float = 0.9,
     xtol_minpack: float = 1e-5,
     max_iter: int = 30,
-) -> float:
+) -> Optional[float]:
     """
     Find a step that satisfies both decrease condition and a curvature condition.
 
@@ -370,7 +371,7 @@ def line_search(
 
     Returns
     -------
-    float
+    Optional[float]
         The step length.
 
     References
@@ -519,7 +520,6 @@ def get_lbfgs_matrices(
         # Update the lbfgsb matrices
         Sarray = np.diff(np.array(X), axis=0).T
         Yarray = np.diff(np.array(G), axis=0).T
-
         STS = np.transpose(Sarray).dot(Sarray)
         L = np.transpose(Sarray).dot(Yarray)
         D = np.diag(-np.diag(L))
@@ -527,6 +527,8 @@ def get_lbfgs_matrices(
 
         thet = yTy / sTy
         W = np.hstack([Yarray, thet * Sarray])
+
+        # This can probably improve with cholesky
         M = np.linalg.inv(np.hstack([np.vstack([D, L]), np.vstack([L.T, thet * STS])]))
 
     return W, M, thet
@@ -554,6 +556,70 @@ def get_bounds(
     return lb, ub
 
 
+def display_results(
+    iprint: int,
+    n_iterations: int,
+    max_iter,
+    x: NDArrayFloat,
+    grad: NDArrayFloat,
+    lb: NDArrayFloat,
+    ub: NDArrayFloat,
+    f0: NDArrayFloat,
+    gtol: float,
+    is_final_display: bool,
+) -> None:
+    """
+    Disaply the optimization results on the fly.
+
+    Parameters
+    ----------
+    iprint : int, optional
+        Controls the frequency of output. ``iprint < 0`` means no output;
+        ``iprint = 0``    print only one line at the last iteration;
+        ``0 < iprint < 99`` print also f and ``|proj g|`` every iprint iterations;
+        ``iprint >= 99``   print details of every iteration except n-vectors;
+    n_iterations : int
+        _description_
+    max_iter : _type_
+        _description_
+    x : NDArrayFloat
+        _description_
+    grad : NDArrayFloat
+        _description_
+    lb : NDArrayFloat
+        Lower bound vector.
+    ub : NDArrayFloat
+        Upper bound vector.
+    f0 : NDArrayFloat
+        Last objective function value.
+    gtol : float
+        Relative tolerance on gradient.
+    is_final_display: bool
+        Is it the final display, after convergence or stop.
+    """
+    if iprint is None:
+        return
+    if iprint < 0:
+        return
+    if iprint == 0 and not is_final_display:
+        return
+    if iprint < 99 and n_iterations % iprint != 0:
+        return
+    print(
+        "Iteration #%d (max: %d): ||x||=%.3e, f(x)=%.3e, ||jac(x)||=%.3e, "
+        "cdt_arret=%.3e (eps=%.3e)"
+        % (
+            n_iterations,
+            max_iter,
+            np.linalg.norm(x, np.inf),
+            f0,
+            np.linalg.norm(grad, np.inf),
+            np.max(np.abs(np.clip(x - grad, lb, ub) - x)),
+            gtol,
+        )
+    )
+
+
 def minimize_lbfgsb(
     *,
     x0: NDArrayFloat,
@@ -561,7 +627,6 @@ def minimize_lbfgsb(
     args: Tuple = (),
     jac=Optional[Callable[[NDArrayFloat, ...], NDArrayFloat]],
     bounds: Optional[NDArrayFloat] = None,
-    disp: Optional[int] = None,
     maxcor: int = 10,
     gtol: float = 1e-5,
     ftol: float = 1e-5,
@@ -581,6 +646,8 @@ def minimize_lbfgsb(
     """
     Solves bound constrained optimization problems by using the compact formula
     of the limited memory BFGS updates.
+
+    # TODO: try to reproduce the exact behavior of scipy.minimize
 
     fun :  Callable[[NDArrayFloat, Tuple[Any]], float],
         The objective function to be minimized.
@@ -620,10 +687,6 @@ def minimize_lbfgsb(
             1. Instance of `Bounds` class.
             2. Sequence of ``(min, max)`` pairs for each element in `x`. None
                is used to specify no bound.
-    disp : None or int
-        If `disp is None` (the default), then the supplied version of `iprint`
-        is used. If `disp is not None`, then it overrides the supplied version
-        of `iprint` with the behaviour you outlined.
     maxcor : int
         The maximum number of variable metric corrections used to
         define the limited memory matrix. (The limited memory BFGS
@@ -632,16 +695,10 @@ def minimize_lbfgsb(
     ftol : float
         The iteration stops when ``(f^k -
         f^{k+1})/max{|f^k|,|f^{k+1}|,1} <= ftol``.
-        # TODO: see what definition is right.
-        Tolerance on function change: programs ends when
-        (f_k-f_{k+1})/max(|f_k|,|f_{k+1}|,1) < ftol
     gtol : float
         The iteration will stop when ``max{|proj g_i | i = 1, ..., n}
         <= gtol`` where ``pg_i`` is the i-th component of the
         projected gradient.
-        # TODO: see what definition is right.
-        Tolerance on projected gradient: programs converges when
-        P(x-grad, l, u)<gtol.
     eps : float or ndarray
         If `jac is None` the absolute step size used for numerical
         approximation of the jacobian via forward differences.
@@ -649,15 +706,26 @@ def minimize_lbfgsb(
         Maximum number of function evaluations. Note that this function
         may violate the limit because of evaluating gradients by numerical
         differentiation.
+        Note that interruptions due to maxfun are postponed
+        until the completion of a minimization iteration, consequently it might
+        stop after maxfun has been reached.
     maxiter : int
         Maximum number of iterations.
     iprint : int, optional
         Controls the frequency of output. ``iprint < 0`` means no output;
         ``iprint = 0``    print only one line at the last iteration;
         ``0 < iprint < 99`` print also f and ``|proj g|`` every iprint iterations;
-        ``iprint = 99``   print details of every iteration except n-vectors;
-        ``iprint = 100``  print also the changes of active set and final x;
-        ``iprint > 100``  print details of every iteration including x and g.
+        ``iprint >= 99``   print details of every iteration except n-vectors;
+    callback : callable, optional
+        Called after each iteration. It is a callable with
+        the signature:
+
+            ``callback(xk, OptimizeResult state) -> bool``
+
+        where ``xk`` is the current parameter vector. and ``state``
+        is an `OptimizeResult` object, with the same fields
+        as the ones from the return. If callback returns True
+        the algorithm execution is terminated.
     maxls : int, optional
         Maximum number of line search steps (per iteration). Default is 20.
     finite_diff_rel_step : None or array_like, optional
@@ -734,50 +802,33 @@ def minimize_lbfgsb(
     G.append(grad)
     n_iterations = 0
 
-    task_str = "Nothing"
+    task_str = "START"
+    is_sucess = False
+    warnflag = 2
 
+    # Note that interruptions due to maxfun are postponed
+    # until the completion of the current minimization iteration.
     while (
-        np.max(np.abs(np.clip(x - grad, lb, ub) - x)) > gtol and n_iterations < max_iter
+        np.max(np.abs(np.clip(x - grad, lb, ub) - x)) > gtol
+        and n_iterations < max_iter
+        and sf.nfev < maxfun
     ):
         oljac0 = f0
         x.copy()
         grad.copy()
 
-        #
-        dictCP = compute_Cauchy_point(x, grad, lb, ub, W, M, theta)
+        # find cauchy point
+        dictCP = compute_cauchy_point(x, grad, lb, ub, W, M, theta)
 
-        # find the
-        dictMinMod = minimize_model(
+        # subspace minimization: find the search direction for the minimization problem
+        xbar: NDArrayFloat = direct_primal_subspace_minimization(
             x, dictCP["xc"], dictCP["c"], grad, lb, ub, W, M, theta
         )
+        d = xbar - x
 
-        # search direction for the minimization problem
-        d = dictMinMod["xbar"] - x
-
-        # print(f"d = {d}")
-
-        # TODO: delete this ?
-        # These two portions of the workspace are described in the mainlb
-        # subroutine in lbfgsb.f. See line 363.
-        # s = wa[0 : m * n].reshape(m, n)
-        # y = wa[m * n : 2 * m * n].reshape(m, n)
-
-        # Get the number of past gradient and x updates to use for hessian approx
-        min(n_iterations, maxcor)
-
-        # hess_inv = LbfgsInvHessProduct(s[:n_corrs], y[:n_corrs])
-        # print(np.array(S).shape)
-        # print(np.array(Y).shape)
-        if n_iterations != 0:
-            hess_inv = LbfgsInvHessProduct(
-                np.diff(np.array(X), axis=0), np.diff(np.array(G), axis=0)
-            )
-
-            #### END modify #### ???
-            -hess_inv.dot(x) - x
-            # print(f"d2 = {d2}")
-
-            # d = d2
+        # TODO: implement
+        # - Primal Conjugate Gradient Method (section 5.2 in Byrd et al. (1995))
+        # - Dual Method for Subspace Minimization (section 5.3 in Byrd et al. (1995)
 
         # max_stpl = computer defined
         # max_steplength = user defined
@@ -799,8 +850,10 @@ def minimize_lbfgsb(
         if steplength is None:
             if len(X) == 0:
                 # Hessian already rebooted: abort.
-                task_str = "Error: can not compute new steplength : abort"
+                task_str = "Error: cannot compute new steplength : abort"
                 f, grad = sf.fun_and_grad(x)
+                warnflag = 2
+                is_sucess = False
                 break
             else:
                 # Reboot BFGS-Hessian:
@@ -826,32 +879,57 @@ def minimize_lbfgsb(
                 eps_SY,
             )
 
-            print(
-                "Iteration #%d (max: %d): ||x||=%.3e, f(x)=%.3e, ||jac(x)||=%.3e, "
-                "cdt_arret=%.3e (eps=%.3e)"
-                % (
-                    n_iterations,
-                    max_iter,
-                    np.linalg.norm(x, np.inf),
-                    f0,
-                    np.linalg.norm(grad, np.inf),
-                    np.max(np.abs(np.clip(x - grad, lb, ub) - x)),
-                    gtol,
-                )
-            )
             if (oljac0 - f0) / max(abs(oljac0), abs(f0), 1) < ftol:
                 task_str = "CONVERGENCE: REL_REDUCTION_OF_F_<=_FACTR*EPSMCH"
+                is_sucess = True
+                warnflag = 0
                 break
+
+            # callback is a user defined mechanism to stop optimization
+            # if callback returns True, then it stops.
+            if callback is not None:
+                if callback(
+                    np.copy(x),
+                    OptimizeResult(
+                        fun=f0,
+                        jac=grad,
+                        nfev=sf.nfev,
+                        njev=sf.ngev,
+                        nit=n_iterations,
+                        status=warnflag,
+                        message=task_str,
+                        x=x,
+                        success=is_sucess,
+                        hess_inv=LbfgsInvHessProduct(
+                            np.diff(np.array(X), axis=0), np.diff(np.array(G), axis=0)
+                        ),
+                    ),
+                ):
+                    task_str = "STOP: USER CALLBACK"
+                    is_sucess = True
+                    break
+
+            # Result display
+            display_results(
+                iprint, n_iterations, max_iter, x, grad, lb, ub, f0, gtol, False
+            )
             n_iterations += 1
 
+    # Final display
+    display_results(iprint, n_iterations, max_iter, x, grad, lb, ub, f0, gtol, True)
+
+    if np.max(np.abs(np.clip(x - grad, lb, ub) - x)) <= gtol:
+        task_str = "CONVERGENCE: NORM_OF_PROJECTED_GRADIENT_<=_PGTOL"
+        is_sucess = True
+        warnflag = 1
     if n_iterations == max_iter:
         task_str = "STOP: TOTAL NO. of ITERATIONS REACHED LIMIT"
-
-    # Add test for number of function reached
-    # 'STOP: TOTAL NO. of ITERATIONS REACHED LIMIT'
-
-    # Add test for max gradient
-    warnflag = 0
+        is_sucess = True
+        warnflag = 1
+    elif sf.nfev >= maxfun:
+        task_str = "STOP: TOTAL NO. of f AND g EVALUATIONS EXCEEDS LIMIT"
+        is_sucess = True
+        warnflag = 1
 
     return OptimizeResult(
         fun=f0,
@@ -862,7 +940,7 @@ def minimize_lbfgsb(
         status=warnflag,
         message=task_str,
         x=x,
-        success=(warnflag == 0),
+        success=is_sucess,
         hess_inv=LbfgsInvHessProduct(
             np.diff(np.array(X), axis=0), np.diff(np.array(G), axis=0)
         ),

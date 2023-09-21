@@ -74,7 +74,13 @@ def test_minimize_rozenbrock() -> None:
 
     # 2) optimizaiton with our implementation
     opt_rosenbrock = minimize_lbfgsb(
-        x0=x0, fun=rosenbrock, jac=grad_rosenbrock, bounds=bounds, ftol=ftol, gtol=gtol
+        x0=x0,
+        fun=rosenbrock,
+        jac=grad_rosenbrock,
+        bounds=bounds,
+        ftol=ftol,
+        gtol=gtol,
+        iprint=1,
     )
     x_opt = np.array([1, 1])
     np.testing.assert_allclose(x_opt, opt_rosenbrock.x, rtol=1e-3)
