@@ -338,7 +338,7 @@ def _apply_divergence_effect(
         order="F"
     )
     div_old = (
-        fl_model.lu_darcy_div[time_index - 1] - fl_model.lunitflow[time_index]
+        fl_model.lu_darcy_div[time_index - 1] - fl_model.lunitflow[time_index - 1]
     ).flatten(order="F")
 
     q_next.setdiag(q_next.diagonal() - tr_model.crank_nicolson_advection * div)

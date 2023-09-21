@@ -57,15 +57,20 @@ class Observable:
     mean_type: MeanType
         Type of mean used to averaged the simulated values when the observations
         are performed over several meshes.
+    perturbations: NDArrayFloat
+        Perturbations to add to the values when performing the inversion. This
+        is only useful for the ensemble method when the observed values
+        are perturbed with samples from N(0, R).
     """
 
     __slots__ = [
         "state_variable",
         "node_indices",
         "times",
-        "values",
+        "_values",
         "uncertainties",
         "_mean_type",
+        "perturbations",
     ]
 
     def __init__(
@@ -109,7 +114,9 @@ class Observable:
         self.state_variable = state_variable
         self.node_indices = np.sort(np.array(node_indices).ravel())
         self.times = times.ravel()
-        self.values = values.ravel()
+        self.set_values(values.ravel())
+        # perturbations must be initialized before any ".values" attribute call
+        self.perturbations = np.zeros(values.shape)
 
         _uncertainties = (
             np.array(uncertainties) if uncertainties is not None else np.array([])
@@ -134,6 +141,19 @@ class Observable:
             )
 
         self.mean_type = mean_type
+
+    @property
+    def values(self) -> NDArrayFloat:
+        """
+        Return the values plus the optional perturbations.
+
+        This is read-only. Use the method set_values to update the observations.
+        """
+        return self._values + self.perturbations
+
+    def set_values(self, values: NDArrayFloat) -> None:
+        """Set the observed values."""
+        self._values = values
 
     @property
     def mean_type(self) -> MeanType:
@@ -173,9 +193,26 @@ class Observable:
             default=str,
         ).replace("null", "None")
 
+    def set_perturbations(self, pvals: NDArrayFloat) -> None:
+        """Set the values perturbations (see ensemble smoothers)."""
+        if self.values.size != pvals.size:
+            raise ValueError(
+                "perturbations size should " "match observation values size !"
+            )
+        self.perturbations = pvals
+
 
 # new type
 Observables = Union[Observable, Sequence[Observable]]
+
+
+def update_perturbation_values(observables: Observables, pvals: NDArrayFloat) -> None:
+    """Update the perturbation values for the given observables instances."""
+    first_index = 0
+    for obs in object_or_object_sequence_to_list(observables):
+        last_index = first_index + obs.values.size
+        # Update perturbations
+        obs.perturbations = pvals[first_index:last_index]
 
 
 def _get_obs_ascending_time_sorting_permutations(

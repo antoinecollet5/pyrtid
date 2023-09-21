@@ -22,12 +22,13 @@ from typing import (
     List,
     Optional,
     Sequence,
+    Tuple,
     TypeVar,
     Union,
 )
 
 import numpy as np
-from iterative_ensemble_smoother import SIES
+from iterative_ensemble_smoother import SIES, SiesInversionType
 from pyesmda import ESMDA, ESMDA_RS
 from pyPCGA import PCGA
 from scipy.optimize import OptimizeResult as ScipyOptimizeResult
@@ -138,7 +139,9 @@ class DataModel:
     @property
     def s_dim(self):
         """Return the length of the parameters vector."""
-        return self.s_init.shape[1]
+        if len(self.s_init.shape) == 2:
+            return self.s_init.shape[1]
+        return self.s_init.shape[0]
 
     @property
     def d_dim(self):
@@ -212,7 +215,8 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
             Pre transformation to apply to the rt_model before oe run.
             The default is None.
         s_init: Optional[NDArrayFloat]
-            Initial adjusted values. This is required by some solvers such
+            Initial preconditioned adjusted values.
+            This is required by some solvers such
             as ESMDA or SIES. In case of an ensemble, the expected shape
             is (Ne, Nm) with Ne the number of members in the ensemble and
             Nm the number of adjusted parameters. If None, it is retrieved
@@ -245,7 +249,9 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
                 fwd_model, inv_model.parameters_to_adjust, is_preconditioned=True
             )
         else:
+            # TODO: Check the preconditionning
             _s_init = s_init
+            # TODO: add a function check s_init
 
         # Need to differentiate flux and grids
         self.data_model = DataModel(
@@ -1020,6 +1026,8 @@ class SIESSolverConfig(BaseSolverConfig):
         Number of workers to use if the concurrency is enabled. The default is 2.
     n_iterations : int, optional
         Number of iterations (:math:`N_{a}`). The default is 4.
+    inversion_method: SiesInversionType
+        Type of inversion for the hessian term. The default is \"exact\".
     save_ensembles_history: bool, optional
         Whether to save the history predictions and parameters over
         the assimilations. The default is False.
@@ -1030,12 +1038,21 @@ class SIESSolverConfig(BaseSolverConfig):
     is_forecast_for_last_assimilation: bool, optional
         Whether to compute the predictions for the ensemble obtained at the
         last assimilation step. The default is True.
+    is_use_adjoint: bool = False
+        Whether to use the adjoint state for the gradient computation. If not, the
+        gradient is estimated from the ensemble following the initial
+        formulation by Evensen (2019), and the implementation from Equinor.
     """
 
     n_iterations: int = 4
+    inversion_method: SiesInversionType = SiesInversionType.EXACT
     save_ensembles_history: bool = False
     seed: Optional[int] = None
     is_forecast_for_last_assimilation: bool = True
+    is_use_adjoint: bool = False
+    reg_factor: Union[float, str] = "auto"
+    afpi_eps: float = 1e-5
+    is_a_numerical_acceleratiion: bool = False
 
 
 class _SIES(SIES):
@@ -1054,7 +1071,15 @@ class SIESInversionExecutor(BaseInversionExecutor[SIESSolverConfig]):
     def _init_solver(self, s_init: NDArrayFloat) -> None:
         """Initiate a solver with its args."""
 
-        self.solver: _SIES = _SIES(s_init.shape[0], seed=self.solver_config.seed)
+        self.solver: _SIES = _SIES(seed=self.solver_config.seed)
+
+        # Create an adjoint model only if needed
+        self.adj_model = None
+        if self.solver_config.is_use_adjoint:
+            self._init_adjoint_model(
+                self.solver_config.afpi_eps,
+                self.solver_config.is_a_numerical_acceleratiion,
+            )
 
     def _get_solver_name(self) -> str:
         """Return the solver name."""
@@ -1073,15 +1098,20 @@ class SIESInversionExecutor(BaseInversionExecutor[SIESSolverConfig]):
             self.solver.s_history.append(_m)
         for iteration in range(self.solver_config.n_iterations):
             logging.info(f"Iteration # {iteration}")
-            d_pred = self._map_forward_model(
-                _m, is_parallel=self.solver_config.is_parallel
+            d_pred, gradients = self._map_forward_model_with_adjoint(
+                _m,
+                is_parallel=self.solver_config.is_parallel,
+                is_use_adjoint=self.solver_config.is_use_adjoint,
             )
             self.solver.d_history.append(d_pred)
             self.solver.fit(
                 d_pred.T,
-                self.data_model.cov_obs.diagonal(),
+                np.sqrt(self.data_model.cov_obs.diagonal()),
                 self.data_model.obs,
                 param_ensemble=_m.T,
+                gradient_ensemble=(
+                    gradients.T if self.solver_config.is_use_adjoint.T else None
+                ),
             )
             _m = self.solver.update(_m.T).T
 
@@ -1093,6 +1123,129 @@ class SIESInversionExecutor(BaseInversionExecutor[SIESSolverConfig]):
     def s_history(self) -> List[NDArrayFloat]:
         """Return the successive ensembles."""
         return self.solver.s_history
+
+    def _run_forward_model_with_adjoint(
+        self,
+        m: NDArrayFloat,
+        run_n: int,
+        is_save_state: bool = True,
+        is_use_adjoint: bool = False,
+    ) -> Tuple[NDArrayFloat, NDArrayFloat]:
+        """
+        Run the forward model and returns the prediction vector.
+
+        Parameters
+        ----------
+        m : np.array
+            Inverted parameters values as a 1D vector.
+        run_n: int
+            Run number.
+        is_save_state: bool
+            Whether the parameter values must be stored or not.
+            The default is True.
+
+        Returns
+        -------
+        d_pred: np.array
+            Vector of results matching the observations.
+
+        """
+        logging.info("- Running forward model # %s", run_n)
+
+        # Update the model with the new values of x (preconditioned)
+        update_model_with_parameters_values(
+            self.fwd_model,
+            m,
+            self.inv_model.parameters_to_adjust,
+            is_preconditioned=True,
+            is_to_save=is_save_state,  # This is not finite differences
+        )
+
+        # Apply user transformation is needed:
+        if self.pre_run_transformation is not None:
+            self.pre_run_transformation(self.fwd_model)
+
+        # Solve the forward model with the new parameters
+        ForwardSolver(self.fwd_model).solve()
+
+        d_pred = get_predictions_matching_observations(
+            self.fwd_model, self.inv_model.observables, self.solver_config.hm_end_time
+        )
+
+        # AdjointModel()
+        gradient = np.zeros((self.data_model.s_dim), dtype=np.float64)
+
+        # Save the predictions
+        if is_save_state:
+            self.inv_model.list_d_pred.append(d_pred)
+
+        self._check_nans_in_predictions(d_pred, run_n)
+
+        # Read the results at the observation well
+        # Update the prediction vector for the parameters m(j)
+        logging.info("- Run # %s over", run_n)
+
+        return d_pred, gradient
+
+    def _map_forward_model_with_adjoint(
+        self,
+        s_ensemble: NDArrayFloat,
+        is_parallel: bool = False,
+        is_use_adjoint: bool = False,
+    ) -> Tuple[NDArrayFloat, NDArrayFloat]:
+        """
+        Call the forward model for all ensemble members, return predicted data.
+
+        Function calling the non-linear observation model (forward_model)
+        for all ensemble members and returning the predicted data for
+        each ensemble member. this function is responsible for the creation of
+        simulation folder etc.
+
+        Returns
+        -------
+        None.
+        """
+        run_n: int = self.inv_model.nb_f_calls
+        n_ensemble: int = s_ensemble.shape[0]
+        d_pred: NDArrayFloat = np.zeros([n_ensemble, self.data_model.d_dim])
+        gradients: NDArrayFloat = np.zeros([n_ensemble, self.data_model.s_dim])
+        if is_parallel:
+            with ProcessPoolExecutor(
+                max_workers=self.solver_config.max_workers
+            ) as executor:
+                results: Iterator[NDArrayFloat] = executor.map(
+                    self._run_forward_model_with_adjoint,
+                    s_ensemble,
+                    range(run_n + 1, run_n + n_ensemble + 1),
+                )
+                for j, res in enumerate(results):
+                    d_pred[j, :], gradients[j, :] = res
+            # self.simu_n += n_ensemble
+        else:
+            for j in range(n_ensemble):
+                d_pred[j, :], gradients[j, :] = self._run_forward_model_with_adjoint(
+                    s_ensemble[j, :], run_n + j + 1
+                )
+        # update the number of runs
+
+        # The check is already done in Forward_model but nan can also be introduced
+        # because of the stacking. So it is necessary to check
+        self._check_nans_in_predictions(d_pred, run_n)
+
+        # save objective functions. This should be very fast.
+        for i in range(d_pred.shape[0]):
+            ls_loss = ls_loss_function(
+                d_pred[i, :],
+                get_observables_values_as_1d_vector(
+                    self.inv_model.observables, self.solver_config.hm_end_time
+                ),
+                get_observables_uncertainties_as_1d_vector(
+                    self.inv_model.observables, self.solver_config.hm_end_time
+                ),
+            )
+            self.inv_model.list_f_res.append(ls_loss)
+
+        return d_pred, gradients
 
 
 @dataclass
@@ -1116,12 +1269,29 @@ class ScipySolverConfig(BaseSolverConfig):
         Whether to run the calculation one at the time or in a concurrent way.
     max_workers: int, optional
         Number of workers to use if the concurrency is enabled. The default is 2.
-    is_check_gradient: bool
-        Whether the gradient The default is False.
+    random_state: Optional[Union[int, np.random.Generator, np.random.RandomState]]
+        Pseudorandom number generator state used to generate resamples.
+        If `random_state` is ``None`` (or `np.random`), the
+        `numpy.random.RandomState` singleton is used.
+        If `random_state` is an int, a new ``RandomState`` instance is used,
+        seeded with `random_state`.
+        If `random_state` is already a ``Generator`` or ``RandomState``
+        instance then that instance is used.
+    solver_name: str = "L-BFGS-B"
+        Name of the solver to use. TODO: point to scipy.
+    solver_options: Optional[Dict[str, Any]] = None
+    max_optimization_round_nb: int = 1
+    max_fun_first_round: int = 5
     max_fun_per_round: int
         The number of function evaluation before a new round  starts.
+    is_check_gradient: bool
+        Whether the gradient The default is False.
+    is_use_adjoint: bool = True
+    is_regularization_at_first_round: bool = True
     reg_factor: Union[float, str] = "auto"
-        The default is "auto".
+        Weight for the regularization part. The default is "auto".
+    afpi_eps: float = 1e-5
+    is_a_numerical_acceleratiion: bool = False
 
     """
 
@@ -1142,6 +1312,7 @@ class ScipyInversionExecutor(BaseInversionExecutor[ScipySolverConfig]):
     """Represent a inversion executor instance using scipy's solvers."""
 
     def _init_solver(self, s_init: NDArrayFloat) -> None:
+        """Careful, s_init is supposed to be preconditioned."""
         super()._init_solver(s_init)
 
         # Create an adjoint model only if needed

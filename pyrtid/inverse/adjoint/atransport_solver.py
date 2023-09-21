@@ -476,7 +476,7 @@ def _apply_adj_divergence_effect(
 ) -> None:
     """Take into account the divergence: dcdt+U.grad(c)=L(u)."""
     src = fl_model.lunitflow[time_index]
-    src_old = fl_model.lunitflow[time_index + 1]
+    src_old = fl_model.lunitflow[time_index]
 
     div = (fl_model.u_darcy_div[:, :, time_index] - src).flatten(order="F")
     div_old = (fl_model.u_darcy_div[:, :, time_index] - src_old).flatten(order="F")
