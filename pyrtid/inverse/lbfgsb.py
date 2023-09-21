@@ -319,21 +319,16 @@ def line_search(
     d: NDArrayFloat,
     above_iter: int,
     max_steplength: float,
-    fct_f: Callable[[NDArrayFloat], float],
-    fct_grad: Callable[[NDArrayFloat], float],
+    fun_and_grad: Callable[[NDArrayFloat], Tuple[float, NDArrayFloat]],
     alpha: float = 1e-4,
     beta: float = 0.9,
     xtol_minpack: float = 1e-5,
     max_iter: int = 30,
-):
+) -> float:
     """
-    Finds a step that satisfies a sufficient decrease condition and a curvature
-    condition.
+    Find a step that satisfies both decrease condition and a curvature condition.
 
-    The algorithm is designed to find a step that satisfies the sufficient decrease
-    condition
-
-       f(x0+stp*d) <= f(x0) + alpha*stp*\langle f'(x0),d\rangle,
+        f(x0+stp*d) <= f(x0) + alpha*stp*\langle f'(x0),d\rangle,
 
     and the curvature condition
 
@@ -342,44 +337,36 @@ def line_search(
     If alpha is less than beta and if, for example, the functionis bounded below, then
     there is always a step which satisfies both conditions.
 
-    :param x0: starting point
-    :type x0: np.array
+    Parameters
+    ----------
+    x0 : NDArrayFloat
+        Starting point.
+    f0 : float
+        Objective function value for x0.
+    g0 : NDArrayFloat
+        Gradient of the objective function for x0.
+    d : NDArrayFloat
+        Search direction.
+    above_iter : int
+        current iteration in optimization process.
+    max_steplength : float
+        Maximum steplength allowed.
+    fun_and_grad : Callable[[NDArrayFloat], Tuple[float, NDArrayFloat]]
+        Function returning both the obejctive function and its gradient with respect to
+        a given vector x.
+    alpha : float, optional
+        _description_, by default 1e-4.
+    beta : float, optional
+        Parameters of the decrease and curvature conditions, by default 0.9.
+    xtol_minpack : float, optional
+        Tolerance used in minpack2.dcsrch, by default 1e-5.
+    max_iter : int, optional
+        Maximum number of linesearch iterations, by default 30.
 
-    :param f0: f(x0)
-    :type f0: float
-
-    :param g0: f'(x0), gradient
-    :type g0: np.array
-
-    :param d: search direction
-    :type d: np.array
-
-    :param above_iter: current iteration in optimization process
-    :type above_iter: integer
-
-    :param max_steplength: maximum steplength allowed
-    :type max_steplength: float
-
-    :param fct_f: callable, function f(x)
-    :type fct_f: function returning float
-
-    :param fct_grad: callable, function f'(x)
-    :type fct_grad: function returning np.array
-
-    :param alpha, beta: parameters of the decrease and curvature conditions
-    :type alpha, beta: floats
-
-    :param xtol_minpack: tolerance used in minpack2.dcsrch
-    :type xtol_minpack: float
-
-    :param max_iter: number of iteration allowed for finding a steplength
-    :type max_iter: integer
-
-    :return: optimal steplength meeting both decrease and curvature condition
-    :rtype: float
-
-
-
+    Returns
+    -------
+    float
+        The step length.
 
     .. seealso::
 
@@ -425,8 +412,8 @@ def line_search(
         )
         if task[:2] == b"FG":
             steplength_0 = steplength
-            f_m1 = fct_f(x0 + steplength * d)
-            dphi_m1 = fct_grad(x0 + steplength * d).dot(d)
+            f_m1, dphi_m1 = fun_and_grad(x0 + steplength * d)
+            dphi_m1 = dphi_m1.dot(d)
         else:
             break
     else:
@@ -656,8 +643,7 @@ def L_BFGS_B(
             d,
             n_iterations,
             max_stpl,
-            fun,
-            jac,
+            sf.fun_and_grad,
             alpha_linesearch,
             beta_linesearch,
             xtol_minpack,
@@ -668,7 +654,8 @@ def L_BFGS_B(
             if len(S) == 0:
                 # Hessian already rebooted: abort.
                 task_str = "Error: can not compute new steplength : abort"
-                return {"x": x, "f": fun(x), "jac": jac(x)}
+                f, grad = sf.fun_and_grad(x)
+                return {"x": x, "f": f, "jac": grad}
             else:
                 # Reboot BFGS-Hessian:
                 S.clear()
@@ -710,8 +697,6 @@ def L_BFGS_B(
     # 'STOP: TOTAL NO. of ITERATIONS REACHED LIMIT'
 
     # Add test for max gradient
-
-    # return {"x": x, "f": f0, "jac": grad}
     warnflag = 0
 
     return OptimizeResult(
