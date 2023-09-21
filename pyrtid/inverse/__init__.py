@@ -26,6 +26,8 @@ Different executors are provided (scipy, stochopy, pyesmda, pypcga).
     ScipySolverConfig
     StochopyInversionExecutor
     StochopySolverConfig
+    SIESInversionExecutor
+    SIESSolverConfig
 
 .. currentmodule:: pyrtid.inverse
 
@@ -71,6 +73,23 @@ Observables and utilities
     get_values_matching_node_indices
     get_adjoint_sources_for_obs
     get_model_ls_loss_function
+    update_perturbation_values
+
+L-BFGS-B implementation
+^^^^^^^^^^^^^^^^^^^^^^^
+
+A pure python implementation of the L-BFGS-B solver using the same keywords as
+`scipy.optimize.minimize` which possesses the ability to perform on the fly update
+of the stored objective function gradient with the goal to change the regularization
+weight while minimizing without losing inverse hessian approximationc consistency.
+# TODO: add ref to PhD.
+
+.. autosummary::
+   :toctree: _autosummary
+
+   minimize_lbfgsb
+   compute_Cauchy_point
+   get_lbfgs_matrices
 
 """
 
@@ -85,8 +104,15 @@ from pyrtid.inverse.executors import (
     PCGASolverConfig,
     ScipyInversionExecutor,
     ScipySolverConfig,
+    SIESInversionExecutor,
+    SIESSolverConfig,
     StochopyInversionExecutor,
     StochopySolverConfig,
+)
+from pyrtid.inverse.lbfgsb import (
+    compute_Cauchy_point,
+    get_lbfgs_matrices,
+    minimize_lbfgsb,
 )
 from pyrtid.inverse.loss_function import (
     get_model_loss_function,
@@ -107,6 +133,7 @@ from pyrtid.inverse.obs import (
     get_sorted_observable_uncertainties,
     get_sorted_observable_values,
     get_values_matching_node_indices,
+    update_perturbation_values,
 )
 from pyrtid.inverse.params import (
     AdjustableParameter,
@@ -126,12 +153,14 @@ __all__ = [
     "ESMDARSSolverConfig",
     "PCGASolverConfig",
     "StochopySolverConfig",
+    "SIESSolverConfig",
     "ScipyInversionExecutor",
     "ScipyInversionExecutor",
     "StochopyInversionExecutor",
     "PCGAInversionExecutor",
     "ESMDAInversionExecutor",
     "ESMDARSInversionExecutor",
+    "SIESInversionExecutor",
     "AdjustableParameter",
     "ParameterName",
     "ls_loss_function",
@@ -150,6 +179,7 @@ __all__ = [
     "get_observables_uncertainties_as_1d_vector",
     "get_values_matching_node_indices",
     "get_adjoint_sources_for_obs",
+    "update_perturbation_values",
     "InverseModel",
     "AdjointSolver",
     "AdjointModel",
@@ -159,4 +189,7 @@ __all__ = [
     "get_model_ls_loss_function",
     "get_model_reg_loss_function",
     "get_model_loss_function",
+    "minimize_lbfgsb",
+    "compute_Cauchy_point",
+    "get_lbfgs_matrices",
 ]

@@ -1,8 +1,10 @@
+import copy
 from collections import deque
-from typing import Callable, Dict, Optional, Tuple
+from typing import Callable, Deque, Dict, Optional, Tuple
 
 import numpy as np
 from scipy.optimize import minpack2
+from scipy.optimize._constraints import old_bound_to_new
 from scipy.optimize._lbfgsb_py import LbfgsInvHessProduct  # noqa : F401
 from scipy.optimize._optimize import _check_unknown_options  # noqa : F401
 from scipy.optimize._optimize import OptimizeResult, _prepare_scalar_function
@@ -57,16 +59,17 @@ def compute_Cauchy_point(
         - 'c' = W^(T)(xc-x), used for the subspace minimization
         - 'F' set of free variables
 
-    .. seealso::
-
-       [1] R. H. Byrd, P. Lu, J. Nocedal and C. Zhu, ``A limited
-       memory algorithm for bound constrained optimization'',
-       SIAM J. Scientific Computing 16 (1995), no. 5, pp. 1190--1208.
-
-       [2] C. Zhu, R.H. Byrd, P. Lu, J. Nocedal, ``L-BFGS-B: FORTRAN
-       Subroutines for Large Scale Bound Constrained Optimization''
-       Tech. Report, NAM-11, EECS Department, Northwestern University,
-       1994.
+    References
+    ----------
+    * R. H. Byrd, P. Lu and J. Nocedal. A Limited Memory Algorithm for Bound
+      Constrained Optimization, (1995), SIAM Journal on Scientific and
+      Statistical Computing, 16, 5, pp. 1190-1208.
+    * C. Zhu, R. H. Byrd and J. Nocedal. L-BFGS-B: Algorithm 778: L-BFGS-B,
+      FORTRAN routines for large scale bound constrained optimization (1997),
+      ACM Transactions on Mathematical Software, 23, 4, pp. 550 - 560.
+    * J.L. Morales and J. Nocedal. L-BFGS-B: Remark on Algorithm 778: L-BFGS-B,
+      FORTRAN routines for large scale bound constrained optimization (2011),
+      ACM Transactions on Mathematical Software, 38, 1.
     """
     eps_f_sec = 1e-30
     t = np.empty(x.size)
@@ -200,16 +203,17 @@ def minimize_model(
         dict containing a computed value of:
         - 'xbar' the minimizer
 
-            .. seealso::
-
-       [1] R. H. Byrd, P. Lu, J. Nocedal and C. Zhu, ``A limited
-       memory algorithm for bound constrained optimization'',
-       SIAM J. Scientific Computing 16 (1995), no. 5, pp. 1190--1208.
-
-       [2] C. Zhu, R.H. Byrd, P. Lu, J. Nocedal, ``L-BFGS-B: FORTRAN
-       Subroutines for Large Scale Bound Constrained Optimization''
-       Tech. Report, NAM-11, EECS Department, Northwestern University,
-       1994.
+    References
+    ----------
+    * R. H. Byrd, P. Lu and J. Nocedal. A Limited Memory Algorithm for Bound
+      Constrained Optimization, (1995), SIAM Journal on Scientific and
+      Statistical Computing, 16, 5, pp. 1190-1208.
+    * C. Zhu, R. H. Byrd and J. Nocedal. L-BFGS-B: Algorithm 778: L-BFGS-B,
+      FORTRAN routines for large scale bound constrained optimization (1997),
+      ACM Transactions on Mathematical Software, 23, 4, pp. 550 - 560.
+    * J.L. Morales and J. Nocedal. L-BFGS-B: Remark on Algorithm 778: L-BFGS-B,
+      FORTRAN routines for large scale bound constrained optimization (2011),
+      ACM Transactions on Mathematical Software, 38, 1.
     """
 
     ### Début de la multiplication avec le Hessien ?
@@ -292,16 +296,17 @@ def max_allowed_steplength(
     float
         maximum steplength allowed
 
-    .. seealso::
-
-       [1] R. H. Byrd, P. Lu, J. Nocedal and C. Zhu, ``A limited
-       memory algorithm for bound constrained optimization'',
-       SIAM J. Scientific Computing 16 (1995), no. 5, pp. 1190--1208.
-
-       [2] C. Zhu, R.H. Byrd, P. Lu, J. Nocedal, ``L-BFGS-B: FORTRAN
-       Subroutines for Large Scale Bound Constrained Optimization''
-       Tech. Report, NAM-11, EECS Department, Northwestern University,
-       1994.
+    References
+    ----------
+    * R. H. Byrd, P. Lu and J. Nocedal. A Limited Memory Algorithm for Bound
+      Constrained Optimization, (1995), SIAM Journal on Scientific and
+      Statistical Computing, 16, 5, pp. 1190-1208.
+    * C. Zhu, R. H. Byrd and J. Nocedal. L-BFGS-B: Algorithm 778: L-BFGS-B,
+      FORTRAN routines for large scale bound constrained optimization (1997),
+      ACM Transactions on Mathematical Software, 23, 4, pp. 550 - 560.
+    * J.L. Morales and J. Nocedal. L-BFGS-B: Remark on Algorithm 778: L-BFGS-B,
+      FORTRAN routines for large scale bound constrained optimization (2011),
+      ACM Transactions on Mathematical Software, 38, 1.
     """
     max_stpl = max_steplength
     for i in range(x.size):
@@ -368,18 +373,17 @@ def line_search(
     float
         The step length.
 
-    .. seealso::
-
-       [minpack] scipy.optimize.minpack2.dcsrch
-
-       [1] R. H. Byrd, P. Lu, J. Nocedal and C. Zhu, ``A limited
-       memory algorithm for bound constrained optimization'',
-       SIAM J. Scientific Computing 16 (1995), no. 5, pp. 1190--1208.
-
-       [2] C. Zhu, R.H. Byrd, P. Lu, J. Nocedal, ``L-BFGS-B: FORTRAN
-       Subroutines for Large Scale Bound Constrained Optimization''
-       Tech. Report, NAM-11, EECS Department, Northwestern University,
-       1994.
+    References
+    ----------
+    * R. H. Byrd, P. Lu and J. Nocedal. A Limited Memory Algorithm for Bound
+      Constrained Optimization, (1995), SIAM Journal on Scientific and
+      Statistical Computing, 16, 5, pp. 1190-1208.
+    * C. Zhu, R. H. Byrd and J. Nocedal. L-BFGS-B: Algorithm 778: L-BFGS-B,
+      FORTRAN routines for large scale bound constrained optimization (1997),
+      ACM Transactions on Mathematical Software, 23, 4, pp. 550 - 560.
+    * J.L. Morales and J. Nocedal. L-BFGS-B: Remark on Algorithm 778: L-BFGS-B,
+      FORTRAN routines for large scale bound constrained optimization (2011),
+      ACM Transactions on Mathematical Software, 38, 1.
     """
 
     steplength_0 = 1 if max_steplength > 1 else 0.5 * max_steplength
@@ -428,56 +432,94 @@ def line_search(
     return steplength
 
 
-def update_SY(sk, yk, S, Y, m, W, M, thet, eps=2.2e-16):
+def get_lbfgs_matrices(
+    xk: NDArrayFloat,
+    gk: NDArrayFloat,
+    X: Deque[NDArrayFloat],
+    G: Deque[NDArrayFloat],
+    maxcor: int,
+    W: NDArrayFloat,
+    M: NDArrayFloat,
+    thet: float,
+    is_force_update: bool,
+    eps: float = 2.2e-16,
+) -> Tuple[NDArrayFloat, NDArrayFloat, float]:
     """
-        Update lists S and Y, and form the L-BFGS Hessian approximation thet, W and M.
+    Update lists S and Y, and form the L-BFGS Hessian approximation thet, W and M.
 
-    :param sk: correction in x = new_x - old_x
-    :type sk: np.array
+    Instead of storing sk and yk, we store the gradients and the parameters.
 
-    :param yk: correction in gradient = f'(new_x) - f'(old_x)
-    :type yk: np.array
+    2 conditions for update
+    - The current step update is accepted
+    - The all sequence of x and g has been modified (reg case)
 
-    :param S, Y: lists defining the L-BFGS matrices, updated during process (IN/OUT)
-    :type S, Y: list
+    Parameters
+    ----------
+    xk : NDArrayFloat
+        New x parameter.
+    gk : NDArrayFloat
+        New gradient parameter g.
+    X : deque
+        List of successive parameters x.
+    G : deque
+        List of successive gradients.
+    maxcor : int
+        The maximum number of variable metric corrections used to
+        define the limited memory matrix. (The limited memory BFGS
+        method does not store the full hessian but uses this many terms
+        in an approximation to it.)
+    W : NDArrayFloat
+        L-BFGS matrices.
+    M : NDArrayFloat
+        L-BFGS matrices.
+    thet : float
+        L-BFGS float parameter (multiply the identity matrix).
+    is_force_update: bool
+        Whether to perform an update even if the current step update is rejected.
+        This is useful if the sequence of X and G has been modified during the
+        optimization. See TODO: add ref, for the use.
+    eps : float, optional
+        Positive stability parameter for accepting current step for updating.
+        By default 2.2e-16.
 
-    :param m: Maximum size of lists S and Y: keep in memory only m previous iterations
-    :type m: integer
+    Returns
+    -------
+    List[NDArrayFloat, NDArrayFloat, float]
+        Updated [W, M, thet]
 
-    :param W, M: L-BFGS matrices
-    :type W, M: np.array
-
-    :param thet: L-BFGS float parameter
-    :type thet: float
-
-    :param eps: Positive stability parameter for accepting current step for updating
-    matrices.
-    :type eps: float >0
-
-    :return: updated [W, M, thet]
-    :rtype: tuple
-
-    .. seealso::
-
-       [1] R. H. Byrd, P. Lu, J. Nocedal and C. Zhu, ``A limited
-       memory algorithm for bound constrained optimization'',
-       SIAM J. Scientific Computing 16 (1995), no. 5, pp. 1190--1208.
-
-       [2] C. Zhu, R.H. Byrd, P. Lu, J. Nocedal, ``L-BFGS-B: FORTRAN
-       Subroutines for Large Scale Bound Constrained Optimization''
-       Tech. Report, NAM-11, EECS Department, Northwestern University,
-       1994.
+    References
+    ----------
+    * R. H. Byrd, P. Lu and J. Nocedal. A Limited Memory Algorithm for Bound
+      Constrained Optimization, (1995), SIAM Journal on Scientific and
+      Statistical Computing, 16, 5, pp. 1190-1208.
+    * C. Zhu, R. H. Byrd and J. Nocedal. L-BFGS-B: Algorithm 778: L-BFGS-B,
+      FORTRAN routines for large scale bound constrained optimization (1997),
+      ACM Transactions on Mathematical Software, 23, 4, pp. 550 - 560.
+    * J.L. Morales and J. Nocedal. L-BFGS-B: Remark on Algorithm 778: L-BFGS-B,
+      FORTRAN routines for large scale bound constrained optimization (2011),
+      ACM Transactions on Mathematical Software, 38, 1.
     """
-    sTy = sk.dot(yk)
-    yTy = yk.dot(yk)
+    yk = gk - G[-1]
+    sTy = (xk - X[-1]).dot(yk)  # type: ignore
+    yTy = (yk).dot(yk)  # type: ignore
+
+    is_current_update_accepted = False
+
+    # TODO: Why do we perform that check ?
     if sTy > eps * yTy:
-        S.append(sk)
-        Y.append(yk)
-        if len(S) > m:
-            S.popleft()
-            Y.popleft()
-        Sarray = np.asarray(S).T
-        Yarray = np.asarray(Y).T
+        is_current_update_accepted = True
+        X.append(xk)
+        G.append(gk)
+        if len(X) > maxcor:
+            X.popleft()
+            G.popleft()
+
+    # two conditions to update the inverse Hessian approximation
+    if is_force_update or is_current_update_accepted:
+        # Update the lbfgsb matrices
+        Sarray = np.diff(np.array(X), axis=0).T
+        Yarray = np.diff(np.array(G), axis=0).T
+
         STS = np.transpose(Sarray).dot(Sarray)
         L = np.transpose(Sarray).dot(Yarray)
         D = np.diag(-np.diag(L))
@@ -487,17 +529,40 @@ def update_SY(sk, yk, S, Y, m, W, M, thet, eps=2.2e-16):
         W = np.hstack([Yarray, thet * Sarray])
         M = np.linalg.inv(np.hstack([np.vstack([D, L]), np.vstack([L.T, thet * STS])]))
 
-    return [W, M, thet]
+    return W, M, thet
 
 
-def L_BFGS_B(
+def get_bounds(
+    x0: NDArrayFloat, bounds: Optional[NDArrayFloat]
+) -> Tuple[NDArrayFloat, NDArrayFloat]:
+    if bounds is None:
+        bounds = np.repeat(np.array([(-np.inf, np.inf)]), x0.size, axis=1)
+    else:
+        if len(bounds) != x0.size:
+            raise ValueError("length of x0 != length of bounds")
+
+    lb, ub = old_bound_to_new(bounds)
+
+    # check bounds
+    if (lb > ub).any():
+        raise ValueError(
+            "LBFGSB - one of the lower bounds is greater than an upper bound."
+        )
+
+    # initial vector must lie within the bounds. Otherwise ScalarFunction and
+    # approx_derivative will cause problems
+    return lb, ub
+
+
+def minimize_lbfgsb(
     *,
     x0: NDArrayFloat,
-    fun: Callable[[NDArrayFloat], float],
+    fun: Callable[[NDArrayFloat, ...], float],
     args: Tuple = (),
-    jac=Optional[Callable[[NDArrayFloat], float]],
+    jac=Optional[Callable[[NDArrayFloat, ...], NDArrayFloat]],
     bounds: Optional[NDArrayFloat] = None,
-    m: int = 10,
+    disp: Optional[int] = None,
+    maxcor: int = 10,
     gtol: float = 1e-5,
     ftol: float = 1e-5,
     max_iter: int = 50,
@@ -511,99 +576,147 @@ def L_BFGS_B(
     beta_linesearch: float = 0.9,
     max_steplength: float = 1e8,
     xtol_minpack: float = 1e-5,
-    max_iter_linesearch: int = 30,
     eps_SY: float = 2.2e-16,
-):
+) -> OptimizeResult:
     """
-       Solves bound constrained optimization problems by using the compact formula
-       of the limited memory BFGS updates.
+    Solves bound constrained optimization problems by using the compact formula
+    of the limited memory BFGS updates.
 
-    :param x0: initial guess
-    :type sk: np.array
+    fun :  Callable[[NDArrayFloat, Tuple[Any]], float],
+        The objective function to be minimized.
 
-    :param f: cost function to optimize f(x)
-    :type f: function returning float
+            ``fun(x, *args) -> float``
 
-    :param jac: gradient of cost function to optimize f'(x)
-    :type jac: function returning np.array
+        where ``x`` is a 1-D array with shape (n,) and ``args``
+        is a tuple of the fixed parameters needed to completely
+        specify the function.
+    x0 : ndarray, shape (n,)
+        Initial guess. Array of real elements of size (n,),
+        where ``n`` is the number of independent variables.
+    args : tuple, optional
+        Extra arguments passed to the objective function and its
+        derivatives (`fun`, `jac` and `hess` functions).
+    jac : {callable,  '2-point', '3-point', 'cs', bool}, optional
+        Method for computing the gradient vector.
+        If it is a callable, it should be a function that returns the gradient
+        vector:
 
-    :param l: the lower bound of x
-    :type l: np.array
+            ``jac(x, *args) -> array_like, shape (n,)``
 
-    :param u: the upper bound of x
-    :type u: np.array
+        where ``x`` is an array with shape (n,) and ``args`` is a tuple with
+        the fixed parameters. If `jac` is a Boolean and is True, `fun` is
+        assumed to return a tuple ``(f, g)`` containing the objective
+        function and the gradient.
+        If None or False, the gradient will be estimated using 2-point finite
+        difference estimation with an absolute step size.
+        Alternatively, the keywords  {'2-point', '3-point', 'cs'} can be used
+        to select a finite difference scheme for numerical estimation of the
+        gradient with a relative step size. These finite difference schemes
+        obey any specified `bounds`.
+    bounds : sequence or `Bounds`, optional
+        Bounds on variables for Nelder-Mead, L-BFGS-B, TNC, SLSQP, Powell, and
+        trust-constr methods. There are two ways to specify the bounds:
 
-    :param m: Maximum size of lists for L-BFGS Hessian approximation
-    :type m: integer
+            1. Instance of `Bounds` class.
+            2. Sequence of ``(min, max)`` pairs for each element in `x`. None
+               is used to specify no bound.
+    disp : None or int
+        If `disp is None` (the default), then the supplied version of `iprint`
+        is used. If `disp is not None`, then it overrides the supplied version
+        of `iprint` with the behaviour you outlined.
+    maxcor : int
+        The maximum number of variable metric corrections used to
+        define the limited memory matrix. (The limited memory BFGS
+        method does not store the full hessian but uses this many terms
+        in an approximation to it.)
+    ftol : float
+        The iteration stops when ``(f^k -
+        f^{k+1})/max{|f^k|,|f^{k+1}|,1} <= ftol``.
+        # TODO: see what definition is right.
+        Tolerance on function change: programs ends when
+        (f_k-f_{k+1})/max(|f_k|,|f_{k+1}|,1) < ftol
+    gtol : float
+        The iteration will stop when ``max{|proj g_i | i = 1, ..., n}
+        <= gtol`` where ``pg_i`` is the i-th component of the
+        projected gradient.
+        # TODO: see what definition is right.
+        Tolerance on projected gradient: programs converges when
+        P(x-grad, l, u)<gtol.
+    eps : float or ndarray
+        If `jac is None` the absolute step size used for numerical
+        approximation of the jacobian via forward differences.
+    maxfun : int
+        Maximum number of function evaluations. Note that this function
+        may violate the limit because of evaluating gradients by numerical
+        differentiation.
+    maxiter : int
+        Maximum number of iterations.
+    iprint : int, optional
+        Controls the frequency of output. ``iprint < 0`` means no output;
+        ``iprint = 0``    print only one line at the last iteration;
+        ``0 < iprint < 99`` print also f and ``|proj g|`` every iprint iterations;
+        ``iprint = 99``   print details of every iteration except n-vectors;
+        ``iprint = 100``  print also the changes of active set and final x;
+        ``iprint > 100``  print details of every iteration including x and g.
+    maxls : int, optional
+        Maximum number of line search steps (per iteration). Default is 20.
+    finite_diff_rel_step : None or array_like, optional
+        If `jac in ['2-point', '3-point', 'cs']` the relative step size to
+        use for numerical approximation of the jacobian. The absolute step
+        size is computed as ``h = rel_step * sign(x) * max(1, abs(x))``,
+        possibly adjusted to fit into the bounds. For ``method='3-point'``
+        the sign of `h` is ignored. If None (default) then step is selected
+        automatically.
+    alpha_linesearch: float
+        Parameters for linesearch. The default is 1e-4.
+    beta_linesearch: float
+        Parameters for linesearch. The default is 0.9.
+    max_steplength: float
+        Maximum steplength allowed. The default is 1e8.
+    xtol_minpack: float
+        Tolerance used by minpack2. The default is 1e-5.
+    eps_SY: float
+        Parameter used for updating the L-BFGS matrices. The default is 2.2e-16.
 
-    :param gtol: Tolerance on projected gradient: programs converges when
-                P(x-grad, l, u)<gtol.
-    :type gtol: float
+    Returns
+    -------
+    OptimizeResult
+        Wrapper for optimization results (from scipy).
 
-    :param ftol: Tolerance on function change: programs ends when
-    (f_k-f_{k+1})/max(|f_k|,|f_{k+1}|,1) < ftol
-    :type ftol: float
-
-    :param alpha_linesearch, beta_linesearch: Parameters for linesearch.
-                                              See ``alpha`` and ``beta``
-                                              in :func:`line_search`
-    :type alpha_linesearch, beta_linesearch: float
-
-    :param max_steplength: Maximum steplength allowed. See ``max_steplength``
-    in :func:`max_allowed_steplength`
-    :type max_steplength: float
-
-    :param xtol_minpack: Tolerance used by minpack2. See ``xtol_minpack``
-    in :func:`line_search`
-    :type xtol_minpack: float
-
-    :param max_iter_linesearch: Maximum number of trials for linesearch.
-                                See ``max_iter_linesearch`` in :func:`line_search`
-    :type max_iter_linesearch: integer
-
-    :param eps_SY: Parameter used for updating the L-BFGS matrices. See ``eps``
-    in :func:`update_SY`
-    :type eps_SY: float
-
-    :return: dict containing:
-            - 'x': optimal point
-            - 'f': optimal value at x
-            - 'jac': gradient f'(x)
-    :rtype: dict
-
-
-    ..todo Check matrices update and different safeguards may be missing
-
-    .. seealso::
-       Function tested on Rosenbrock and Beale function with different starting points.
-       All tests passed.
-
-       [1] R. H. Byrd, P. Lu, J. Nocedal and C. Zhu, ``A limited
-       memory algorithm for bound constrained optimization'',
-       SIAM J. Scientific Computing 16 (1995), no. 5, pp. 1190--1208.
-
-       [2] C. Zhu, R.H. Byrd, P. Lu, J. Nocedal, ``L-BFGS-B: FORTRAN
-       Subroutines for Large Scale Bound Constrained Optimization''
-       Tech. Report, NAM-11, EECS Department, Northwestern University,
-       1994.
+    References
+    ----------
+    * R. H. Byrd, P. Lu and J. Nocedal. A Limited Memory Algorithm for Bound
+      Constrained Optimization, (1995), SIAM Journal on Scientific and
+      Statistical Computing, 16, 5, pp. 1190-1208.
+    * C. Zhu, R. H. Byrd and J. Nocedal. L-BFGS-B: Algorithm 778: L-BFGS-B,
+      FORTRAN routines for large scale bound constrained optimization (1997),
+      ACM Transactions on Mathematical Software, 23, 4, pp. 550 - 560.
+    * J.L. Morales and J. Nocedal. L-BFGS-B: Remark on Algorithm 778: L-BFGS-B,
+      FORTRAN routines for large scale bound constrained optimization (2011),
+      ACM Transactions on Mathematical Software, 38, 1.
     """
-    lb = bounds[:, 0]
-    ub = bounds[:, 1]
-
+    lb, ub = get_bounds(x0, bounds)
     max_steplength_user = max_steplength
 
+    # applying the bounds to the initial guess x0
     n = x0.size
     if x0.dtype != np.float64:
         x = x0.astype(np.float64, copy=True)
         x = np.clip(x, lb, ub)
     else:
         x = np.clip(x0, lb, ub)
-    S = deque()
-    Y = deque()
+
+    # Deque = similar to list but with faster operations to remove and add
+    # values to extremities
+    X: Deque[NDArrayFloat] = deque()
+    G: Deque[NDArrayFloat] = deque()
+
+    # search direction for the minimization problem
     W = np.zeros([n, 1])
     M = np.zeros([1, 1])
     theta = 1
 
+    # wrapper storing the calls to f and g and handling finite difference approximation
     sf = _prepare_scalar_function(
         fun,
         x0,
@@ -613,9 +726,12 @@ def L_BFGS_B(
         bounds=bounds,
         finite_diff_rel_step=finite_diff_rel_step,
     )
-    func_and_grad = sf.fun_and_grad
 
-    f0, grad = func_and_grad(x)
+    f0, grad = sf.fun_and_grad(x)
+
+    # Store first res to X and G
+    X.append(x0)
+    G.append(grad)
     n_iterations = 0
 
     task_str = "Nothing"
@@ -624,14 +740,44 @@ def L_BFGS_B(
         np.max(np.abs(np.clip(x - grad, lb, ub) - x)) > gtol and n_iterations < max_iter
     ):
         oljac0 = f0
-        oldx = x.copy()
-        oldg = grad.copy()
+        x.copy()
+        grad.copy()
+
+        #
         dictCP = compute_Cauchy_point(x, grad, lb, ub, W, M, theta)
+
+        # find the
         dictMinMod = minimize_model(
             x, dictCP["xc"], dictCP["c"], grad, lb, ub, W, M, theta
         )
 
+        # search direction for the minimization problem
         d = dictMinMod["xbar"] - x
+
+        # print(f"d = {d}")
+
+        # TODO: delete this ?
+        # These two portions of the workspace are described in the mainlb
+        # subroutine in lbfgsb.f. See line 363.
+        # s = wa[0 : m * n].reshape(m, n)
+        # y = wa[m * n : 2 * m * n].reshape(m, n)
+
+        # Get the number of past gradient and x updates to use for hessian approx
+        min(n_iterations, maxcor)
+
+        # hess_inv = LbfgsInvHessProduct(s[:n_corrs], y[:n_corrs])
+        # print(np.array(S).shape)
+        # print(np.array(Y).shape)
+        if n_iterations != 0:
+            hess_inv = LbfgsInvHessProduct(
+                np.diff(np.array(X), axis=0), np.diff(np.array(G), axis=0)
+            )
+
+            #### END modify #### ???
+            -hess_inv.dot(x) - x
+            # print(f"d2 = {d2}")
+
+            # d = d2
 
         # max_stpl = computer defined
         # max_steplength = user defined
@@ -647,29 +793,37 @@ def L_BFGS_B(
             alpha_linesearch,
             beta_linesearch,
             xtol_minpack,
-            max_iter_linesearch,
+            maxls,
         )
 
         if steplength is None:
-            if len(S) == 0:
+            if len(X) == 0:
                 # Hessian already rebooted: abort.
                 task_str = "Error: can not compute new steplength : abort"
                 f, grad = sf.fun_and_grad(x)
-                return {"x": x, "f": f, "jac": grad}
+                break
             else:
                 # Reboot BFGS-Hessian:
-                S.clear()
-                Y.clear()
+                X.clear()
+                G.clear()
                 W = np.zeros([n, 1])
                 M = np.zeros([1, 1])
                 theta = 1
         else:
             x += steplength * d
-            f0, grad = func_and_grad(x)
+            f0, grad = sf.fun_and_grad(x)
 
-            # On met à jour l'inverse du gradient
-            [W, M, theta] = update_SY(
-                x - oldx, grad - oldg, S, Y, m, W, M, theta, eps_SY
+            W, M, theta = get_lbfgs_matrices(
+                x.copy(),  # copy otherwise x might be changed in X when updated
+                grad,
+                X,
+                G,
+                maxcor,
+                W.copy(),
+                M.copy(),
+                copy.copy(theta),
+                False,
+                eps_SY,
             )
 
             print(
@@ -709,5 +863,7 @@ def L_BFGS_B(
         message=task_str,
         x=x,
         success=(warnflag == 0),
-        hess_inv=None,
+        hess_inv=LbfgsInvHessProduct(
+            np.diff(np.array(X), axis=0), np.diff(np.array(G), axis=0)
+        ),
     )
