@@ -66,6 +66,18 @@ and performs the calculation on a :class:`ForwardModel`.
     solve_transport_semi_implicit
     solve_geochem
 
+Functions
+^^^^^^^^^
+
+Some useful functions
+
+.. currentmodule:: pyrtid.forward
+
+.. autosummary::
+   :toctree: _autosummary
+
+    get_owner_neigh_indices
+
 """
 
 from .flow_solver import solve_flow_stationary, solve_flow_transient_semi_implicit
@@ -83,6 +95,7 @@ from .models import (
     TransportParameters,
     VerticalAxis,
     ZeroConcGradient,
+    get_owner_neigh_indices,
 )
 from .solver import ForwardSolver, get_max_coupling_error
 from .transport_solver import solve_transport_semi_implicit
@@ -106,4 +119,5 @@ __all__ = [
     "solve_flow_transient_semi_implicit",
     "solve_transport_semi_implicit",
     "solve_geochem",
+    "get_owner_neigh_indices",
 ]
