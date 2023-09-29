@@ -19,7 +19,7 @@ from pyrtid.forward.models import (
 from pyrtid.forward.solver import VERY_SMALL_NUMBER, get_max_coupling_error
 from pyrtid.inverse.adjoint.amodels import AdjointTransportModel
 from pyrtid.utils import harmonic_mean
-from pyrtid.utils.operators import get_super_lu_preconditioner
+from pyrtid.utils.operators import get_super_ilu_preconditioner
 from pyrtid.utils.types import NDArrayFloat
 
 
@@ -98,7 +98,7 @@ def solve_adj_initial_transport(
     tmp -= (a_tr_model.a_gch_src_term / geometry.mesh_volume).ravel("F")
 
     # Build the LU preconditioning
-    preconditioner = get_super_lu_preconditioner(q_next.tocsc())
+    preconditioner = get_super_ilu_preconditioner(q_next.tocsc())
 
     # Solve Ax = b with A sparse using LU preconditioner
     res, exit_code = gmres(q_next.tocsc(), tmp, M=preconditioner, atol=1e-15)
@@ -617,7 +617,7 @@ def solve_adj_transport_transient_semi_implicit(
     tmp -= a_tr_model.a_gch_src_term.ravel(order="F") / geometry.mesh_volume
 
     # Build the LU preconditioning
-    preconditioner = get_super_lu_preconditioner(q_next.tocsc())
+    preconditioner = get_super_ilu_preconditioner(q_next.tocsc())
 
     # Solve Ax = b with A sparse using LU preconditioner
     res, exit_code = gmres(q_next.tocsc(), tmp, M=preconditioner, atol=1e-15)

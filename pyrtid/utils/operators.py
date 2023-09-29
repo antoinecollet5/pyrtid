@@ -4,7 +4,7 @@ from typing import Optional
 
 import numpy as np
 from scipy.sparse import csc_array
-from scipy.sparse.linalg import LinearOperator, splu
+from scipy.sparse.linalg import LinearOperator, spilu
 
 from pyrtid.utils.types import NDArrayFloat
 
@@ -116,10 +116,29 @@ def hessian_cfd(param: NDArrayFloat, dx: float, axis: int = 0) -> NDArrayFloat:
     return hess
 
 
-def get_super_lu_preconditioner(mat: csc_array) -> Optional[LinearOperator]:
-    """Get the preconditioner for the given matrix."""
+def get_super_ilu_preconditioner(mat: csc_array) -> Optional[LinearOperator]:
+    """
+    Get an incomplete LU preconditioner for the given sparse matrix.
+
+    Reference: :citet:`meijerinkGuidelinesUsageIncomplete1981`.
+
+    Note
+    ----
+    As wikipedia states, for a typical sparse matrix, the LU factors can be much less
+    sparse than the
+    original matrix — a phenomenon called fill-in. The memory requirements for using a
+    direct solver can then become a bottleneck in solving linear systems. One can
+    combat this problem by using fill-reducing reorderings of the matrix's unknowns,
+    such as the Minimum degree algorithm.
+
+    An incomplete factorization instead seeks triangular matrices L, U such that
+    A ≈ L U A\approx LU rather than A = L U A=LU. Solving for L U x = b LUx=b can be
+    done quickly but does not yield the exact solution to A x = b Ax=b. So,
+    we instead use the matrix M = L U M=LU as a preconditioner in another iterative
+    solution algorithm such as the conjugate gradient method or GMRES.
+    """
     try:
-        op = splu(mat)
+        op = spilu(mat)
     except RuntimeError:  # The Factor is exactly singular
         return None
 

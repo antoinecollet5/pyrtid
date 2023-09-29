@@ -9,7 +9,7 @@ from scipy.sparse.linalg import gmres
 
 from pyrtid.utils import (
     get_array_borders_selection,
-    get_super_lu_preconditioner,
+    get_super_ilu_preconditioner,
     harmonic_mean,
 )
 from pyrtid.utils.types import NDArrayFloat
@@ -289,7 +289,7 @@ def solve_flow_stationary(
     ]
 
     # LU preconditioner
-    preconditioner = get_super_lu_preconditioner(fl_model.q_next.tocsc())
+    preconditioner = get_super_ilu_preconditioner(fl_model.q_next.tocsc())
 
     # Add the source terms
     tmp += flw_sources.flatten(order="F")
@@ -481,7 +481,7 @@ def solve_flow_transient_semi_implicit(
     _q_prev = _q_prev.tocsc()
 
     # Get LU preconditioner
-    preconditioner = get_super_lu_preconditioner(_q_next)
+    preconditioner = get_super_ilu_preconditioner(_q_next)
 
     # Multiply prev matrix by prev vector
     tmp = _q_prev.dot(fl_model.lhead[time_index - 1].flatten(order="F"))

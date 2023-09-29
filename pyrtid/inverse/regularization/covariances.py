@@ -25,7 +25,7 @@ from scipy.spatial.distance import cdist
 from pyrtid.inverse.regularization.dense import generate_dense_matrix
 from pyrtid.inverse.regularization.hmatrix import Hmatrix
 from pyrtid.inverse.regularization.toeplitz import create_row, toeplitz_product
-from pyrtid.utils.operators import get_super_lu_preconditioner
+from pyrtid.utils.operators import get_super_ilu_preconditioner
 from pyrtid.utils.types import NDArrayFloat, NDArrayInt
 
 
@@ -556,7 +556,7 @@ class SparseInvCovarianceMatrix(CovarianceMatrix):
             Sparse precision matrix (inverse of the covariance matrix).
         """
         self.inv_mat: csc_array = inv_mat
-        self.preconditioner = get_super_lu_preconditioner(self.inv_mat)
+        self.preconditioner = get_super_ilu_preconditioner(self.inv_mat)
         super().__init__(inv_mat.shape)
 
     def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
