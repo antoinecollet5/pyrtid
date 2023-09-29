@@ -12,6 +12,7 @@ import shutil
 from abc import ABC, abstractmethod
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import (
     Any,
@@ -28,7 +29,7 @@ from typing import (
 )
 
 import numpy as np
-from iterative_ensemble_smoother import SIES, SiesInversionType
+from iterative_ensemble_smoother import SIES
 from pyesmda import ESMDA, ESMDA_RS
 from pyPCGA import PCGA
 from scipy.optimize import OptimizeResult as ScipyOptimizeResult
@@ -1001,6 +1002,39 @@ class ESMDARSInversionExecutor(BaseInversionExecutor[ESMDARSSolverConfig]):
     def s_history(self) -> List[NDArrayFloat]:
         """Return the successive ensembles."""
         return self.solver.m_history
+
+
+class SiesInversionType(str, Enum):
+    """Inversion type for the computation of (S @ S.T + E @ E.T)^-1.
+
+    Note
+    ----
+    It is a hashable string enum and can be iterated.
+    """
+
+    NAIVE = "naive"  # direct inversion
+    EXACT = "exact"  # only if cdd is diagonal
+    EXACT_R = "exact_r"  # for big data assimilation this is the recommended method
+    SUBSPACE_RE = "subspace_re"  # using full Cdd
+
+    def __str__(self) -> str:
+        """Return instance value."""
+        return self.value
+
+    def __hash__(self) -> int:
+        """Return the hash of the value."""
+        return hash(self.value)
+
+    def __eq__(self, other: object) -> bool:
+        """Return if two instances are equal."""
+        if not isinstance(other, SiesInversionType) and not isinstance(other, str):
+            return False
+        return self.value == other
+
+    @classmethod
+    def to_list(cls) -> List[SiesInversionType]:
+        """Return all enums as a list."""
+        return list(cls)
 
 
 @dataclass
