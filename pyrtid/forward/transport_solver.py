@@ -49,7 +49,7 @@ def make_transport_matrices_diffusion_only(
             geometry,
             (slice(0, geometry.nx - 1), slice(None)),
             (slice(1, geometry.nx), slice(None)),
-            tr_model.cst_conc_indices,
+            owner_indices_to_keep=tr_model.free_conc_nn,
         )
 
         tmp = geometry.dy / geometry.dx / geometry.mesh_volume
@@ -72,7 +72,7 @@ def make_transport_matrices_diffusion_only(
             geometry,
             (slice(1, geometry.nx), slice(None)),
             (slice(0, geometry.nx - 1), slice(None)),
-            tr_model.cst_conc_indices,
+            owner_indices_to_keep=tr_model.free_conc_nn,
         )
 
         q_next[idc_owner, idc_owner] += (
@@ -101,7 +101,7 @@ def make_transport_matrices_diffusion_only(
             geometry,
             (slice(None), slice(0, geometry.ny - 1)),
             (slice(None), slice(1, geometry.ny)),
-            tr_model.cst_conc_indices,
+            owner_indices_to_keep=tr_model.free_conc_nn,
         )
 
         tmp = geometry.dx / geometry.dy / geometry.mesh_volume
@@ -124,7 +124,7 @@ def make_transport_matrices_diffusion_only(
             geometry,
             (slice(None), slice(1, geometry.ny)),
             (slice(None), slice(0, geometry.ny - 1)),
-            tr_model.cst_conc_indices,
+            owner_indices_to_keep=tr_model.free_conc_nn,
         )
 
         q_next[idc_owner, idc_owner] += (
@@ -171,7 +171,7 @@ def _add_advection_to_transport_matrices(
             geometry,
             (slice(0, geometry.nx - 1), slice(None)),
             (slice(1, geometry.nx), slice(None)),
-            tr_model.cst_conc_indices,
+            owner_indices_to_keep=tr_model.free_conc_nn,
         )
 
         q_next[idc_owner, idc_neigh] += (
@@ -201,7 +201,7 @@ def _add_advection_to_transport_matrices(
             geometry,
             (slice(1, geometry.nx), slice(None)),
             (slice(0, geometry.nx - 1), slice(None)),
-            tr_model.cst_conc_indices,
+            owner_indices_to_keep=tr_model.free_conc_nn,
         )
 
         q_next[idc_owner, idc_neigh] += (
@@ -241,7 +241,7 @@ def _add_advection_to_transport_matrices(
             geometry,
             (slice(None), slice(0, geometry.ny - 1)),
             (slice(None), slice(1, geometry.ny)),
-            tr_model.cst_conc_indices,
+            owner_indices_to_keep=tr_model.free_conc_nn,
         )
 
         tmp = geometry.dx / geometry.mesh_volume
@@ -273,7 +273,7 @@ def _add_advection_to_transport_matrices(
             geometry,
             (slice(None), slice(1, geometry.ny)),
             (slice(None), slice(0, geometry.ny - 1)),
-            tr_model.cst_conc_indices,
+            owner_indices_to_keep=tr_model.free_conc_nn,
         )
 
         q_next[idc_owner, idc_neigh] += (

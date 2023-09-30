@@ -43,7 +43,7 @@ def make_stationary_flow_matrices(geometry: Geometry, fl_model: FlowModel) -> li
             geometry,
             (slice(0, geometry.nx - 1), slice(None)),
             (slice(1, geometry.nx), slice(None)),
-            fl_model.cst_head_nn,
+            owner_indices_to_keep=fl_model.free_head_nn,
         )
 
         tmp = geometry.dy / geometry.dx / geometry.mesh_volume
@@ -56,7 +56,7 @@ def make_stationary_flow_matrices(geometry: Geometry, fl_model: FlowModel) -> li
             geometry,
             (slice(1, geometry.nx), slice(None)),
             (slice(0, geometry.nx - 1), slice(None)),
-            fl_model.cst_head_nn,
+            owner_indices_to_keep=fl_model.free_head_nn,
         )
 
         q_next[idc_owner, idc_neigh] -= kmean[idc_neigh] * tmp  # type: ignore
@@ -75,7 +75,7 @@ def make_stationary_flow_matrices(geometry: Geometry, fl_model: FlowModel) -> li
             geometry,
             (slice(None), slice(0, geometry.ny - 1)),
             (slice(None), slice(1, geometry.ny)),
-            fl_model.cst_head_nn,
+            owner_indices_to_keep=fl_model.free_head_nn,
         )
 
         tmp = geometry.dx / geometry.dy / geometry.mesh_volume
@@ -88,7 +88,7 @@ def make_stationary_flow_matrices(geometry: Geometry, fl_model: FlowModel) -> li
             geometry,
             (slice(None), slice(1, geometry.ny)),
             (slice(None), slice(0, geometry.ny - 1)),
-            fl_model.cst_head_nn,
+            owner_indices_to_keep=fl_model.free_head_nn,
         )
 
         q_next[idc_owner, idc_neigh] -= kmean[idc_neigh] * tmp  # type: ignore
@@ -129,7 +129,7 @@ def make_transient_flow_matrices(
             geometry,
             (slice(0, geometry.nx - 1), slice(None)),
             (slice(1, geometry.nx), slice(None)),
-            fl_model.cst_head_nn,
+            owner_indices_to_keep=fl_model.free_head_nn,
         )
 
         tmp = geometry.dy / geometry.dx / geometry.mesh_volume
@@ -164,7 +164,7 @@ def make_transient_flow_matrices(
             geometry,
             (slice(1, geometry.nx), slice(None)),
             (slice(0, geometry.nx - 1), slice(None)),
-            fl_model.cst_head_nn,
+            owner_indices_to_keep=fl_model.free_head_nn,
         )
 
         q_next[idc_owner, idc_neigh] -= (
@@ -205,7 +205,7 @@ def make_transient_flow_matrices(
             geometry,
             (slice(None), slice(0, geometry.ny - 1)),
             (slice(None), slice(1, geometry.ny)),
-            fl_model.cst_head_nn,
+            owner_indices_to_keep=fl_model.free_head_nn,
         )
 
         tmp = geometry.dx / geometry.dy / geometry.mesh_volume
@@ -240,7 +240,7 @@ def make_transient_flow_matrices(
             geometry,
             (slice(None), slice(1, geometry.ny)),
             (slice(None), slice(0, geometry.ny - 1)),
-            fl_model.cst_head_nn,
+            owner_indices_to_keep=fl_model.free_head_nn,
         )
 
         q_next[idc_owner, idc_neigh] -= (

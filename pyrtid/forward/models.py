@@ -869,7 +869,7 @@ class TransportModel:
         "ldensity",
         "grade_prev",
         "boundary_conditions",
-        "cst_conc_indices",
+        "cst_conc_nn",
         "q_prev_diffusion",
         "q_next_diffusion",
         "q_prev",
@@ -915,7 +915,7 @@ class TransportModel:
         self.q_next_diffusion: lil_matrix = lil_array(geometry.nx * geometry.ny)
         self.q_prev: lil_matrix = lil_array(geometry.nx * geometry.ny)
         self.q_next: lil_matrix = lil_array(geometry.nx * geometry.ny)
-        self.cst_conc_indices: NDArrayInt = np.array([], dtype=np.int32)
+        self.cst_conc_nn: NDArrayInt = np.array([], dtype=np.int32)
         self.tolerance = tr_params.tolerance
         self.is_numerical_acceleration = tr_params.is_numerical_acceleration
         self.fpi_eps = tr_params.fpi_eps
@@ -1008,7 +1008,35 @@ class TransportModel:
                         ),
                     ]
                 )
-        self.cst_conc_indices: NDArrayInt = np.unique(node_numbers.flatten())
+        self.cst_conc_nn: NDArrayInt = np.unique(node_numbers.flatten())
+
+    @property
+    def cst_conc_indices(self) -> NDArrayInt:
+        """Return the indices (array) of the constant conc meshes."""
+        # [:2] to ignore the z axis
+        return np.array(
+            node_number_to_indices(
+                self.cst_conc_nn, nx=self.conc.shape[0], ny=self.conc.shape[1]
+            )[:2]
+        )
+
+    @property
+    def free_conc_nn(self) -> NDArrayInt:
+        """Return the free conc node numbers."""
+        return get_a_not_in_b_1d(
+            np.arange(np.prod(self.lconc[0].shape), dtype=np.int32),  # type: ignore
+            self.cst_conc_nn,
+        )
+
+    @property
+    def free_conc_indices(self) -> NDArrayInt:
+        """Return the indices (array) of the free conc meshes."""
+        # [:2] to ignore the z axis
+        return np.array(
+            node_number_to_indices(
+                self.free_conc_nn, nx=self.conc.shape[0], ny=self.conc.shape[1]
+            )[:2]
+        )
 
     def reinit(self) -> None:
         """Set all arrays to zero execpt for the initial conditions(first time)."""
@@ -1188,11 +1216,20 @@ def remove_cst_bound_indices(
     return indices_owner[is_kept], indices_neigh[is_kept]
 
 
+def keep_a_b_if_c_in_a(
+    a: NDArrayInt, b: NDArrayInt, c: NDArrayInt
+) -> Tuple[NDArrayInt, NDArrayInt]:
+    """Keep values in a and b if c in a."""
+    is_kept = np.isin(a, c)
+    return a[is_kept], b[is_kept]
+
+
 def get_owner_neigh_indices(
     geometry: Geometry,
     span_owner: Tuple[slice, slice],
     span_neigh: Tuple[slice, slice],
-    indices_to_remove: NDArrayInt,
+    owner_indices_to_keep: Optional[NDArrayInt] = None,
+    neigh_indices_to_keep: Optional[NDArrayInt] = None,
 ) -> Tuple[NDArrayInt, NDArrayInt]:
     """_summary_
 
@@ -1219,5 +1256,13 @@ def get_owner_neigh_indices(
     indices_neigh: NDArrayInt = span_to_node_numbers_2d(
         span_neigh, nx=geometry.nx, ny=geometry.ny
     )
-    # Remove constant meshes
-    return remove_cst_bound_indices(indices_owner, indices_neigh, indices_to_remove)
+
+    if owner_indices_to_keep is not None:
+        indices_owner, indices_neigh = keep_a_b_if_c_in_a(
+            indices_owner, indices_neigh, owner_indices_to_keep
+        )
+    if neigh_indices_to_keep is not None:
+        indices_neigh, indices_owner = keep_a_b_if_c_in_a(
+            indices_neigh, indices_owner, neigh_indices_to_keep
+        )
+    return indices_owner, indices_neigh
