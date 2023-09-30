@@ -163,3 +163,11 @@ def get_array_borders_selection(nx: int, ny: int) -> NDArrayBool:
         "constant",
         constant_values=1,
     )
+
+
+def get_a_not_in_b_1d(a: NDArrayInt, b: NDArrayInt) -> NDArrayInt:
+    """Return the elements of a not found in b sorted by ascending order."""
+    # handle the case with an empty b
+    if b.size == 0 or a.size == 0:
+        return a
+    return np.sort(a[np.isin(a, b, invert=True)])

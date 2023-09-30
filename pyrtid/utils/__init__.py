@@ -29,6 +29,7 @@ Provide utilities to work with regular grids.
     span_to_node_numbers_2d
     span_to_node_numbers_3d
     get_array_borders_selection
+    get_a_not_in_b_1d
 
 
 .. currentmodule:: pyrtid.utils.wellfield
@@ -168,6 +169,7 @@ from pyrtid.utils.finite_differences import (
     is_gradient_correct,
 )
 from pyrtid.utils.grid import (
+    get_a_not_in_b_1d,
     get_array_borders_selection,
     indices_to_node_number,
     node_number_to_indices,
@@ -248,4 +250,5 @@ __all__ = [
     "NDArrayInt",
     "NDArrayBool",
     "show_versions",
+    "get_a_not_in_b_1d",
 ]

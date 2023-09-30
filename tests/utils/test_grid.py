@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from pyrtid.utils import (
+    get_a_not_in_b_1d,
     get_array_borders_selection,
     indices_to_node_number,
     node_number_to_indices,
@@ -86,3 +87,19 @@ def test_get_array_borders_selection(
     nx: int, ny: int, expected_array: NDArrayBool
 ) -> None:
     np.testing.assert_array_equal(get_array_borders_selection(nx, ny), expected_array)
+
+
+@pytest.mark.parametrize(
+    "a, b, expected",
+    (
+        (np.array([[1, 4, 3, 4, 0]]), np.array([[3]]), np.array([0, 1, 4, 4])),
+        (np.array([[2, 3, 5]]), np.array([[]]), np.array([2, 3, 5])),
+        (np.array([[]]), np.array([[]]), np.array([])),
+        (np.array([[]]), np.array([[2, 3, 5]]), np.array([])),
+        (np.array([[2, 3, 5]]), np.array([[2, 3, 5]]), np.array([])),
+        (np.array([[2, 3, 5]]), np.array([[5, 3, 2]]), np.array([])),
+        (np.array([[2, 3, 5]]), np.array([[5, 3]]), np.array([2])),
+    ),
+)
+def test_get_a_not_in_b_1d(a, b, expected) -> None:
+    np.testing.assert_equal(get_a_not_in_b_1d(a, b).ravel(), expected)
