@@ -194,14 +194,16 @@ class TimeParameters:
         else:
             # decrease dt by 30%
             self.dt *= 0.7
+
+        # Ensure CFL respect
+        if self.dt > dt_max_cfl:
+            self.dt = dt_max_cfl
+
         # Ensure timebounds
         if self.dt < self.dt_min:
             self.dt = self.dt_min
         if self.dt > self.dt_max:
             self.dt = self.dt_max
-
-        if self.dt > dt_max_cfl:
-            self.dt = dt_max_cfl
 
     def get_dt_max_cfl(self, model: ForwardModel, time_index: int) -> float:
         """Get the maximum timestep to respect the CFL condition."""
@@ -756,7 +758,7 @@ class FlowModel:
     def free_head_nn(self) -> NDArrayInt:
         """Return the free head node numbers."""
         return get_a_not_in_b_1d(
-            np.arange(np.prod(self.head.shape), dtype=np.int32),  # type: ignore
+            np.arange(np.prod(self.lhead[0].shape), dtype=np.int32),  # type: ignore
             self.cst_head_nn,
         )
 
