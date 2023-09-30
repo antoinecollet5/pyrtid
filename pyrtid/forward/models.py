@@ -15,7 +15,12 @@ from typing import List, Optional, Sequence, Tuple, Union
 import numpy as np
 from scipy.sparse import lil_array, lil_matrix
 
-from pyrtid.utils import StrEnum, node_number_to_indices, span_to_node_numbers_2d
+from pyrtid.utils import (
+    StrEnum,
+    get_a_not_in_b_1d,
+    node_number_to_indices,
+    span_to_node_numbers_2d,
+)
 from pyrtid.utils.types import (
     NDArrayBool,
     NDArrayFloat,
@@ -747,6 +752,24 @@ class FlowModel:
             )[:2]
         )
 
+    @property
+    def free_head_nn(self) -> NDArrayInt:
+        """Return the free head node numbers."""
+        return get_a_not_in_b_1d(
+            np.arange(np.prod(self.head.shape), dtype=np.int32),  # type: ignore
+            self.cst_head_nn,
+        )
+
+    @property
+    def free_head_indices(self) -> NDArrayInt:
+        """Return the indices (array) of the free head meshes."""
+        # [:2] to ignore the z axis
+        return np.array(
+            node_number_to_indices(
+                self.free_head_nn, nx=self.head.shape[0], ny=self.head.shape[1]
+            )[:2]
+        )
+
     def reinit(self) -> None:
         """Set all arrays to zero execpt for the initial conditions(first time)."""
         self.lhead = self.lhead[:1]
@@ -1061,6 +1084,7 @@ class ForwardModel:
             return
         for condition in object_or_object_sequence_to_list(boundary_conditions):
             self.add_boundary_conditions(condition)
+        self.fl_model.set_constant_head_indices()
 
     def get_sources(
         self, time: float, geometry: Geometry

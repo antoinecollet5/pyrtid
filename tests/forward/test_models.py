@@ -451,3 +451,47 @@ def test_get_sources(
     _flw_src, _conc_src = model.get_sources(time, geometry)
     np.testing.assert_equal(_flw_src, expected_src_flw)
     np.testing.assert_equal(_conc_src, expected_src_conc)
+
+
+@pytest.mark.parametrize(
+    "boundary_conditions, expected_cst_head_nn, expected_free_head_nn",
+    [
+        ((), [], np.array([0, 1, 2, 3, 4, 5, 6, 7, 8])),
+        (ConstantHead(slice(None)), [0, 1, 2, 3, 4, 5, 6, 7, 8], np.array([])),
+        (
+            ConstantHead((slice(0, 3), slice(0, 3))),
+            np.array([0, 1, 2, 3, 4, 5, 6, 7, 8]),
+            [],
+        ),
+        (
+            ConstantHead((slice(0, 3), slice(0, 1))),
+            np.array([0, 1, 2]),
+            [3, 4, 5, 6, 7, 8],
+        ),
+        (
+            ConstantHead((slice(0, 2), slice(0, 1))),
+            np.array([0, 1]),
+            [2, 3, 4, 5, 6, 7, 8],
+        ),
+    ],
+)
+def test_cst_head(
+    boundary_conditions, expected_cst_head_nn, expected_free_head_nn
+) -> None:
+    time_params = TimeParameters(duration=240000, dt_init=600.0)
+    geometry = Geometry(nx=3, ny=3, dx=2.0, dy=2.0, dz=2.0)
+    fl_params = FlowParameters(1e-5)
+    tr_params = TransportParameters(1e-10, 0.23)
+    gch_params = GeochemicalParameters(0.0, 0.0)
+
+    model = ForwardModel(
+        geometry,
+        time_params,
+        fl_params,
+        tr_params,
+        gch_params,
+        boundary_conditions=boundary_conditions,
+    )
+
+    np.testing.assert_equal(model.fl_model.cst_head_nn, expected_cst_head_nn)
+    np.testing.assert_equal(model.fl_model.free_head_nn, expected_free_head_nn)
