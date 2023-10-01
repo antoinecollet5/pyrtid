@@ -72,9 +72,7 @@ Functions to solve the adjoint flow.
 .. autosummary::
    :toctree: _autosummary
 
-    make_stationary_adj_flow_matrices
     make_transient_adj_flow_matrices
-    solve_adj_flow_stationary
     solve_adj_flow_transient_semi_implicit
     update_adjoint_u_darcy
 
@@ -107,9 +105,7 @@ Adjoint chemistry
     """
 
 from pyrtid.inverse.adjoint.aflow_solver import (
-    make_stationary_adj_flow_matrices,
     make_transient_adj_flow_matrices,
-    solve_adj_flow_stationary,
     solve_adj_flow_transient_semi_implicit,
     update_adjoint_u_darcy,
 )
@@ -140,9 +136,7 @@ __all__ = [
     "AdjointFlowModel",
     "AdjointModel",
     "AdjointTransportModel",
-    "make_stationary_adj_flow_matrices",
     "make_transient_adj_flow_matrices",
-    "solve_adj_flow_stationary",
     "solve_adj_flow_transient_semi_implicit",
     "update_adjoint_u_darcy",
     "init_adjoint_tr_variables_fpi",

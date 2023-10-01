@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Tuple
 
 import numpy as np
-from scipy.sparse import lil_array, lil_matrix
+from scipy.sparse import lil_array
 from scipy.sparse.linalg import gmres
 
 from pyrtid.forward.models import (  # ConstantHead,; ZeroConcGradient,
@@ -17,131 +17,6 @@ from pyrtid.forward.models import (  # ConstantHead,; ZeroConcGradient,
 from pyrtid.inverse.adjoint.amodels import AdjointFlowModel, AdjointTransportModel
 from pyrtid.utils import get_super_lu_preconditioner, harmonic_mean
 from pyrtid.utils.types import NDArrayFloat
-
-
-def init_adjoint_fl_variables(
-    geometry: Geometry,
-    fl_model: FlowModel,
-    a_fl_model: AdjointFlowModel,
-    time_params: TimeParameters,
-) -> None:
-    a_fl_model.a_head[:, :, -1] = a_fl_model.a_head_sources
-
-
-def make_stationary_adj_flow_matrices(
-    geometry: Geometry, fl_model: FlowModel, time_params: TimeParameters
-) -> Tuple[lil_array, lil_array]:
-    """
-    Make matrices for the transient flow.
-
-    Note
-    ----
-    Since the permeability and the storage coefficient does not vary with time,
-    matrices q_prev and q_next are the same.
-    """
-
-    dim = geometry.nx * geometry.ny
-    q_prev: lil_matrix = lil_array((dim, dim), dtype=np.float64)
-    q_next: lil_matrix = lil_array((dim, dim), dtype=np.float64)
-
-    # X contribution
-    if geometry.nx >= 2:
-        kmean: NDArrayFloat = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
-        kmean[:-1, :] = harmonic_mean(
-            fl_model.permeability[:-1, :], fl_model.permeability[1:, :]
-        )
-        kmean = kmean.flatten(order="F")
-        tmp = geometry.dy / geometry.dx / geometry.mesh_volume
-
-        # Forward scheme:
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(0, geometry.nx - 1), slice(None)),
-            (slice(1, geometry.nx), slice(None)),
-            fl_model.cst_head_nn,
-        )
-
-        q_next[idc_owner, idc_neigh] -= kmean[idc_owner] * tmp  # type: ignore
-        q_next[idc_owner, idc_owner] += kmean[idc_owner] * tmp  # type: ignore
-
-        q_prev[idc_owner, idc_neigh] += (
-            (1.0 - fl_model.crank_nicolson) * kmean[idc_owner] * tmp
-        )  # type: ignore
-        q_prev[idc_owner, idc_owner] -= (
-            (1.0 - fl_model.crank_nicolson) * kmean[idc_owner] * tmp
-        )  # type: ignore
-
-        # Backward scheme
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(1, geometry.nx), slice(None)),
-            (slice(0, geometry.nx - 1), slice(None)),
-            fl_model.cst_head_nn,
-        )
-
-        q_next[idc_owner, idc_neigh] -= kmean[idc_neigh] * tmp  # type: ignore
-        q_next[idc_owner, idc_owner] += kmean[idc_neigh] * tmp  # type: ignore
-
-        q_prev[idc_owner, idc_neigh] += (
-            (1.0 - fl_model.crank_nicolson) * kmean[idc_neigh] * tmp
-        )  # type: ignore
-        q_prev[idc_owner, idc_owner] -= (
-            (1.0 - fl_model.crank_nicolson) * kmean[idc_neigh] * tmp
-        )  # type: ignore
-
-    # Y contribution
-    if geometry.ny >= 2:
-        kmean: NDArrayFloat = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
-        kmean[:, :-1] = harmonic_mean(
-            fl_model.permeability[:, :-1], fl_model.permeability[:, 1:]
-        )
-        kmean = kmean.flatten(order="F")
-        tmp = geometry.dx / geometry.dy / geometry.mesh_volume
-
-        # Forward scheme:
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(None), slice(0, geometry.ny - 1)),
-            (slice(None), slice(1, geometry.ny)),
-            fl_model.cst_head_nn,
-        )
-
-        q_next[idc_owner, idc_neigh] -= kmean[idc_owner] * tmp  # type: ignore
-        q_next[idc_owner, idc_owner] += kmean[idc_owner] * tmp  # type: ignore
-
-        q_prev[idc_owner, idc_neigh] += (
-            (1.0 - fl_model.crank_nicolson) * kmean[idc_owner] * tmp
-        )  # type: ignore
-        q_prev[idc_owner, idc_owner] -= (
-            (1.0 - fl_model.crank_nicolson) * kmean[idc_owner] * tmp
-        )  # type: ignore
-
-        # Backward scheme
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(None), slice(1, geometry.ny)),
-            (slice(None), slice(0, geometry.ny - 1)),
-            fl_model.cst_head_nn,
-        )
-
-        q_next[idc_owner, idc_neigh] -= kmean[idc_neigh] * tmp  # type: ignore
-        q_next[idc_owner, idc_owner] += kmean[idc_neigh] * tmp  # type: ignore
-        q_prev[idc_owner, idc_neigh] += (
-            (1.0 - fl_model.crank_nicolson) * kmean[idc_neigh] * tmp
-        )  # type: ignore
-        q_prev[idc_owner, idc_owner] -= (
-            (1.0 - fl_model.crank_nicolson) * kmean[idc_neigh] * tmp
-        )  # type: ignore
-
-    # Take constant head into account
-    q_next[fl_model.cst_head_nn, fl_model.cst_head_nn] = 1.0
-
-    # Add 1/dt for the left term contribution
-    q_prev.setdiag(
-        q_prev.diagonal() + 1 / time_params.ldt[0] * fl_model.storage_coefficient
-    )
-
-    return q_next, q_prev
 
 
 def make_transient_adj_flow_matrices(
@@ -163,82 +38,84 @@ def make_transient_adj_flow_matrices(
     # # X contribution
     # kmean = harmonic_mean(fl_model.permeability[:-1, :], fl_model.permeability[1:, :])
 
-    # X contribution
+    # 1) X contribution
     if geometry.nx >= 2:
         kmean: NDArrayFloat = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
         kmean[:-1, :] = harmonic_mean(
             fl_model.permeability[:-1, :], fl_model.permeability[1:, :]
         )
         kmean = kmean.flatten(order="F")
+        tmp = (
+            geometry.dy
+            / geometry.dx
+            / geometry.mesh_volume
+            / fl_model.storage_coefficient
+        )
 
-        # Forward scheme:
+        # 1.1) Forward scheme:
+
+        # 1.1.1) For free head nodes only
         idc_owner, idc_neigh = get_owner_neigh_indices(
             geometry,
             (slice(0, geometry.nx - 1), slice(None)),
             (slice(1, geometry.nx), slice(None)),
-            fl_model.cst_head_nn,
+            owner_indices_to_keep=fl_model.free_head_nn,
         )
-        tmp = geometry.dy / geometry.dx / geometry.mesh_volume
-
-        q_next[idc_owner, idc_neigh] -= (
-            fl_model.crank_nicolson
-            * kmean[idc_owner]
-            * tmp
-            / fl_model.storage_coefficient
-        )  # type: ignore
         q_next[idc_owner, idc_owner] += (
-            fl_model.crank_nicolson
-            * kmean[idc_owner]
-            * tmp
-            / fl_model.storage_coefficient
-        )  # type: ignore
-        q_prev[idc_owner, idc_neigh] += (
-            (1.0 - fl_model.crank_nicolson)
-            * kmean[idc_owner]
-            * tmp
-            / fl_model.storage_coefficient
+            fl_model.crank_nicolson * kmean[idc_owner] * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
-            (1.0 - fl_model.crank_nicolson)
-            * kmean[idc_owner]
-            * tmp
-            / fl_model.storage_coefficient
+            (1.0 - fl_model.crank_nicolson) * kmean[idc_owner] * tmp
         )  # type: ignore
 
-        # Backward scheme
+        # 1.1.2) For all nodes but with free head neighbors only
+        idc_owner, idc_neigh = get_owner_neigh_indices(
+            geometry,
+            (slice(0, geometry.nx - 1), slice(None)),
+            (slice(1, geometry.nx), slice(None)),
+            neigh_indices_to_keep=fl_model.free_head_nn,
+        )
+        q_next[idc_owner, idc_neigh] -= (
+            fl_model.crank_nicolson * kmean[idc_owner] * tmp
+        )  # type: ignore
+
+        q_prev[idc_owner, idc_neigh] += (
+            (1.0 - fl_model.crank_nicolson) * kmean[idc_owner] * tmp
+        )  # type: ignore
+
+        # 1.2) Backward scheme
+
+        # 1.2.1) For free head nodes only
         idc_owner, idc_neigh = get_owner_neigh_indices(
             geometry,
             (slice(1, geometry.nx), slice(None)),
             (slice(0, geometry.nx - 1), slice(None)),
-            fl_model.cst_head_nn,
+            owner_indices_to_keep=fl_model.free_head_nn,
+        )
+        q_next[idc_owner, idc_owner] += (
+            fl_model.crank_nicolson * kmean[idc_neigh] * tmp
+        )  # type: ignore
+        q_prev[idc_owner, idc_owner] -= (
+            (1.0 - fl_model.crank_nicolson) * kmean[idc_neigh] * tmp
+        )  # type: ignore
+
+        # 1.2.2) For all nodes but with free head neighbors only
+        idc_owner, idc_neigh = get_owner_neigh_indices(
+            geometry,
+            (slice(1, geometry.nx), slice(None)),
+            (slice(0, geometry.nx - 1), slice(None)),
+            neigh_indices_to_keep=fl_model.free_head_nn,
         )
 
         q_next[idc_owner, idc_neigh] -= (
-            fl_model.crank_nicolson
-            * kmean[idc_neigh]
-            * tmp
-            / fl_model.storage_coefficient
-        )  # type: ignore
-        q_next[idc_owner, idc_owner] += (
-            fl_model.crank_nicolson
-            * kmean[idc_neigh]
-            * tmp
-            / fl_model.storage_coefficient
-        )  # type: ignore
-        q_prev[idc_owner, idc_neigh] += (
-            (1.0 - fl_model.crank_nicolson)
-            * kmean[idc_neigh]
-            * tmp
-            / fl_model.storage_coefficient
-        )  # type: ignore
-        q_prev[idc_owner, idc_owner] -= (
-            (1.0 - fl_model.crank_nicolson)
-            * kmean[idc_neigh]
-            * tmp
-            / fl_model.storage_coefficient
+            fl_model.crank_nicolson * kmean[idc_neigh] * tmp
         )  # type: ignore
 
-    # Y contribution
+        q_prev[idc_owner, idc_neigh] += (
+            (1.0 - fl_model.crank_nicolson) * kmean[idc_neigh] * tmp
+        )  # type: ignore
+
+    # 2) Y contribution
     if geometry.ny >= 2:
         kmean: NDArrayFloat = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
         kmean[:, :-1] = harmonic_mean(
@@ -246,112 +123,76 @@ def make_transient_adj_flow_matrices(
         )
         kmean = kmean.flatten(order="F")
 
-        # Forward scheme:
+        # 2.1) Forward scheme:
+        tmp = (
+            geometry.dx
+            / geometry.dy
+            / geometry.mesh_volume
+            / fl_model.storage_coefficient
+        )
+
+        # 2.1.1) For free head nodes only
         idc_owner, idc_neigh = get_owner_neigh_indices(
             geometry,
             (slice(None), slice(0, geometry.ny - 1)),
             (slice(None), slice(1, geometry.ny)),
-            fl_model.cst_head_nn,
+            owner_indices_to_keep=fl_model.free_head_nn,
         )
-        tmp = geometry.dx / geometry.dy / geometry.mesh_volume
-
-        q_next[idc_owner, idc_neigh] -= (
-            fl_model.crank_nicolson
-            * kmean[idc_owner]
-            * tmp
-            / fl_model.storage_coefficient
-        )  # type: ignore
         q_next[idc_owner, idc_owner] += (
-            fl_model.crank_nicolson
-            * kmean[idc_owner]
-            * tmp
-            / fl_model.storage_coefficient
-        )  # type: ignore
-        q_prev[idc_owner, idc_neigh] += (
-            (1.0 - fl_model.crank_nicolson)
-            * kmean[idc_owner]
-            * tmp
-            / fl_model.storage_coefficient
+            fl_model.crank_nicolson * kmean[idc_owner] * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
-            (1.0 - fl_model.crank_nicolson)
-            * kmean[idc_owner]
-            * tmp
-            / fl_model.storage_coefficient
+            (1.0 - fl_model.crank_nicolson) * kmean[idc_owner] * tmp
         )  # type: ignore
 
-        # Backward scheme
+        # 2.1.2) For all nodes but with free head neighbors only
+        idc_owner, idc_neigh = get_owner_neigh_indices(
+            geometry,
+            (slice(None), slice(0, geometry.ny - 1)),
+            (slice(None), slice(1, geometry.ny)),
+            neigh_indices_to_keep=fl_model.free_head_nn,
+        )
+
+        q_next[idc_owner, idc_neigh] -= (
+            fl_model.crank_nicolson * kmean[idc_owner] * tmp
+        )  # type: ignore
+
+        q_prev[idc_owner, idc_neigh] += (
+            (1.0 - fl_model.crank_nicolson) * kmean[idc_owner] * tmp
+        )  # type: ignore
+
+        # 2.2) Backward scheme
+
+        # 2.2.1) For free head nodes only
         idc_owner, idc_neigh = get_owner_neigh_indices(
             geometry,
             (slice(None), slice(1, geometry.ny)),
             (slice(None), slice(0, geometry.ny - 1)),
-            fl_model.cst_head_nn,
+            owner_indices_to_keep=fl_model.free_head_nn,
         )
-
-        q_next[idc_owner, idc_neigh] -= (
-            fl_model.crank_nicolson
-            * kmean[idc_neigh]
-            * tmp
-            / fl_model.storage_coefficient
-        )  # type: ignore
         q_next[idc_owner, idc_owner] += (
-            fl_model.crank_nicolson
-            * kmean[idc_neigh]
-            * tmp
-            / fl_model.storage_coefficient
-        )  # type: ignore
-        q_prev[idc_owner, idc_neigh] += (
-            (1.0 - fl_model.crank_nicolson)
-            * kmean[idc_neigh]
-            * tmp
-            / fl_model.storage_coefficient
+            fl_model.crank_nicolson * kmean[idc_neigh] * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
-            (1.0 - fl_model.crank_nicolson)
-            * kmean[idc_neigh]
-            * tmp
-            / fl_model.storage_coefficient
+            (1.0 - fl_model.crank_nicolson) * kmean[idc_neigh] * tmp
+        )  # type: ignore
+
+        # 2.2.2) For all nodes but with free head neighbors only
+        idc_owner, idc_neigh = get_owner_neigh_indices(
+            geometry,
+            (slice(None), slice(1, geometry.ny)),
+            (slice(None), slice(0, geometry.ny - 1)),
+            neigh_indices_to_keep=fl_model.free_head_nn,
+        )
+        q_next[idc_owner, idc_neigh] -= (
+            fl_model.crank_nicolson * kmean[idc_neigh] * tmp
+        )  # type: ignore
+
+        q_prev[idc_owner, idc_neigh] += (
+            (1.0 - fl_model.crank_nicolson) * kmean[idc_neigh] * tmp
         )  # type: ignore
 
     return q_next, q_prev
-
-
-def solve_adj_flow_stationary(
-    geometry: Geometry,
-    fl_model: FlowModel,
-    a_fl_model: AdjointFlowModel,
-    time_index: int,
-) -> int:
-    """
-    Solving the adjoint diffusivity equation:
-
-    dh/dt = div K grad h + ...
-    """
-    # Multiply prev matrix by prev vector
-    tmp = a_fl_model.q_prev.dot(a_fl_model.a_head[:, :, time_index].ravel("F"))
-
-    # Constant heads
-    tmp[fl_model.cst_head_nn] = 0.0
-
-    # Add the source terms from head observations
-    tmp += (
-        a_fl_model.a_head_sources.getcol(time_index).todense().ravel("F")
-        / geometry.mesh_volume
-    )
-
-    preconditioner = get_super_lu_preconditioner(a_fl_model.q_next.tocsc())
-
-    # Add the source terms from mob observations (adjoint transport)
-    # tmp += _get_adjoint_transport_src_terms(
-    #     geometry, fl_model, a_fl_model, time_index, False
-    # )
-
-    # Solve Ax = b with A sparse using LU preconditioner
-    res, exit_code = gmres(a_fl_model.q_next.tocsc(), tmp, M=preconditioner, atol=1e-15)
-    # Note: we solve
-    a_fl_model.a_head[:, :, time_index] = res.reshape(geometry.ny, geometry.nx).T
-
-    return exit_code
 
 
 def update_adjoint_u_darcy(
@@ -482,6 +323,7 @@ def update_adjoint_u_darcy(
 def solve_adj_flow_transient_semi_implicit(
     geometry: Geometry,
     fl_model: FlowModel,
+    tr_model: TransportModel,
     a_fl_model: AdjointFlowModel,
     time_params: TimeParameters,
     time_index: int,
@@ -494,9 +336,30 @@ def solve_adj_flow_transient_semi_implicit(
     _q_prev = a_fl_model.q_prev.copy()
     _q_next = a_fl_model.q_next.copy()
 
-    # Add 1/dt for the left term contribution
-    _q_next.setdiag(_q_next.diagonal() + 1 / time_params.ldt[time_index - 2])
-    _q_prev.setdiag(_q_prev.diagonal() + 1 / time_params.ldt[time_index - 1])
+    # Add 1/dt for the left term contribution: only for free head
+    diag = np.zeros(a_fl_model.a_head[:, :, -1].size)
+    diag[fl_model.free_head_nn] += float(1.0 / time_params.ldt[time_index])
+    # One for the cts head
+    diag[fl_model.cst_head_nn] += 1.0
+
+    _q_next.setdiag(_q_next.diagonal() + diag)
+
+    # For variable initialization -> not nt + 1
+    diag = np.zeros(a_fl_model.a_head[:, :, -1].size)
+    try:
+        diag[fl_model.free_head_nn] += float(1.0 / time_params.ldt[time_index + 1])
+        # One for the cts head
+        diag[fl_model.cst_head_nn] += 1.0
+    except IndexError:
+        pass
+
+    _q_prev.setdiag(_q_prev.diagonal() + diag)
+
+    # _q_next.setdiag(_q_next.diagonal() + 1 / time_params.ldt[time_index])
+    # try:
+    #     _q_prev.setdiag(_q_prev.diagonal() + 1 / time_params.ldt[time_index + 1])
+    # except IndexError:
+    #     pass
 
     # convert to csc format for efficiency
     _q_next = _q_next.tocsc()
@@ -507,11 +370,7 @@ def solve_adj_flow_transient_semi_implicit(
 
     # Handle the first time step in the adjoint (= last timestep in the forward)
     # if time_index + 1 != a_fl_model.a_sources.shape[-1]:
-    try:
-        prev_vector = a_fl_model.a_head[:, :, time_index + 1].ravel("F")
-    except IndexError:
-        prev_vector = np.zeros(a_fl_model.a_head[:, :, 0].size)
-
+    prev_vector = a_fl_model.a_head[:, :, time_index + 1].ravel("F")
     # Multiply prev matrix by prev vector
     tmp = _q_prev.dot(prev_vector)
 
@@ -519,15 +378,23 @@ def solve_adj_flow_transient_semi_implicit(
     # Note: there is no crank-nicolson scheme on the residuals (only applies to
     # forward variables)
     tmp += (
-        a_fl_model.a_head_sources.getcol(time_index).todense().ravel("F")
+        a_fl_model.a_head_sources.getcol(time_index + 1).todense().ravel("F")
         / fl_model.storage_coefficient
         / geometry.mesh_volume
     )
 
+    # TODO: check that all works fine with the density (shift in time)
+    # Use the adjoint pressure instead of the adjoint head
+    # tmp += (
+    #     a_fl_model.a_head_sources.getcol(time_params.nts).todense().ravel("F")
+    #     / fl_model.storage_coefficient
+    #     / geometry.mesh_volume
+    # ) * tr_model.density[:, :, time_params.nts] * GRAVITY
+
     # Add the source terms from mob observations (adjoint transport)
-    tmp += _get_adjoint_transport_src_terms(
-        geometry, fl_model, a_fl_model, time_index, True
-    )
+    # tmp += _get_adjoint_transport_src_terms(
+    #     geometry, fl_model, a_fl_model, time_index, True
+    # )
 
     # Solve Ax = b with A sparse using LU preconditioner
     res, exit_code = gmres(_q_next, tmp, M=preconditioner, atol=1e-15)

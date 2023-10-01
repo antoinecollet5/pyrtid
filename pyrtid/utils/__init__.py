@@ -146,7 +146,7 @@ Other functions
 
     object_or_object_sequence_to_list
     extract_hess_inv_diag
-    get_super_ilu_preconditioner
+    get_super_lu_preconditioner
     show_versions
 
 Types
@@ -189,7 +189,7 @@ from pyrtid.utils.means import (
     hmean_gradient,
 )
 from pyrtid.utils.operators import (
-    get_super_ilu_preconditioner,
+    get_super_lu_preconditioner,
     gradient_bfd,
     gradient_ffd,
     hessian_cfd,
@@ -225,7 +225,7 @@ __all__ = [
     "is_all_close",
     "default_field",
     "gen_wells_coordinates",
-    "get_super_ilu_preconditioner",
+    "get_super_lu_preconditioner",
     "gen_random_ensemble",
     "get_normalized_mean_from_lognormal_params",
     "get_normalized_std_from_lognormal_params",

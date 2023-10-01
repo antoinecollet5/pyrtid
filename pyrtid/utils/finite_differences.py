@@ -15,7 +15,6 @@ Chapitre très intéressant:
 """
 
 
-import sys
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from typing import (
@@ -64,7 +63,7 @@ def is_gradient_correct(
     grad_args: Optional[Tuple[Any]] = None,
     grad_kwargs: Optional[Dict[str, Any]] = None,
     accuracy: int = 0,
-    eps: float = sys.float_info.epsilon * 1e10,
+    eps: Optional[float] = None,
     max_workers: int = 1,
 ) -> bool:
     """
@@ -222,6 +221,12 @@ def finite_gradient(
     eps: float, optional
         The epsilon for the computation (h). By default, it take 1e-6 times
         the maximum absolute value of the input data.
+        .. :math:
+            \delta s = \begin{cases}
+                \epsilon^{1/3} min\Big(max\left(\lvert s\rvert\right),
+                1\Big) & \text{if} \; max\left(\lvert s\rvert\right) > 0\\
+                \epsilon^{1/3} & \text{otherwise}
+            \end{cases}
     max_workers: int
         Number of workers used. If different from one, the calculation relies on
         multi-processing to decrease the computation time. The default is 1.
@@ -234,9 +239,9 @@ def finite_gradient(
     """
     x0 = np.array(x).astype(np.float64)
     if eps is None:
-        eps = float(np.max(np.abs(x0))) * 1e-6
+        eps = np.power(np.finfo(float).eps, 1 / 3) * min(1, np.max(np.abs(x0)))
         if eps == 0:
-            eps = sys.float_info.epsilon * 1e10
+            eps = np.power(np.finfo(float).eps, 1 / 3)
     if accuracy not in [0, 1, 2, 3]:
         raise ValueError("The accuracy should be 0, 1, 2 or 3!")
     grad = np.zeros(x0.size)

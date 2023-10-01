@@ -8,7 +8,7 @@ from scipy.sparse import lil_array, lil_matrix
 from scipy.sparse.linalg import gmres
 
 from pyrtid.utils import harmonic_mean
-from pyrtid.utils.operators import get_super_ilu_preconditioner
+from pyrtid.utils.operators import get_super_lu_preconditioner
 from pyrtid.utils.types import NDArrayFloat
 
 from .models import (
@@ -498,7 +498,7 @@ def solve_transport_semi_implicit(
     tmp += conc_sources.ravel("F")
 
     # Build the LU preconditioning
-    preconditioner = get_super_ilu_preconditioner(q_next.tocsc())
+    preconditioner = get_super_lu_preconditioner(q_next.tocsc())
 
     # Solve Ax = b with A sparse using LU preconditioner
     res, exit_code = gmres(

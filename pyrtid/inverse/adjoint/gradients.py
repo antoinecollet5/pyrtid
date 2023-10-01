@@ -251,7 +251,7 @@ def get_permeability_adjoint_gradient(
     """
     grad = _get_perm_gradient_from_diffusivity_eq(
         fwd_model, adj_model
-    ) + _get_perm_gradient_from_darcy_eq(fwd_model, adj_model)
+    )  # + _get_perm_gradient_from_darcy_eq(fwd_model, adj_model)
     # Add the adjoint sources for initial time (t0)
     return grad + adj_model.a_fl_model.a_permeability_sources.getcol(
         0
@@ -288,16 +288,23 @@ def _get_perm_gradient_from_diffusivity_eq(
 
     head = fwd_model.fl_model.head
     ahead = adj_model.a_fl_model.a_head
+    ma_ahead = np.zeros(ahead.shape)
+    free_head_indices = fwd_model.fl_model.free_head_indices
+    ma_ahead[free_head_indices[0], free_head_indices[1], :] = ahead[
+        free_head_indices[0], free_head_indices[1], :
+    ]
 
     # Consider the x axis
     # Forward scheme
     dhead_fx = np.zeros(shape)
-    dhead_fx[:-1, :, 1:] += (
+    dhead_fx[:-1, :, :-1] += (
         crank_flow * (head[1:, :, 1:] - head[:-1, :, 1:])
         + (1.0 - crank_flow) * (head[1:, :, :-1] - head[:-1, :, :-1])
     ) * dxi_harmonic_mean(permeability[:-1, :], permeability[1:, :])[:, :, np.newaxis]
+
     dahead_fx = np.zeros(shape)
-    dahead_fx[:-1, :, :] += ahead[1:, :, :] - ahead[:-1, :, :]
+    dahead_fx[:-1, :, :] += ma_ahead[1:, :, :] - ma_ahead[:-1, :, :]
+
     # Handle the stationary case
     if fwd_model.fl_model.regime == FlowRegime.STATIONARY:
         dhead_fx[:-1, :, :1] = (head[1:, :, :1] - head[:-1, :, :1]) * dxi_harmonic_mean(
@@ -306,12 +313,13 @@ def _get_perm_gradient_from_diffusivity_eq(
 
     # Bheadkward scheme
     dhead_bx = np.zeros(shape)
-    dhead_bx[1:, :, 1:] += (
+    dhead_bx[1:, :, :-1] += (
         crank_flow * (head[:-1, :, 1:] - head[1:, :, 1:])
         + (1.0 - crank_flow) * (head[:-1, :, :-1] - head[1:, :, :-1])
     ) * dxi_harmonic_mean(permeability[1:, :], permeability[:-1, :])[:, :, np.newaxis]
     dahead_bx = np.zeros(shape)
-    dahead_bx[1:, :, :] += ahead[:-1, :, :] - ahead[1:, :, :]
+
+    dahead_bx[1:, :, :] += ma_ahead[:-1, :, :] - ma_ahead[1:, :, :]
     # Handle the stationary case
     if fwd_model.fl_model.regime == FlowRegime.STATIONARY:
         dhead_bx[1:, :, :1] = (head[:-1, :, :1] - head[1:, :, :1]) * dxi_harmonic_mean(
@@ -329,7 +337,7 @@ def _get_perm_gradient_from_diffusivity_eq(
     if shape[1] != 1:
         # Forward scheme
         dhead_fy = np.zeros(shape)
-        dhead_fy[:, :-1, 1:] += (
+        dhead_fy[:, :-1, :-1] += (
             crank_flow * (head[:, 1:, 1:] - head[:, :-1, 1:])
             + (1.0 - crank_flow) * (head[:, 1:, :-1] - head[:, :-1, :-1])
         ) * dxi_harmonic_mean(permeability[:, :-1], permeability[:, 1:])[
@@ -347,7 +355,7 @@ def _get_perm_gradient_from_diffusivity_eq(
 
         # Bheadkward scheme
         dhead_by = np.zeros(shape)
-        dhead_by[:, 1:, 1:] += (
+        dhead_by[:, 1:, :-1] += (
             crank_flow * (head[:, :-1, 1:] - head[:, 1:, 1:])
             + (1.0 - crank_flow) * (head[:, :-1, :-1] - head[:, 1:, :-1])
         ) * dxi_harmonic_mean(permeability[:, 1:], permeability[:, :-1])[
@@ -495,6 +503,66 @@ def get_initial_grade_adjoint_gradient(
     )
 
 
+def get_initial_head_adjoint_gradient(
+    fwd_model: ForwardModel, adj_model: AdjointModel
+) -> NDArrayFloat:
+    r"""
+    Gradient with respect to mineral phase initial concentrations.
+
+    The gradient reads
+
+    # TODO
+
+    Note
+    ----
+    Parameter span is not taken into account which means that the gradient is
+    computed on the full domain (grid).
+    """
+    crank_perm = fwd_model.fl_model.crank_nicolson
+    a_head = adj_model.a_fl_model.a_head[:, :, 0]
+    grad = np.zeros(a_head.shape, dtype=np.float64)
+    perm = fwd_model.fl_model.permeability
+    # X axis contribution
+    if a_head.shape[0] > 1:  # type: ignore
+        pmean = harmonic_mean(perm[:-1, :], perm[1:, :])
+        tmp = fwd_model.geometry.dy / fwd_model.geometry.dx
+        # Forward scheme
+        grad[:-1, :] += (
+            +(1.0 - crank_perm) * (a_head[1:, :] - a_head[:-1, :]) * pmean
+        ) * tmp
+        # Backward scheme
+        grad[1:, :] += (
+            +(1.0 - crank_perm) * (a_head[:-1, :] - a_head[1:, :]) * pmean
+        ) * tmp
+
+    # Y axis contribution
+    if a_head.shape[1] > 1:  # type: ignore
+        pmean = harmonic_mean(perm[:, :-1], perm[:, 1:])
+        tmp = fwd_model.geometry.dx / fwd_model.geometry.dy
+        # Forward scheme
+        grad[:, :-1] += (
+            +(1.0 - crank_perm) * (a_head[:, 1:] - a_head[:, :-1]) * pmean
+        ) * tmp
+        # Backward scheme
+        grad[:, 1:] += (
+            +(1.0 - crank_perm) * (a_head[:, :-1] - a_head[:, 1:]) * pmean
+        ) * tmp
+
+    # tmp = _q_next.dot(adj_model.a_fl_model.a_head[:, :, 1].ravel(order="F"))
+    grad += a_head * float(
+        fwd_model.fl_model.storage_coefficient
+        * fwd_model.geometry.mesh_volume
+        / fwd_model.time_params.ldt[1]
+    )
+
+    # tmp.reshape(adj_model.a_fl_model.a_head[:, :, 0].shape, order="F")
+
+    # Add adjoint sources for time t=0
+    return grad + adj_model.a_fl_model.a_head_sources.getcol(0).todense().reshape(
+        grad.shape, order="F"
+    )  # type: ignore
+
+
 def get_initial_conc_adjoint_gradient(
     fwd_model: ForwardModel, adj_model: AdjointModel
 ) -> NDArrayFloat:
@@ -603,6 +671,8 @@ def compute_param_adjoint_ls_loss_function_gradient(
         return get_initial_conc_adjoint_gradient(fwd_model, adj_model)
     if param.name == ParameterName.INITIAL_GRADE:
         return get_initial_grade_adjoint_gradient(fwd_model, adj_model)
+    if param.name == ParameterName.INITIAL_HEAD:
+        return get_initial_head_adjoint_gradient(fwd_model, adj_model)
     raise (NotImplementedError("Please contact the developer to handle this issue."))
 
 
@@ -822,6 +892,7 @@ def is_adjoint_gradient_correct(
     adj_grad = compute_adjoint_gradient(
         fwd_model, asolver.adj_model, parameters_to_adjust
     )
+    print(adj_grad.shape)
     fd_grad = compute_fd_gradient(
         fwd_model, observables, parameters_to_adjust, eps=eps, max_workers=max_workers
     )

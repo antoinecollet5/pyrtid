@@ -9,7 +9,7 @@ from scipy.sparse.linalg import gmres
 
 from pyrtid.utils import (
     get_array_borders_selection,
-    get_super_ilu_preconditioner,
+    get_super_lu_preconditioner,
     harmonic_mean,
 )
 from pyrtid.utils.types import NDArrayFloat
@@ -132,31 +132,24 @@ def make_transient_flow_matrices(
             owner_indices_to_keep=fl_model.free_head_nn,
         )
 
-        tmp = geometry.dy / geometry.dx / geometry.mesh_volume
+        tmp = (
+            geometry.dy
+            / geometry.dx
+            / geometry.mesh_volume
+            / fl_model.storage_coefficient
+        )
 
         q_next[idc_owner, idc_neigh] -= (
-            fl_model.crank_nicolson
-            * kmean[idc_owner]
-            * tmp
-            / fl_model.storage_coefficient
+            fl_model.crank_nicolson * kmean[idc_owner] * tmp
         )  # type: ignore
         q_next[idc_owner, idc_owner] += (
-            fl_model.crank_nicolson
-            * kmean[idc_owner]
-            * tmp
-            / fl_model.storage_coefficient
+            fl_model.crank_nicolson * kmean[idc_owner] * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_neigh] += (
-            (1.0 - fl_model.crank_nicolson)
-            * kmean[idc_owner]
-            * tmp
-            / fl_model.storage_coefficient
+            (1.0 - fl_model.crank_nicolson) * kmean[idc_owner] * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
-            (1.0 - fl_model.crank_nicolson)
-            * kmean[idc_owner]
-            * tmp
-            / fl_model.storage_coefficient
+            (1.0 - fl_model.crank_nicolson) * kmean[idc_owner] * tmp
         )  # type: ignore
 
         # Backward scheme
@@ -168,28 +161,16 @@ def make_transient_flow_matrices(
         )
 
         q_next[idc_owner, idc_neigh] -= (
-            fl_model.crank_nicolson
-            * kmean[idc_neigh]
-            * tmp
-            / fl_model.storage_coefficient
+            fl_model.crank_nicolson * kmean[idc_neigh] * tmp
         )  # type: ignore
         q_next[idc_owner, idc_owner] += (
-            fl_model.crank_nicolson
-            * kmean[idc_neigh]
-            * tmp
-            / fl_model.storage_coefficient
+            fl_model.crank_nicolson * kmean[idc_neigh] * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_neigh] += (
-            (1.0 - fl_model.crank_nicolson)
-            * kmean[idc_neigh]
-            * tmp
-            / fl_model.storage_coefficient
+            (1.0 - fl_model.crank_nicolson) * kmean[idc_neigh] * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
-            (1.0 - fl_model.crank_nicolson)
-            * kmean[idc_neigh]
-            * tmp
-            / fl_model.storage_coefficient
+            (1.0 - fl_model.crank_nicolson) * kmean[idc_neigh] * tmp
         )  # type: ignore
 
     # Y contribution
@@ -208,31 +189,24 @@ def make_transient_flow_matrices(
             owner_indices_to_keep=fl_model.free_head_nn,
         )
 
-        tmp = geometry.dx / geometry.dy / geometry.mesh_volume
+        tmp = (
+            geometry.dx
+            / geometry.dy
+            / geometry.mesh_volume
+            / fl_model.storage_coefficient
+        )
 
         q_next[idc_owner, idc_neigh] -= (
-            fl_model.crank_nicolson
-            * kmean[idc_owner]
-            * tmp
-            / fl_model.storage_coefficient
+            fl_model.crank_nicolson * kmean[idc_owner] * tmp
         )  # type: ignore
         q_next[idc_owner, idc_owner] += (
-            fl_model.crank_nicolson
-            * kmean[idc_owner]
-            * tmp
-            / fl_model.storage_coefficient
+            fl_model.crank_nicolson * kmean[idc_owner] * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_neigh] += (
-            (1.0 - fl_model.crank_nicolson)
-            * kmean[idc_owner]
-            * tmp
-            / fl_model.storage_coefficient
+            (1.0 - fl_model.crank_nicolson) * kmean[idc_owner] * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
-            (1.0 - fl_model.crank_nicolson)
-            * kmean[idc_owner]
-            * tmp
-            / fl_model.storage_coefficient
+            (1.0 - fl_model.crank_nicolson) * kmean[idc_owner] * tmp
         )  # type: ignore
 
         # Backward scheme
@@ -244,28 +218,16 @@ def make_transient_flow_matrices(
         )
 
         q_next[idc_owner, idc_neigh] -= (
-            fl_model.crank_nicolson
-            * kmean[idc_neigh]
-            * tmp
-            / fl_model.storage_coefficient
+            fl_model.crank_nicolson * kmean[idc_neigh] * tmp
         )  # type: ignore
         q_next[idc_owner, idc_owner] += (
-            fl_model.crank_nicolson
-            * kmean[idc_neigh]
-            * tmp
-            / fl_model.storage_coefficient
+            fl_model.crank_nicolson * kmean[idc_neigh] * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_neigh] += (
-            (1.0 - fl_model.crank_nicolson)
-            * kmean[idc_neigh]
-            * tmp
-            / fl_model.storage_coefficient
+            (1.0 - fl_model.crank_nicolson) * kmean[idc_neigh] * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
-            (1.0 - fl_model.crank_nicolson)
-            * kmean[idc_neigh]
-            * tmp
-            / fl_model.storage_coefficient
+            (1.0 - fl_model.crank_nicolson) * kmean[idc_neigh] * tmp
         )  # type: ignore
 
     return q_next, q_prev
@@ -289,7 +251,7 @@ def solve_flow_stationary(
     ]
 
     # LU preconditioner
-    preconditioner = get_super_ilu_preconditioner(fl_model.q_next.tocsc())
+    preconditioner = get_super_lu_preconditioner(fl_model.q_next.tocsc())
 
     # Add the source terms
     tmp += flw_sources.flatten(order="F")
@@ -473,6 +435,7 @@ def solve_flow_transient_semi_implicit(
     _q_prev = fl_model.q_prev.copy()
 
     # Add 1/dt for the left term contribution (note: the timestep is variable)
+    # Only for free head
     _q_next.setdiag(_q_next.diagonal() + 1 / time_params.dt)
     _q_prev.setdiag(_q_prev.diagonal() + 1 / time_params.dt)
 
@@ -481,7 +444,7 @@ def solve_flow_transient_semi_implicit(
     _q_prev = _q_prev.tocsc()
 
     # Get LU preconditioner
-    preconditioner = get_super_ilu_preconditioner(_q_next)
+    preconditioner = get_super_lu_preconditioner(_q_next)
 
     # Multiply prev matrix by prev vector
     tmp = _q_prev.dot(fl_model.lhead[time_index - 1].flatten(order="F"))

@@ -5,9 +5,7 @@ import logging
 
 from pyrtid.forward.models import FlowRegime, ForwardModel
 from pyrtid.inverse.adjoint.aflow_solver import (
-    make_stationary_adj_flow_matrices,
     make_transient_adj_flow_matrices,
-    solve_adj_flow_stationary,
     solve_adj_flow_transient_semi_implicit,
     update_adjoint_u_darcy,
 )
@@ -46,24 +44,14 @@ class AdjointSolver:
 
     def initialize_ajd_flow_matrices(self, flow_regime: FlowRegime) -> None:
         """Initialize matrices to solve the adjoint flow problem."""
-        if flow_regime == FlowRegime.STATIONARY:
-            (
-                self.adj_model.a_fl_model.q_next,
-                self.adj_model.a_fl_model.q_prev,
-            ) = make_stationary_adj_flow_matrices(
-                self.fwd_model.geometry,
-                self.fwd_model.fl_model,
-                self.fwd_model.time_params,
-            )
-        if flow_regime == FlowRegime.TRANSIENT:
-            (
-                self.adj_model.a_fl_model.q_next,
-                self.adj_model.a_fl_model.q_prev,
-            ) = make_transient_adj_flow_matrices(
-                self.fwd_model.geometry,
-                self.fwd_model.fl_model,
-                self.fwd_model.time_params,
-            )
+        (
+            self.adj_model.a_fl_model.q_next,
+            self.adj_model.a_fl_model.q_prev,
+        ) = make_transient_adj_flow_matrices(
+            self.fwd_model.geometry,
+            self.fwd_model.fl_model,
+            self.fwd_model.time_params,
+        )
 
     def initialize_ajd_transport_matrices(self) -> None:
         """Initialize matrices to solve the adjoint transport problem."""
@@ -101,21 +89,21 @@ class AdjointSolver:
         )
 
         for time_index in range(
-            self.fwd_model.time_params.nts - 1, 0, -1
+            self.fwd_model.time_params.nts - 1, -1, -1
         ):  # Reverse order in time, and reverse order in operator sequence
             self._solve_system_for_timestep(time_index, is_verbose)
 
         # Flow: solve for the last timestep, only if the flow was initially stationnary
         # Otherwise, just copy as for transport
         _copy_fl_adj_prev_to_current(self.adj_model.a_fl_model, 0)
-        if self.fwd_model.fl_model.regime == FlowRegime.STATIONARY:
-            self.initialize_ajd_flow_matrices(FlowRegime.STATIONARY)
-            solve_adj_flow_stationary(
-                self.fwd_model.geometry,
-                self.fwd_model.fl_model,
-                self.adj_model.a_fl_model,
-                0,  # time index
-            )
+        # if self.fwd_model.fl_model.regime == FlowRegime.STATIONARY:
+        #     self.initialize_ajd_flow_matrices(FlowRegime.STATIONARY)
+        #     solve_adj_flow_stationary(
+        #         self.fwd_model.geometry,
+        #         self.fwd_model.fl_model,
+        #         self.adj_model.a_fl_model,
+        #         0,  # time index
+        #     )
 
     def init_adjoint_variables(
         self,
@@ -134,9 +122,6 @@ class AdjointSolver:
         )
         if is_verbose:
             logging.info(" - Done!")
-        # init_adjoint_fl_variables()
-
-    # Here we should initiate the other adjoint variables
 
     def _solve_system_for_timestep(
         self, time_index: int, is_verbose: bool = False
@@ -200,6 +185,7 @@ class AdjointSolver:
         solve_adj_flow_transient_semi_implicit(
             self.fwd_model.geometry,
             self.fwd_model.fl_model,
+            self.fwd_model.tr_model,
             self.adj_model.a_fl_model,
             self.fwd_model.time_params,
             time_index,

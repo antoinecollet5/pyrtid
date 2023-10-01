@@ -19,7 +19,7 @@ from pyrtid.forward.models import (
 from pyrtid.forward.solver import VERY_SMALL_NUMBER, get_max_coupling_error
 from pyrtid.inverse.adjoint.amodels import AdjointTransportModel
 from pyrtid.utils import harmonic_mean
-from pyrtid.utils.operators import get_super_ilu_preconditioner
+from pyrtid.utils.operators import get_super_lu_preconditioner
 from pyrtid.utils.types import NDArrayFloat
 
 
@@ -98,7 +98,7 @@ def solve_adj_initial_transport(
     tmp -= (a_tr_model.a_gch_src_term / geometry.mesh_volume).ravel("F")
 
     # Build the LU preconditioning
-    preconditioner = get_super_ilu_preconditioner(q_next.tocsc())
+    preconditioner = get_super_lu_preconditioner(q_next.tocsc())
 
     # Solve Ax = b with A sparse using LU preconditioner
     res, exit_code = gmres(q_next.tocsc(), tmp, M=preconditioner, atol=1e-15)
@@ -245,7 +245,7 @@ def make_transient_adj_transport_matrices(
             geometry,
             (slice(0, geometry.nx - 1), slice(None)),
             (slice(1, geometry.nx), slice(None)),
-            tr_model.cst_conc_indices,
+            owner_indices_to_keep=tr_model.free_conc_nn,
         )
 
         tmp = geometry.dy / geometry.dx / geometry.mesh_volume
@@ -268,7 +268,7 @@ def make_transient_adj_transport_matrices(
             geometry,
             (slice(1, geometry.nx), slice(None)),
             (slice(0, geometry.nx - 1), slice(None)),
-            tr_model.cst_conc_indices,
+            owner_indices_to_keep=tr_model.free_conc_nn,
         )
 
         q_next[idc_owner, idc_neigh] -= (
@@ -297,7 +297,7 @@ def make_transient_adj_transport_matrices(
             geometry,
             (slice(None), slice(0, geometry.ny - 1)),
             (slice(None), slice(1, geometry.ny)),
-            tr_model.cst_conc_indices,
+            owner_indices_to_keep=tr_model.free_conc_nn,
         )
 
         tmp = geometry.dx / geometry.dy / geometry.mesh_volume
@@ -320,7 +320,7 @@ def make_transient_adj_transport_matrices(
             geometry,
             (slice(None), slice(1, geometry.ny)),
             (slice(None), slice(0, geometry.ny - 1)),
-            tr_model.cst_conc_indices,
+            owner_indices_to_keep=tr_model.free_conc_nn,
         )
 
         q_next[idc_owner, idc_neigh] -= (
@@ -362,7 +362,7 @@ def _add_advection_to_adj_transport_matrices(
             geometry,
             (slice(0, geometry.nx - 1), slice(None)),
             (slice(1, geometry.nx), slice(None)),
-            tr_model.cst_conc_indices,
+            owner_indices_to_keep=tr_model.free_conc_nn,
         )
         tmp = geometry.dy / geometry.mesh_volume
 
@@ -383,7 +383,7 @@ def _add_advection_to_adj_transport_matrices(
             geometry,
             (slice(1, geometry.nx), slice(None)),
             (slice(0, geometry.nx - 1), slice(None)),
-            tr_model.cst_conc_indices,
+            owner_indices_to_keep=tr_model.free_conc_nn,
         )
 
         tmp_un_pos = np.where(normal * un_x > 0.0, normal * un_x, 0.0)[idc_neigh]
@@ -409,7 +409,7 @@ def _add_advection_to_adj_transport_matrices(
             geometry,
             (slice(None), slice(0, geometry.ny - 1)),
             (slice(None), slice(1, geometry.ny)),
-            tr_model.cst_conc_indices,
+            owner_indices_to_keep=tr_model.free_conc_nn,
         )
         tmp = geometry.dx / geometry.mesh_volume
 
@@ -430,7 +430,7 @@ def _add_advection_to_adj_transport_matrices(
             geometry,
             (slice(None), slice(1, geometry.ny)),
             (slice(None), slice(0, geometry.ny - 1)),
-            tr_model.cst_conc_indices,
+            owner_indices_to_keep=tr_model.free_conc_nn,
         )
 
         tmp_un_pos = np.where(normal * un_y > 0.0, normal * un_y, 0.0)[idc_neigh]
@@ -617,7 +617,7 @@ def solve_adj_transport_transient_semi_implicit(
     tmp -= a_tr_model.a_gch_src_term.ravel(order="F") / geometry.mesh_volume
 
     # Build the LU preconditioning
-    preconditioner = get_super_ilu_preconditioner(q_next.tocsc())
+    preconditioner = get_super_lu_preconditioner(q_next.tocsc())
 
     # Solve Ax = b with A sparse using LU preconditioner
     res, exit_code = gmres(q_next.tocsc(), tmp, M=preconditioner, atol=1e-15)

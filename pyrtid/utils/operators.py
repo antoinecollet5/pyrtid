@@ -4,7 +4,7 @@ from typing import Optional
 
 import numpy as np
 from scipy.sparse import csc_array
-from scipy.sparse.linalg import LinearOperator, spilu
+from scipy.sparse.linalg import LinearOperator, splu
 
 from pyrtid.utils.types import NDArrayFloat
 
@@ -116,9 +116,9 @@ def hessian_cfd(param: NDArrayFloat, dx: float, axis: int = 0) -> NDArrayFloat:
     return hess
 
 
-def get_super_ilu_preconditioner(mat: csc_array) -> Optional[LinearOperator]:
+def get_super_lu_preconditioner(mat: csc_array) -> Optional[LinearOperator]:
     """
-    Get an incomplete LU preconditioner for the given sparse matrix.
+    Get an complete LU preconditioner for the given sparse matrix.
 
     Reference: :citet:`meijerinkGuidelinesUsageIncomplete1981`.
 
@@ -138,7 +138,7 @@ def get_super_ilu_preconditioner(mat: csc_array) -> Optional[LinearOperator]:
     solution algorithm such as the conjugate gradient method or GMRES.
     """
     try:
-        op = spilu(mat)
+        op = splu(mat)
     except RuntimeError:  # The Factor is exactly singular
         return None
 
