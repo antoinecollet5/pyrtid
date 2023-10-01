@@ -552,7 +552,7 @@ def get_initial_head_adjoint_gradient(
     grad += a_head * float(
         fwd_model.fl_model.storage_coefficient
         * fwd_model.geometry.mesh_volume
-        / fwd_model.time_params.ldt[1]
+        / fwd_model.time_params.ldt[0]
     )
 
     # tmp.reshape(adj_model.a_fl_model.a_head[:, :, 0].shape, order="F")

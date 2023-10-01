@@ -1,7 +1,6 @@
 """Provide an adjoint solver for the transport operator."""
 from __future__ import annotations
 
-import logging
 from typing import Tuple
 
 import numpy as np
@@ -10,13 +9,12 @@ from scipy.sparse.linalg import gmres
 
 from pyrtid.forward.models import (
     FlowModel,
-    GeochemicalParameters,
     Geometry,
     TimeParameters,
     TransportModel,
     get_owner_neigh_indices,
 )
-from pyrtid.forward.solver import VERY_SMALL_NUMBER, get_max_coupling_error
+from pyrtid.forward.solver import get_max_coupling_error
 from pyrtid.inverse.adjoint.amodels import AdjointTransportModel
 from pyrtid.utils import harmonic_mean
 from pyrtid.utils.operators import get_super_lu_preconditioner
@@ -106,114 +104,6 @@ def solve_adj_initial_transport(
     a_tr_model.a_conc[:, :, time_index] = res.reshape(geometry.ny, geometry.nx).T
 
     return exit_code
-
-
-def init_adjoint_tr_variables_fpi(
-    fl_model: FlowModel,
-    tr_model: TransportModel,
-    a_tr_model: AdjointTransportModel,
-    gch_params: GeochemicalParameters,
-    geometry: Geometry,
-    time_params: TimeParameters,
-    is_verbose: bool = False,
-) -> None:
-    r"""
-    Initiate the initial (at tmax) adjoint transport variable using FPI.
-
-    FPI stands for fixed point iterations.
-
-    .. math::
-        \begin{cases}
-            \lambda_{c_{i}}^{N+1} = \dfrac{\Delta t^{N} }{\mathcal{A}_{i} \omega_{i}}
-            \left( - \dfrac{c_{i}^{N+1, \mathrm{obs}} - c_{i}^{N+1, \mathrm{calc}}}{
-                \left(\sigma_{c_{i}}^{N+1, \mathrm{obs}}\right)^{2}} - \lambda_{
-                    \overline{c}_{i}}^{N+1} \Delta t^{N}  k_{v} A_{s} \dfrac{
-                        \overline{c}_{i}^{N}}{Ks} \right), & \text{Initial condition}
-            \\\\
-            \lambda_{\overline{c}_{i}}^{N+1} =  - \dfrac{\mathcal{A}_{i}
-            \omega_{i}}{\Delta t^{N}} \lambda_{c_{i}}^{N+1} - \dfrac{
-                \overline{c}_{i}^{N+1, \mathrm{obs}} - \overline{c}_{i}^{N+1,
-                \mathrm{calc}}}{\left(\sigma_{\overline{c}_{i}}^{N+1,
-                \mathrm{obs}}\right)^{2}}, & \text{Initial condition}
-            \\\\
-        \end{cases}
-
-
-    The convergence criteria is given by:
-
-    .. math::
-        \text{max} \left\lVert 1 - \dfrac{\lambda_{c}^{N+1, k+1}}
-        {\lambda_{c}^{N+1, k}} \right\rVert  < \epsilon
-
-    with $k$ the number of fixed point iterations.
-
-    Parameters
-    ----------
-    tr_model : TransportModel
-        _description_
-    a_tr_model : AdjointTransportModel
-        _description_
-    gch_params : GeochemicalParameters
-        _description_
-    geometry : Geometry
-        _description_
-    time_params : TimeParameters
-        _description_
-    is_verbose : bool, optional
-        _description_, by default False
-    """
-    if is_verbose:
-        logging.info(" - Adjoint transport FPI initialization!")
-    has_converged = False
-    nafpi = 0
-
-    # Initiate the concentrations to a very small number so that
-    # a_conc_prev is not zero when calling get_adjoint_max_coupling_error
-    # for the first time (end of the first loop)
-    a_tr_model.a_conc[:, :, -1] = VERY_SMALL_NUMBER
-
-    tmp = (
-        time_params.ldt[-1]
-        * gch_params.kv
-        * gch_params.As
-        * tr_model.lgrade[-2]
-        / gch_params.Ks
-    )
-
-    while not has_converged:
-        nafpi += 1
-        # Copy for the convergence check
-        a_tr_model.a_conc_prev = a_tr_model.a_conc[:, :, -1].copy()
-
-        # Compute adjoint grades
-        a_tr_model.a_grade[:, :, -1] = (
-            -a_tr_model.a_conc[:, :, -1]
-            * (tr_model.porosity * geometry.mesh_volume)
-            / time_params.ldt[-1]
-        ) + a_tr_model.a_grade_sources.getcol(-1).reshape(geometry.shape, order="F")
-
-        # Source term for the transport
-        a_tr_model.a_gch_src_term = a_tr_model.a_grade[:, :, -1] * tmp
-
-        # Solve adjoint transport
-        solve_adj_initial_transport(
-            geometry, fl_model, tr_model, a_tr_model, time_params, -1, nafpi
-        )
-
-        has_converged = (
-            get_adjoint_max_coupling_error(a_tr_model, -1) < tr_model.fpi_eps
-        )
-
-        if is_verbose:
-            logging.info(
-                f"max-coupling error at it = {time_params.nt}-{nafpi}: "
-                f"{get_adjoint_max_coupling_error(a_tr_model, -1)}"
-            )
-        has_converged = (
-            get_adjoint_max_coupling_error(a_tr_model, -1) < tr_model.fpi_eps
-        )
-        if is_verbose:
-            logging.info(f"has-converged ?: {has_converged}")
 
 
 def make_transient_adj_transport_matrices(

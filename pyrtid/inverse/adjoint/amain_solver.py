@@ -10,10 +10,9 @@ from pyrtid.inverse.adjoint.aflow_solver import (
     update_adjoint_u_darcy,
 )
 from pyrtid.inverse.adjoint.ageochem_solver import solve_adj_geochem
-from pyrtid.inverse.adjoint.amodels import AdjointFlowModel, AdjointModel
+from pyrtid.inverse.adjoint.amodels import AdjointModel
 from pyrtid.inverse.adjoint.atransport_solver import (
     get_adjoint_max_coupling_error,
-    init_adjoint_tr_variables_fpi,
     make_transient_adj_transport_matrices,
     solve_adj_transport_transient_semi_implicit,
 )
@@ -81,47 +80,10 @@ class AdjointSolver:
         # Consequently, the preconditioner is built on the fly too.
         self.initialize_ajd_transport_matrices()
 
-        # Initiate adjoint concentrations and grades
-        self.init_adjoint_variables(
-            self.fwd_model,
-            self.adj_model,
-            is_verbose,
-        )
-
         for time_index in range(
-            self.fwd_model.time_params.nts - 1, -1, -1
+            self.fwd_model.time_params.nts - 1, -1, -1  # type: ignore
         ):  # Reverse order in time, and reverse order in operator sequence
             self._solve_system_for_timestep(time_index, is_verbose)
-
-        # Flow: solve for the last timestep, only if the flow was initially stationnary
-        # Otherwise, just copy as for transport
-        _copy_fl_adj_prev_to_current(self.adj_model.a_fl_model, 0)
-        # if self.fwd_model.fl_model.regime == FlowRegime.STATIONARY:
-        #     self.initialize_ajd_flow_matrices(FlowRegime.STATIONARY)
-        #     solve_adj_flow_stationary(
-        #         self.fwd_model.geometry,
-        #         self.fwd_model.fl_model,
-        #         self.adj_model.a_fl_model,
-        #         0,  # time index
-        #     )
-
-    def init_adjoint_variables(
-        self,
-        fwd_model: ForwardModel,
-        adj_model: AdjointModel,
-        is_verbose: bool = False,
-    ) -> None:
-        init_adjoint_tr_variables_fpi(
-            fwd_model.fl_model,
-            fwd_model.tr_model,
-            adj_model.a_tr_model,
-            fwd_model.gch_params,
-            fwd_model.geometry,
-            fwd_model.time_params,
-            is_verbose,
-        )
-        if is_verbose:
-            logging.info(" - Done!")
 
     def _solve_system_for_timestep(
         self, time_index: int, is_verbose: bool = False
@@ -190,19 +152,3 @@ class AdjointSolver:
             self.fwd_model.time_params,
             time_index,
         )
-
-
-# TODO: delete this ???
-def _copy_fl_adj_prev_to_current(a_fl_model: AdjointFlowModel, time_index: int) -> None:
-    try:
-        # Copy the last index
-        a_fl_model.a_head[:, :, time_index] = a_fl_model.a_head[:, :, time_index + 1]
-        a_fl_model.a_u_darcy_x[:, :, time_index] = a_fl_model.a_u_darcy_x[
-            :, :, time_index + 1
-        ]
-        a_fl_model.a_u_darcy_y[:, :, time_index] = a_fl_model.a_u_darcy_y[
-            :, :, time_index + 1
-        ]
-    except IndexError:
-        # Do nothing for the first timestep (keep 0)
-        pass
