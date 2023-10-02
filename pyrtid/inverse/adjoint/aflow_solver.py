@@ -34,9 +34,11 @@ def make_transient_adj_flow_matrices(
     dim = geometry.nx * geometry.ny
     q_prev = lil_array((dim, dim), dtype=np.float64)
     q_next = lil_array((dim, dim), dtype=np.float64)
+    stocoeff = fl_model.storage_coefficient.ravel("F")
 
     # # X contribution
     # kmean = harmonic_mean(fl_model.permeability[:-1, :], fl_model.permeability[1:, :])
+    _tmp = geometry.dy / geometry.dx / geometry.mesh_volume
 
     # 1) X contribution
     if geometry.nx >= 2:
@@ -45,12 +47,6 @@ def make_transient_adj_flow_matrices(
             fl_model.permeability[:-1, :], fl_model.permeability[1:, :]
         )
         kmean = kmean.flatten(order="F")
-        tmp = (
-            geometry.dy
-            / geometry.dx
-            / geometry.mesh_volume
-            / fl_model.storage_coefficient
-        )
 
         # 1.1) Forward scheme:
 
@@ -61,6 +57,9 @@ def make_transient_adj_flow_matrices(
             (slice(1, geometry.nx), slice(None)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
+        # Add the storage coefficient with respect to the owner mesh
+        tmp = _tmp / stocoeff[idc_owner]
+
         q_next[idc_owner, idc_owner] += (
             fl_model.crank_nicolson * kmean[idc_owner] * tmp
         )  # type: ignore
@@ -75,6 +74,9 @@ def make_transient_adj_flow_matrices(
             (slice(1, geometry.nx), slice(None)),
             neigh_indices_to_keep=fl_model.free_head_nn,
         )
+        # Add the storage coefficient with respect to the owner mesh
+        tmp = _tmp / stocoeff[idc_owner]
+
         q_next[idc_owner, idc_neigh] -= (
             fl_model.crank_nicolson * kmean[idc_owner] * tmp
         )  # type: ignore
@@ -92,6 +94,9 @@ def make_transient_adj_flow_matrices(
             (slice(0, geometry.nx - 1), slice(None)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
+        # Add the storage coefficient with respect to the owner mesh
+        tmp = _tmp / stocoeff[idc_owner]
+
         q_next[idc_owner, idc_owner] += (
             fl_model.crank_nicolson * kmean[idc_neigh] * tmp
         )  # type: ignore
@@ -106,6 +111,8 @@ def make_transient_adj_flow_matrices(
             (slice(0, geometry.nx - 1), slice(None)),
             neigh_indices_to_keep=fl_model.free_head_nn,
         )
+        # Add the storage coefficient with respect to the owner mesh
+        tmp = _tmp / stocoeff[idc_owner]
 
         q_next[idc_owner, idc_neigh] -= (
             fl_model.crank_nicolson * kmean[idc_neigh] * tmp
@@ -124,12 +131,7 @@ def make_transient_adj_flow_matrices(
         kmean = kmean.flatten(order="F")
 
         # 2.1) Forward scheme:
-        tmp = (
-            geometry.dx
-            / geometry.dy
-            / geometry.mesh_volume
-            / fl_model.storage_coefficient
-        )
+        tmp = geometry.dx / geometry.dy / geometry.mesh_volume
 
         # 2.1.1) For free head nodes only
         idc_owner, idc_neigh = get_owner_neigh_indices(
@@ -138,6 +140,9 @@ def make_transient_adj_flow_matrices(
             (slice(None), slice(1, geometry.ny)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
+        # Add the storage coefficient with respect to the owner mesh
+        tmp = _tmp / stocoeff[idc_owner]
+
         q_next[idc_owner, idc_owner] += (
             fl_model.crank_nicolson * kmean[idc_owner] * tmp
         )  # type: ignore
@@ -152,6 +157,8 @@ def make_transient_adj_flow_matrices(
             (slice(None), slice(1, geometry.ny)),
             neigh_indices_to_keep=fl_model.free_head_nn,
         )
+        # Add the storage coefficient with respect to the owner mesh
+        tmp = _tmp / stocoeff[idc_owner]
 
         q_next[idc_owner, idc_neigh] -= (
             fl_model.crank_nicolson * kmean[idc_owner] * tmp
@@ -170,6 +177,9 @@ def make_transient_adj_flow_matrices(
             (slice(None), slice(0, geometry.ny - 1)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
+        # Add the storage coefficient with respect to the owner mesh
+        tmp = _tmp / stocoeff[idc_owner]
+
         q_next[idc_owner, idc_owner] += (
             fl_model.crank_nicolson * kmean[idc_neigh] * tmp
         )  # type: ignore
@@ -184,6 +194,9 @@ def make_transient_adj_flow_matrices(
             (slice(None), slice(0, geometry.ny - 1)),
             neigh_indices_to_keep=fl_model.free_head_nn,
         )
+        # Add the storage coefficient with respect to the owner mesh
+        tmp = _tmp / stocoeff[idc_owner]
+
         q_next[idc_owner, idc_neigh] -= (
             fl_model.crank_nicolson * kmean[idc_neigh] * tmp
         )  # type: ignore
@@ -339,17 +352,25 @@ def solve_adj_flow_transient_semi_implicit(
     # Add 1/dt for the left term contribution: only for free head
     diag = np.zeros(a_fl_model.a_head[:, :, -1].size)
     diag[fl_model.free_head_nn] += float(1.0 / time_params.ldt[time_index])
-    # One for the cts head
-    diag[fl_model.cst_head_nn] += 1.0
+    # One for the cts head -> we must divide by storage coef and mesh volume because
+    # we divide the other terms in _q_prev and q_next (better conditionning)
+    diag[fl_model.cst_head_nn] += (
+        1.0
+        / fl_model.storage_coefficient.ravel("F")[fl_model.cst_head_nn]
+        / geometry.mesh_volume
+    )
 
     _q_next.setdiag(_q_next.diagonal() + diag)
-
-    # For variable initialization -> not nt + 1
     diag = np.zeros(a_fl_model.a_head[:, :, -1].size)
+    # Need a try - except for n = N_{ts} resolution: then \Delta t^{N_{ts}+1} does not
+    # exists
     try:
         diag[fl_model.free_head_nn] += float(1.0 / time_params.ldt[time_index + 1])
-        # One for the cts head
-        diag[fl_model.cst_head_nn] += 1.0
+        diag[fl_model.cst_head_nn] += (
+            1.0
+            / fl_model.storage_coefficient.ravel("F")[fl_model.cst_head_nn]
+            / geometry.mesh_volume
+        )
     except IndexError:
         pass
 
@@ -379,7 +400,7 @@ def solve_adj_flow_transient_semi_implicit(
     # forward variables)
     tmp += (
         a_fl_model.a_head_sources.getcol(time_index + 1).todense().ravel("F")
-        / fl_model.storage_coefficient
+        / fl_model.storage_coefficient.ravel("F")
         / geometry.mesh_volume
     )
 
@@ -482,5 +503,5 @@ def _get_adjoint_transport_src_terms(
 
     # Divide by the storage coefficient only if transient mode
     if is_transient:
-        return src.ravel("F") / fl_model.storage_coefficient
+        return src.ravel("F") / fl_model.storage_coefficient.ravel("F")
     return src.ravel("F")

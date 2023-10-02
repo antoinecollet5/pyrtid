@@ -122,6 +122,7 @@ def make_transient_flow_matrices(
         fl_model.permeability[:-1, :], fl_model.permeability[1:, :]
     )
     kmean = kmean.flatten(order="F")
+    stocoeff = fl_model.storage_coefficient.ravel("F")
 
     # Forward scheme:
     if geometry.nx >= 2:
@@ -132,12 +133,7 @@ def make_transient_flow_matrices(
             owner_indices_to_keep=fl_model.free_head_nn,
         )
 
-        tmp = (
-            geometry.dy
-            / geometry.dx
-            / geometry.mesh_volume
-            / fl_model.storage_coefficient
-        )
+        tmp = geometry.dy / geometry.dx / geometry.mesh_volume / stocoeff[idc_owner]
 
         q_next[idc_owner, idc_neigh] -= (
             fl_model.crank_nicolson * kmean[idc_owner] * tmp
@@ -189,12 +185,7 @@ def make_transient_flow_matrices(
             owner_indices_to_keep=fl_model.free_head_nn,
         )
 
-        tmp = (
-            geometry.dx
-            / geometry.dy
-            / geometry.mesh_volume
-            / fl_model.storage_coefficient
-        )
+        tmp = geometry.dx / geometry.dy / geometry.mesh_volume / stocoeff[idc_owner]
 
         q_next[idc_owner, idc_neigh] -= (
             fl_model.crank_nicolson * kmean[idc_owner] * tmp
@@ -453,7 +444,7 @@ def solve_flow_transient_semi_implicit(
     sources = (
         fl_model.crank_nicolson * flw_sources.flatten(order="F")
         + (1.0 - fl_model.crank_nicolson) * flw_sources_old.flatten(order="F")
-    ) / fl_model.storage_coefficient
+    ) / fl_model.storage_coefficient.ravel(order="F")
 
     tmp += sources
 

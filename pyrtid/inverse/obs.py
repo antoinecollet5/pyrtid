@@ -32,6 +32,7 @@ class StateVariable(StrEnum):
     PERMEABILITY = "permeability"
     POROSITY = "porosity"
     PRESSURE = "pressure"
+    STORAGE_COEFFICIENT = "storage_coefficient"
 
 
 class Observable:
@@ -328,6 +329,8 @@ def get_array_from_state_variable(
         return model.tr_model.diffusion
     if state_variable == StateVariable.DENSITY:
         return model.tr_model.density
+    if state_variable == StateVariable.STORAGE_COEFFICIENT:
+        return model.fl_model.storage_coefficient
     else:
         raise ValueError(
             f'"{state_variable}" is not a valid state variable or parameter type!'

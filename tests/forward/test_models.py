@@ -239,35 +239,69 @@ def test_add_transport_boundary_conditions(
         model.tr_model.add_boundary_conditions(condition)
 
 
-def test_get_owner_neigh_indices() -> None:
+@pytest.mark.parametrize(
+    "span_owner,span_neigh,owner_indices_to_keep, "
+    "neigh_indices_to_keep,expected_idc_owner,expected_idc_neigh",
+    (
+        (
+            (slice(None), slice(1, 4)),
+            (slice(None), slice(0, 4 - 1)),
+            None,
+            None,
+            np.array([4, 8, 12, 5, 9, 13, 6, 10, 14, 7, 11, 15]),
+            np.array([0, 4, 8, 1, 5, 9, 2, 6, 10, 3, 7, 11]),
+        ),
+        (
+            (slice(None), slice(1, 4)),
+            (slice(None), slice(0, 4 - 1)),
+            np.array([]),
+            None,
+            np.array([]),
+            np.array([]),
+        ),
+        (
+            (slice(None), slice(1, 4)),
+            (slice(None), slice(0, 4 - 1)),
+            None,
+            np.array([]),
+            np.array([]),
+            np.array([]),
+        ),
+        (
+            (slice(None), slice(1, 4)),
+            (slice(None), slice(0, 4 - 1)),
+            np.array([1, 2, 3, 4, 5, 6, 7]),
+            None,
+            np.array([4, 5, 6, 7]),
+            np.array([0, 1, 2, 3]),
+        ),
+    ),
+)
+def test_get_owner_neigh_indices(
+    span_owner,
+    span_neigh,
+    owner_indices_to_keep,
+    neigh_indices_to_keep,
+    expected_idc_owner,
+    expected_idc_neigh,
+) -> None:
     geometry = Geometry(4, 4, 1.0, 1.0, 1.0)
 
     idc_owner, idc_neigh = get_owner_neigh_indices(
         geometry,
-        (slice(None), slice(1, geometry.ny)),
-        (slice(None), slice(0, geometry.ny - 1)),
-        np.array([]),
+        span_owner,
+        span_neigh,
+        owner_indices_to_keep=owner_indices_to_keep,
+        neigh_indices_to_keep=neigh_indices_to_keep,
     )
 
     np.testing.assert_equal(
-        idc_owner, np.array([4, 8, 12, 5, 9, 13, 6, 10, 14, 7, 11, 15], dtype=np.int32)
+        idc_owner,
+        expected_idc_owner,
     )
     np.testing.assert_equal(
-        idc_neigh, np.array([0, 4, 8, 1, 5, 9, 2, 6, 10, 3, 7, 11], dtype=np.int32)
-    )
-
-    idc_owner, idc_neigh = get_owner_neigh_indices(
-        geometry,
-        (slice(None), slice(1, geometry.ny)),
-        (slice(None), slice(0, geometry.ny - 1)),
-        np.array([0, 1, 12, 13]),
-    )
-
-    np.testing.assert_equal(
-        idc_owner, np.array([4, 8, 5, 9, 6, 10, 14, 7, 11, 15], dtype=np.int32)
-    )
-    np.testing.assert_equal(
-        idc_neigh, np.array([0, 4, 1, 5, 2, 6, 10, 3, 7, 11], dtype=np.int32)
+        idc_neigh,
+        expected_idc_neigh,
     )
 
 

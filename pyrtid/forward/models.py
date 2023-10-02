@@ -615,9 +615,12 @@ class FlowModel:
     ) -> None:
         """Initialize the instance."""
         self.crank_nicolson: float = fl_params.crank_nicolson
-        self.storage_coefficient: float = fl_params.storage_coefficient
+        self.storage_coefficient: NDArrayFloat = (
+            np.ones((geometry.nx, geometry.ny), dtype=np.float64)
+            * fl_params.storage_coefficient
+        )
         self.regime: FlowRegime = fl_params.regime
-        self.permeability = (
+        self.permeability: NDArrayFloat = (
             np.ones((geometry.nx, geometry.ny), dtype=np.float64)
             * fl_params.permeability
         )

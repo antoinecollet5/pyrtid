@@ -462,6 +462,52 @@ def _get_perm_gradient_from_darcy_eq(
     return -np.sum(grad, axis=-1)
 
 
+def get_storage_coefficient_adjoint_gradient(
+    fwd_model: ForwardModel, adj_model: AdjointModel
+) -> NDArrayFloat:
+    """
+    Compute the gradient with respect to the storge coefficient.
+
+    Parameters
+    ----------
+    fwd_model : ForwardModel
+        The forward model which contains all forward variables and parameters.
+    adj_model : AdjointModel
+        The adjoint model which contains all adjoint variables and parameters.
+
+    Note
+    ----
+    Parameter span is not taken into account which means that the gradient is
+    computed on the full domain (grid).
+
+    Returns
+    -------
+    NDArrayFloat
+        Gradient with respect to the storage coefficient.
+    """
+    head = fwd_model.fl_model.head
+    ahead = adj_model.a_fl_model.a_head
+    ma_ahead = np.zeros(ahead.shape)
+    free_head_indices = fwd_model.fl_model.free_head_indices
+    ma_ahead[free_head_indices[0], free_head_indices[1], :] = ahead[
+        free_head_indices[0], free_head_indices[1], :
+    ]
+
+    grad = (
+        (head[:, :, 1:] - head[:, :, :-1])
+        * ma_ahead[:, :, :-1]
+        / np.array(fwd_model.time_params.ldt)[np.newaxis, np.newaxis, :]
+        * fwd_model.geometry.mesh_volume
+    )
+
+    # We sum along the temporal axis
+    return -np.sum(
+        grad, axis=-1
+    ) + adj_model.a_fl_model.a_storage_coefficient_sources.getcol(0).todense().reshape(
+        (fwd_model.geometry.nx, fwd_model.geometry.ny), order="F"
+    )
+
+
 def get_initial_grade_adjoint_gradient(
     fwd_model: ForwardModel, adj_model: AdjointModel
 ) -> NDArrayFloat:
@@ -521,41 +567,58 @@ def get_initial_head_adjoint_gradient(
     crank_perm = fwd_model.fl_model.crank_nicolson
     a_head = adj_model.a_fl_model.a_head[:, :, 0]
     grad = np.zeros(a_head.shape, dtype=np.float64)
-    perm = fwd_model.fl_model.permeability
+
+    ma_ahead = np.zeros(a_head.shape)
+    free_head_indices = fwd_model.fl_model.free_head_indices
+    cst_head_indices = fwd_model.fl_model.cst_head_indices
+    ma_ahead[free_head_indices[0], free_head_indices[1]] = a_head[
+        free_head_indices[0], free_head_indices[1]
+    ]
+
     # X axis contribution
     if a_head.shape[0] > 1:  # type: ignore
-        pmean = harmonic_mean(perm[:-1, :], perm[1:, :])
+        pmean = harmonic_mean(
+            fwd_model.fl_model.permeability[:-1, :],
+            fwd_model.fl_model.permeability[1:, :],
+        )
         tmp = fwd_model.geometry.dy / fwd_model.geometry.dx
         # Forward scheme
         grad[:-1, :] += (
-            +(1.0 - crank_perm) * (a_head[1:, :] - a_head[:-1, :]) * pmean
+            +(1.0 - crank_perm) * (ma_ahead[1:, :] - ma_ahead[:-1, :]) * pmean
         ) * tmp
         # Backward scheme
         grad[1:, :] += (
-            +(1.0 - crank_perm) * (a_head[:-1, :] - a_head[1:, :]) * pmean
+            +(1.0 - crank_perm) * (ma_ahead[:-1, :] - ma_ahead[1:, :]) * pmean
         ) * tmp
 
     # Y axis contribution
     if a_head.shape[1] > 1:  # type: ignore
-        pmean = harmonic_mean(perm[:, :-1], perm[:, 1:])
+        pmean = harmonic_mean(
+            fwd_model.fl_model.permeability[:, :-1],
+            fwd_model.fl_model.permeability[:, 1:],
+        )
         tmp = fwd_model.geometry.dx / fwd_model.geometry.dy
         # Forward scheme
         grad[:, :-1] += (
-            +(1.0 - crank_perm) * (a_head[:, 1:] - a_head[:, :-1]) * pmean
+            +(1.0 - crank_perm) * (ma_ahead[:, 1:] - ma_ahead[:, :-1]) * pmean
         ) * tmp
         # Backward scheme
         grad[:, 1:] += (
-            +(1.0 - crank_perm) * (a_head[:, :-1] - a_head[:, 1:]) * pmean
+            +(1.0 - crank_perm) * (ma_ahead[:, :-1] - ma_ahead[:, 1:]) * pmean
         ) * tmp
 
-    # tmp = _q_next.dot(adj_model.a_fl_model.a_head[:, :, 1].ravel(order="F"))
-    grad += a_head * float(
-        fwd_model.fl_model.storage_coefficient
+    # grad = _q_prev.dot(a_head.ravel(order="F")) # .reshape(a_head.shape, order="F")
+
+    grad += (
+        ma_ahead
+        * fwd_model.fl_model.storage_coefficient
         * fwd_model.geometry.mesh_volume
         / fwd_model.time_params.ldt[0]
     )
 
-    # tmp.reshape(adj_model.a_fl_model.a_head[:, :, 0].shape, order="F")
+    grad[cst_head_indices[0], cst_head_indices[1]] += a_head[
+        cst_head_indices[0], cst_head_indices[1]
+    ]
 
     # Add adjoint sources for time t=0
     return grad + adj_model.a_fl_model.a_head_sources.getcol(0).todense().reshape(
@@ -673,6 +736,8 @@ def compute_param_adjoint_ls_loss_function_gradient(
         return get_initial_grade_adjoint_gradient(fwd_model, adj_model)
     if param.name == ParameterName.INITIAL_HEAD:
         return get_initial_head_adjoint_gradient(fwd_model, adj_model)
+    if param.name == ParameterName.STORAGE_COEFFICIENT:
+        return get_storage_coefficient_adjoint_gradient(fwd_model, adj_model)
     raise (NotImplementedError("Please contact the developer to handle this issue."))
 
 
@@ -892,7 +957,6 @@ def is_adjoint_gradient_correct(
     adj_grad = compute_adjoint_gradient(
         fwd_model, asolver.adj_model, parameters_to_adjust
     )
-    print(adj_grad.shape)
     fd_grad = compute_fd_gradient(
         fwd_model, observables, parameters_to_adjust, eps=eps, max_workers=max_workers
     )

@@ -47,6 +47,7 @@ class ParameterName(StrEnum):
     PERMEABILITY = "permeability"
     POROSITY = "porosity"
     INITIAL_PRESSURE = "pressure"
+    STORAGE_COEFFICIENT = "storage_coefficient"
 
 
 PARAM_TO_STATE_VAR = {
@@ -57,6 +58,7 @@ PARAM_TO_STATE_VAR = {
     ParameterName.PERMEABILITY: StateVariable.PERMEABILITY,
     ParameterName.POROSITY: StateVariable.POROSITY,
     ParameterName.INITIAL_PRESSURE: StateVariable.PRESSURE,
+    ParameterName.STORAGE_COEFFICIENT: StateVariable.STORAGE_COEFFICIENT,
 }
 
 
@@ -651,6 +653,8 @@ def update_model_with_param_values(
         model.tr_model.porosity[param.span] = param.values[param.span]
     elif param.name == ParameterName.DIFFUSION:
         model.tr_model.diffusion[param.span] = param.values[param.span]
+    elif param.name == ParameterName.STORAGE_COEFFICIENT:
+        model.fl_model.storage_coefficient[param.span] = param.values[param.span]
     else:
         raise ValueError(
             f'"{param.name}" is not a valid state variable or parameter type!'

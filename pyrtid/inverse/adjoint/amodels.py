@@ -32,6 +32,7 @@ class AdjointFlowModel:
         "a_pressure_sources",
         "a_density_sources",
         "a_permeability_sources",
+        "a_storage_coefficient_sources",
         "q_prev",
         "q_next",
     ]
@@ -64,6 +65,9 @@ class AdjointFlowModel:
         self.a_permeability_sources: csc_array = csc_array(
             (geometry.nx * geometry.ny, 1), dtype=np.float64
         )
+        self.a_storage_coefficient_sources: csc_array = csc_array(
+            (geometry.nx * geometry.ny, 1), dtype=np.float64
+        )
 
         self.q_prev: lil_matrix = lil_array(geometry.nx * geometry.ny)
         self.q_next: lil_matrix = lil_array(geometry.nx * geometry.ny)
@@ -76,6 +80,9 @@ class AdjointFlowModel:
         self.a_pressure_sources = csc_array(self.a_pressure_sources.shape)
         self.a_density_sources = csc_array(self.a_density_sources.shape)
         self.a_permeability_sources = csc_array(self.a_permeability_sources.shape)
+        self.a_storage_coefficient_sources = csc_array(
+            self.a_storage_coefficient_sources.shape
+        )
 
 
 class AdjointTransportModel:
@@ -265,6 +272,9 @@ class AdjointModel:
                 StateVariable.PERMEABILITY: self.a_fl_model.a_permeability_sources,
                 StateVariable.POROSITY: self.a_tr_model.a_porosity_sources,
                 StateVariable.PRESSURE: self.a_fl_model.a_pressure_sources,
+                StateVariable.STORAGE_COEFFICIENT: (
+                    self.a_fl_model.a_storage_coefficient_sources
+                ),
             }[obs.state_variable]
 
             # Add the sparse array to the correct attribute
@@ -290,3 +300,5 @@ class AdjointModel:
                 self.a_tr_model.a_porosity_sources += res
             elif obs.state_variable == StateVariable.PRESSURE:
                 self.a_fl_model.a_pressure_sources += res
+            elif obs.state_variable == StateVariable.STORAGE_COEFFICIENT:
+                self.a_fl_model.a_storage_coefficient_sources += res
