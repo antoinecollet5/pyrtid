@@ -8,7 +8,7 @@ Note :
 """
 from __future__ import annotations
 
-from abc import ABC
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import List, Optional, Sequence, Tuple, Union
 
@@ -30,6 +30,9 @@ from pyrtid.utils.types import (
 
 GRAVITY = 9.81
 WATER_DENSITY = 997
+WATER_MW = 0.01801528  # kg/mol
+TDS_LINEAR_COEFFICIENT = 1.0  # -> for the densities calculation
+H_PLUS_CONC = 1.00603e-07  # mol/l -> for the densities calculation
 VERY_SMALL_NUMBER = 1e-30
 
 
@@ -361,6 +364,11 @@ class GeochemicalParameters:
         self.Ks: float = Ks
         self.Ms: float = Ms
 
+    @property
+    def mw(self) -> float:
+        """Return the molar weight in mol/kg"""
+        return 1 / self.Ms * 1000.0
+
 
 class Geometry:
     """
@@ -588,7 +596,7 @@ class ZeroConcGradient(BoundaryCondition):
     span: Union[NDArrayInt, Tuple[slice, slice], slice]
 
 
-class FlowModel:
+class FlowModel(ABC):
     """Represent a flow model."""
 
     __slots__ = [
@@ -598,6 +606,7 @@ class FlowModel:
         "storage_coefficient",
         "permeability",
         "lhead",
+        "lpressure",
         "lu_darcy_x",
         "lu_darcy_y",
         "lu_darcy_div",
@@ -625,10 +634,6 @@ class FlowModel:
             * fl_params.permeability
         )
 
-        # These are list of ndarrays
-        self.lhead: List[NDArrayFloat] = [
-            np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
-        ]
         self.lu_darcy_x: List[NDArrayFloat] = []
         self.lu_darcy_y: List[NDArrayFloat] = []
         self.lu_darcy_div: List[NDArrayFloat] = []
@@ -646,14 +651,38 @@ class FlowModel:
             VerticalAxis.DZ: geometry.dz,
         }[fl_params.vertical_axis]
 
+        # These are list of ndarrays
+        self.lhead: List[NDArrayFloat] = [
+            np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
+        ]
+
+        # TODO: provide the initial density
+        self.lpressure: List[NDArrayFloat] = [
+            (
+                np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
+                - self._get_mesh_center_vertical_pos().T
+            )
+            * GRAVITY
+            * WATER_DENSITY
+        ]
+
     @property
     def head(self) -> NDArrayFloat:
         """
-        Return head as array with dimension (nx, ny, nz, nt).
+        Return head [m] as array with dimension (nx, ny, nz, nt).
 
         This is read-only.
         """
         return np.transpose(np.array(self.lhead), axes=(1, 2, 0))
+
+    @property
+    def pressure(self) -> NDArrayFloat:
+        """
+        Return pressure [Pa] as array with dimension (nx, ny, nz, nt).
+
+        This is read-only.
+        """
+        return np.transpose(np.array(self.lpressure), axes=(1, 2, 0))
 
     @property
     def u_darcy_x(self) -> NDArrayFloat:
@@ -691,15 +720,7 @@ class FlowModel:
         """
         return np.transpose(np.array(self.lunitflow), axes=(1, 2, 0))
 
-    @property
-    def pressure(self) -> NDArrayFloat:
-        """
-        Return the pressure in pascals (Pa).
-
-        This is read-only (for now).
-        """
-        return self.head
-
+    @abstractmethod
     def set_initial_head(
         self,
         values: Union[float, int, NDArrayInt, NDArrayFloat],
@@ -709,8 +730,9 @@ class FlowModel:
         ),
     ) -> None:
         """Set the initial head field."""
-        self.lhead[0][span] = values
+        ...
 
+    @abstractmethod
     def set_initial_pressure(
         self,
         values: Union[float, int, NDArrayInt, NDArrayFloat],
@@ -720,7 +742,7 @@ class FlowModel:
         ),
     ) -> None:
         """Set the initial pressure field in Pa."""
-        self.lhead[0][span] = values
+        ...
 
     def add_boundary_conditions(self, condition: BoundaryCondition) -> None:
         """Add a boundary condition to the flow model."""
@@ -778,6 +800,7 @@ class FlowModel:
     def reinit(self) -> None:
         """Set all arrays to zero execpt for the initial conditions(first time)."""
         self.lhead = self.lhead[:1]
+        self.lpressure = self.lpressure[:1]
         self.lu_darcy_x = []
         self.lu_darcy_y = []
         self.lu_darcy_div = []
@@ -823,17 +846,19 @@ class FlowModel:
 
     def get_pressure_pa(self) -> NDArrayFloat:
         """Return the pressure in Pa."""
-        return (
-            (self.head - self._get_mesh_center_vertical_pos().T[:, :, np.newaxis])
-            * GRAVITY
-            * WATER_DENSITY
-        )
+        return self.pressure
 
     def get_pressure_bar(self) -> NDArrayFloat:
         """Return the pressure in bar."""
         return self.get_pressure_pa() / 1e5
 
+    @property
+    def is_gravity(self) -> bool:
+        """Return False because the gravity effect is ignored with saturated flow."""
+        ...
 
+
+# TODO: make the link with the initial density for the pressure
 class SaturatedFlowModel(FlowModel):
     __slots__ = [
         "_head",
@@ -844,6 +869,41 @@ class SaturatedFlowModel(FlowModel):
     ) -> None:
         """Initialize the instance."""
         super().__init__(geometry, time_params, fl_params)
+
+    def set_initial_head(
+        self,
+        values: Union[float, int, NDArrayInt, NDArrayFloat],
+        span: Union[NDArrayInt, Tuple[slice, slice], NDArrayBool] = (
+            slice(None),
+            slice(None),
+        ),
+    ) -> None:
+        """Set the initial head field."""
+        self.lhead[0][span] = values
+
+    def set_initial_pressure(
+        self,
+        values: Union[float, int, NDArrayInt, NDArrayFloat],
+        span: Union[NDArrayInt, Tuple[slice, slice], NDArrayBool] = (
+            slice(None),
+            slice(None),
+        ),
+    ) -> None:
+        """Set the initial pressure field in Pa."""
+        self.lhead[0][span] = values
+
+    def get_pressure_pa(self) -> NDArrayFloat:
+        """Return the pressure in Pa."""
+        return (
+            (self.head - self._get_mesh_center_vertical_pos().T[:, :, np.newaxis])
+            * GRAVITY
+            * WATER_DENSITY
+        )
+
+    @property
+    def is_gravity(self) -> bool:
+        """Return False because the gravity effect is ignored with saturated flow."""
+        return False
 
 
 class DensityFlowModel(FlowModel):
@@ -856,6 +916,36 @@ class DensityFlowModel(FlowModel):
         super().__init__(geometry, time_params, fl_params)
 
     # Need acceccors for density etc.
+    def get_pressure_pa(self) -> NDArrayFloat:
+        """Return the pressure in Pa."""
+        return self._pressure
+
+    def set_initial_head(
+        self,
+        values: Union[float, int, NDArrayInt, NDArrayFloat],
+        span: Union[NDArrayInt, Tuple[slice, slice], NDArrayBool] = (
+            slice(None),
+            slice(None),
+        ),
+    ) -> None:
+        """Set the initial head field."""
+        self.lhead[0][span] = values
+
+    def set_initial_pressure(
+        self,
+        values: Union[float, int, NDArrayInt, NDArrayFloat],
+        span: Union[NDArrayInt, Tuple[slice, slice], NDArrayBool] = (
+            slice(None),
+            slice(None),
+        ),
+    ) -> None:
+        """Set the initial pressure field in Pa."""
+        self.lhead[0][span] = values
+
+    @property
+    def is_gravity(self) -> bool:
+        """Return True because the gravity effect is considered with density flow."""
+        return False
 
 
 class TransportModel:
@@ -1103,7 +1193,16 @@ class ForwardModel:
         self.geometry: Geometry = geometry
         self.time_params: TimeParameters = time_params
         self.gch_params: GeochemicalParameters = gch_params
-        self.fl_model: FlowModel = FlowModel(geometry, time_params, fl_params)
+        # Two possible flowmodels
+        if fl_params.is_gravity:
+            self.fl_model: FlowModel = DensityFlowModel(
+                geometry, time_params, fl_params
+            )
+        else:
+            self.fl_model: FlowModel = SaturatedFlowModel(
+                geometry, time_params, fl_params
+            )
+
         self.tr_model: TransportModel = TransportModel(
             geometry, time_params, tr_params, gch_params
         )

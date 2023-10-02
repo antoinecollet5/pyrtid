@@ -8,13 +8,17 @@ from scipy.sparse import lil_array
 from scipy.sparse.linalg import gmres
 
 from pyrtid.forward.models import (  # ConstantHead,; ZeroConcGradient,
+    GRAVITY,
     FlowModel,
     Geometry,
     TimeParameters,
     TransportModel,
     get_owner_neigh_indices,
 )
-from pyrtid.inverse.adjoint.amodels import AdjointFlowModel, AdjointTransportModel
+from pyrtid.inverse.adjoint.amodels import (
+    AdjointTransportModel,
+    SaturatedAdjointFlowModel,
+)
 from pyrtid.utils import get_super_lu_preconditioner, harmonic_mean
 from pyrtid.utils.types import NDArrayFloat
 
@@ -213,7 +217,7 @@ def update_adjoint_u_darcy(
     tr_model: TransportModel,
     a_tr_model: AdjointTransportModel,
     fl_model: FlowModel,
-    a_fl_model: AdjointFlowModel,
+    a_fl_model: SaturatedAdjointFlowModel,
     time_index: int,
 ) -> None:
     crank_adv = tr_model.crank_nicolson_advection
@@ -337,7 +341,7 @@ def solve_adj_flow_transient_semi_implicit(
     geometry: Geometry,
     fl_model: FlowModel,
     tr_model: TransportModel,
-    a_fl_model: AdjointFlowModel,
+    a_fl_model: SaturatedAdjointFlowModel,
     time_params: TimeParameters,
     time_index: int,
 ) -> int:
@@ -376,12 +380,6 @@ def solve_adj_flow_transient_semi_implicit(
 
     _q_prev.setdiag(_q_prev.diagonal() + diag)
 
-    # _q_next.setdiag(_q_next.diagonal() + 1 / time_params.ldt[time_index])
-    # try:
-    #     _q_prev.setdiag(_q_prev.diagonal() + 1 / time_params.ldt[time_index + 1])
-    # except IndexError:
-    #     pass
-
     # convert to csc format for efficiency
     _q_next = _q_next.tocsc()
     _q_prev = _q_prev.tocsc()
@@ -406,11 +404,15 @@ def solve_adj_flow_transient_semi_implicit(
 
     # TODO: check that all works fine with the density (shift in time)
     # Use the adjoint pressure instead of the adjoint head
-    # tmp += (
-    #     a_fl_model.a_head_sources.getcol(time_params.nts).todense().ravel("F")
-    #     / fl_model.storage_coefficient
-    #     / geometry.mesh_volume
-    # ) * tr_model.density[:, :, time_params.nts] * GRAVITY
+    tmp += (
+        (
+            a_fl_model.a_pressure_sources.getcol(time_index + 1).todense().ravel("F")
+            / fl_model.storage_coefficient.ravel("F")
+            / geometry.mesh_volume
+        )
+        * tr_model.ldensity[time_index + 1].ravel("F")
+        * GRAVITY
+    )
 
     # Add the source terms from mob observations (adjoint transport)
     # tmp += _get_adjoint_transport_src_terms(
@@ -428,7 +430,7 @@ def solve_adj_flow_transient_semi_implicit(
 def _get_adjoint_transport_src_terms(
     geometry: Geometry,
     fl_model: FlowModel,
-    a_fl_model: AdjointFlowModel,
+    a_fl_model: SaturatedAdjointFlowModel,
     time_index: int,
     is_transient: bool,
 ) -> NDArrayFloat:

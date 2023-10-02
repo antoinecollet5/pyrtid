@@ -5,6 +5,8 @@ import logging
 
 import numpy as np
 
+from pyrtid.utils import NDArrayFloat
+
 from .flow_solver import (
     compute_u_darcy,
     compute_u_darcy_div,
@@ -14,13 +16,20 @@ from .flow_solver import (
     solve_flow_transient_semi_implicit,
 )
 from .geochem_solver import solve_geochem
-from .models import FlowRegime, ForwardModel, TransportModel
+from .models import (
+    H_PLUS_CONC,
+    TDS_LINEAR_COEFFICIENT,
+    VERY_SMALL_NUMBER,
+    WATER_DENSITY,
+    WATER_MW,
+    FlowRegime,
+    ForwardModel,
+    TransportModel,
+)
 from .transport_solver import (
     make_transport_matrices_diffusion_only,
     solve_transport_semi_implicit,
 )
-
-VERY_SMALL_NUMBER = 1e-25
 
 
 def get_max_coupling_error(current_arr, prev_arr) -> float:
@@ -103,11 +112,17 @@ class ForwardSolver:
         self.model.fl_model.lunitflow.append(flw_sources)
         self.model.tr_model.lsources.append(conc_sources)
 
+        # Update the initial density
+        self.model.tr_model.ldensity[0] = get_density(
+            self.model.tr_model.lconc[0], self.model.gch_params.mw
+        )
+
         if self.model.fl_model.regime == FlowRegime.STATIONARY:
             self.initialize_flow_matrices(FlowRegime.STATIONARY)
             solve_flow_stationary(
                 self.model.geometry,
                 self.model.fl_model,
+                self.model.tr_model,
                 flw_sources,
                 0,
             )
@@ -163,6 +178,7 @@ class ForwardSolver:
         solve_flow_transient_semi_implicit(
             self.model.geometry,
             self.model.fl_model,
+            self.model.tr_model,
             flw_sources,
             flw_sources_old,
             self.model.time_params,
@@ -191,6 +207,10 @@ class ForwardSolver:
             # One more coupling iteration has been performed
             # Update the number of FPI
             self.model.time_params.nfpi += 1
+
+            self.model.tr_model.ldensity.append(
+                get_density(self.model.tr_model.lconc[-1], self.model.gch_params.mw)
+            )
 
             # Solve the transport
             solve_transport_semi_implicit(
@@ -227,3 +247,32 @@ class ForwardSolver:
 
         # Save the number of fixed point iterations required
         self.model.time_params.save_nfpi()
+
+
+def get_density(conc: NDArrayFloat, mw: float) -> NDArrayFloat:
+    """
+
+    Parameters
+    ----------
+    conc : NDArrayFloat
+        Array of concentration (2D) with shape (Nx, Ny).
+    mv: float
+        Molar weight of the species.
+
+    Returns
+    -------
+    NDArrayFloat
+        2D array of densities with shape (Nx, Ny).
+    """
+
+    # total dissolved fraction
+    # Add H[+] and OH[-] contributions which concentrations are not
+    # At pH=7, there are always equal numbers of H + and OH -, so we take
+    # the molar weight of water (sum of the two previous).
+    # tds += H_PLUS_CONC * WATER_MW;
+    tds = np.ones(conc.shape) * H_PLUS_CONC * WATER_MW
+    tds += conc * mw
+
+    # 2) compute the density (this is implemented only for water solvent)
+    # in kg/l
+    return WATER_DENSITY * (TDS_LINEAR_COEFFICIENT * tds + 1.0)

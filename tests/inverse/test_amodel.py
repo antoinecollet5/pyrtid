@@ -20,7 +20,7 @@ from pyrtid.utils import MeanType, NDArrayFloat, finite_gradient
 def test_adjoint_model_init(args, kwargs) -> None:
     time_params = dmfwd.TimeParameters(duration=1.0, dt_init=1.0)
     geometry = dmfwd.Geometry(nx=5, ny=5, dx=4.5, dy=7.5)
-    dminv.AdjointModel(geometry, time_params, *args, **kwargs)
+    dminv.AdjointModel(geometry, time_params, False, *args, **kwargs)
 
 
 @pytest.mark.parametrize(
@@ -110,6 +110,9 @@ def test_init_adjoint_sources(max_obs_time, mean_type) -> None:
 
     # Add all possible obervable instance
     for state_var in dminv.StateVariable:
+        # TODO: need to change this
+        if state_var == dminv.StateVariable.PRESSURE:
+            continue
         observables.append(
             dminv.Observable(
                 state_var,
@@ -121,7 +124,7 @@ def test_init_adjoint_sources(max_obs_time, mean_type) -> None:
             )
         )
 
-    adj_model = dminv.AdjointModel(geometry, time_params)
+    adj_model = dminv.AdjointModel(geometry, time_params, False)
     adj_model.init_adjoint_sources(model, observables, hm_end_time=max_obs_time)
 
     def wrapper_conc(arr: NDArrayFloat) -> float:

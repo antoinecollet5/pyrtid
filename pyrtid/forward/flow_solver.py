@@ -14,7 +14,14 @@ from pyrtid.utils import (
 )
 from pyrtid.utils.types import NDArrayFloat
 
-from .models import FlowModel, Geometry, TimeParameters, get_owner_neigh_indices
+from .models import (
+    GRAVITY,
+    FlowModel,
+    Geometry,
+    TimeParameters,
+    TransportModel,
+    get_owner_neigh_indices,
+)
 
 
 def make_stationary_flow_matrices(geometry: Geometry, fl_model: FlowModel) -> lil_array:
@@ -227,6 +234,7 @@ def make_transient_flow_matrices(
 def solve_flow_stationary(
     geometry: Geometry,
     fl_model: FlowModel,
+    tr_model: TransportModel,
     flw_sources: NDArrayFloat,
     time_index: int,
 ) -> int:
@@ -254,6 +262,15 @@ def solve_flow_stationary(
 
     # Here we don't append but we overwrite the already existing head for t0.
     fl_model.lhead[0] = res.reshape(geometry.ny, geometry.nx).T
+
+    fl_model.lpressure[0] = (
+        (
+            res.reshape(geometry.ny, geometry.nx).T
+            - fl_model._get_mesh_center_vertical_pos().T
+        )
+        * GRAVITY
+        * tr_model.ldensity[0]
+    )
 
     compute_u_darcy(fl_model, geometry, time_index)
 
@@ -412,6 +429,7 @@ def compute_u_darcy_div(
 def solve_flow_transient_semi_implicit(
     geometry: Geometry,
     fl_model: FlowModel,
+    tr_model: TransportModel,
     flw_sources: NDArrayFloat,
     flw_sources_old: NDArrayFloat,
     time_params: TimeParameters,
@@ -457,5 +475,15 @@ def solve_flow_transient_semi_implicit(
     compute_u_darcy(fl_model, geometry, time_index)
 
     compute_u_darcy_div(fl_model, geometry, time_index)
+
+    # update the pressure field
+    fl_model.lpressure.append(
+        (
+            res.reshape(geometry.ny, geometry.nx).T
+            - fl_model._get_mesh_center_vertical_pos().T
+        )
+        * GRAVITY
+        * tr_model.ldensity[-1]
+    )
 
     return exit_code

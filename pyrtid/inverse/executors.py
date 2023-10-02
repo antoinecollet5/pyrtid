@@ -309,6 +309,7 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         self.adj_model = AdjointModel(
             self.fwd_model.geometry,
             self.fwd_model.time_params,
+            self.fwd_model.fl_model.is_gravity,
             afpi_eps,
             is_numerical_acceleration,
         )

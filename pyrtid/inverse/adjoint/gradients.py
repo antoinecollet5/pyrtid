@@ -735,9 +735,20 @@ def compute_param_adjoint_ls_loss_function_gradient(
     if param.name == ParameterName.INITIAL_GRADE:
         return get_initial_grade_adjoint_gradient(fwd_model, adj_model)
     if param.name == ParameterName.INITIAL_HEAD:
+        if fwd_model.fl_model.is_gravity:
+            raise RuntimeError(
+                "Cannot optimize the initial head when using a density flow"
+                " (gravity is on). Optimize the initial pressure instead!"
+            )
         return get_initial_head_adjoint_gradient(fwd_model, adj_model)
     if param.name == ParameterName.STORAGE_COEFFICIENT:
         return get_storage_coefficient_adjoint_gradient(fwd_model, adj_model)
+    if param.name == ParameterName.INITIAL_PRESSURE:
+        if not fwd_model.fl_model.is_gravity:
+            raise RuntimeError(
+                "Cannot optimize the initial pressure if not using a density flow"
+                " (gravity is off). Optimize the initial head instead!"
+            )
     raise (NotImplementedError("Please contact the developer to handle this issue."))
 
 

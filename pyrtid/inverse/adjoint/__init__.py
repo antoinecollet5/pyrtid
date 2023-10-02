@@ -17,6 +17,8 @@ Classes holding the adjoint variables.
 
     AdjointModel
     AdjointFlowModel
+    SaturatedAdjointFlowModel
+    DesnityAdjointFlowModel
     AdjointTransportModel
 
 Gradients of cost function with respect to control parameters
@@ -114,6 +116,8 @@ from pyrtid.inverse.adjoint.amodels import (
     AdjointFlowModel,
     AdjointModel,
     AdjointTransportModel,
+    DensityAdjointFlowModel,
+    SaturatedAdjointFlowModel,
 )
 from pyrtid.inverse.adjoint.atransport_solver import (
     get_adjoint_max_coupling_error,
@@ -132,6 +136,8 @@ from pyrtid.inverse.adjoint.gradients import (
 __all__ = [
     "AdjointSolver",
     "AdjointFlowModel",
+    "SaturatedAdjointFlowModel",
+    "DensityAdjointFlowModel",
     "AdjointModel",
     "AdjointTransportModel",
     "make_transient_adj_flow_matrices",

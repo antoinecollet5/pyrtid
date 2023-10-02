@@ -1,6 +1,7 @@
 """Provide the models for the adjoint states."""
 from __future__ import annotations
 
+from abc import ABC
 from typing import Optional
 
 import numpy as np
@@ -21,11 +22,10 @@ from pyrtid.utils import object_or_object_sequence_to_list
 from pyrtid.utils.types import NDArrayFloat
 
 
-class AdjointFlowModel:
+class AdjointFlowModel(ABC):
     """Represent an adjoint flow model."""
 
     __slots__ = [
-        "a_head",
         "a_u_darcy_x",
         "a_u_darcy_y",
         "a_head_sources",
@@ -39,9 +39,6 @@ class AdjointFlowModel:
 
     def __init__(self, geometry: Geometry, time_params: TimeParameters) -> None:
         """Initialize the instance."""
-        self.a_head = np.zeros(
-            (geometry.nx, geometry.ny, time_params.nt), dtype=np.float64
-        )
         self.a_u_darcy_x = np.zeros(
             (geometry.nx - 1, geometry.ny, time_params.nt), dtype=np.float64
         )
@@ -82,6 +79,58 @@ class AdjointFlowModel:
         self.a_permeability_sources = csc_array(self.a_permeability_sources.shape)
         self.a_storage_coefficient_sources = csc_array(
             self.a_storage_coefficient_sources.shape
+        )
+
+
+class SaturatedAdjointFlowModel(AdjointFlowModel):
+    """
+    Saturated Adjoint Flow Model.
+    """
+
+    __slots__ = [
+        "a_head",
+    ]
+
+    def __init__(self, geometry: Geometry, time_params: TimeParameters) -> None:
+        """
+        Initialize the instance.
+
+        Parameters
+        ----------
+        geometry : Geometry
+            Geometry of the problem, grid definition.
+        time_params : TimeParameters
+            Time parameters from the forward problem.
+        """
+        super().__init__(geometry, time_params)
+        self.a_head = np.zeros(
+            (geometry.nx, geometry.ny, time_params.nt), dtype=np.float64
+        )
+
+
+class DensityAdjointFlowModel(AdjointFlowModel):
+    """
+    Density Adjoint Flow Model.
+    """
+
+    __slots__ = [
+        "a_pressure",
+    ]
+
+    def __init__(self, geometry: Geometry, time_params: TimeParameters) -> None:
+        """
+        Initialize the instance.
+
+        Parameters
+        ----------
+        geometry : Geometry
+            Geometry of the problem, grid definition.
+        time_params : TimeParameters
+            Time parameters from the forward problem.
+        """
+        super().__init__(geometry, time_params)
+        self.a_pressure = np.zeros(
+            (geometry.nx, geometry.ny, time_params.nt), dtype=np.float64
         )
 
 
@@ -198,6 +247,7 @@ class AdjointModel:
         self,
         geometry: Geometry,
         time_params: TimeParameters,
+        is_gravity: bool,
         afpi_eps: float = 1e-5,
         is_adj_numerical_acceleration: bool = False,
     ) -> None:
@@ -210,12 +260,21 @@ class AdjointModel:
             Simulation geometry definition.
         time_params: TimeParameters
             Simulation time parameters (duration, timesteps, etc.)
+        is_gravity: bool
+            Whether to consider gravity for a density driven flow.
         afpi_eps: float
         is_numerical_acceleration: bool
         """
         self.geometry: Geometry = geometry
         self.time_params: TimeParameters = time_params
-        self.a_fl_model: AdjointFlowModel = AdjointFlowModel(geometry, time_params)
+        if is_gravity:
+            self.a_fl_model: AdjointFlowModel = DensityAdjointFlowModel(
+                geometry, time_params
+            )
+        else:
+            self.a_fl_model: AdjointFlowModel = SaturatedAdjointFlowModel(
+                geometry, time_params
+            )
         self.a_tr_model: AdjointTransportModel = AdjointTransportModel(
             geometry, time_params, afpi_eps, is_adj_numerical_acceleration
         )
