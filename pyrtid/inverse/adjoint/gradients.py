@@ -320,6 +320,7 @@ def _get_perm_gradient_from_diffusivity_eq(
     dahead_bx = np.zeros(shape)
 
     dahead_bx[1:, :, :] += ma_ahead[:-1, :, :] - ma_ahead[1:, :, :]
+
     # Handle the stationary case
     if fwd_model.fl_model.regime == FlowRegime.STATIONARY:
         dhead_bx[1:, :, :1] = (head[:-1, :, :1] - head[1:, :, :1]) * dxi_harmonic_mean(

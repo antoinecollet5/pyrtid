@@ -2,7 +2,6 @@
 
 import numpy as np
 import pytest
-
 from pyrtid.inverse.regularization import (
     TikhonovRegularizatorAnisotropic,
     TikhonovRegularizatorIsotropic,

@@ -1,8 +1,7 @@
 import numpy as np
-from scipy.optimize import minimize
-
 from pyrtid.inverse import minimize_lbfgsb
 from pyrtid.utils import NDArrayFloat
+from scipy.optimize import minimize
 
 
 # Definition of some test functions

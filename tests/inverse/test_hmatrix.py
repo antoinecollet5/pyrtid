@@ -1,7 +1,6 @@
 import numpy as np
-from scipy.spatial import distance_matrix
-
 from pyrtid.inverse.regularization.hmatrix import Hmatrix
+from scipy.spatial import distance_matrix
 
 
 def test_hmatrix() -> None:

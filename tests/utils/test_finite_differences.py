@@ -2,7 +2,6 @@
 import numdifftools as nd
 import numpy as np
 import pytest
-
 from pyrtid.utils import finite_gradient, is_gradient_correct
 from pyrtid.utils.finite_differences import rosen, rosen_gradient, rosen_hessian
 

@@ -1,7 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
-
 from pyrtid.plot import plot_observed_vs_simulated
 
 

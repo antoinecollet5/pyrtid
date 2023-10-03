@@ -1,6 +1,5 @@
 import numpy as np
 import pytest
-
 from pyrtid.utils.spatial_filters import GaussianFilter
 
 

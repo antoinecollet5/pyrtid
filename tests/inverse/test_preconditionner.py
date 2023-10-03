@@ -1,5 +1,4 @@
 import numpy as np
-
 from pyrtid.inverse.preconditioner import expit, logit
 
 

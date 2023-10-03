@@ -5,8 +5,6 @@ from typing import Optional, Tuple
 import numdifftools as nd
 import numpy as np
 import pytest
-from scipy.stats import gmean, hmean
-
 from pyrtid.utils import (
     MeanType,
     amean_gradient,
@@ -20,6 +18,7 @@ from pyrtid.utils import (
     hmean_gradient,
 )
 from pyrtid.utils.types import NDArrayFloat
+from scipy.stats import gmean, hmean
 
 
 @pytest.mark.parametrize(

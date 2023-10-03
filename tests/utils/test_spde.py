@@ -4,9 +4,6 @@ from contextlib import nullcontext as does_not_raise
 
 import numpy as np
 import pytest
-from scipy.sparse import csc_array
-from sksparse.cholmod import Factor, cholesky
-
 from pyrtid.utils.spde import (
     condition_precision_matrix,
     get_laplacian_matrix,
@@ -16,6 +13,8 @@ from pyrtid.utils.spde import (
     simu_c,
     simu_nc,
 )
+from scipy.sparse import csc_array
+from sksparse.cholmod import Factor, cholesky
 
 
 def _get_precision_matrix(alpha) -> csc_array:

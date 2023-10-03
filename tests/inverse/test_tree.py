@@ -1,7 +1,6 @@
 from time import time
 
 import numpy as np
-
 from pyrtid.inverse.regularization.tree import Cluster
 
 

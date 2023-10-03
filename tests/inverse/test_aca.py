@@ -2,9 +2,8 @@ import logging
 from time import time
 
 import numpy as np
-from scipy.linalg import svdvals as svd
-
 from pyrtid.inverse.regularization.aca import ACA, ACApp, GenerateDenseMatrix
+from scipy.linalg import svdvals as svd
 
 
 def test_aca() -> None:

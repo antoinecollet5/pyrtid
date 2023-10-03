@@ -4,7 +4,6 @@ from typing import Any, Dict
 
 import numpy as np
 import pytest
-
 from pyrtid.inverse import AdjustableParameter
 from pyrtid.inverse.regularization import (
     TikhonovRegularizatorAnisotropic,

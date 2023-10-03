@@ -7,7 +7,6 @@ Created on Tue Dec  6 12:27:40 2022
 """
 
 import pytest
-
 from pyrtid.utils import gen_wells_coordinates
 
 

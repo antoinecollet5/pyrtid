@@ -6,8 +6,11 @@ import numpy as np
 from scipy.optimize import minpack2
 from scipy.optimize._constraints import old_bound_to_new
 from scipy.optimize._lbfgsb_py import LbfgsInvHessProduct  # noqa : F401
-from scipy.optimize._optimize import _check_unknown_options  # noqa : F401
-from scipy.optimize._optimize import OptimizeResult, _prepare_scalar_function
+from scipy.optimize._optimize import (
+    OptimizeResult,
+    _check_unknown_options,  # noqa : F401
+    _prepare_scalar_function,
+)
 
 from pyrtid.utils import NDArrayFloat
 
@@ -21,7 +24,7 @@ def compute_cauchy_point(
     M: NDArrayFloat,
     theta: float,
 ):
-    """
+    r"""
     Computes the generalized Cauchy point (GCP).
 
     It is defined as the first local minimizer of the quadratic
@@ -159,7 +162,7 @@ def direct_primal_subspace_minimization(
     M: NDArrayFloat,
     theta: float,
 ) -> NDArrayFloat:
-    """
+    r"""
     Computes an approximate solution of the subspace problem.
 
     This is following section 5.1 in Byrd et al. (1995).
@@ -275,7 +278,7 @@ def max_allowed_steplength(
     ub: NDArrayFloat,
     max_steplength: float,
 ) -> float:
-    """
+    r"""
     Computes the biggest 0<=k<=max_steplength such that:
         l<= x+kd <= u
 
@@ -331,7 +334,7 @@ def line_search(
     xtol_minpack: float = 1e-5,
     max_iter: int = 30,
 ) -> Optional[float]:
-    """
+    r"""
     Find a step that satisfies both decrease condition and a curvature condition.
 
         f(x0+stp*d) <= f(x0) + alpha*stp*\langle f'(x0),d\rangle,
@@ -445,7 +448,7 @@ def get_lbfgs_matrices(
     is_force_update: bool,
     eps: float = 2.2e-16,
 ) -> Tuple[NDArrayFloat, NDArrayFloat, float]:
-    """
+    r"""
     Update lists S and Y, and form the L-BFGS Hessian approximation thet, W and M.
 
     Instead of storing sk and yk, we store the gradients and the parameters.
@@ -568,7 +571,7 @@ def display_results(
     gtol: float,
     is_final_display: bool,
 ) -> None:
-    """
+    r"""
     Disaply the optimization results on the fly.
 
     Parameters
@@ -649,7 +652,7 @@ def minimize_lbfgsb(
     xtol_minpack: float = 1e-5,
     eps_SY: float = 2.2e-16,
 ) -> OptimizeResult:
-    """
+    r"""
     Solves bound constrained optimization problems by using the compact formula
     of the limited memory BFGS updates.
 

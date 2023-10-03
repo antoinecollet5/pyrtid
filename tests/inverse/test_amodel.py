@@ -1,8 +1,7 @@
 import numpy as np
-import pytest
-
 import pyrtid.forward as dmfwd
 import pyrtid.inverse as dminv
+import pytest
 from pyrtid.utils import MeanType, NDArrayFloat, finite_gradient
 
 

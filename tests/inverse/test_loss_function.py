@@ -1,8 +1,7 @@
 import numpy as np
-import pytest
-
 import pyrtid.forward as dmfwd
 import pyrtid.inverse as dminv
+import pytest
 from pyrtid.inverse.loss_function import (
     get_model_loss_function,
     get_model_ls_loss_function,

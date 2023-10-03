@@ -1,6 +1,5 @@
 import gstools as gs
 import numpy as np
-
 from pyrtid.utils import (
     gen_random_ensemble,
     get_log_normalized_mean_from_normal_params,

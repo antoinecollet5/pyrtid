@@ -6,7 +6,6 @@ from typing import Tuple
 
 import numpy as np
 import pytest
-
 from pyrtid.forward.models import (
     ConstantConcentration,
     ConstantHead,

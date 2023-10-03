@@ -1,6 +1,5 @@
 import numpy as np
 import pytest
-
 from pyrtid.utils import (
     get_a_not_in_b_1d,
     get_array_borders_selection,

@@ -1,9 +1,8 @@
 from contextlib import nullcontext as does_not_raise
 
 import numpy as np
-import pytest
-
 import pyrtid.forward as dmfwd
+import pytest
 from pyrtid.inverse.loss_function import get_model_ls_loss_function
 from pyrtid.inverse.obs import (
     Observable,

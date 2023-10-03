@@ -3,9 +3,8 @@
 import numpy as np
 import scipy.linalg
 from numpy.testing import assert_allclose
-from scipy.optimize import minimize
-
 from pyrtid.utils import extract_hess_inv_diag
+from scipy.optimize import minimize
 
 
 def test_1():

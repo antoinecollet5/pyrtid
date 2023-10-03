@@ -1,5 +1,4 @@
 import pytest
-
 from pyrtid.utils.types import object_or_object_sequence_to_list
 
 

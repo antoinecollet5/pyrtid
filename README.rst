@@ -2,7 +2,7 @@
 pyRTID
 ======
 
-|License| |Stars| |Python| |PyPI| |Downloads| |Build Status| |Documentation Status| |Coverage| |Codacy| |Precommit: enabled| |Code style: black| |Ruff| |Mypy| |Isort| |DOI|
+|License| |Stars| |Python| |PyPI| |Downloads| |Build Status| |Documentation Status| |Coverage| |Codacy| |Precommit: enabled| |Code style: black| |Ruff| |Mypy| |DOI|
 
 The Python Reactive Transport Inversion Demonstrator
 
@@ -64,10 +64,6 @@ python Reactive Transport Inversion is a reactive transport inversion demonstrat
 .. |Mypy| image:: https://www.mypy-lang.org/static/mypy_badge.svg
     :target: https://mypy-lang.org/
     :alt: Checked with mypy
-
-.. |Isort| image:: https://img.shields.io/badge/%20imports-isort-%231674b1?style=flat
-    :target: https://timothycrosley.github.io/isort
-    :alt: isort
 
 .. |DOI| image:: https://zenodo.org/badge/DOI/10.5281/zenodo.8192031.svg
    :target: https://doi.org/10.5281/zenodo.8192031

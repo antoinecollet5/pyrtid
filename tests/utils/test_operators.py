@@ -2,15 +2,14 @@
 
 import numpy as np
 import pytest
-from scipy.sparse import csc_array
-from scipy.sparse.linalg import gmres
-
 from pyrtid.utils import (
     get_super_lu_preconditioner,
     gradient_bfd,
     gradient_ffd,
     hessian_cfd,
 )
+from scipy.sparse import csc_array
+from scipy.sparse.linalg import gmres
 
 
 def test_get_super_lu_preconditioner() -> None:

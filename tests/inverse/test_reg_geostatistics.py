@@ -2,7 +2,6 @@ from typing import Tuple
 
 import numpy as np
 import pytest
-
 from pyrtid.inverse.regularization import (  # DriftMatrix,; LinearDriftMatrix,
     ConstantPriorTerm,
     DenseCovarianceMatrix,

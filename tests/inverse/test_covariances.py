@@ -1,7 +1,6 @@
 """Some tests to refactor."""
 
 import numpy as np
-
 from pyrtid.inverse.regularization import EnsembleCovarianceMatrix
 
 

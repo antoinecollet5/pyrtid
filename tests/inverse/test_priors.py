@@ -3,7 +3,6 @@ from typing import Optional
 
 import numpy as np
 import pytest
-
 from pyrtid.inverse.regularization import (
     ConstantPriorTerm,
     DriftMatrix,

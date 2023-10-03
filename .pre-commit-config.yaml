@@ -30,12 +30,6 @@ repos:
     require_serial: true
     types_or: [python, pyi, jupyter]
     additional_dependencies: [".[jupyter]"]
-  - id: isort
-    name: isort
-    entry: isort
-    language: system
-    types: [python]
-    args: ["--profile", "black", "--filter-files"]
   - id: codespell
     name: codespell
     entry: codespell
@@ -54,3 +48,4 @@ repos:
     entry: ruff
     language: python
     types: [python]
+    args: [--fix, --exit-non-zero-on-fix]

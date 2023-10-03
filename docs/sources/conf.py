@@ -24,10 +24,9 @@ import errno
 import os
 import sys
 
+import pyrtid
 import sphinx.util.osutil
 from sphinx.ext.napoleon.docstring import GoogleDocstring
-
-import pyrtid
 
 sphinx.util.osutil.ENOENT = errno.ENOENT
 
