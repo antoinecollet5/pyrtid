@@ -5,6 +5,7 @@ import logging
 
 from pyrtid.forward.models import FlowRegime, ForwardModel
 from pyrtid.inverse.adjoint.aflow_solver import (
+    make_initial_adj_flow_matrices,
     make_transient_adj_flow_matrices,
     solve_adj_flow_transient_semi_implicit,
     update_adjoint_u_darcy,
@@ -44,6 +45,14 @@ class AdjointSolver:
     def initialize_ajd_flow_matrices(self, flow_regime: FlowRegime) -> None:
         """Initialize matrices to solve the adjoint flow problem."""
         (
+            self.adj_model.a_fl_model.q_next_init,
+            self.adj_model.a_fl_model.q_prev_init,
+        ) = make_initial_adj_flow_matrices(
+            self.fwd_model.geometry,
+            self.fwd_model.fl_model,
+            self.fwd_model.time_params,
+        )
+        (
             self.adj_model.a_fl_model.q_next,
             self.adj_model.a_fl_model.q_prev,
         ) = make_transient_adj_flow_matrices(
@@ -81,7 +90,7 @@ class AdjointSolver:
         self.initialize_ajd_transport_matrices()
 
         for time_index in range(
-            self.fwd_model.time_params.nts - 1, -1, -1  # type: ignore
+            self.fwd_model.time_params.nts, -1, -1  # type: ignore
         ):  # Reverse order in time, and reverse order in operator sequence
             self._solve_system_for_timestep(time_index, is_verbose)
 

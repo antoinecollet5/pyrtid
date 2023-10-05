@@ -35,6 +35,8 @@ class AdjointFlowModel(ABC):
         "a_storage_coefficient_sources",
         "q_prev",
         "q_next",
+        "q_prev_init",
+        "q_next_init",
     ]
 
     def __init__(self, geometry: Geometry, time_params: TimeParameters) -> None:
@@ -68,6 +70,8 @@ class AdjointFlowModel(ABC):
 
         self.q_prev: lil_matrix = lil_array(geometry.nx * geometry.ny)
         self.q_next: lil_matrix = lil_array(geometry.nx * geometry.ny)
+        self.q_prev_init: lil_matrix = lil_array(geometry.nx * geometry.ny)
+        self.q_next_init: lil_matrix = lil_array(geometry.nx * geometry.ny)
 
     def clear_adjoint_sources(self) -> None:
         """

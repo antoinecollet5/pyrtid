@@ -7,8 +7,9 @@ from typing import List, Optional, Sequence, Union
 import numpy as np
 
 from pyrtid.forward import ForwardModel, ForwardSolver
-from pyrtid.forward.models import FlowRegime
+from pyrtid.forward.models import GRAVITY, FlowRegime
 from pyrtid.inverse.adjoint import AdjointModel, AdjointSolver
+from pyrtid.inverse.adjoint.aflow_solver import get_aflow_matrices
 from pyrtid.inverse.loss_function import get_model_loss_function
 from pyrtid.inverse.obs import Observable
 from pyrtid.inverse.params import (
@@ -297,7 +298,7 @@ def _get_perm_gradient_from_diffusivity_eq(
     # Consider the x axis
     # Forward scheme
     dhead_fx = np.zeros(shape)
-    dhead_fx[:-1, :, :-1] += (
+    dhead_fx[:-1, :, 1:] += (
         crank_flow * (head[1:, :, 1:] - head[:-1, :, 1:])
         + (1.0 - crank_flow) * (head[1:, :, :-1] - head[:-1, :, :-1])
     ) * dxi_harmonic_mean(permeability[:-1, :], permeability[1:, :])[:, :, np.newaxis]
@@ -313,7 +314,7 @@ def _get_perm_gradient_from_diffusivity_eq(
 
     # Bheadkward scheme
     dhead_bx = np.zeros(shape)
-    dhead_bx[1:, :, :-1] += (
+    dhead_bx[1:, :, 1:] += (
         crank_flow * (head[:-1, :, 1:] - head[1:, :, 1:])
         + (1.0 - crank_flow) * (head[:-1, :, :-1] - head[1:, :, :-1])
     ) * dxi_harmonic_mean(permeability[1:, :], permeability[:-1, :])[:, :, np.newaxis]
@@ -496,7 +497,7 @@ def get_storage_coefficient_adjoint_gradient(
 
     grad = (
         (head[:, :, 1:] - head[:, :, :-1])
-        * ma_ahead[:, :, :-1]
+        * ma_ahead[:, :, 1:]
         / np.array(fwd_model.time_params.ldt)[np.newaxis, np.newaxis, :]
         * fwd_model.geometry.mesh_volume
     )
@@ -565,66 +566,47 @@ def get_initial_head_adjoint_gradient(
     Parameter span is not taken into account which means that the gradient is
     computed on the full domain (grid).
     """
-    crank_perm = fwd_model.fl_model.crank_nicolson
-    a_head = adj_model.a_fl_model.a_head[:, :, 0]
-    grad = np.zeros(a_head.shape, dtype=np.float64)
+    a_head = adj_model.a_fl_model.a_head[:, :, :2].reshape((-1, 2), order="F")
+    grad = np.zeros(a_head[:, 0].size, dtype=np.float64)
 
-    ma_ahead = np.zeros(a_head.shape)
-    free_head_indices = fwd_model.fl_model.free_head_indices
-    cst_head_indices = fwd_model.fl_model.cst_head_indices
-    ma_ahead[free_head_indices[0], free_head_indices[1]] = a_head[
-        free_head_indices[0], free_head_indices[1]
-    ]
-
-    # X axis contribution
-    if a_head.shape[0] > 1:  # type: ignore
-        pmean = harmonic_mean(
-            fwd_model.fl_model.permeability[:-1, :],
-            fwd_model.fl_model.permeability[1:, :],
-        )
-        tmp = fwd_model.geometry.dy / fwd_model.geometry.dx
-        # Forward scheme
-        grad[:-1, :] += (
-            +(1.0 - crank_perm) * (ma_ahead[1:, :] - ma_ahead[:-1, :]) * pmean
-        ) * tmp
-        # Backward scheme
-        grad[1:, :] += (
-            +(1.0 - crank_perm) * (ma_ahead[:-1, :] - ma_ahead[1:, :]) * pmean
-        ) * tmp
-
-    # Y axis contribution
-    if a_head.shape[1] > 1:  # type: ignore
-        pmean = harmonic_mean(
-            fwd_model.fl_model.permeability[:, :-1],
-            fwd_model.fl_model.permeability[:, 1:],
-        )
-        tmp = fwd_model.geometry.dx / fwd_model.geometry.dy
-        # Forward scheme
-        grad[:, :-1] += (
-            +(1.0 - crank_perm) * (ma_ahead[:, 1:] - ma_ahead[:, :-1]) * pmean
-        ) * tmp
-        # Backward scheme
-        grad[:, 1:] += (
-            +(1.0 - crank_perm) * (ma_ahead[:, :-1] - ma_ahead[:, 1:]) * pmean
-        ) * tmp
-
-    # grad = _q_prev.dot(a_head.ravel(order="F")) # .reshape(a_head.shape, order="F")
-
-    grad += (
-        ma_ahead
-        * fwd_model.fl_model.storage_coefficient
-        * fwd_model.geometry.mesh_volume
-        / fwd_model.time_params.ldt[0]
+    q_next, q_prev = get_aflow_matrices(
+        fwd_model.geometry,
+        fwd_model.fl_model,
+        adj_model.a_fl_model,
+        fwd_model.time_params,
+        0,
     )
 
-    grad[cst_head_indices[0], cst_head_indices[1]] += a_head[
-        cst_head_indices[0], cst_head_indices[1]
-    ]
+    grad = (
+        q_prev.dot(a_head[:, 1])
+        * fwd_model.geometry.mesh_volume
+        * fwd_model.fl_model.storage_coefficient.ravel("F")
+    )
+
+    if fwd_model.fl_model.regime == FlowRegime.STATIONARY:
+        grad -= (
+            q_next.dot(a_head[:, 0])
+            * fwd_model.geometry.mesh_volume
+            * fwd_model.fl_model.storage_coefficient.ravel("F")
+        )
+
+        cst_head_nn = fwd_model.fl_model.cst_head_nn
+        grad[cst_head_nn] += a_head[cst_head_nn, 0]
+
+    # Add adjoint sources for t=0
+    # 1) head sources
+    grad += (
+        adj_model.a_fl_model.a_head_sources.getcol(0).todense().ravel("F")
+    )  # type: ignore
+    # 2) pressure sources
+    grad += (
+        adj_model.a_fl_model.a_pressure_sources.getcol(0).todense().ravel("F")
+        * GRAVITY
+        * fwd_model.tr_model.ldensity[0].ravel("F")
+    )  # type: ignore
 
     # Add adjoint sources for time t=0
-    return grad + adj_model.a_fl_model.a_head_sources.getcol(0).todense().reshape(
-        grad.shape, order="F"
-    )  # type: ignore
+    return grad.reshape(fwd_model.fl_model.lhead[0].shape, order="F")
 
 
 def get_initial_conc_adjoint_gradient(

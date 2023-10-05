@@ -57,11 +57,18 @@ def make_transport_matrices_diffusion_only(
         q_next[idc_owner, idc_owner] += (
             tr_model.crank_nicolson_diffusion * dmean[idc_owner] * tmp
         )  # type: ignore
-        q_next[idc_owner, idc_neigh] -= (
-            tr_model.crank_nicolson_diffusion * dmean[idc_owner] * tmp
-        )  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
             (1.0 - tr_model.crank_nicolson_diffusion) * dmean[idc_owner] * tmp
+        )  # type: ignore
+
+        idc_owner, idc_neigh = get_owner_neigh_indices(
+            geometry,
+            (slice(0, geometry.nx - 1), slice(None)),
+            (slice(1, geometry.nx), slice(None)),
+            owner_indices_to_keep=tr_model.free_conc_nn,
+        )
+        q_next[idc_owner, idc_neigh] -= (
+            tr_model.crank_nicolson_diffusion * dmean[idc_owner] * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_neigh] += (
             (1.0 - tr_model.crank_nicolson_diffusion) * dmean[idc_owner] * tmp
@@ -78,14 +85,22 @@ def make_transport_matrices_diffusion_only(
         q_next[idc_owner, idc_owner] += (
             tr_model.crank_nicolson_diffusion * dmean[idc_neigh] * tmp
         )  # type: ignore
-        q_next[idc_owner, idc_neigh] -= (
-            tr_model.crank_nicolson_diffusion * dmean[idc_neigh] * tmp
-        )  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
             (1.0 - tr_model.crank_nicolson_diffusion) * dmean[idc_neigh] * tmp
         )  # type: ignore
+
+        idc_owner, idc_neigh = get_owner_neigh_indices(
+            geometry,
+            (slice(1, geometry.nx), slice(None)),
+            (slice(0, geometry.nx - 1), slice(None)),
+            owner_indices_to_keep=tr_model.free_conc_nn,
+        )
+
         q_prev[idc_owner, idc_neigh] += (
             (1.0 - tr_model.crank_nicolson_diffusion) * dmean[idc_neigh] * tmp
+        )  # type: ignore
+        q_next[idc_owner, idc_neigh] -= (
+            tr_model.crank_nicolson_diffusion * dmean[idc_neigh] * tmp
         )  # type: ignore
 
     # Y contribution
@@ -109,12 +124,20 @@ def make_transport_matrices_diffusion_only(
         q_next[idc_owner, idc_owner] += (
             tr_model.crank_nicolson_diffusion * dmean[idc_owner] * tmp
         )  # type: ignore
-        q_next[idc_owner, idc_neigh] -= (
-            tr_model.crank_nicolson_diffusion * dmean[idc_owner] * tmp
-        )  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
             (1.0 - tr_model.crank_nicolson_diffusion) * dmean[idc_owner] * tmp
         )  # type: ignore
+
+        idc_owner, idc_neigh = get_owner_neigh_indices(
+            geometry,
+            (slice(None), slice(0, geometry.ny - 1)),
+            (slice(None), slice(1, geometry.ny)),
+            neigh_indices_to_keep=tr_model.free_conc_nn,
+        )
+        q_next[idc_owner, idc_neigh] -= (
+            tr_model.crank_nicolson_diffusion * dmean[idc_owner] * tmp
+        )  # type: ignore
+
         q_prev[idc_owner, idc_neigh] += (
             (1.0 - tr_model.crank_nicolson_diffusion) * dmean[idc_owner] * tmp
         )  # type: ignore
@@ -130,11 +153,18 @@ def make_transport_matrices_diffusion_only(
         q_next[idc_owner, idc_owner] += (
             tr_model.crank_nicolson_diffusion * dmean[idc_neigh] * tmp
         )  # type: ignore
-        q_next[idc_owner, idc_neigh] -= (
-            tr_model.crank_nicolson_diffusion * dmean[idc_neigh] * tmp
-        )  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
             (1.0 - tr_model.crank_nicolson_diffusion) * dmean[idc_neigh] * tmp
+        )  # type: ignore
+
+        idc_owner, idc_neigh = get_owner_neigh_indices(
+            geometry,
+            (slice(None), slice(1, geometry.ny)),
+            (slice(None), slice(0, geometry.ny - 1)),
+            neigh_indices_to_keep=tr_model.free_conc_nn,
+        )
+        q_next[idc_owner, idc_neigh] -= (
+            tr_model.crank_nicolson_diffusion * dmean[idc_neigh] * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_neigh] += (
             (1.0 - tr_model.crank_nicolson_diffusion) * dmean[idc_neigh] * tmp
@@ -299,12 +329,13 @@ def _add_advection_to_transport_matrices(
 
     _apply_transport_sink_term(fl_model, tr_model, q_next, q_prev, time_index)
 
-    _apply_divergence_effect(fl_model, tr_model, q_next, q_prev, time_index)
+    # _apply_divergence_effect(fl_model, tr_model, q_next, q_prev, time_index)
 
     # Handle boundary conditions
-    _add_transport_boundary_conditions(
-        geometry, fl_model, tr_model, q_next, q_prev, time_index
-    )
+    # TODO: refactor this
+    # _add_transport_boundary_conditions(
+    #     geometry, fl_model, tr_model, q_next, q_prev, time_index
+    # )
 
 
 def _apply_transport_sink_term(
@@ -505,8 +536,6 @@ def solve_transport_semi_implicit(
         q_next.tocsc(), tmp, M=preconditioner, atol=tr_model.tolerance
     )
 
-    # In that regard, we save the intermediate concentrations for the non
-    # iterative sequential apprach (adjoint state)
     tr_model.lconc[time_index] = res.reshape(geometry.ny, geometry.nx).T
 
     return exit_code

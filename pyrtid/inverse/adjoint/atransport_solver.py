@@ -478,11 +478,11 @@ def solve_adj_transport_transient_semi_implicit(
         # -> better conditionning and easier LU preconditioning.
         q_next.setdiag(
             q_next.diagonal()
-            + tr_model.porosity.flatten("F") / time_params.ldt[time_index - 1]
+            + tr_model.porosity.flatten("F") / time_params.ldt[time_index - 2]
         )
         q_prev.setdiag(
             q_prev.diagonal()
-            + tr_model.porosity.flatten("F") / time_params.ldt[time_index]
+            + tr_model.porosity.flatten("F") / time_params.ldt[time_index - 1]
         )
 
         a_tr_model.q_next = q_next
@@ -492,7 +492,10 @@ def solve_adj_transport_transient_semi_implicit(
         q_prev = a_tr_model.q_prev
 
     # Get the previous vector
-    prev_vector = a_tr_model.a_conc[:, :, time_index + 1].ravel("F")
+    try:
+        prev_vector = a_tr_model.a_conc[:, :, time_index + 1].ravel("F")
+    except IndexError:
+        prev_vector = np.zeros(q_prev.shape[0])
 
     # Multiply prev matrix by prev vector
     tmp: NDArrayFloat = q_prev.dot(prev_vector)

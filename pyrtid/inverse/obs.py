@@ -449,6 +449,8 @@ def get_weights(
         Weights to apply on simulated values before and after observations.
     """
     den = simu_times[after_idx] - simu_times[before_idx]
+    if np.sum(den) == 0:
+        den = 1.0
     weights_before = 1 - (obs_times - simu_times[before_idx]) / den
     weights_before[before_idx < 0] = 0.0  # Handle obs at time zero.
     weights_after = 1 - (simu_times[after_idx] - obs_times) / den
