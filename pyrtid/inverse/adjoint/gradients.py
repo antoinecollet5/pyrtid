@@ -295,58 +295,70 @@ def _get_perm_gradient_from_diffusivity_eq(
         free_head_indices[0], free_head_indices[1], :
     ]
 
+    grad = np.zeros(shape)
+
     # Consider the x axis
-    # Forward scheme
-    dhead_fx = np.zeros(shape)
-    dhead_fx[:-1, :, 1:] += (
-        crank_flow * (head[1:, :, 1:] - head[:-1, :, 1:])
-        + (1.0 - crank_flow) * (head[1:, :, :-1] - head[:-1, :, :-1])
-    ) * dxi_harmonic_mean(permeability[:-1, :], permeability[1:, :])[:, :, np.newaxis]
+    if shape[0] > 1:
+        # Forward scheme
+        dhead_fx = np.zeros(shape)
+        dhead_fx[:-1, :, 1:] += (
+            crank_flow * (head[1:, :, 1:] - head[:-1, :, 1:])
+            + (1.0 - crank_flow) * (head[1:, :, :-1] - head[:-1, :, :-1])
+        ) * dxi_harmonic_mean(permeability[:-1, :], permeability[1:, :])[
+            :, :, np.newaxis
+        ]
 
-    dahead_fx = np.zeros(shape)
-    dahead_fx[:-1, :, :] += ma_ahead[1:, :, :] - ma_ahead[:-1, :, :]
+        dahead_fx = np.zeros(shape)
+        dahead_fx[:-1, :, :] += ma_ahead[1:, :, :] - ma_ahead[:-1, :, :]
 
-    # Handle the stationary case
-    if fwd_model.fl_model.regime == FlowRegime.STATIONARY:
-        dhead_fx[:-1, :, :1] = (head[1:, :, :1] - head[:-1, :, :1]) * dxi_harmonic_mean(
-            permeability[:-1, :], permeability[1:, :]
-        )[:, :, np.newaxis]
+        # Handle the stationary case
+        if fwd_model.fl_model.regime == FlowRegime.STATIONARY:
+            dhead_fx[:-1, :, :1] = (
+                head[1:, :, :1] - head[:-1, :, :1]
+            ) * dxi_harmonic_mean(permeability[:-1, :], permeability[1:, :])[
+                :, :, np.newaxis
+            ]
 
-    # Bheadkward scheme
-    dhead_bx = np.zeros(shape)
-    dhead_bx[1:, :, 1:] += (
-        crank_flow * (head[:-1, :, 1:] - head[1:, :, 1:])
-        + (1.0 - crank_flow) * (head[:-1, :, :-1] - head[1:, :, :-1])
-    ) * dxi_harmonic_mean(permeability[1:, :], permeability[:-1, :])[:, :, np.newaxis]
-    dahead_bx = np.zeros(shape)
+        # Bheadkward scheme
+        dhead_bx = np.zeros(shape)
+        dhead_bx[1:, :, 1:] += (
+            crank_flow * (head[:-1, :, 1:] - head[1:, :, 1:])
+            + (1.0 - crank_flow) * (head[:-1, :, :-1] - head[1:, :, :-1])
+        ) * dxi_harmonic_mean(permeability[1:, :], permeability[:-1, :])[
+            :, :, np.newaxis
+        ]
+        dahead_bx = np.zeros(shape)
 
-    dahead_bx[1:, :, :] += ma_ahead[:-1, :, :] - ma_ahead[1:, :, :]
+        dahead_bx[1:, :, :] += ma_ahead[:-1, :, :] - ma_ahead[1:, :, :]
 
-    # Handle the stationary case
-    if fwd_model.fl_model.regime == FlowRegime.STATIONARY:
-        dhead_bx[1:, :, :1] = (head[:-1, :, :1] - head[1:, :, :1]) * dxi_harmonic_mean(
-            permeability[1:, :], permeability[:-1, :]
-        )[:, :, np.newaxis]
+        # Handle the stationary case
+        if fwd_model.fl_model.regime == FlowRegime.STATIONARY:
+            dhead_bx[1:, :, :1] = (
+                head[:-1, :, :1] - head[1:, :, :1]
+            ) * dxi_harmonic_mean(permeability[1:, :], permeability[:-1, :])[
+                :, :, np.newaxis
+            ]
 
-    # Gather the two schemes
-    grad = (
-        (dhead_fx * dahead_fx + dhead_bx * dahead_bx)
-        * fwd_model.geometry.dy
-        / fwd_model.geometry.dx
-    )
+        # Gather the two schemes
+        grad += (
+            (dhead_fx * dahead_fx + dhead_bx * dahead_bx)
+            * fwd_model.geometry.dy
+            / fwd_model.geometry.dx
+        )
 
     # Consider the y axis for 2D cases
-    if shape[1] != 1:
+    if shape[1] > 1:
         # Forward scheme
         dhead_fy = np.zeros(shape)
-        dhead_fy[:, :-1, :-1] += (
+        dhead_fy[:, :-1, 1:] += (
             crank_flow * (head[:, 1:, 1:] - head[:, :-1, 1:])
             + (1.0 - crank_flow) * (head[:, 1:, :-1] - head[:, :-1, :-1])
         ) * dxi_harmonic_mean(permeability[:, :-1], permeability[:, 1:])[
             :, :, np.newaxis
         ]
         dahead_fy = np.zeros(shape)
-        dahead_fy[:, :-1, :] += ahead[:, 1:, :] - ahead[:, :-1, :]
+        dahead_fy[:, :-1, :] += ma_ahead[:, 1:, :] - ma_ahead[:, :-1, :]
+
         # Handle the stationary case
         if fwd_model.fl_model.regime == FlowRegime.STATIONARY:
             dhead_fy[:, :-1, :1] += (
@@ -357,15 +369,16 @@ def _get_perm_gradient_from_diffusivity_eq(
 
         # Bheadkward scheme
         dhead_by = np.zeros(shape)
-        dhead_by[:, 1:, :-1] += (
+        dhead_by[:, 1:, 1:] += (
             crank_flow * (head[:, :-1, 1:] - head[:, 1:, 1:])
             + (1.0 - crank_flow) * (head[:, :-1, :-1] - head[:, 1:, :-1])
         ) * dxi_harmonic_mean(permeability[:, 1:], permeability[:, :-1])[
             :, :, np.newaxis
         ]
         dahead_by = np.zeros(shape)
-        dahead_by[:, 1:, :] += ahead[:, :-1, :] - ahead[:, 1:, :]
+        dahead_by[:, 1:, :] += ma_ahead[:, :-1, :] - ma_ahead[:, 1:, :]
         # Handle the stationary case
+
         if fwd_model.fl_model.regime == FlowRegime.STATIONARY:
             dhead_by[:, 1:, :1] += (
                 (head[:, :-1, :1] - head[:, 1:, :1])

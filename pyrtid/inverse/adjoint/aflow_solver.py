@@ -41,10 +41,6 @@ def make_initial_adj_flow_matrices(
     q_next = lil_array((dim, dim), dtype=np.float64)
     stocoeff = fl_model.storage_coefficient.ravel("F")
 
-    # # X contribution
-    # kmean = harmonic_mean(fl_model.permeability[:-1, :], fl_model.permeability[1:, :])
-    tmp = geometry.dy / geometry.dx / geometry.mesh_volume
-
     # 1) X contribution
     if geometry.nx >= 2:
         kmean: NDArrayFloat = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
@@ -52,6 +48,8 @@ def make_initial_adj_flow_matrices(
             fl_model.permeability[:-1, :], fl_model.permeability[1:, :]
         )
         kmean = kmean.flatten(order="F")
+
+        tmp = geometry.dy / geometry.dx / geometry.mesh_volume
 
         # 1.1) Forward scheme:
 
@@ -121,9 +119,10 @@ def make_initial_adj_flow_matrices(
             neigh_indices_to_keep=fl_model.free_head_nn,
         )
 
-        q_next[idc_owner, idc_neigh] -= (
-            kmean[idc_neigh] * tmp / stocoeff[idc_owner]  # type: ignore
-        )
+        if fl_model.regime == FlowRegime.STATIONARY:
+            q_next[idc_owner, idc_neigh] -= (
+                kmean[idc_neigh] * tmp / stocoeff[idc_owner]  # type: ignore
+            )
 
         q_prev[idc_owner, idc_neigh] += (
             (1.0 - fl_model.crank_nicolson)
@@ -134,6 +133,7 @@ def make_initial_adj_flow_matrices(
 
     # 2) Y contribution
     if geometry.ny >= 2:
+        print("yoooo")
         kmean: NDArrayFloat = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
         kmean[:, :-1] = harmonic_mean(
             fl_model.permeability[:, :-1], fl_model.permeability[:, 1:]
@@ -267,11 +267,10 @@ def make_transient_adj_flow_matrices(
     q_next = lil_array((dim, dim), dtype=np.float64)
     stocoeff = fl_model.storage_coefficient.ravel("F")
 
-    # # X contribution
-    _tmp = geometry.dy / geometry.dx / geometry.mesh_volume
-
     # 1) X contribution
     if geometry.nx >= 2:
+        _tmp = geometry.dy / geometry.dx / geometry.mesh_volume
+
         kmean: NDArrayFloat = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
         kmean[:-1, :] = harmonic_mean(
             fl_model.permeability[:-1, :], fl_model.permeability[1:, :]
@@ -361,7 +360,7 @@ def make_transient_adj_flow_matrices(
         kmean = kmean.flatten(order="F")
 
         # 2.1) Forward scheme:
-        tmp = geometry.dx / geometry.dy / geometry.mesh_volume
+        _tmp = geometry.dx / geometry.dy / geometry.mesh_volume
 
         # 2.1.1) For free head nodes only
         idc_owner, idc_neigh = get_owner_neigh_indices(

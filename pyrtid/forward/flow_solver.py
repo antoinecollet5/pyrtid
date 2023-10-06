@@ -7,10 +7,7 @@ import numpy as np
 from scipy.sparse import lil_array
 from scipy.sparse.linalg import gmres
 
-from pyrtid.utils import (
-    get_super_lu_preconditioner,
-    harmonic_mean,
-)
+from pyrtid.utils import get_super_lu_preconditioner, harmonic_mean
 from pyrtid.utils.types import NDArrayFloat
 
 from .models import (
@@ -44,6 +41,8 @@ def make_stationary_flow_matrices(geometry: Geometry, fl_model: FlowModel) -> li
         )
         kmean = kmean.flatten(order="F")
 
+        tmp = geometry.dy / geometry.dx / geometry.mesh_volume
+
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
             geometry,
@@ -51,8 +50,6 @@ def make_stationary_flow_matrices(geometry: Geometry, fl_model: FlowModel) -> li
             (slice(1, geometry.nx), slice(None)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
-
-        tmp = geometry.dy / geometry.dx / geometry.mesh_volume
 
         q_next[idc_owner, idc_neigh] -= kmean[idc_owner] * tmp  # type: ignore
         q_next[idc_owner, idc_owner] += kmean[idc_owner] * tmp  # type: ignore
@@ -76,6 +73,8 @@ def make_stationary_flow_matrices(geometry: Geometry, fl_model: FlowModel) -> li
         )
         kmean = kmean.flatten(order="F")
 
+        tmp = geometry.dx / geometry.dy / geometry.mesh_volume
+
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
             geometry,
@@ -83,8 +82,6 @@ def make_stationary_flow_matrices(geometry: Geometry, fl_model: FlowModel) -> li
             (slice(None), slice(1, geometry.ny)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
-
-        tmp = geometry.dx / geometry.dy / geometry.mesh_volume
 
         q_next[idc_owner, idc_neigh] -= kmean[idc_owner] * tmp  # type: ignore
         q_next[idc_owner, idc_owner] += kmean[idc_owner] * tmp  # type: ignore
@@ -122,16 +119,17 @@ def make_transient_flow_matrices(
     q_prev = lil_array((dim, dim), dtype=np.float64)
     q_next = lil_array((dim, dim), dtype=np.float64)
 
-    # X contribution
-    kmean: NDArrayFloat = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
-    kmean[:-1, :] = harmonic_mean(
-        fl_model.permeability[:-1, :], fl_model.permeability[1:, :]
-    )
-    kmean = kmean.flatten(order="F")
     stocoeff = fl_model.storage_coefficient.ravel("F")
 
-    # Forward scheme:
+    # X contribution
     if geometry.nx >= 2:
+        kmean: NDArrayFloat = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
+        kmean[:-1, :] = harmonic_mean(
+            fl_model.permeability[:-1, :], fl_model.permeability[1:, :]
+        )
+        kmean = kmean.flatten(order="F")
+
+        # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
             geometry,
             (slice(0, geometry.nx - 1), slice(None)),
@@ -161,6 +159,8 @@ def make_transient_flow_matrices(
             (slice(0, geometry.nx - 1), slice(None)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
+
+        tmp = geometry.dy / geometry.dx / geometry.mesh_volume / stocoeff[idc_owner]
 
         q_next[idc_owner, idc_neigh] -= (
             fl_model.crank_nicolson * kmean[idc_neigh] * tmp
@@ -213,6 +213,8 @@ def make_transient_flow_matrices(
             (slice(None), slice(0, geometry.ny - 1)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
+
+        tmp = geometry.dx / geometry.dy / geometry.mesh_volume / stocoeff[idc_owner]
 
         q_next[idc_owner, idc_neigh] -= (
             fl_model.crank_nicolson * kmean[idc_neigh] * tmp
