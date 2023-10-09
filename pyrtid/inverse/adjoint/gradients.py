@@ -11,7 +11,7 @@ from pyrtid.forward.models import GRAVITY, FlowRegime
 from pyrtid.inverse.adjoint import AdjointModel, AdjointSolver
 from pyrtid.inverse.adjoint.aflow_solver import get_aflow_matrices
 from pyrtid.inverse.loss_function import get_model_loss_function
-from pyrtid.inverse.obs import Observable
+from pyrtid.inverse.obs import Observable, Observables
 from pyrtid.inverse.params import (
     AdjustableParameter,
     ParameterName,
@@ -285,7 +285,10 @@ def _get_perm_gradient_from_diffusivity_eq(
     shape = (fwd_model.geometry.nx, fwd_model.geometry.ny, fwd_model.time_params.nt)
     permeability = fwd_model.fl_model.permeability
 
-    crank_flow = fwd_model.fl_model.crank_nicolson
+    if adj_model.a_fl_model.crank_nicolson is None:
+        crank_flow: float = fwd_model.fl_model.crank_nicolson
+    else:
+        crank_flow = adj_model.a_fl_model.crank_nicolson
 
     head = fwd_model.fl_model.head
     ahead = adj_model.a_fl_model.a_head
@@ -294,7 +297,6 @@ def _get_perm_gradient_from_diffusivity_eq(
     ma_ahead[free_head_indices[0], free_head_indices[1], :] = ahead[
         free_head_indices[0], free_head_indices[1], :
     ]
-
     grad = np.zeros(shape)
 
     # Consider the x axis
@@ -760,9 +762,9 @@ def compute_adjoint_gradient(
     Note
     ----
     Adjoint gradient computation step 3: The gradient has to be mutiplied
-    by 1 / first preconditioner_1st_derivative(m), with m the adjusted parameter
+    by 1 / first preconditioner_1st_derivative(m]) with m the adjusted parameter
     because the preconditioner operates a variable
-    change in the objective function: The new objective function J is J2(m2) = J(m),
+    change in the objective function: The new objective function J is J2(m2) = J[m],
     with m the adjusted parameter vector. Then the gradient is dJ2/dm2
     = dm/dm2 * dJ/dm.
     - Example 1 : we defined m2 = k * m -> dJ2/dm2 = dm/dm2 dJ/dm = 1/k * dj/dm. If
@@ -837,7 +839,7 @@ def _local_fun(
 
 def compute_fd_gradient(
     model: ForwardModel,
-    observables: Union[Observable, Sequence[Observable]],
+    observables: Observables,
     parameters_to_adjust: Union[AdjustableParameter, Sequence[AdjustableParameter]],
     jreg_weight=1.0,
     eps: Optional[float] = None,
@@ -917,9 +919,10 @@ def is_adjoint_gradient_correct(
     fwd_model: ForwardModel,
     adj_model: AdjointModel,
     parameters_to_adjust: Union[AdjustableParameter, Sequence[AdjustableParameter]],
-    observables: Union[Observable, Sequence[Observable]],
+    observables: Observables,
     eps: Optional[float] = None,
     max_workers: int = 1,
+    hm_end_time: Optional[float] = None,
     is_verbose: bool = False,
 ) -> bool:
     """
@@ -933,7 +936,7 @@ def is_adjoint_gradient_correct(
         _description_
     parameters_to_adjust : Union[AdjustableParameter, Sequence[AdjustableParameter]]
         _description_
-    observables : Union[Observable, Sequence[Observable]]
+    observables : Observables
         _description_
     eps: float, optional
         The epsilon for the computation of the approximated gradient by finite
@@ -942,6 +945,8 @@ def is_adjoint_gradient_correct(
         Number of workers used  if the gradient is approximated by finite
         differences. If different from one, the calculation relies on
         multi-processing to decrease the computation time. The default is 1.
+    hm_end_time : Optional[float], optional
+        Threshold time from which the observation are ignored, by default None.
     is_verbose: bool
         Whether to display info. The default is False.
     Returns
@@ -955,11 +960,12 @@ def is_adjoint_gradient_correct(
 
     # Solve the forward problem
     solver: ForwardSolver = ForwardSolver(fwd_model)
-    solver.solve()
+    solver.solve(is_verbose=is_verbose)
 
     # Solve the adjoint problem
+
     asolver: AdjointSolver = AdjointSolver(fwd_model, adj_model)
-    asolver.solve(is_verbose=is_verbose)
+    asolver.solve(observables, hm_end_time=hm_end_time, is_verbose=is_verbose)
 
     adj_grad = compute_adjoint_gradient(
         fwd_model, asolver.adj_model, parameters_to_adjust

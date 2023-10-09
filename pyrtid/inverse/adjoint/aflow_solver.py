@@ -17,6 +17,7 @@ from pyrtid.forward.models import (  # ConstantHead,; ZeroConcGradient,
     get_owner_neigh_indices,
 )
 from pyrtid.inverse.adjoint.amodels import (
+    AdjointFlowModel,
     AdjointTransportModel,
     SaturatedAdjointFlowModel,
 )
@@ -25,7 +26,10 @@ from pyrtid.utils.types import NDArrayFloat
 
 
 def make_initial_adj_flow_matrices(
-    geometry: Geometry, fl_model: FlowModel, time_params: TimeParameters
+    geometry: Geometry,
+    fl_model: FlowModel,
+    a_fl_model: AdjointFlowModel,
+    time_params: TimeParameters,
 ) -> Tuple[lil_array, lil_array]:
     """
     Make matrices for the initial time step with a potential stationary flow.
@@ -40,6 +44,10 @@ def make_initial_adj_flow_matrices(
     q_prev = lil_array((dim, dim), dtype=np.float64)
     q_next = lil_array((dim, dim), dtype=np.float64)
     stocoeff = fl_model.storage_coefficient.ravel("F")
+    if a_fl_model.crank_nicolson is None:
+        fl_crank = fl_model.crank_nicolson
+    else:
+        fl_crank = a_fl_model.crank_nicolson
 
     # 1) X contribution
     if geometry.nx >= 2:
@@ -65,10 +73,7 @@ def make_initial_adj_flow_matrices(
                 kmean[idc_owner] * tmp / stocoeff[idc_owner]  # type: ignore
             )
         q_prev[idc_owner, idc_owner] -= (
-            (1.0 - fl_model.crank_nicolson)
-            * kmean[idc_owner]
-            * tmp
-            / stocoeff[idc_owner]
+            (1.0 - fl_crank) * kmean[idc_owner] * tmp / stocoeff[idc_owner]
         )  # type: ignore
 
         # 1.1.2) For all nodes but with free head neighbors only
@@ -84,10 +89,7 @@ def make_initial_adj_flow_matrices(
             )
 
         q_prev[idc_owner, idc_neigh] += (
-            (1.0 - fl_model.crank_nicolson)
-            * kmean[idc_owner]
-            * tmp
-            / stocoeff[idc_owner]
+            (1.0 - fl_crank) * kmean[idc_owner] * tmp / stocoeff[idc_owner]
         )  # type: ignore
 
         # 1.2) Backward scheme
@@ -105,10 +107,7 @@ def make_initial_adj_flow_matrices(
                 kmean[idc_neigh] * tmp / stocoeff[idc_owner]  # type: ignore
             )
         q_prev[idc_owner, idc_owner] -= (
-            (1.0 - fl_model.crank_nicolson)
-            * kmean[idc_neigh]
-            * tmp
-            / stocoeff[idc_owner]
+            (1.0 - fl_crank) * kmean[idc_neigh] * tmp / stocoeff[idc_owner]
         )  # type: ignore
 
         # 1.2.2) For all nodes but with free head neighbors only
@@ -125,15 +124,11 @@ def make_initial_adj_flow_matrices(
             )
 
         q_prev[idc_owner, idc_neigh] += (
-            (1.0 - fl_model.crank_nicolson)
-            * kmean[idc_neigh]
-            * tmp
-            / stocoeff[idc_owner]
+            (1.0 - fl_crank) * kmean[idc_neigh] * tmp / stocoeff[idc_owner]
         )  # type: ignore
 
     # 2) Y contribution
     if geometry.ny >= 2:
-        print("yoooo")
         kmean: NDArrayFloat = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
         kmean[:, :-1] = harmonic_mean(
             fl_model.permeability[:, :-1], fl_model.permeability[:, 1:]
@@ -156,10 +151,7 @@ def make_initial_adj_flow_matrices(
                 kmean[idc_owner] * tmp / stocoeff[idc_owner]  # type: ignore
             )
         q_prev[idc_owner, idc_owner] -= (
-            (1.0 - fl_model.crank_nicolson)
-            * kmean[idc_owner]
-            * tmp
-            / stocoeff[idc_owner]
+            (1.0 - fl_crank) * kmean[idc_owner] * tmp / stocoeff[idc_owner]
         )  # type: ignore
 
         # 2.1.2) For all nodes but with free head neighbors only
@@ -176,10 +168,7 @@ def make_initial_adj_flow_matrices(
             )
 
         q_prev[idc_owner, idc_neigh] += (
-            (1.0 - fl_model.crank_nicolson)
-            * kmean[idc_owner]
-            * tmp
-            / stocoeff[idc_owner]
+            (1.0 - fl_crank) * kmean[idc_owner] * tmp / stocoeff[idc_owner]
         )  # type: ignore
 
         # 2.2) Backward scheme
@@ -197,10 +186,7 @@ def make_initial_adj_flow_matrices(
                 kmean[idc_neigh] * tmp / stocoeff[idc_owner]  # type: ignore
             )
         q_prev[idc_owner, idc_owner] -= (
-            (1.0 - fl_model.crank_nicolson)
-            * kmean[idc_neigh]
-            * tmp
-            / stocoeff[idc_owner]
+            (1.0 - fl_crank) * kmean[idc_neigh] * tmp / stocoeff[idc_owner]
         )  # type: ignore
 
         # 2.2.2) For all nodes but with free head neighbors only
@@ -217,10 +203,7 @@ def make_initial_adj_flow_matrices(
             )
 
         q_prev[idc_owner, idc_neigh] += (
-            (1.0 - fl_model.crank_nicolson)
-            * kmean[idc_neigh]
-            * tmp
-            / stocoeff[idc_owner]
+            (1.0 - fl_crank) * kmean[idc_neigh] * tmp / stocoeff[idc_owner]
         )  # type: ignore
 
     # Take constant head into account
@@ -251,7 +234,10 @@ def make_initial_adj_flow_matrices(
 
 
 def make_transient_adj_flow_matrices(
-    geometry: Geometry, fl_model: FlowModel, time_params: TimeParameters
+    geometry: Geometry,
+    fl_model: FlowModel,
+    a_fl_model: AdjointFlowModel,
+    time_params: TimeParameters,
 ) -> Tuple[lil_array, lil_array]:
     """
     Make matrices for the transient flow.
@@ -266,6 +252,10 @@ def make_transient_adj_flow_matrices(
     q_prev = lil_array((dim, dim), dtype=np.float64)
     q_next = lil_array((dim, dim), dtype=np.float64)
     stocoeff = fl_model.storage_coefficient.ravel("F")
+    if a_fl_model.crank_nicolson is None:
+        fl_crank: float = fl_model.crank_nicolson
+    else:
+        fl_crank = a_fl_model.crank_nicolson
 
     # 1) X contribution
     if geometry.nx >= 2:
@@ -290,10 +280,10 @@ def make_transient_adj_flow_matrices(
         tmp = _tmp / stocoeff[idc_owner]
 
         q_next[idc_owner, idc_owner] += (
-            fl_model.crank_nicolson * kmean[idc_owner] * tmp
+            fl_crank * kmean[idc_owner] * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
-            (1.0 - fl_model.crank_nicolson) * kmean[idc_owner] * tmp
+            (1.0 - fl_crank) * kmean[idc_owner] * tmp
         )  # type: ignore
 
         # 1.1.2) For all nodes but with free head neighbors only
@@ -307,11 +297,11 @@ def make_transient_adj_flow_matrices(
         tmp = _tmp / stocoeff[idc_owner]
 
         q_next[idc_owner, idc_neigh] -= (
-            fl_model.crank_nicolson * kmean[idc_owner] * tmp
+            fl_crank * kmean[idc_owner] * tmp
         )  # type: ignore
 
         q_prev[idc_owner, idc_neigh] += (
-            (1.0 - fl_model.crank_nicolson) * kmean[idc_owner] * tmp
+            (1.0 - fl_crank) * kmean[idc_owner] * tmp
         )  # type: ignore
 
         # 1.2) Backward scheme
@@ -327,10 +317,10 @@ def make_transient_adj_flow_matrices(
         tmp = _tmp / stocoeff[idc_owner]
 
         q_next[idc_owner, idc_owner] += (
-            fl_model.crank_nicolson * kmean[idc_neigh] * tmp
+            fl_crank * kmean[idc_neigh] * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
-            (1.0 - fl_model.crank_nicolson) * kmean[idc_neigh] * tmp
+            (1.0 - fl_crank) * kmean[idc_neigh] * tmp
         )  # type: ignore
 
         # 1.2.2) For all nodes but with free head neighbors only
@@ -344,11 +334,11 @@ def make_transient_adj_flow_matrices(
         tmp = _tmp / stocoeff[idc_owner]
 
         q_next[idc_owner, idc_neigh] -= (
-            fl_model.crank_nicolson * kmean[idc_neigh] * tmp
+            fl_crank * kmean[idc_neigh] * tmp
         )  # type: ignore
 
         q_prev[idc_owner, idc_neigh] += (
-            (1.0 - fl_model.crank_nicolson) * kmean[idc_neigh] * tmp
+            (1.0 - fl_crank) * kmean[idc_neigh] * tmp
         )  # type: ignore
 
     # 2) Y contribution
@@ -373,10 +363,10 @@ def make_transient_adj_flow_matrices(
         tmp = _tmp / stocoeff[idc_owner]
 
         q_next[idc_owner, idc_owner] += (
-            fl_model.crank_nicolson * kmean[idc_owner] * tmp
+            fl_crank * kmean[idc_owner] * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
-            (1.0 - fl_model.crank_nicolson) * kmean[idc_owner] * tmp
+            (1.0 - fl_crank) * kmean[idc_owner] * tmp
         )  # type: ignore
 
         # 2.1.2) For all nodes but with free head neighbors only
@@ -390,11 +380,11 @@ def make_transient_adj_flow_matrices(
         tmp = _tmp / stocoeff[idc_owner]
 
         q_next[idc_owner, idc_neigh] -= (
-            fl_model.crank_nicolson * kmean[idc_owner] * tmp
+            fl_crank * kmean[idc_owner] * tmp
         )  # type: ignore
 
         q_prev[idc_owner, idc_neigh] += (
-            (1.0 - fl_model.crank_nicolson) * kmean[idc_owner] * tmp
+            (1.0 - fl_crank) * kmean[idc_owner] * tmp
         )  # type: ignore
 
         # 2.2) Backward scheme
@@ -410,10 +400,10 @@ def make_transient_adj_flow_matrices(
         tmp = _tmp / stocoeff[idc_owner]
 
         q_next[idc_owner, idc_owner] += (
-            fl_model.crank_nicolson * kmean[idc_neigh] * tmp
+            fl_crank * kmean[idc_neigh] * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
-            (1.0 - fl_model.crank_nicolson) * kmean[idc_neigh] * tmp
+            (1.0 - fl_crank) * kmean[idc_neigh] * tmp
         )  # type: ignore
 
         # 2.2.2) For all nodes but with free head neighbors only
@@ -427,11 +417,11 @@ def make_transient_adj_flow_matrices(
         tmp = _tmp / stocoeff[idc_owner]
 
         q_next[idc_owner, idc_neigh] -= (
-            fl_model.crank_nicolson * kmean[idc_neigh] * tmp
+            fl_crank * kmean[idc_neigh] * tmp
         )  # type: ignore
 
         q_prev[idc_owner, idc_neigh] += (
-            (1.0 - fl_model.crank_nicolson) * kmean[idc_neigh] * tmp
+            (1.0 - fl_crank) * kmean[idc_neigh] * tmp
         )  # type: ignore
 
     return q_next, q_prev

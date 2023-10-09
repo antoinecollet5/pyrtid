@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Optional
 
 from pyrtid.forward.models import FlowRegime, ForwardModel
 from pyrtid.inverse.adjoint.aflow_solver import (
@@ -17,6 +18,7 @@ from pyrtid.inverse.adjoint.atransport_solver import (
     make_transient_adj_transport_matrices,
     solve_adj_transport_transient_semi_implicit,
 )
+from pyrtid.inverse.obs import Observables
 
 
 class AdjointSolver:
@@ -50,6 +52,7 @@ class AdjointSolver:
         ) = make_initial_adj_flow_matrices(
             self.fwd_model.geometry,
             self.fwd_model.fl_model,
+            self.adj_model.a_fl_model,
             self.fwd_model.time_params,
         )
         (
@@ -58,6 +61,7 @@ class AdjointSolver:
         ) = make_transient_adj_flow_matrices(
             self.fwd_model.geometry,
             self.fwd_model.fl_model,
+            self.adj_model.a_fl_model,
             self.fwd_model.time_params,
         )
 
@@ -72,7 +76,12 @@ class AdjointSolver:
             self.fwd_model.time_params,
         )
 
-    def solve(self, is_verbose: bool = False) -> None:
+    def solve(
+        self,
+        observables: Observables,
+        hm_end_time: Optional[float] = None,
+        is_verbose: bool = False,
+    ) -> None:
         """
         Solve the adjoint system of equations.
 
@@ -81,6 +90,13 @@ class AdjointSolver:
         is_verbose : bool, optional
             Whether to display computation infrmation, by default False.
         """
+        # Compute the adjoint sources
+        self.adj_model.init_adjoint_sources(
+            self.fwd_model,
+            observables,
+            hm_end_time=hm_end_time,
+        )
+
         # Construct the flow matrices (not modified along the timesteps because
         # permeability and storage coefficients are constant).
         self.initialize_ajd_flow_matrices(FlowRegime.TRANSIENT)

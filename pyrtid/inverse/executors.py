@@ -313,12 +313,6 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
             afpi_eps,
             is_numerical_acceleration,
         )
-        # Compute the adjoint sources
-        self.adj_model.init_adjoint_sources(
-            self.fwd_model,
-            self.inv_model.observables,
-            hm_end_time=self.solver_config.hm_end_time,
-        )
 
     @abstractmethod
     def _init_solver(self, s_init: Optional[NDArrayFloat]) -> None:
@@ -643,6 +637,7 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
             self.inv_model.observables,
             eps=eps,
             max_workers=max_workers,
+            hm_end_time=self.solver_config.hm_end_time,
             is_verbose=is_verbose,
         )
 
@@ -1430,7 +1425,6 @@ class ScipyInversionExecutor(BaseInversionExecutor[ScipySolverConfig]):
             max_fun: int = min(
                 solver_config.max_fun_per_round, options.get("maxfun", 15000) - nfev
             )
-        print(max_fun)
         options["maxfun"] = max_fun
         return options
 
@@ -1457,14 +1451,20 @@ class ScipyInversionExecutor(BaseInversionExecutor[ScipySolverConfig]):
         adj_grad = np.array([], dtype=np.float64)
         fd_grad = np.array([], dtype=np.float64)
         if self.solver_config.is_use_adjoint or self.solver_config.is_check_gradient:
+            if self.adj_model is not None:
+                crank_flow = self.adj_model.a_fl_model.crank_nicolson
+            else:
+                crank_flow = None
             # Reinitialize the adjoint model
             self._init_adjoint_model(
                 self.solver_config.afpi_eps,
                 self.solver_config.is_a_numerical_acceleratiion,
             )
+            self.adj_model.a_fl_model.set_crank_nicolson(crank_flow)
+
             # Solve the adjoint system
             solver = AdjointSolver(self.fwd_model, self.adj_model)
-            solver.solve()
+            solver.solve(self.inv_model.observables, self.solver_config.hm_end_time)
             # Compute the gradient with the adjoint state method
             adj_grad = (
                 compute_adjoint_gradient(

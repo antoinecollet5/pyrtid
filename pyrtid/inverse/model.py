@@ -4,7 +4,7 @@ from typing import List, Sequence, Union
 import numpy as np
 
 from pyrtid.forward.models import ForwardModel
-from pyrtid.inverse.obs import Observable
+from pyrtid.inverse.obs import Observable, Observables
 from pyrtid.inverse.params import AdjustableParameter, ParameterName
 from pyrtid.utils.types import NDArrayFloat, object_or_object_sequence_to_list
 
@@ -63,7 +63,7 @@ class InverseModel:
     def __init__(
         self,
         parameters_to_adjust: Union[AdjustableParameter, Sequence[AdjustableParameter]],
-        observables: Union[Observable, Sequence[Observable]],
+        observables: Observables,
     ) -> None:
         """
         Initialize the instance.
@@ -72,7 +72,7 @@ class InverseModel:
         ----------
         parameters_to_adjust : Union[AdjustableParameter, Sequence[AdjustableParameter]]
             _description_
-        observables : Union[Observable, Sequence[Observable]]
+        observables : Observables
             _description_
 
         Raises

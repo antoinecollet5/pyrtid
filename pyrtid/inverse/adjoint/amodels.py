@@ -37,6 +37,7 @@ class AdjointFlowModel(ABC):
         "q_next",
         "q_prev_init",
         "q_next_init",
+        "crank_nicolson",
     ]
 
     def __init__(self, geometry: Geometry, time_params: TimeParameters) -> None:
@@ -73,6 +74,11 @@ class AdjointFlowModel(ABC):
         self.q_prev_init: lil_matrix = lil_array(geometry.nx * geometry.ny)
         self.q_next_init: lil_matrix = lil_array(geometry.nx * geometry.ny)
 
+        # crank nicolson: if None, then the crank-nicolson from the forward model
+        # is used. This attribute only purpose is to test the impact of an
+        # incorrect discretization.
+        self.crank_nicolson: Optional[float] = None
+
     def clear_adjoint_sources(self) -> None:
         """
         Reset all adjoint sources to zero.
@@ -84,6 +90,9 @@ class AdjointFlowModel(ABC):
         self.a_storage_coefficient_sources = csc_array(
             self.a_storage_coefficient_sources.shape
         )
+
+    def set_crank_nicolson(self, value: Optional[float]) -> None:
+        self.crank_nicolson = value
 
 
 class SaturatedAdjointFlowModel(AdjointFlowModel):

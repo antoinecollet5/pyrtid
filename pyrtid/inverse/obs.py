@@ -338,7 +338,7 @@ def get_array_from_state_variable(
 
 
 def get_observables_values_as_1d_vector(
-    observables: Union[Observable, Sequence[Observable]],
+    observables: Observables,
     max_obs_time: Optional[float] = None,
 ) -> NDArrayFloat:
     """
@@ -365,7 +365,7 @@ def get_observables_values_as_1d_vector(
 
 
 def get_observables_uncertainties_as_1d_vector(
-    observables: Union[Observable, Sequence[Observable]],
+    observables: Observables,
     max_obs_time: Optional[float] = None,
 ) -> NDArrayFloat:
     """Return the uncertainties of all observables as a 1D vector.
@@ -449,7 +449,7 @@ def get_weights(
         Weights to apply on simulated values before and after observations.
     """
     den = simu_times[after_idx] - simu_times[before_idx]
-    if np.sum(den) == 0:
+    if np.all(den == 0):
         den = 1.0
     weights_before = 1 - (obs_times - simu_times[before_idx]) / den
     weights_before[before_idx < 0] = 0.0  # Handle obs at time zero.
@@ -729,7 +729,7 @@ def get_adjoint_sources_for_obs(
 
 def get_predictions_matching_observations(
     model: ForwardModel,
-    observables: Union[Observable, Sequence[Observable]],
+    observables: Observables,
     max_obs_time: Optional[float] = None,
 ) -> NDArrayFloat:
     """
@@ -739,7 +739,7 @@ def get_predictions_matching_observations(
     ----------
     model : ForwardModel
         _description_
-    observables : Union[Observable, Sequence[Observable]]
+    observables : Observables
         _description_
     max_obs_time : Optional[float], optional
         Maximum time for which to consider an obervation value, by default None.

@@ -7,7 +7,7 @@ from pyrtid.inverse.params import update_parameters_from_model
 from pyrtid.utils.types import NDArrayFloat, object_or_object_sequence_to_list
 
 from .obs import (
-    Observable,
+    Observables,
     get_observables_uncertainties_as_1d_vector,
     get_observables_values_as_1d_vector,
     get_predictions_matching_observations,
@@ -49,7 +49,7 @@ def ls_loss_function(
 
 def get_model_ls_loss_function(
     model: ForwardModel,
-    observables: Union[Observable, Sequence[Observable]],
+    observables: Observables,
     max_obs_time: Optional[float] = None,
 ) -> float:
     """
@@ -59,7 +59,7 @@ def get_model_ls_loss_function(
     ----------
     model : ForwardModel
         The forward model from which to read the simulated values.
-    observables : Union[Observable, Sequence[Observable]]
+    observables : Observables
         Sequence of observable instances.
     max_obs_time : Optional[float], optional
         Maximum time for which to consider an obervation value, by default None
@@ -99,7 +99,7 @@ def get_model_reg_loss_function(
 
 def get_model_loss_function(
     model: ForwardModel,
-    observables: Union[Observable, Sequence[Observable]],
+    observables: Observables,
     parameters_to_adjust: Union[AdjustableParameter, Sequence[AdjustableParameter]],
     max_obs_time: Optional[float] = None,
     jreg_weight: float = 1.0,

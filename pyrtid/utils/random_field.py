@@ -142,7 +142,7 @@ def get_log_normalized_mean_from_normal_params(mean: float, std: float) -> float
     float
         The mean of the log-noramlized distribution.
     """
-    return np.exp(mean + 1 / 2 * std**2)
+    return float(np.exp(mean + 1 / 2 * std**2))
 
 
 def get_normalized_std_from_lognormal_params(mean: float, std: float) -> float:
