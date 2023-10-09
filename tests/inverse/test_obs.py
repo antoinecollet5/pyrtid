@@ -377,6 +377,18 @@ def test_get_observables_values_as_1d_vector(
             np.array([1.0, 2.0, 3.0, 6.0, 7.0]),
             np.array([1.75, 7.0]),
         ),
+        (
+            np.array([0.0]),
+            np.array([0.0]),
+            np.array([1.0]),
+            np.array([1.0]),
+        ),
+        (
+            np.array([0.0, 0.0, 0.0, 0.0]),
+            np.array([0.0, 0.0, 0.0, 0.0]),
+            np.array([1.0, 2.0, 3.0, 4.0]),
+            np.array([4.0, 4.0, 4.0, 4.0]),
+        ),
     ],
 )
 def test_get_interp_simu_values_matching_obs_times(
