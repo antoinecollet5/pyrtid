@@ -3,7 +3,7 @@ Provide the inverse reactive transport model and solver as well as executors.
 
 The following functionalities are directly provided on module-level.
 
-.. currentmodule:: pyrtid.inverse.executors
+.. currentmodule:: pyrtid.inverse
 
 Classes
 =======
@@ -16,18 +16,7 @@ Different executors are provided (scipy, stochopy, pyesmda, pypcga).
 .. autosummary::
    :toctree: _autosummary
 
-    ESMDAInversionExecutor
-    ESMDASolverConfig
-    ESMDARSInversionExecutor
-    ESMDARSSolverConfig
-    PCGAInversionExecutor
-    PCGASolverConfig
-    ScipyInversionExecutor
-    ScipySolverConfig
-    StochopyInversionExecutor
-    StochopySolverConfig
-    SIESInversionExecutor
-    SIESSolverConfig
+    executors
 
 .. currentmodule:: pyrtid.inverse
 
@@ -100,6 +89,8 @@ from pyrtid.inverse.executors import (
     ESMDARSInversionExecutor,
     ESMDARSSolverConfig,
     ESMDASolverConfig,
+    LBFGSBInversionExecutor,
+    LBFGSBSolverConfig,
     PCGAInversionExecutor,
     PCGASolverConfig,
     ScipyInversionExecutor,
@@ -148,19 +139,20 @@ from pyrtid.inverse.params import (
 )
 
 __all__ = [
-    "ScipySolverConfig",
-    "ESMDASolverConfig",
-    "ESMDARSSolverConfig",
-    "PCGASolverConfig",
-    "StochopySolverConfig",
-    "SIESSolverConfig",
-    "ScipyInversionExecutor",
-    "ScipyInversionExecutor",
-    "StochopyInversionExecutor",
-    "PCGAInversionExecutor",
     "ESMDAInversionExecutor",
     "ESMDARSInversionExecutor",
+    "ESMDARSSolverConfig",
+    "ESMDASolverConfig",
+    "LBFGSBInversionExecutor",
+    "LBFGSBSolverConfig",
+    "PCGAInversionExecutor",
+    "PCGASolverConfig",
+    "ScipyInversionExecutor",
+    "ScipySolverConfig",
     "SIESInversionExecutor",
+    "SIESSolverConfig",
+    "StochopyInversionExecutor",
+    "StochopySolverConfig",
     "AdjustableParameter",
     "ParameterName",
     "ls_loss_function",

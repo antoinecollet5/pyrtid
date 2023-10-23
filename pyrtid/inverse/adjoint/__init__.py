@@ -18,7 +18,7 @@ Classes holding the adjoint variables.
     AdjointModel
     AdjointFlowModel
     SaturatedAdjointFlowModel
-    DesnityAdjointFlowModel
+    DensityAdjointFlowModel
     AdjointTransportModel
 
 Gradients of cost function with respect to control parameters

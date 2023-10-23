@@ -1,27 +1,21 @@
+..
+   Template for the html class rendering
+
+   Modified from
+   https://github.com/sphinx-doc/sphinx/tree/master/sphinx/ext/autosummary/templates/autosummary/class.rst
+
 {{ fullname | escape | underline}}
 
 .. currentmodule:: {{ module }}
 
 .. autoclass:: {{ objname }}
-   :members:                                    <-- add at least this line
+   :members:
    :private-members:
-   :show-inheritance:                           <-- plus I want to show inheritance...
-   :inherited-members:                          <-- ...and inherited members too
+   :show-inheritance:
+   :inherited-members:
 
    {% block methods %}
    .. automethod:: __init__
-
-   {% if methods %}
-   .. rubric:: {{ _('Public methods summary') }}
-
-   .. autosummary::
-   {% for item in methods %}
-      ~{{ name }}.{{ item }}
-   {%- endfor %}
-   {% for item in _methods %}
-      ~{{ name }}.{{ item }}
-   {%- endfor %}
-   {% endif %}
    {% endblock %}
 
    .. rubric:: {{ _('Methods definition') }}
