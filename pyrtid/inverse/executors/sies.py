@@ -95,7 +95,8 @@ class SIESSolverConfig(BaseSolverConfig):
     n_iterations : int, optional
         Number of iterations (:math:`N_{a}`). The default is 4.
     inversion_method: SiesInversionType
-        Type of inversion for the hessian term. The default is \"exact\".
+        Type of inversion used. See :class:`SiesInversionType` for available types.
+        The default is \"exact\".
     save_ensembles_history: bool, optional
         Whether to save the history predictions and parameters over
         the assimilations. The default is False.
