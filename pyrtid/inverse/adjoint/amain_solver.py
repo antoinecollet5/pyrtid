@@ -8,7 +8,7 @@ from pyrtid.forward.models import FlowRegime, ForwardModel
 from pyrtid.inverse.adjoint.aflow_solver import (
     make_initial_adj_flow_matrices,
     make_transient_adj_flow_matrices,
-    solve_adj_flow_transient_semi_implicit,
+    solve_adj_flow,
     update_adjoint_u_darcy,
 )
 from pyrtid.inverse.adjoint.ageochem_solver import solve_adj_geochem
@@ -54,6 +54,7 @@ class AdjointSolver:
             self.fwd_model.fl_model,
             self.adj_model.a_fl_model,
             self.fwd_model.time_params,
+            is_q_prev_for_gradient=False,
         )
         (
             self.adj_model.a_fl_model.q_next,
@@ -169,7 +170,7 @@ class AdjointSolver:
         )
 
         # 4) Solve the flow last -> requires the previous
-        solve_adj_flow_transient_semi_implicit(
+        solve_adj_flow(
             self.fwd_model.geometry,
             self.fwd_model.fl_model,
             self.fwd_model.tr_model,

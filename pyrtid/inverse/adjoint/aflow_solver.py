@@ -30,9 +30,14 @@ def make_initial_adj_flow_matrices(
     fl_model: FlowModel,
     a_fl_model: AdjointFlowModel,
     time_params: TimeParameters,
+    is_q_prev_for_gradient: bool = False,
 ) -> Tuple[lil_array, lil_array]:
     """
     Make matrices for the initial time step with a potential stationary flow.
+
+    is_for_gradient: bool
+        Whether the q_prev matrix is used for gradient w.r.t. h0 computation. If true
+        the boundaries must be taken into account.
 
     Note
     ----
@@ -48,6 +53,12 @@ def make_initial_adj_flow_matrices(
         fl_crank = fl_model.crank_nicolson
     else:
         fl_crank = a_fl_model.crank_nicolson
+
+    # This is a trick to avoid building another matrix
+    if is_q_prev_for_gradient:
+        oitkg = None
+    else:
+        oitkg = fl_model.free_head_nn
 
     # 1) X contribution
     if geometry.nx >= 2:
@@ -68,10 +79,12 @@ def make_initial_adj_flow_matrices(
             (slice(1, geometry.nx), slice(None)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
+
         if fl_model.regime == FlowRegime.STATIONARY:
             q_next[idc_owner, idc_owner] += (
                 kmean[idc_owner] * tmp / stocoeff[idc_owner]  # type: ignore
             )
+
         q_prev[idc_owner, idc_owner] -= (
             (1.0 - fl_crank) * kmean[idc_owner] * tmp / stocoeff[idc_owner]
         )  # type: ignore
@@ -81,6 +94,7 @@ def make_initial_adj_flow_matrices(
             geometry,
             (slice(0, geometry.nx - 1), slice(None)),
             (slice(1, geometry.nx), slice(None)),
+            owner_indices_to_keep=oitkg,
             neigh_indices_to_keep=fl_model.free_head_nn,
         )
         if fl_model.regime == FlowRegime.STATIONARY:
@@ -115,6 +129,7 @@ def make_initial_adj_flow_matrices(
             geometry,
             (slice(1, geometry.nx), slice(None)),
             (slice(0, geometry.nx - 1), slice(None)),
+            owner_indices_to_keep=oitkg,
             neigh_indices_to_keep=fl_model.free_head_nn,
         )
 
@@ -159,6 +174,7 @@ def make_initial_adj_flow_matrices(
             geometry,
             (slice(None), slice(0, geometry.ny - 1)),
             (slice(None), slice(1, geometry.ny)),
+            owner_indices_to_keep=oitkg,
             neigh_indices_to_keep=fl_model.free_head_nn,
         )
 
@@ -194,6 +210,7 @@ def make_initial_adj_flow_matrices(
             geometry,
             (slice(None), slice(1, geometry.ny)),
             (slice(None), slice(0, geometry.ny - 1)),
+            owner_indices_to_keep=oitkg,
             neigh_indices_to_keep=fl_model.free_head_nn,
         )
 
@@ -206,17 +223,6 @@ def make_initial_adj_flow_matrices(
             (1.0 - fl_crank) * kmean[idc_neigh] * tmp / stocoeff[idc_owner]
         )  # type: ignore
 
-    # Take constant head into account
-    if fl_model.regime == FlowRegime.STATIONARY:
-        q_next[fl_model.cst_head_nn, fl_model.cst_head_nn] = (
-            1.0 / stocoeff[fl_model.cst_head_nn] / geometry.mesh_volume
-        )
-    else:
-        q_next[fl_model.cst_head_nn, fl_model.cst_head_nn] = (
-            1.0 / stocoeff[fl_model.cst_head_nn] / geometry.mesh_volume
-        )
-
-    # Add 1/dt for the left term contribution
     # Add 1/dt for the left term contribution: only for free head
     diag = np.zeros(q_next.shape[0])
     diag[fl_model.free_head_nn] += float(1.0 / time_params.ldt[0])
@@ -599,7 +605,7 @@ def update_adjoint_u_darcy(
         )
 
 
-def solve_adj_flow_transient_semi_implicit(
+def solve_adj_flow(
     geometry: Geometry,
     fl_model: FlowModel,
     tr_model: TransportModel,
@@ -658,6 +664,11 @@ def solve_adj_flow_transient_semi_implicit(
 
     # Solve Ax = b with A sparse using LU preconditioner
     res, exit_code = gmres(_q_next, tmp, M=preconditioner, atol=1e-15)
+
+    # Impose null adjoint head the the cst head boundaries
+    if time_index == 0:
+        res[fl_model.cst_head_nn] = 0.0
+
     # Note: we go backward in time, so time_index -1...
     a_fl_model.a_head[:, :, time_index] = res.reshape(geometry.ny, geometry.nx).T
 

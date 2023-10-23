@@ -75,7 +75,7 @@ Functions to solve the adjoint flow.
    :toctree: _autosummary
 
     make_transient_adj_flow_matrices
-    solve_adj_flow_transient_semi_implicit
+    solve_adj_flow
     update_adjoint_u_darcy
 
 Adjoint transport
@@ -107,7 +107,7 @@ Adjoint chemistry
 
 from pyrtid.inverse.adjoint.aflow_solver import (
     make_transient_adj_flow_matrices,
-    solve_adj_flow_transient_semi_implicit,
+    solve_adj_flow,
     update_adjoint_u_darcy,
 )
 from pyrtid.inverse.adjoint.ageochem_solver import solve_adj_geochem
@@ -141,7 +141,7 @@ __all__ = [
     "AdjointModel",
     "AdjointTransportModel",
     "make_transient_adj_flow_matrices",
-    "solve_adj_flow_transient_semi_implicit",
+    "solve_adj_flow",
     "update_adjoint_u_darcy",
     "get_adjoint_max_coupling_error",
     "make_transient_adj_transport_matrices",

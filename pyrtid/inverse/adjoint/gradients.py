@@ -9,7 +9,9 @@ import numpy as np
 from pyrtid.forward import ForwardModel, ForwardSolver
 from pyrtid.forward.models import GRAVITY, FlowRegime
 from pyrtid.inverse.adjoint import AdjointModel, AdjointSolver
-from pyrtid.inverse.adjoint.aflow_solver import get_aflow_matrices
+from pyrtid.inverse.adjoint.aflow_solver import (
+    make_initial_adj_flow_matrices,
+)
 from pyrtid.inverse.loss_function import get_model_loss_function
 from pyrtid.inverse.obs import Observable, Observables
 from pyrtid.inverse.params import (
@@ -584,29 +586,27 @@ def get_initial_head_adjoint_gradient(
     a_head = adj_model.a_fl_model.a_head[:, :, :2].reshape((-1, 2), order="F")
     grad = np.zeros(a_head[:, 0].size, dtype=np.float64)
 
-    q_next, q_prev = get_aflow_matrices(
+    (q_next, q_prev) = make_initial_adj_flow_matrices(
         fwd_model.geometry,
         fwd_model.fl_model,
         adj_model.a_fl_model,
         fwd_model.time_params,
-        0,
+        is_q_prev_for_gradient=True,
     )
 
+    # Computation w.r.t. \lambda^{1} -> explicit part
     grad = (
         q_prev.dot(a_head[:, 1])
         * fwd_model.geometry.mesh_volume
         * fwd_model.fl_model.storage_coefficient.ravel("F")
     )
 
-    if fwd_model.fl_model.regime == FlowRegime.STATIONARY:
-        grad -= (
-            q_next.dot(a_head[:, 0])
-            * fwd_model.geometry.mesh_volume
-            * fwd_model.fl_model.storage_coefficient.ravel("F")
-        )
-
-        cst_head_nn = fwd_model.fl_model.cst_head_nn
-        grad[cst_head_nn] += a_head[cst_head_nn, 0]
+    # Computation w.r.t. \lambda^{0} -> implicit part
+    grad -= (
+        q_next.dot(a_head[:, 0])
+        * fwd_model.geometry.mesh_volume
+        * fwd_model.fl_model.storage_coefficient.ravel("F")
+    )
 
     # Add adjoint sources for t=0
     # 1) head sources
@@ -617,8 +617,8 @@ def get_initial_head_adjoint_gradient(
     grad += (
         adj_model.a_fl_model.a_pressure_sources.getcol(0).todense().ravel("F")
         * GRAVITY
-        * fwd_model.tr_model.ldensity[0].ravel("F")
-    )  # type: ignore
+        * fwd_model.tr_model.ldensity[0].ravel("F")  # type: ignore
+    )
 
     # Add adjoint sources for time t=0
     return grad.reshape(fwd_model.fl_model.lhead[0].shape, order="F")
