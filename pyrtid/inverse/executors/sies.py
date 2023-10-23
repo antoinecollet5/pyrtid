@@ -161,7 +161,7 @@ class SIESInversionExecutor(BaseInversionExecutor[SIESSolverConfig]):
             s_init,
             self.data_model.cov_obs,
             self.data_model.obs,
-            inversion=self.solver_config.inversion_method,
+            inversion=self.solver_config.inversion_type,
             truncation=self.solver_config.truncation,
             seed=self.solver_config.seed,
         )
