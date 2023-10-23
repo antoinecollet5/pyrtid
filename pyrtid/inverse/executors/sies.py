@@ -38,7 +38,7 @@ from pyrtid.inverse.params import update_model_with_parameters_values
 from pyrtid.utils.types import NDArrayFloat
 
 
-class SiesInversionType(str, Enum):
+class SIESInversionType(str, Enum):
     """Inversion type for the computation of (S @ S.T + E @ E.T)^-1.
 
     Note
@@ -61,12 +61,12 @@ class SiesInversionType(str, Enum):
 
     def __eq__(self, other: object) -> bool:
         """Return if two instances are equal."""
-        if not isinstance(other, SiesInversionType) and not isinstance(other, str):
+        if not isinstance(other, SIESInversionType) and not isinstance(other, str):
             return False
         return self.value == other
 
     @classmethod  # type: ignore
-    def to_list(cls) -> List[SiesInversionType]:
+    def to_list(cls) -> List[SIESInversionType]:
         """Return all enums as a list."""
         return list(cls)
 
@@ -94,8 +94,8 @@ class SIESSolverConfig(BaseSolverConfig):
         Number of workers to use if the concurrency is enabled. The default is 2.
     n_iterations : int, optional
         Number of iterations (:math:`N_{a}`). The default is 4.
-    inversion_method: SiesInversionType
-        Type of inversion used. See :class:`SiesInversionType` for available types.
+    inversion_type: SIESInversionType
+        Type of inversion used. See :class:`SIESInversionType` for available types.
         The default is \"exact\".
     save_ensembles_history: bool, optional
         Whether to save the history predictions and parameters over
@@ -125,7 +125,7 @@ class SIESSolverConfig(BaseSolverConfig):
     """
 
     n_iterations: int = 4
-    inversion_method: SiesInversionType = SiesInversionType.EXACT
+    inversion_type: SIESInversionType = SIESInversionType.EXACT
     save_ensembles_history: bool = False
     truncation: float = 0.99
     seed: Optional[int] = None
