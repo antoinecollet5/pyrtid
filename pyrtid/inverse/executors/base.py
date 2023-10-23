@@ -84,7 +84,7 @@ _BaseSolverConfig = TypeVar("_BaseSolverConfig", bound=BaseSolverConfig)
 
 
 class DataModel:
-    """
+    r"""
     Wrapping class for all model inputs and observables.
 
     Parameters
@@ -94,9 +94,13 @@ class DataModel:
     s_init : np.array
         Initial ensemble of N_{e} parameters vector.
     cov_obs: NDArrayFloat
-        Covariance matrix of observed data measurement errors with dimensions
-        (:math:`N_{obs}`, :math:`N_{obs}`).
-
+        Either a 1D array of diagonal covariances, or a 2D covariance matrix.
+        The shape is either (:math:`N_{obs}`) or (:math:`N_{obs}`, :math:`N_{obs}`).
+        This is usually denoted :math:`\mathbf{R}` or :math:`\mathbf{C}_{\mathrm{dd}}`
+        and represents observation or measurement errors.
+        We observe d from the real world, y from the model g(x), and
+        assume that d = y + e, where the error e is multivariate normal with
+        covariance given by `covariance`.
     """
 
     __slots__ = ["obs", "s_init", "_cov_obs", "std_m_prior"]
@@ -135,16 +139,21 @@ class DataModel:
     def cov_obs(self, s: NDArrayFloat) -> None:
         """Set the observation errors covariance matrix."""
         # pylint: disable=C0103  # arg name does not conform to snake_case naming style
-        if len(s.shape) != 2 or s.shape[0] != s.shape[1]:
+        is_error = False
+        if s.shape[0] != self.d_dim:  # type: ignore
+            is_error = True
+        if len(s.shape) == 2:
+            if s.shape[0] != s.shape[1]:
+                is_error = True
+        elif len(s.shape) > 2:
+            is_error = True
+        if is_error:
             raise ValueError(
-                "cov_obs must be a square matrix with same "
-                "dimensions as the observations vector."
+                "cov_obs must be either a 1D array of diagonal covariances, "
+                "or a 2D covariance matrix. The shape is either "
+                "(Nobs) or (Nobs, Nobs)."
             )
-        if s.shape[0] != self.d_dim:
-            raise ValueError(
-                "cov_obs must be a square matrix with same "
-                "dimensions as the observations vector."
-            )
+
         self._cov_obs: NDArrayFloat = s
 
 
