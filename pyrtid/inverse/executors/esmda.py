@@ -142,7 +142,7 @@ class ESMDAInversionExecutor(BaseInversionExecutor[ESMDASolverConfig]):
 
         self.solver: ESMDA = ESMDA(
             self.data_model.obs,
-            s_init,  # To change back
+            s_init,
             self.data_model.cov_obs,
             self._map_forward_model,
             forward_model_kwargs={"is_parallel": self.solver_config.is_parallel},

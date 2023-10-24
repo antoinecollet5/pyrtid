@@ -115,7 +115,7 @@ class PCGAInversionExecutor(BaseInversionExecutor[PCGASolverConfig]):
         """Return the solver name."""
         return "PCGA"
 
-    def run(self) -> Optional[Sequence[Any]]:
+    def run(self) -> Sequence[Any]:
         """
         Run the history matching.
 

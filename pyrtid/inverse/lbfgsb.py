@@ -1,8 +1,36 @@
+"""
+Python implementation of the lbfgsb code 778 in fortran.
+
+Author: Antoine COLLET.
+
+Note: this is a manual reimplementation using the api of scipy. It should produce
+the same results than the original implementation. Python being slow, we tried to
+remove the for loops as much as possible and use python functions rather than direct
+accesses to linpack or minpack.
+
+Additional features
+--------------------
+Explain about the experimental feature. point to the doc of the main routine.
+
+References
+----------
+* R. H. Byrd, P. Lu and J. Nocedal. A Limited Memory Algorithm for Bound
+    Constrained Optimization, (1995), SIAM Journal on Scientific and
+    Statistical Computing, 16, 5, pp. 1190-1208.
+* C. Zhu, R. H. Byrd and J. Nocedal. L-BFGS-B: Algorithm 778: L-BFGS-B,
+    FORTRAN routines for large scale bound constrained optimization (1997),
+    ACM Transactions on Mathematical Software, 23, 4, pp. 550 - 560.
+* J.L. Morales and J. Nocedal. L-BFGS-B: Remark on Algorithm 778: L-BFGS-B,
+    FORTRAN routines for large scale bound constrained optimization (2011),
+    ACM Transactions on Mathematical Software, 38, 1.
+"""
 import copy
 from collections import deque
+from enum import Enum, auto
 from typing import Callable, Deque, Optional, Tuple, Union
 
 import numpy as np
+import scipy as sp
 from scipy.optimize import minpack2
 from scipy.optimize._constraints import old_bound_to_new
 from scipy.optimize._lbfgsb_py import LbfgsInvHessProduct  # noqa : F401
@@ -11,18 +39,84 @@ from scipy.optimize._optimize import (
     _check_unknown_options,  # noqa : F401
     _prepare_scalar_function,
 )
+from scipy.sparse import lil_array, spmatrix
 
-from pyrtid.utils import NDArrayFloat
+from pyrtid.utils import NDArrayFloat, NDArrayInt
 
 
-def compute_cauchy_point(
+class Status(Enum):
+    """Representation of the solver status."""
+
+    START = auto()
+    ERROR = auto()
+
+
+class LBFGSmat:
+    """Represent the LBFGS matrices."""
+
+    __slots__ = ["Wa", "Ws", "Wy", "Sy", "Ss", "Wn", "Wt", "Snd"]
+
+    def __init__(self, n: int, m: int) -> None:
+        """Initialize the instance.
+
+        Parameters
+        ----------
+        n : int
+            The number of variables in the optimization problem.
+        m : int
+            The mamximum number of variables metric correction in the limited
+            memory matrix (number of gradients stored).
+        """
+        # Create the working arrays used to store information defining the limited
+        # memory BFGS matrix -> fixed memory allocation
+
+        # working vector -> this is a vector of dim (8 * m)
+        # This vector is used to store the intermediate calculation when finding
+        # the cauchy points
+        self.Wa = np.zeros((8 * m), dtype=np.float_)
+        # Ws stores S, the matrix of s-vectors;
+        self.Ws = np.zeros((n, m), dtype=np.float_)
+        # Wy stores Y, the matrix of y-vectors;
+        self.Wy = np.zeros((n, m), dtype=np.float_)
+        # Sy stores S'Y;
+        self.Sy = np.zeros((m, m), dtype=np.float_)
+        # Ss stores S'S;
+        self.Ss = np.array((m, m), dtype=np.float_)
+        # Wn stores the Cholesky factorization of (theta*S'S+LD^(-1)L');
+        # see eq. (2.26) in [3].
+        self.Wn = np.zeros((2 * m, 2 * m), dtype=np.float_)
+        # used to store the LEL^T factorization of the indefinite matrix
+        # ```
+        #  K = [-D -Y'ZZ'Y/theta     L_a'-R_z'  ]
+        #      [L_a -R_z           theta*S'AA'S ]
+        # ```
+        # where
+        # ```
+        #  E = [-I  0]
+        #      [ 0  I]
+        # ```
+        self.Wt = np.zeros((m, m), dtype=np.float_)
+        # stores the lower triangular part of
+        # ```
+        #  N = [Y' ZZ'Y   L_a'+R_z']
+        #      [L_a +R_z  S'AA'S   ]
+        # ```
+        self.Snd = np.zeros((2 * m, 2 * m), dtype=np.float_)
+
+
+def get_cauchy_point(
     x: NDArrayFloat,
     grad: NDArrayFloat,
     lb: NDArrayFloat,
     ub: NDArrayFloat,
     W: NDArrayFloat,
     M: NDArrayFloat,
+    mats: LBFGSmat,
     theta: float,
+    col: int,
+    max_cor: int,
+    iprint: int,
+    iter: int,
 ):
     r"""
     Computes the generalized Cauchy point (GCP).
@@ -51,8 +145,16 @@ def compute_cauchy_point(
         Part of limited memory BFGS Hessian approximation
     M : NDArrayFloat
         Part of limited memory BFGS Hessian approximation
+    mats: LBFGSmat
+        LBFGS matrices.
     theta : float
         Part of limited memory BFGS Hessian approximation.
+    col: int
+        The actual number of variable metric corrections stored so far.
+    iprint: int
+        Printing level.
+    iter: int
+        Current iteration.
 
     Returns
     -------
@@ -74,38 +176,63 @@ def compute_cauchy_point(
       FORTRAN routines for large scale bound constrained optimization (2011),
       ACM Transactions on Mathematical Software, 38, 1.
     """
+    if iprint >= 99:
+        print("---------------- CAUCHY entered-------------------")
+
     eps_f_sec = 1e-30
-    t = np.empty(x.size)
-    d = np.empty(x.size)
     x_cp = x.copy()
 
-    # TODO: refactor this
-    for i in range(x.size):
-        if grad[i] < 0:
-            t[i] = (x[i] - ub[i]) / grad[i]
-        elif grad[i] > 0:
-            t[i] = (x[i] - lb[i]) / grad[i]
-        else:
-            t[i] = np.inf
-        if t[i] == 0:
-            d[i] = 0
-        else:
-            d[i] = -grad[i]
+    x.size
+    m = mats.Ws.shape[1]
 
+    # These 4 vectors are Wa (8 * m)
+    # working array used to store the vector `p = W^(T)d`.
+    p = mats.Wa[: 2 * m]
+    # working array used to store the vector `c = W^(T)(xcp-x)`.
+    c = mats.Wa[2 * m + 1 : 4 * m]
+    # working array used to store the row of `W` corresponding to a breakpoint.
+    mats.Wa[4 * m + 1 : 6 * m]
+    # working array
+    mats.Wa[6 * m + 1 :]
+
+    # We set p to zero and build it up as we determine d.
+    # Set p and c to zero
+    p[:] = 0
+    c[:] = 0
+
+    # To define the breakpoints in each coordinate direction, we compute
+    t = np.where(grad < 0, (x - ub) / grad, (x - lb) / grad)
+    t[grad == 0] = np.inf
+
+    # used to store the Cauchy direction `P(x-tg)-x`.
+    d = np.where(t == 0, 0.0, -grad)
+
+    # sort {t;,i = 1,. ..,n} in increasing order to obtain the ordered
+    # set {tj :tj <= tj+1 ,j = 1, ...,n}.
     F = np.argsort(t)
+    # Keep only the indices where t > 0
     F = [i for i in F if t[i] > 0]
+    # In the end, F is the list of ordered breakpoint indices
+
+    # TODO: The integer t denotes the number of free variables at the Cauchy point zc;
+    # in other words there are n - t variables at bound at zC
+
+    nbreak = len(F)
+    if iprint >= 99:
+        print(f"There are {nbreak} breakpoints ")
+
+    # Initialization
+    p = W.T @ d
+    c = np.zeros(p.size)
+    f_prime = -d.dot(d)
+    f_second = -theta * f_prime - p.dot(M.dot(p))
+    Dt_min = -f_prime / f_second
     t_old = 0
     F_i = 0
     b = F[0]
     t_min = t[b]
     Dt = t_min
-
-    p = np.transpose(W).dot(d)
-    c = np.zeros(p.size)
-    f_prime = -d.dot(d)
-    f_second = -theta * f_prime - p.dot(M.dot(p))
     f_sec0 = f_second
-    Dt_min = -f_prime / f_second
 
     while Dt_min >= Dt and F_i < len(F):
         if d[b] > 0:
@@ -137,23 +264,117 @@ def compute_cauchy_point(
         else:
             t_min = np.inf
 
+    if iprint >= 99:
+        Nseg = 2
+        print("GCP found in this segment")
+        print(f"Piece    {Nseg}  --f1, f2 at start point , {f_prime} , {f_second}")
+        print(f"Distance to the stationary point = {Dt}")
+
     Dt_min = 0 if Dt_min < 0 else Dt_min
     t_old += Dt_min
 
-    for i in range(x.size):
-        if t[i] >= t_min:
-            x_cp[i] = x[i] + t_old * d[i]
+    x_cp[t >= t_min] = (x + t_old * d)[t >= t_min]
 
     F = [i for i in F if t[i] != t_min]
 
     c += Dt_min * p
-    return {"xc": x_cp, "c": c, "F": F}
+
+    if iprint > 100:
+        print(f"Cauchy X =  {x_cp}")
+    if iprint >= 99:
+        print("---------------- exit CAUCHY----------------------")
+
+    return {
+        "xc": x_cp,
+        "c": c,
+        "F": F,
+    }
+
+
+def freev(
+    x_cp: NDArrayFloat,
+    lb: NDArrayFloat,
+    ub: NDArrayFloat,
+    free_vars_old: NDArrayInt,
+    iprint: int,
+    iter: int,
+) -> Tuple[NDArrayInt, spmatrix, spmatrix]:
+    """
+    Get the free variables and build Z and A matrices (sparse).
+
+    Parameters
+    ----------
+    x_cp : NDArrayFloat
+        Generalized cauchy point.
+    lb : NDArrayFloat
+        Lower bounds.
+    ub : NDArrayFloat
+        Upper bounds.
+    free_vars_old : NDArrayInt
+        Free variables at x_cp at the previous iteration.
+    iprint : int
+        Level of display.
+    iter : int
+        Iteration number.
+
+    Returns
+    -------
+    Tuple[NDArrayInt, spmatrix, spmatrix]
+        The free variables and sparse matrices Z and A.
+    """
+    # number of variables
+    n: int = x_cp.size
+
+    # Array of free variable and active variable indices (from 0 to n-1)
+    free_vars: NDArrayInt = ((x_cp != ub) & (x_cp != lb)).nonzero()[0]
+    active_vars: NDArrayInt = (
+        ~np.isin(np.arange(n), free_vars)  # type: ignore
+    ).nonzero()[0]
+
+    nb_free_vars: int = free_vars.size
+    nb_active_vars: int = active_vars.size
+
+    # See section 5 of [1]: We define Z to be the (n , t) matrix whose columns are
+    # unit vectors (i.e., columns of the identity matrix) that span the subspace of the
+    # free variables at zc.Similarly A denotes the (n, (n- t)) matrix of active
+    # constraint gradients at zc,which consists of n - t unit vectors.
+    # Note that A^{T}Z = 0 and that  AA^T + ZZ^T == I.
+
+    # We use sparse formats to save memory and get faster matrix products
+    Z = lil_array((n, nb_free_vars))
+    A = lil_array((n, nb_active_vars))
+    # Affect one
+    Z[free_vars, np.arange(nb_free_vars)] = 1
+    A[active_vars, np.arange(nb_active_vars)] = 1
+
+    # Test: we should have Z @ Z.T + A @ A.T == I
+
+    # Some display
+    # 1) Indicate which variable is leaving the free variables and which is
+    # entering the free variables -> Not for the first iteration
+    if iprint > 100 and iter > 0:
+        # Variables leaving the free variables
+        leaving_vars = active_vars[np.isin(active_vars, free_vars_old)]
+        print(f"Variables leaving the free variables set = {leaving_vars}")
+        entering_vars = free_vars[~np.isin(free_vars, free_vars_old)]
+        print(f"Variables entering the free variables set = {entering_vars}")
+        print(
+            f"N variables leaving = {leaving_vars.size} \t,"
+            f" N variables entering = {entering_vars.size}"
+        )
+    # 2) Display the total of free variables at x_cp
+    if iprint > 99:
+        print(f"{free_vars.size} variables are free at GCP, iter = {iter + 1}")
+
+    return free_vars, Z.tocsc(), A.tocsc()
 
 
 # There are three methods for this one and we need to find the correct one.
 def direct_primal_subspace_minimization(
     x: NDArrayFloat,
     xc: NDArrayFloat,
+    free_vars: NDArrayInt,
+    Z: spmatrix,
     c: NDArrayFloat,
     grad: NDArrayFloat,
     lb: NDArrayFloat,
@@ -161,6 +382,7 @@ def direct_primal_subspace_minimization(
     W: NDArrayFloat,
     M: NDArrayFloat,
     theta: float,
+    K: NDArrayFloat,
 ) -> NDArrayFloat:
     r"""
     Computes an approximate solution of the subspace problem.
@@ -202,6 +424,8 @@ def direct_primal_subspace_minimization(
         Part of limited memory BFGS Hessian approximation.
     theta : float
         Part of limited memory BFGS Hessian approximation.
+    Z: spmatrix
+        Warning: it has shape (n, t)
 
     Returns
     -------
@@ -224,36 +448,35 @@ def direct_primal_subspace_minimization(
 
     invThet = 1.0 / theta
 
-    Z = list()
-    free_vars = list()
-    n = xc.size
-    unit = np.zeros(n)
-    for i in range(n):
-        unit[i] = 1
-        if (xc[i] != ub[i]) and (xc[i] != lb[i]):
-            free_vars.append(i)
-            Z.append(unit.copy())
-        unit[i] = 0
-
     if len(free_vars) == 0:
         return xc
 
-    Z = np.asarray(Z).T
-    WTZ = W.T.dot(Z)
+    # Same as W.T.dot(Z.T) but numpy does not handle correctly
+    # numpy_array.dot(sparce_matrix), so we give the responsibility to the
+    # sparse matrix
+    # Note that here, Z is suppose to have a shape (t, n) with t the number
+    # of free_vars and n the number of variables.
+    WTZ = Z.dot(W).T
 
     rHat = [(grad + theta * (xc - x) - W.dot(M.dot(c)))[ind] for ind in free_vars]
-    v = WTZ.dot(rHat)
-    v = M.dot(v)
+    v = M.dot(WTZ.dot(rHat))
 
-    N = invThet * WTZ.dot(np.transpose(WTZ))
-    N = np.eye(N.shape[0]) - M.dot(N)
-    # This is not working, we should try to factorize the sub matrices
-    # v: NDArrayFloat = sp.linalg.cho_solve(*sp.linalg.cho_factor(N), v)
+    N = -M.dot(invThet * WTZ.dot(np.transpose(WTZ)))
+    # N = invThet * WTZ.dot(np.transpose(WTZ))
+    # Add the identitu matrix: this is the same as N = np.eye(N.shape[0]) - M.dot(N)
+    # but much faster
+    np.fill_diagonal(N, N.diagonal() + 1)
+
+    # TODO: this is not efficient at all and we should try to remove it
     v = np.linalg.solve(N, v)
+
+    # TODO: new way to perform
+    # v = sp.linalg.solve(K, v)
 
     dHat = -invThet * (rHat + invThet * np.transpose(WTZ).dot(v))
 
     # Find alpha
+    # TODO: remove the loop
     alpha_star = 1
     for i in range(len(free_vars)):
         idx = free_vars[i]
@@ -269,6 +492,60 @@ def direct_primal_subspace_minimization(
         xbar[idx] += d_star[i]
 
     return xbar
+
+
+def formk(X: Deque, G: Deque, Z: spmatrix, A: spmatrix, theta: float) -> NDArrayFloat:
+    """Form mk
+
+    Form  the LEL^T factorization of the indefinite
+    matrix    K = [-D -Y'ZZ'Y/theta     L_a'-R_z'  ]
+                    [L_a -R_z           theta*S'AA'S ]
+    where     E = [-I  0]
+                    [ 0  I]
+
+    TODO
+
+    Parameters
+    ----------
+    """
+    # form S and Y
+    S = np.diff(np.array(X), axis=0).T
+    Y = np.diff(np.array(G), axis=0).T
+
+    D = np.diag(-np.diag(S.T @ Y))
+
+    # K sub-blocks
+
+    # LZ is the upper triangular part
+    if Z.size == 0:
+        YTZZTY = 0.0
+        LZ = 0.0
+    else:
+        YTZZTY = Y.T @ Z @ Z.T @ Y
+        LZ = np.triu(YTZZTY)
+
+    # LA is the strict lower triangle of S^{T}AA^{T}S
+    if A.size == 0:
+        STAATS = 0.0
+        LA = 0.0
+    else:
+        STAATS = S.T @ A @ A.T @ S
+        LA = np.tril(STAATS, -1)
+
+    K11 = -D - 1 / theta * YTZZTY
+    K21 = LA - LZ
+
+    if A.size == 0:
+        K22 = np.zeros(K21.shape)
+    else:
+        K22 = theta * STAATS
+    # S = K22 - K21 @ np.linalg.inv(K11) @ K21.T
+
+    # print(K11.shape)
+    # print(K21.shape)
+    # print(K22.shape)
+
+    return np.hstack([np.vstack([K11, K21]), np.vstack([K21.T, K22])])
 
 
 def max_allowed_steplength(
@@ -312,13 +589,10 @@ def max_allowed_steplength(
       FORTRAN routines for large scale bound constrained optimization (2011),
       ACM Transactions on Mathematical Software, 38, 1.
     """
-    max_stpl = max_steplength
-    for i in range(x.size):
-        if d[i] > 0:
-            max_stpl = min(max_stpl, (ub[i] - x[i]) / d[i])
-        elif d[i] < 0:
-            max_stpl = min(max_stpl, (lb[i] - x[i]) / d[i])
-    return max_stpl
+    with np.errstate(divide="ignore"):
+        return min(
+            max_steplength, np.nanmin(np.where(d > 0, (ub - x) / d, (lb - x) / d))
+        )
 
 
 def line_search(
@@ -345,6 +619,10 @@ def line_search(
 
     If alpha is less than beta and if, for example, the functionis bounded below, then
     there is always a step which satisfies both conditions.
+
+    !  This subroutine calls subroutine dcsrch from the Minpack2 library
+    !  to perform the line search.  Subroutine dscrch is safeguarded so
+    !  that all trial points lie within the feasible region.
 
     Parameters
     ----------
@@ -398,7 +676,7 @@ def line_search(
 
     if above_iter == 0:
         max_steplength = 1.0
-        steplength_0 = min(1.0 / np.sqrt(d.dot(d)), 1.0)
+        steplength_0 = min(1.0 / np.sqrt(d.dot(d)), max_steplength)
 
     isave = np.zeros((2,), np.intc)
     dsave = np.zeros((13,), float)
@@ -442,6 +720,7 @@ def get_lbfgs_matrices(
     X: Deque[NDArrayFloat],
     G: Deque[NDArrayFloat],
     maxcor: int,
+    mats: LBFGSmat,
     W: NDArrayFloat,
     M: NDArrayFloat,
     thet: float,
@@ -518,6 +797,8 @@ def get_lbfgs_matrices(
             X.popleft()
             G.popleft()
 
+    theta = 1.0
+
     # two conditions to update the inverse Hessian approximation
     if is_force_update or is_current_update_accepted:
         # Update the lbfgsb matrices
@@ -528,13 +809,35 @@ def get_lbfgs_matrices(
         D = np.diag(-np.diag(L))
         L = np.tril(L, -1)
 
-        thet = yTy / sTy
-        W = np.hstack([Yarray, thet * Sarray])
+        theta = yTy / sTy
+        W = np.hstack([Yarray, theta * Sarray])
+
+        # B writes
+        # B = theta * I  - W @ M @ W.T
+        # I don't understand what this is useful for ?
+        # J = form_t(theta, STS, L, D)
 
         # This can probably improve with cholesky
-        M = np.linalg.inv(np.hstack([np.vstack([D, L]), np.vstack([L.T, thet * STS])]))
+        M = np.linalg.inv(np.hstack([np.vstack([D, L]), np.vstack([L.T, theta * STS])]))
 
-    return W, M, thet
+    return W, M, theta
+
+
+def form_t(theta, STS, L, D) -> NDArrayFloat:
+    """
+    Form the upper half of the pds T = theta*SS + L*D^(-1)*L';
+
+    Cholesky factorize T to J*J' with
+    Now the inverse of the middle matrix in B is
+
+         [  D^(1/2)      O ] [ -D^(1/2)  D^(-1/2)*L' ]
+         [ -L*D^(-1/2)   J ] [  0        J'          ]
+
+    This is useful for the cauchy points.
+    """
+    print(theta * STS + L @ (1 / D) @ L.T)
+
+    return sp.linalg.cholesky(theta * STS + L @ (1 / D) @ L.T).T
 
 
 def get_bounds(
@@ -557,6 +860,130 @@ def get_bounds(
     # initial vector must lie within the bounds. Otherwise ScalarFunction and
     # approx_derivative will cause problems
     return lb, ub
+
+
+def clip2bounds(x0: NDArrayFloat, lb: NDArrayFloat, ub: NDArrayFloat) -> NDArrayFloat:
+    """
+    Impose the bounds to x0.
+
+    Parameters
+    ----------
+    x0 : NDArrayFloat
+        Adjusted variables.
+    lb : NDArrayFloat
+        Lower bounds.
+    ub : NDArrayFloat
+        Upper bounds.
+
+    Returns
+    -------
+    NDArrayFloat
+        Bounded adjusted variables.
+    """
+    if x0.dtype != np.float64:
+        return np.clip(x0.astype(np.float64, copy=True), lb, ub)
+    return np.clip(x0, lb, ub)
+
+
+def count_var_at_bounds(x: NDArrayFloat, lb: NDArrayFloat, ub: NDArrayFloat) -> int:
+    """
+    Count the number of variables exactly at the bounds.
+
+    Parameters
+    ----------
+    x : NDArrayFloat
+        Adjusted variables.
+    lb : NDArrayFloat
+        Lower bounds.
+    ub : NDArrayFloat
+        Upper bounds.
+
+    Returns
+    -------
+    int
+        Number of variables exactly at the bounds.
+    """
+    return (x[x == ub]).size + (x[x == lb]).size
+
+
+def display_start(epsmch, n: int, m: int, nvar_at_b: int, iprint: int) -> None:
+    """
+    Display information at solver start.
+
+    Parameters
+    ----------
+    epsmch : _type_
+        Machine precision.
+    n : int
+        Number of variables.
+    m : int
+        Number of updates.
+    nvar_at_b : int
+        Number of variables at bounds.
+    """
+    if iprint < 0:
+        return
+    print("RUNNING THE L-BFGS-B CODE")
+    print("           * * *")
+    print(f"Machine precision = {epsmch}")
+    print(f"N = \t{n}\tM = \t{m}")
+    print(f"At X0, {nvar_at_b} variables are exactly at the bounds")
+
+
+def projgr(
+    x: NDArrayFloat, grad: NDArrayFloat, lb: NDArrayFloat, ub: NDArrayFloat
+) -> float:
+    """
+    Computes the infinity norm of the projected gradient.
+
+    Parameters
+    ----------
+    x : NDArrayFloat
+        _description_
+    g : NDArrayFloat
+        _description_
+    lb : NDArrayFloat
+        _description_
+    ub : NDArrayFloat
+        _description_
+
+    Returns
+    -------
+    NDArrayFloat
+        Infinity norm of the projected gradient
+    """
+    return np.max(np.abs(np.clip(x - grad, lb, ub) - x))
+    return np.max(
+        np.abs(
+            np.where(
+                grad < 0,
+                np.nanmax([x - ub, grad], axis=0),  # type: ignore
+                np.nanmin([x - lb, grad], axis=0),  # type: ignore
+            )
+        )
+    )
+
+    # supposed to be the same than
+    # np.max(np.abs(np.clip(x - grad, lb, ub) - x))
+
+
+def display_iter(iter: int, sbgnrm: float, f: float, iprint: int) -> None:
+    """
+    Compute the infinity norm of the (-) projected gradient.
+
+    Parameters
+    ----------
+    iter: int
+        Current iteration number (0 to n).
+    sbgnrm: float
+        Infinity norm of the (-) projected gradient.
+    iter: int
+        Current iteration.
+    iprint: int
+        Level of display.
+    """
+    if iprint > 1:
+        print(f"At iterate {iter} , f= {f} , |proj g|= {sbgnrm}")
 
 
 def display_results(
@@ -617,7 +1044,7 @@ def display_results(
             np.linalg.norm(x, np.inf),
             f0,
             np.linalg.norm(grad, np.inf),
-            np.max(np.abs(np.clip(x - grad, lb, ub) - x)),
+            projgr(x, grad, lb, ub),
             gtol,
         )
     )
@@ -690,6 +1117,7 @@ def minimize_lbfgsb(
         gradient with a relative step size. These finite difference schemes
         obey any specified `bounds`.
     update_fun_def: Optional[Callable[[Deque[NDArrayFloat], Deque[NDArrayFloat]],
+        TODO: _DESCRIPTION.
     Deque[NDArrayFloat]]]
         Method to update the gradient sequence. This is an experimental feature to
         allow changing the objective function definition on the fly. In the first place
@@ -789,16 +1217,21 @@ def minimize_lbfgsb(
 
     # applying the bounds to the initial guess x0
     n = x0.size
-    if x0.dtype != np.float64:
-        x = x0.astype(np.float64, copy=True)
-        x = np.clip(x, lb, ub)
-    else:
-        x = np.clip(x0, lb, ub)
+    x = clip2bounds(x0, lb, ub)
+
+    Status.START
+    # Some display about the problem at hand. The display depends on the value of iprint
+    display_start(
+        np.finfo(float).eps, n, maxcor, count_var_at_bounds(x, lb, ub), iprint
+    )
 
     # Deque = similar to list but with faster operations to remove and add
     # values to extremities
     X: Deque[NDArrayFloat] = deque()
     G: Deque[NDArrayFloat] = deque()
+
+    # Initialize lbfgsb matrices ("Wa", "Ws", "Wy", "Sy", "Ss", "Wn", "Wt", "Snd")
+    mats = LBFGSmat(x.size, maxcor)
 
     # search direction for the minimization problem
     W = np.zeros([n, 1])
@@ -827,23 +1260,53 @@ def minimize_lbfgsb(
     is_sucess = False
     warnflag = 2
 
+    # For now the free variables at the cauchy points is an empty set
+    free_vars = np.array([], dtype=np.int_)
+
+    # Check the infinity norm of the projected gradient
+    sbgnrm = projgr(x, grad, lb, ub)
+    display_iter(n_iterations, sbgnrm, f0, iprint)
+
     # Note that interruptions due to maxfun are postponed
     # until the completion of the current minimization iteration.
     while (
-        np.max(np.abs(np.clip(x - grad, lb, ub) - x)) > gtol
-        and n_iterations < max_iter
-        and sf.nfev < maxfun
+        projgr(x, grad, lb, ub) > gtol and n_iterations < max_iter and sf.nfev < maxfun
     ):
+        if iprint > 99:
+            print(f"\nITERATION {n_iterations}\n")
+
         oljac0 = f0
         x.copy()
         grad.copy()
 
         # find cauchy point
-        dictCP = compute_cauchy_point(x, grad, lb, ub, W, M, theta)
+        # TODO: replace dictCP by a class
+        dictCP = get_cauchy_point(
+            x, grad, lb, ub, W, M, mats, theta, len(X), maxcor, iprint, n_iterations
+        )
+
+        # Get the free variables for the GCP
+
+        free_vars, Z, A = freev(dictCP["xc"], lb, ub, free_vars, iprint, n_iterations)
+
+        # if n_iterations != 0 and dictCP["free_vars"] != 0:
+        # Factorization of the matrix K used in the subspace minimization
+        K: NDArrayFloat = formk(X, G, Z, A, theta)
 
         # subspace minimization: find the search direction for the minimization problem
         xbar: NDArrayFloat = direct_primal_subspace_minimization(
-            x, dictCP["xc"], dictCP["c"], grad, lb, ub, W, M, theta
+            x,
+            dictCP["xc"],
+            free_vars,
+            Z,
+            dictCP["c"],
+            grad,
+            lb,
+            ub,
+            W,
+            M,
+            theta,
+            K,
         )
         d = xbar - x
 
@@ -894,12 +1357,15 @@ def minimize_lbfgsb(
             if update_fun_def is not None:
                 f0, grad, G = update_fun_def(f0, grad, X, G)
 
+            display_iter(n_iterations, sbgnrm, f0, iprint)
+
             W, M, theta = get_lbfgs_matrices(
                 x.copy(),  # copy otherwise x might be changed in X when updated
                 grad,
                 X,
                 G,
                 maxcor,
+                mats,
                 W.copy(),
                 M.copy(),
                 copy.copy(theta),
@@ -946,7 +1412,7 @@ def minimize_lbfgsb(
     # Final display
     display_results(iprint, n_iterations, max_iter, x, grad, lb, ub, f0, gtol, True)
 
-    if np.max(np.abs(np.clip(x - grad, lb, ub) - x)) <= gtol:
+    if projgr(x, grad, lb, ub) <= gtol:
         task_str = "CONVERGENCE: NORM_OF_PROJECTED_GRADIENT_<=_PGTOL"
         is_sucess = True
         warnflag = 1
