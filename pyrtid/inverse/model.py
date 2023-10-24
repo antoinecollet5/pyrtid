@@ -1,11 +1,15 @@
 """Provide a model class to store the inversion parameters and results."""
-from typing import List, Sequence, Union
+from typing import List, Union
 
 import numpy as np
 
 from pyrtid.forward.models import ForwardModel
 from pyrtid.inverse.obs import Observable, Observables
-from pyrtid.inverse.params import AdjustableParameter, ParameterName
+from pyrtid.inverse.params import (
+    AdjustableParameter,
+    AdjustableParameters,
+    ParameterName,
+)
 from pyrtid.utils.types import NDArrayFloat, object_or_object_sequence_to_list
 
 
@@ -62,7 +66,7 @@ class InverseModel:
 
     def __init__(
         self,
-        parameters_to_adjust: Union[AdjustableParameter, Sequence[AdjustableParameter]],
+        parameters_to_adjust: AdjustableParameters,
         observables: Observables,
     ) -> None:
         """
@@ -70,7 +74,7 @@ class InverseModel:
 
         Parameters
         ----------
-        parameters_to_adjust : Union[AdjustableParameter, Sequence[AdjustableParameter]]
+        parameters_to_adjust : AdjustableParameters
             _description_
         observables : Observables
             _description_
@@ -165,7 +169,7 @@ class InverseModel:
 
     def set_parameters_to_adjust(
         self,
-        parameters_to_adjust: Union[AdjustableParameter, Sequence[AdjustableParameter]],
+        parameters_to_adjust: AdjustableParameters,
         model: ForwardModel,
     ) -> None:
         """Set the parameters to adjust during the inversion."""

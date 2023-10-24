@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import os
 import shutil
+import warnings
 from abc import ABC, abstractmethod
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
@@ -33,6 +34,7 @@ from pyrtid.inverse.obs import (
     get_predictions_matching_observations,
 )
 from pyrtid.inverse.params import (
+    get_parameters_bounds,
     get_parameters_values_from_model,
     update_model_with_parameters_values,
     update_parameters_from_model,
@@ -230,14 +232,16 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         # _std_m_prior = self.source_simulation.get_std_m_prior()
         _std_m_prior = np.array([])
 
-        if s_init is None:
-            _s_init = get_parameters_values_from_model(
-                fwd_model, inv_model.parameters_to_adjust, is_preconditioned=True
-            )
+        # Get the initial values from the model
+        _s_init_model = get_parameters_values_from_model(
+            fwd_model, inv_model.parameters_to_adjust, is_preconditioned=True
+        )
+
+        if s_init is not None:
+            # check the dimensions and the bounds (clip to bounds + raise warning)
+            _s_init = self.validate_s_init(s_init, _s_init_model.size)
         else:
-            # TODO: Check the preconditionning
-            _s_init = s_init
-            # TODO: add a function check s_init
+            _s_init = _s_init_model
 
         # Need to differentiate flux and grids
         self.data_model = DataModel(
@@ -424,23 +428,24 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         None.
         """
         run_n: int = self.inv_model.nb_f_calls
-        n_ensemble: int = s_ensemble.shape[0]  # type: ignore
-        d_pred: NDArrayFloat = np.zeros([n_ensemble, self.data_model.d_dim])
+        n_ensemble: int = s_ensemble.shape[1]  # type: ignore
+        print(f"n_ensemble = {n_ensemble}")
+        d_pred: NDArrayFloat = np.zeros([self.data_model.d_dim, n_ensemble])
         if is_parallel:
             with ProcessPoolExecutor(
                 max_workers=self.solver_config.max_workers
             ) as executor:
                 results: Iterator[NDArrayFloat] = executor.map(
                     self._run_forward_model,
-                    s_ensemble,
+                    s_ensemble.T,
                     range(run_n + 1, run_n + n_ensemble + 1),  # type: ignore
                 )
                 for j, res in enumerate(results):
-                    d_pred[j, :] = res
+                    d_pred[:j] = res
             # self.simu_n += n_ensemble
         else:
             for j in range(n_ensemble):  # type: ignore
-                d_pred[j, :] = self._run_forward_model(s_ensemble[j, :], run_n + j + 1)
+                d_pred[:, j] = self._run_forward_model(s_ensemble[:, j], run_n + j + 1)
         # update the number of runs
 
         # The check is already done in Forward_model but nan can also be introduced
@@ -448,9 +453,9 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         self._check_nans_in_predictions(d_pred, run_n)
 
         # save objective functions. This should be very fast.
-        for i in range(d_pred.shape[0]):  # type: ignore
+        for i in range(d_pred.shape[1]):  # type: ignore
             ls_loss = ls_loss_function(
-                d_pred[i, :],
+                d_pred[:, i],
                 get_observables_values_as_1d_vector(
                     self.inv_model.observables, self.solver_config.hm_end_time
                 ),
@@ -458,9 +463,10 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
                     self.inv_model.observables, self.solver_config.hm_end_time
                 ),
             )
+
             self.inv_model.list_f_res.append(ls_loss)
 
-        return d_pred
+        return d_pred  # shape (N_obs, N_e)
 
     def scaled_loss_function(
         self, m: NDArrayFloat, is_save_state: bool = True
@@ -489,7 +495,7 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         logging.info(f"Scaling factor        = {self.inv_model.scaling_factor}")
         logging.info(f"Loss (scaled)         = {scaled_loss}\n")
 
-        # Save the loss
+        # Save the loss and the associated regularization weight
         if is_save_state:
             self.inv_model.list_f_res.append(scaled_loss)
 
@@ -570,7 +576,7 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
             return  # -> no issue found
 
         # Case of a vector
-        if len(d_pred.shape) == 1:
+        if d_pred.ndim == 1:
             msg: str = (
                 "Something went wrong with NaN values"
                 f" are found in predictions for simulation {simu_n} !"
@@ -579,7 +585,7 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         else:
             # + simu_n + 1 to get the indices of simulations
             error_indices: List[int] = sorted(
-                set(np.where(np.isnan(d_pred))[0] + simu_n + 1)  # type: ignore
+                set(np.where(np.isnan(d_pred))[1] + simu_n + 1)  # type: ignore
             )
             msg = (
                 "Something went wrong with NaN values"
@@ -625,3 +631,33 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
             hm_end_time=self.solver_config.hm_end_time,
             is_verbose=is_verbose,
         )
+
+    def validate_s_init(
+        self, s_init: NDArrayFloat, expected_s_dim: int
+    ) -> NDArrayFloat:
+        """Check if s init has the correct size."""
+        if s_init.size == expected_s_dim:
+            s_init = s_init.ravel()
+        if s_init.ndim != 2 or s_init.shape[0] != expected_s_dim:  # type: ignore
+            raise ValueError(
+                "s_init must be either a 1D vector of shape (N_s)"
+                " or a 2D array of shape (N_s, N_e) with N_s the number of"
+                " adjusted values, and N_e the number of members (realizations) in"
+                " the provided ensemble."
+            )
+
+        # Ensure bounds (preconditionned)
+        bounds = get_parameters_bounds(
+            self.inv_model.parameters_to_adjust, is_preconditioned=True
+        )
+
+        clipped = np.clip(s_init.T, bounds[:, 0], bounds[:, 1]).T
+
+        if not np.array_equal(clipped, s_init):
+            warnings.warn(
+                "There are values out of bounds in the provided s_init!"
+                "Remember that preconditioned values are expected (only applies for "
+                "precondtioned parameters)."
+                "\nCheck your inputs if this is not desired."
+            )
+        return clipped

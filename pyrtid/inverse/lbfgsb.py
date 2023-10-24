@@ -128,6 +128,8 @@ def get_cauchy_point(
     r"""
     Computes the generalized Cauchy point (GCP).
 
+    This is the Generalized Cauchy point procedure in section 4 of [1].
+
     It is defined as the first local minimizer of the quadratic
 
     .. math::
@@ -202,11 +204,6 @@ def get_cauchy_point(
     # working array
     mats.Wa[6 * m + 1 :]
 
-    # We set p to zero and build it up as we determine d.
-    # Set p and c to zero
-    p[:] = 0
-    c[:] = 0
-
     # To define the breakpoints in each coordinate direction, we compute
     t = np.where(grad < 0, (x - ub) / grad, (x - lb) / grad)
     t[grad == 0] = np.inf
@@ -216,66 +213,110 @@ def get_cauchy_point(
 
     # sort {t;,i = 1,. ..,n} in increasing order to obtain the ordered
     # set {tj :tj <= tj+1 ,j = 1, ...,n}.
-    F = np.argsort(t)
     # Keep only the indices where t > 0
-    F = [i for i in F if t[i] > 0]
+    F = np.argsort(t)[t > 0]
+
+    # F = [i for i in F if t[i] > 0]
     # In the end, F is the list of ordered breakpoint indices
+
+    # TODO: handle the case with no breakpoints
+    # if ( nbreak==0 .and. nfree==n+1 ) then ...
 
     # TODO: The integer t denotes the number of free variables at the Cauchy point zc;
     # in other words there are n - t variables at bound at zC
+
+    # Initialization
+    # There is a problem with the size of W -> it should be fixed but it is not here....
+    # See what is best with python ???
+    # TODO: p[:] = W.T @ d
+    p = W.T @ d  # 2mn operations
+    # TODO: c[:] = 0
+    c = np.zeros(p.size)
+    # f1 in the original code
+    f_prime: float = -d.dot(d)  # n operations
+    # f2 in the original code
+    f_second: float = -theta * f_prime
+    # f2_org in the fortran code
+    f_sec0: float = copy.deepcopy(f_second)
+    # Update f2 with - d^{T} @ W @ M @ W^{T} @ d = - p^{T} @ M @ p
+    f_second = f_second - p.dot(M.dot(p))  # O(m^{2}) operations
+
+    # dtm in the fortran code
+    Dt_min: float = -f_prime / f_second
+
+    # iter in the fortran code
+    F_i = 0
+    # break point index (b in section 4 [1])
+    ibp = F[F_i]  # TODO: remove b from F ???
+    # value of the smallest breakpoint, t in section 4 [1]
+    t_min = t[ibp]
+    # previous breakpoint value
+    t_old = 0
+
+    Dt = t_min - 0
+
+    # Number of the breakpoint segment -> Nseg in Fortran
+    nseg: int = 1  # TODO: check that
 
     nbreak = len(F)
     if iprint >= 99:
         print(f"There are {nbreak} breakpoints ")
 
-    # Initialization
-    p = W.T @ d
-    c = np.zeros(p.size)
-    f_prime = -d.dot(d)
-    f_second = -theta * f_prime - p.dot(M.dot(p))
-    Dt_min = -f_prime / f_second
-    t_old = 0
-    F_i = 0
-    b = F[0]
-    t_min = t[b]
-    Dt = t_min
-    f_sec0 = f_second
+    if nbreak != 0:
+        pass
 
-    while Dt_min >= Dt and F_i < len(F):
-        if d[b] > 0:
-            x_cp[b] = ub[b]
-        elif d[b] < 0:
-            x_cp[b] = lb[b]
-        x_bcp = x_cp[b]
+        while Dt_min >= Dt and F_i < len(F):
+            if Dt != 0 and iprint >= 100:
+                print(
+                    f"Piece    , {nseg},  --f1, f2 at start point , {f_prime} , "
+                    f"{f_second}"
+                )
+                print(f"Distance to the next break point =  {Dt}")
+                print(f"Distance to the stationary point =  {Dt_min}")
 
-        zb = x_bcp - x[b]
-        c += Dt * p
-        W_b = W[b, :]
-        g_b = grad[b]
+            # Fix one variable and reset the corresponding component of d to zero.
+            if d[ibp] > 0:
+                x_cp[ibp] = ub[ibp]
+            elif d[ibp] < 0:
+                x_cp[ibp] = lb[ibp]
+            x_bcp = x_cp[ibp]
+            zb = x_bcp - x[ibp]
 
-        f_prime += Dt * f_second + g_b * (g_b + theta * zb - W_b.dot(M.dot(c)))
-        f_second -= g_b * (g_b * theta + W_b.dot(M.dot(2 * p + g_b * W_b)))
-        f_second = min(f_second, eps_f_sec * f_sec0)
+            if iprint >= 100:
+                # ibp +1 to match the Fortran code (because index starts at 1)
+                print(f"Variable  {ibp + 1} is fixed.")
+            F_i += 1
 
-        Dt_min = -f_prime / f_second
+            c += Dt * p
+            W_b = W[ibp, :]
+            g_b = grad[ibp]
 
-        p += g_b * W_b
-        d[b] = 0
-        t_old = t_min
-        F_i += 1
+            # Update the derivative information
+            f_prime += Dt * f_second + g_b * (g_b + theta * zb - W_b.dot(M.dot(c)))
+            f_second -= g_b * (g_b * theta + W_b.dot(M.dot(2 * p + g_b * W_b)))
+            f_second = min(f_second, eps_f_sec * f_sec0)
 
-        if F_i < len(F):
-            b = F[F_i]
-            t_min = t[b]
-            Dt = t_min - t_old
-        else:
-            t_min = np.inf
+            Dt_min = -f_prime / f_second
+
+            # Fix one variable and reset the corresponding component of d to zero.
+            p += g_b * W_b
+            d[ibp] = 0
+            t_old = t_min
+
+            if F_i < len(F):
+                ibp = F[F_i]
+                t_min = t[ibp]
+                Dt = t_min - t_old
+            else:
+                t_min = np.inf
+
+            nseg += 1
 
     if iprint >= 99:
-        Nseg = 2
         print("GCP found in this segment")
-        print(f"Piece    {Nseg}  --f1, f2 at start point , {f_prime} , {f_second}")
-        print(f"Distance to the stationary point = {Dt}")
+
+        # print(f"Piece    {nseg}  --f1, f2 at start point , {f_prime} , {f_second}")
+        # print(f"Distance to the stationary point = {Dt}")
 
     Dt_min = 0 if Dt_min < 0 else Dt_min
     t_old += Dt_min
@@ -614,6 +655,7 @@ def line_search(
     beta: float = 0.9,
     xtol_minpack: float = 1e-5,
     max_iter: int = 30,
+    iprint: int = 10,
 ) -> Optional[float]:
     r"""
     Find a step that satisfies both decrease condition and a curvature condition.
@@ -675,15 +717,20 @@ def line_search(
       ACM Transactions on Mathematical Software, 38, 1.
     """
 
-    steplength_0 = 1 if max_steplength > 1 else 0.5 * max_steplength
+    # steplength_0 = 1 if max_steplength > 1 else 0.5 * max_steplength
+
     f_m1 = f0
     dphi = g0.dot(d)
     dphi_m1 = dphi
     i = 0
 
     if above_iter == 0:
-        max_steplength = 1.0
         steplength_0 = min(1.0 / np.sqrt(d.dot(d)), max_steplength)
+    else:
+        steplength_0 = 1.0
+
+    print(f"max_steplength = {max_steplength}")
+    print(f"steplength_0 = {steplength_0}")
 
     isave = np.zeros((2,), np.intc)
     dsave = np.zeros((13,), float)
@@ -717,6 +764,9 @@ def line_search(
         if task[:21] != b"WARNING: STP = STPMAX":
             print(task)
             steplength = None  # failed
+
+    if iprint >= 99:
+        print(f"LINE SEARCH  {i} times; norm of step = {steplength}")
 
     return steplength
 
@@ -960,18 +1010,6 @@ def projgr(
         Infinity norm of the projected gradient
     """
     return np.max(np.abs(np.clip(x - grad, lb, ub) - x))
-    return np.max(
-        np.abs(
-            np.where(
-                grad < 0,
-                np.nanmax([x - ub, grad], axis=0),  # type: ignore
-                np.nanmin([x - lb, grad], axis=0),  # type: ignore
-            )
-        )
-    )
-
-    # supposed to be the same than
-    # np.max(np.abs(np.clip(x - grad, lb, ub) - x))
 
 
 def display_iter(iter: int, sbgnrm: float, f: float, iprint: int) -> None:
@@ -1001,7 +1039,7 @@ def display_results(
     grad: NDArrayFloat,
     lb: NDArrayFloat,
     ub: NDArrayFloat,
-    f0: NDArrayFloat,
+    f0: float,
     gtol: float,
     is_final_display: bool,
 ) -> None:
@@ -1220,7 +1258,7 @@ def minimize_lbfgsb(
       ACM Transactions on Mathematical Software, 38, 1.
     """
     lb, ub = get_bounds(x0, bounds)
-    max_steplength_user = max_steplength
+    max_steplength_user: float = copy.copy(max_steplength)
 
     # applying the bounds to the initial guess x0
     n = x0.size
@@ -1280,7 +1318,7 @@ def minimize_lbfgsb(
         projgr(x, grad, lb, ub) > gtol and n_iterations < max_iter and sf.nfev < maxfun
     ):
         if iprint > 99:
-            print(f"\nITERATION {n_iterations}\n")
+            print(f"\nITERATION {n_iterations + 1}\n")
 
         oljac0 = f0
         x.copy()
@@ -1336,6 +1374,7 @@ def minimize_lbfgsb(
             beta_linesearch,
             xtol_minpack,
             maxls,
+            iprint,
         )
 
         if steplength is None:
@@ -1363,8 +1402,6 @@ def minimize_lbfgsb(
             # upgrade the gradient and the past sequence of gradients accordingly
             if update_fun_def is not None:
                 f0, grad, G = update_fun_def(f0, grad, X, G)
-
-            display_iter(n_iterations, sbgnrm, f0, iprint)
 
             W, M, theta = get_lbfgs_matrices(
                 x.copy(),  # copy otherwise x might be changed in X when updated
@@ -1414,6 +1451,9 @@ def minimize_lbfgsb(
             display_results(
                 iprint, n_iterations, max_iter, x, grad, lb, ub, f0, gtol, False
             )
+
+            display_iter(n_iterations + 1, sbgnrm, f0, iprint)
+
             n_iterations += 1
 
     # Final display

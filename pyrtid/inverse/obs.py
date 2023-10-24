@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-from typing import List, Optional, Sequence, Tuple, Union
+from typing import Optional, Sequence, Tuple, Union
 
 import numpy as np
 
@@ -15,6 +15,7 @@ from pyrtid.utils.means import (
     get_mean_values_gradient_for_last_axis,
 )
 from pyrtid.utils.types import (
+    Int,
     NDArrayFloat,
     NDArrayInt,
     object_or_object_sequence_to_list,
@@ -77,7 +78,7 @@ class Observable:
     def __init__(
         self,
         state_variable: StateVariable,
-        node_indices: Union[NDArrayInt, List[int], int],
+        node_indices: Int,
         times: NDArrayFloat,
         values: NDArrayFloat,
         uncertainties: Optional[Union[float, NDArrayFloat]] = None,
@@ -96,7 +97,7 @@ class Observable:
         ----------
         state_variable: StateVariable
             Name of the state variable or the parameter being observed.
-        node_indices: Union[NDArrayInt, List[int], int]
+        node_indices: Int
             Location of the observation in the grid (indices from 0 to nx * ny - 1).
         times: NDArrayFloat
             Timesteps matching the values.

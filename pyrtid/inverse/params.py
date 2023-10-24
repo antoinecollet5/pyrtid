@@ -396,9 +396,17 @@ class AdjustableParameter:
             ]
         ).T
 
-    def get_regularization_loss_function(self) -> float:
+    def get_regularization_loss_function(
+        self, x: Optional[NDArrayFloat] = None
+    ) -> float:
         """
         Return the regularization objective function for the parameter.
+
+        Parameters
+        ----------
+        x: Optional[NDArrayFloat]
+            Optional values for which to compute the regularization. If no values are
+            provided, the values stored in the parameter instances are used.
 
         Note
         ----
@@ -409,20 +417,35 @@ class AdjustableParameter:
             values: NDArrayFloat = self.values.copy()
             if reg.is_preconditioned:
                 values: NDArrayFloat = self.preconditioner(values)
+            if x is not None:
+                if reg.is_preconditioned:
+                    x = self.backconditioner(x)
+                values[self.span] = x
             _sum += reg.loss_function(values)
         return _sum
 
     def get_regularization_loss_function_gradient(
-        self,
-    ) -> Union[NDArrayFloat, float]:
-        """Return the regularization objective function gradient."""
+        self, x: Optional[NDArrayFloat] = None
+    ) -> NDArrayFloat:
+        """
+        Return the regularization objective function gradient.
+
+        x has to be preconditionned.
+        """
         grad: NDArrayFloat = np.zeros(self.values.shape)
         for reg in self.regularizators:
             values: NDArrayFloat = self.values.copy()
             if reg.is_preconditioned:
                 values: NDArrayFloat = self.preconditioner(values)
+            if x is not None:
+                if reg.is_preconditioned:
+                    x = self.backconditioner(x)
+                values[self.span] = x
             grad += reg.loss_function_gradient(values)
         return grad
+
+
+AdjustableParameters = Union[AdjustableParameter, Sequence[AdjustableParameter]]
 
 
 def get_parameter_values_from_model(
@@ -430,6 +453,10 @@ def get_parameter_values_from_model(
 ) -> NDArrayFloat:
     """
     Get the adjusted parameter values in the model.
+
+    Note
+    ----
+    Returned values are not preconditioned.
 
     Parameters
     ----------
@@ -460,7 +487,7 @@ def get_parameter_values_from_model(
 
 def update_parameters_from_model(
     model: ForwardModel,
-    parameters_to_adjust: Union[AdjustableParameter, Sequence[AdjustableParameter]],
+    parameters_to_adjust: AdjustableParameters,
 ) -> None:
     """Update adjusted parameters from model."""
     for param in object_or_object_sequence_to_list(parameters_to_adjust):
@@ -471,7 +498,7 @@ def update_parameters_from_model(
 
 def get_parameters_values_from_model(
     model: ForwardModel,
-    params: Union[AdjustableParameter, Sequence[AdjustableParameter]],
+    params: AdjustableParameters,
     is_preconditioned: bool = False,
 ) -> NDArrayFloat:
     """
@@ -499,7 +526,7 @@ def get_parameters_values_from_model(
 
 def get_1st_derivative_preconditoned_parameters_values_from_model(
     model: ForwardModel,
-    params: Union[AdjustableParameter, Sequence[AdjustableParameter]],
+    params: AdjustableParameters,
 ) -> NDArrayFloat:
     """
     Return a 1D vector of preconditioned inverted model parameters derivative.
@@ -522,7 +549,7 @@ def get_1st_derivative_preconditoned_parameters_values_from_model(
 def update_model_with_parameters_values(
     model: ForwardModel,
     parameters_values: NDArrayFloat,
-    params: Union[AdjustableParameter, Sequence[AdjustableParameter]],
+    params: AdjustableParameters,
     is_preconditioned: bool = False,
     is_to_save: bool = False,
 ) -> None:
@@ -551,7 +578,7 @@ def update_model_with_parameters_values(
 
 
 def get_parameters_bounds(
-    params: Union[AdjustableParameter, Sequence[AdjustableParameter]],
+    params: AdjustableParameters,
     is_preconditioned: bool = False,
 ) -> np.ndarray:
     """Return a 2xn bounds matrix, n being the number of parameters values inverted.
@@ -659,3 +686,73 @@ def update_model_with_param_values(
         raise ValueError(
             f'"{param.name}" is not a valid state variable or parameter type!'
         )
+
+
+def get_reg_loss_function(
+    params: AdjustableParameters, model: ForwardModel, x: Optional[NDArrayFloat] = None
+) -> float:
+    """
+    Get the regularization loss function for the provided parameters.
+
+    Parameters
+    ----------
+    param : AdjustableParameters
+        Sequence of adjutable parameters.
+    x : Optional[NDArrayFloat], optional
+        Optional values for the parameters. If None, the value stored in the
+        parameter instances are used, by default None. MUST BE PRECONDITONED !!!
+
+    Returns
+    -------
+    float
+        The regularization objective function.
+    """
+    jreg: float = 0
+    idx = 0
+    for param in object_or_object_sequence_to_list(params):
+        values = param.get_sliced_field(get_parameter_values_from_model(model, param))
+        if x is not None:
+            values = x[idx : idx + values.size]
+            idx += values.size
+        jreg += param.get_regularization_loss_function(values)
+    return jreg
+
+
+def get_reg_loss_function_gradient(
+    params: AdjustableParameters, model: ForwardModel, x: Optional[NDArrayFloat] = None
+) -> NDArrayFloat:
+    """
+    Get the regularization loss function for the provided parameters.
+
+    Parameters
+    ----------
+    param : AdjustableParameters
+        Sequence of adjutable parameters.
+    x : Optional[NDArrayFloat], optional
+        Optional values for the parameters. If None, the value stored in the
+        parameter instances are used, by default None. MUST BE PRECONDITONED !!!
+
+    Returns
+    -------
+    float
+        The regularization objective function.
+    """
+    grad: NDArrayFloat = np.array([], dtype=np.float_)
+    idx = 0
+    for param in object_or_object_sequence_to_list(params):
+        values: NDArrayFloat = param.get_sliced_field(
+            get_parameter_values_from_model(model, param)
+        )
+        if x is not None:
+            values = x[idx : idx + values.size]
+            idx += values.size
+        grad = np.hstack(
+            (
+                grad,
+                param.get_regularization_loss_function_gradient(values)[
+                    param.span
+                ].ravel(),
+            )
+        )
+
+    return grad

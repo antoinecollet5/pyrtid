@@ -142,4 +142,4 @@ class PCGAInversionExecutor(BaseInversionExecutor[PCGASolverConfig]):
         """
         # pylint: disable=W0613  # Unused argument 'ncores'
         # The transposition is due to the implementation of pypcga
-        return super()._map_forward_model(s_ensemble.T, is_parallel).T
+        return super()._map_forward_model(s_ensemble, is_parallel)

@@ -2,20 +2,19 @@
 
 import copy
 import warnings
-from typing import List, Optional, Sequence, Union
+from typing import List, Optional
 
 import numpy as np
 
 from pyrtid.forward import ForwardModel, ForwardSolver
 from pyrtid.forward.models import GRAVITY, FlowRegime
 from pyrtid.inverse.adjoint import AdjointModel, AdjointSolver
-from pyrtid.inverse.adjoint.aflow_solver import (
-    make_initial_adj_flow_matrices,
-)
+from pyrtid.inverse.adjoint.aflow_solver import make_initial_adj_flow_matrices
 from pyrtid.inverse.loss_function import get_model_loss_function
 from pyrtid.inverse.obs import Observable, Observables
 from pyrtid.inverse.params import (
     AdjustableParameter,
+    AdjustableParameters,
     ParameterName,
     get_parameter_values_from_model,
     update_model_with_parameters_values,
@@ -753,7 +752,7 @@ def compute_param_adjoint_ls_loss_function_gradient(
 def compute_adjoint_gradient(
     fwd_model: ForwardModel,
     adj_model: AdjointModel,
-    parameters_to_adjust: Union[AdjustableParameter, Sequence[AdjustableParameter]],
+    parameters_to_adjust: AdjustableParameters,
     jreg_weight: float = 1.0,
 ) -> NDArrayFloat:
     """
@@ -840,7 +839,7 @@ def _local_fun(
 def compute_fd_gradient(
     model: ForwardModel,
     observables: Observables,
-    parameters_to_adjust: Union[AdjustableParameter, Sequence[AdjustableParameter]],
+    parameters_to_adjust: AdjustableParameters,
     jreg_weight=1.0,
     eps: Optional[float] = None,
     max_workers: int = 1,
@@ -918,7 +917,7 @@ def compute_fd_gradient(
 def is_adjoint_gradient_correct(
     fwd_model: ForwardModel,
     adj_model: AdjointModel,
-    parameters_to_adjust: Union[AdjustableParameter, Sequence[AdjustableParameter]],
+    parameters_to_adjust: AdjustableParameters,
     observables: Observables,
     eps: Optional[float] = None,
     max_workers: int = 1,
@@ -934,7 +933,7 @@ def is_adjoint_gradient_correct(
         _description_
     adj_model : AdjointModel
         _description_
-    parameters_to_adjust : Union[AdjustableParameter, Sequence[AdjustableParameter]]
+    parameters_to_adjust : AdjustableParameters
         _description_
     observables : Observables
         _description_

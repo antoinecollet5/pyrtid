@@ -6,13 +6,11 @@ Provide functions to work with regular grids.
 
 # pylint: disable=C0103  # Do not conform to snake-case naming style
 # pylint: disable=R0913  # Too many arguments
-from typing import Sequence, Tuple, Union
+from typing import Tuple, Union
 
 import numpy as np
 
-from pyrtid.utils.types import NDArrayBool, NDArrayInt
-
-Int = Union[int, NDArrayInt, Sequence[int]]
+from pyrtid.utils.types import Int, NDArrayBool, NDArrayInt
 
 
 def indices_to_node_number(

@@ -9,6 +9,7 @@ import numpy.typing as npt
 NDArrayFloat = npt.NDArray[np.float_]
 NDArrayInt = npt.NDArray[np.int_]
 NDArrayBool = npt.NDArray[np.bool_]
+Int = Union[int, NDArrayInt, Sequence[int]]
 
 _Object = TypeVar("_Object", bound=object)
 

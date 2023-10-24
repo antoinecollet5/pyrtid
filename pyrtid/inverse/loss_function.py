@@ -1,4 +1,4 @@
-from typing import Optional, Sequence, Union
+from typing import Optional
 
 import numpy as np
 
@@ -12,7 +12,7 @@ from .obs import (
     get_observables_values_as_1d_vector,
     get_predictions_matching_observations,
 )
-from .params import AdjustableParameter
+from .params import AdjustableParameters
 
 
 def ls_loss_function(
@@ -83,7 +83,7 @@ def get_model_ls_loss_function(
 
 def get_model_reg_loss_function(
     model: ForwardModel,
-    parameters_to_adjust: Union[AdjustableParameter, Sequence[AdjustableParameter]],
+    parameters_to_adjust: AdjustableParameters,
 ) -> float:
     # Update the parameter values from the model.
     update_parameters_from_model(model, parameters_to_adjust)
@@ -100,7 +100,7 @@ def get_model_reg_loss_function(
 def get_model_loss_function(
     model: ForwardModel,
     observables: Observables,
-    parameters_to_adjust: Union[AdjustableParameter, Sequence[AdjustableParameter]],
+    parameters_to_adjust: AdjustableParameters,
     max_obs_time: Optional[float] = None,
     jreg_weight: float = 1.0,
 ) -> float:
@@ -110,7 +110,7 @@ def get_model_loss_function(
     ----------
     fwd_model : ForwardModel
         Forward model.
-    parameters_to_adjust : Union[AdjustableParameter, Sequence[AdjustableParameter]]
+    parameters_to_adjust : AdjustableParameters
         Adjusted parameters.
     max_obs_time : Optional[float], optional
         Maximum time for which to consider an obervation value, by default None

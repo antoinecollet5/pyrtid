@@ -122,7 +122,7 @@ class LBFGSBInversionExecutor(BaseInversionExecutor[LBFGSBSolverConfig]):
 
     def update_fun_def(
         self,
-        f0: float,
+        j: float,
         grad: NDArrayFloat,
         X: Deque[NDArrayFloat],
         G: Deque[NDArrayFloat],
@@ -142,7 +142,7 @@ class LBFGSBInversionExecutor(BaseInversionExecutor[LBFGSBSolverConfig]):
 
         Parameters
         ----------
-        f0 : float
+        j : float
             Value of the objective function.
         grad : NDArrayFloat
             Gradient.
@@ -157,7 +157,37 @@ class LBFGSBInversionExecutor(BaseInversionExecutor[LBFGSBSolverConfig]):
             Update f0, grad and G.
         """
         # Return updated f0, grad and G
-        return f0, grad, G
+
+        # Regularization weight that has been used up to now
+        old_weight: float = self.inv_model.jreg_weight
+
+        # Get the current regularization term of the objectuve function
+        # And compute the new weight
+        jreg: float = 0.0
+        # for
+        # float(
+        #     sum(
+        #         [
+        #             p.get_regularization_loss_function()
+        #             for p in self.inv_model.parameters_to_adjust
+        #         ]
+        #     )
+        # )
+
+        # Compute back the data misfit objective function
+        # (remove the previous regularization term)
+        j0: float = j - old_weight * jreg * jreg
+        # Update the regularization weight
+        new_weight: float = j0 / jreg
+        self.inv_model.jreg_weight = new_weight
+        # updated j
+        updated_j: float = j0 + new_weight * jreg
+
+        # Update all past gradients
+        for x in X:
+            pass
+
+        return updated_j, grad, G
 
     def run(self) -> ScipyOptimizeResult:
         """
