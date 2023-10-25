@@ -204,7 +204,7 @@ class SIESInversionExecutor(BaseInversionExecutor[SIESSolverConfig]):
         _m = self.solver.X  # stored in the SIES instance
         if self.solver_config.save_ensembles_history:
             self.solver.s_history.append(_m)
-        for iteration in range(self.solver_config.n_iterations):  # type: ignore
+        for iteration in range(1, self.solver_config.n_iterations + 1):  # type: ignore
             logging.info(f"Iteration # {iteration}")
             d_pred = self._map_forward_model_wrapper(
                 _m,
@@ -213,11 +213,8 @@ class SIESInversionExecutor(BaseInversionExecutor[SIESSolverConfig]):
             self.solver.d_history.append(d_pred)
 
             _m = self.solver.sies_iteration(
-                d_pred.T,
+                d_pred,
                 step_length=self.solver_config.steplength_strategy(iteration),
-                # gradient_ensemble=(
-                #     gradients.T if self.solver_config.is_use_adjoint.T else None
-                # ),
             )
 
             if self.solver_config.save_ensembles_history:
@@ -370,3 +367,10 @@ class SIESInversionExecutor(BaseInversionExecutor[SIESSolverConfig]):
             self.inv_model.list_losses.append(ls_loss)
 
         return d_pred, gradients
+
+
+if __name__ == "__main__":
+    # For ProcessPoolExecutor
+    # Make sure that the main module can be safely imported by a new Python interpreter
+    # without causing unintended side effects (such a starting a new process).
+    pass
