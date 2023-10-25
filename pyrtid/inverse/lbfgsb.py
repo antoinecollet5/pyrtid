@@ -119,6 +119,7 @@ def get_cauchy_point(
     ub: NDArrayFloat,
     W: NDArrayFloat,
     M: NDArrayFloat,
+    invMlt: NDArrayFloat,
     mats: LBFGSmat,
     theta: float,
     col: int,
@@ -238,7 +239,13 @@ def get_cauchy_point(
     # f2_org in the fortran code
     f_sec0: float = copy.deepcopy(f_second)
     # Update f2 with - d^{T} @ W @ M @ W^{T} @ d = - p^{T} @ M @ p
-    f_second = f_second - p.dot(M.dot(p))  # O(m^{2}) operations
+    # old way: f_second = f_second - p.dot(M.dot(p))  # O(m^{2}) operations
+    # new_way: not at first iteration -> invMlt and M are worse zero.
+    # And cho_solve produces nan
+    if iter != 0:
+        f_second = f_second - p.dot(
+            sp.linalg.cho_solve((invMlt, True), p)
+        )  # O(m^{2}) operations
 
     # dtm in the fortran code
     Dt_min: float = -f_prime / f_second
@@ -291,8 +298,20 @@ def get_cauchy_point(
             g_b = grad[ibp]
 
             # Update the derivative information
-            f_prime += Dt * f_second + g_b * (g_b + theta * zb - W_b.dot(M.dot(c)))
-            f_second -= g_b * (g_b * theta + W_b.dot(M.dot(2 * p + g_b * W_b)))
+            # 1) Old way
+            # f_prime += Dt * f_second + g_b * (g_b + theta * zb - W_b.dot(M.dot(c)))
+            # f_second -= g_b * (g_b * theta + W_b.dot(M.dot(2 * p + g_b * W_b)))
+            # 2) New way with the cholesky factorization
+            f_prime += Dt * f_second + g_b * (g_b + theta * zb)
+            f_second -= g_b * (g_b * theta)
+            # First iteration -> invMlt and M are worse zero.
+            # And cho_solve produces nan
+            if iter != 0:
+                f_prime -= g_b * W_b.dot(sp.linalg.cho_solve((invMlt, True), c))
+                f_second -= g_b * W_b.dot(
+                    sp.linalg.cho_solve((invMlt, True), (2 * p + g_b * W_b))
+                )
+
             f_second = min(f_second, eps_f_sec * f_sec0)
 
             Dt_min = -f_prime / f_second
@@ -559,36 +578,41 @@ def formk(X: Deque, G: Deque, Z: spmatrix, A: spmatrix, theta: float) -> NDArray
     # form S and Y
     S = np.diff(np.array(X), axis=0).T
     Y = np.diff(np.array(G), axis=0).T
-
-    D = np.diag(-np.diag(S.T @ Y))
+    D: NDArrayFloat = np.diag(np.diag(S.T @ Y))
 
     # K sub-blocks
 
     # LZ is the upper triangular part
     if Z.size == 0:
-        YTZZTY = 0.0
-        LZ = 0.0
+        YTZZTY = np.array([0.0])
+        LZ = np.array([0.0])
     else:
         YTZZTY = Y.T @ Z @ Z.T @ Y
         LZ = np.triu(YTZZTY)
 
     # LA is the strict lower triangle of S^{T}AA^{T}S
     if A.size == 0:
-        STAATS = 0.0
-        LA = 0.0
+        STAATS = np.array([0.0])
+        LA = np.array([0.0])
     else:
         STAATS = S.T @ A @ A.T @ S
         LA = np.tril(STAATS, -1)
 
-    K11 = -D - 1 / theta * YTZZTY
-    K21 = LA - LZ
+    K11: NDArrayFloat = -D - 1 / theta * YTZZTY
+    K21: NDArrayFloat = LA - LZ
 
     if A.size == 0:
         K22 = np.zeros(K21.shape)
     else:
         K22 = theta * STAATS
-    # S = K22 - K21 @ np.linalg.inv(K11) @ K21.T
 
+    try:
+        print(K11)
+        L11 = sp.linalg.cholesky(K11, lower=True)
+        print(L11)
+        S = K22 - K21 @ sp.linalg.cho_solve((L11, True), K21.T)
+    except ValueError:
+        S = 0.0
     # print(K11.shape)
     # print(K21.shape)
     # print(K22.shape)
@@ -759,15 +783,13 @@ def line_search(
     dphi_m1 = dphi
     i = 0
 
-    print(f"max_steplength = {max_steplength}")
-
     if above_iter == 0:
         steplength_0 = min(1.0 / np.sqrt(d.dot(d)), max_steplength)
     else:
         steplength_0 = 1.0
 
-    print(f"max_steplength = {max_steplength}")
-    print(f"steplength_0 = {steplength_0}")
+    # print(f"max_steplength = {max_steplength}")
+    # print(f"steplength_0 = {steplength_0}")
 
     isave = np.zeros((2,), np.intc)
     dsave = np.zeros((13,), float)
@@ -817,10 +839,11 @@ def get_lbfgs_matrices(
     mats: LBFGSmat,
     W: NDArrayFloat,
     M: NDArrayFloat,
-    thet: float,
+    invMlt: NDArrayFloat,
+    theta: float,
     is_force_update: bool,
     eps: float = 2.2e-16,
-) -> Tuple[NDArrayFloat, NDArrayFloat, float]:
+) -> Tuple[NDArrayFloat, NDArrayFloat, NDArrayFloat, float]:
     r"""
     Update lists S and Y, and form the L-BFGS Hessian approximation thet, W and M.
 
@@ -916,20 +939,20 @@ def get_lbfgs_matrices(
             np.hstack([np.vstack([-D, L]), np.vstack([L.T, theta * STS])])
         )
         # However, we can also factorize its inverse and obtain very fast matrix
-        # products
-        form_cholesky_mk(theta, STS, L, D)
+        # products: lower triangle of M inverse
+        invMlt = form_invMlt(theta, STS, L, D)
 
-    return W, M, theta
+    return W, M, invMlt, theta
 
 
-def form_cholesky_mk(theta, STS, L, D) -> NDArrayFloat:
-    """
-    Perform the cholesky factorization of the matrix Mk, defined in eq. (3.4) [1].
+def form_invMlt(theta, STS, L, D) -> NDArrayFloat:
+    r"""
+    Perform the cholesky factorization of the inverse of M_k, defined in eq. (3.4) [1].
 
     Although Mk is not positive definite, but its inverse reads:
 
         [  -D       L'        ]
-        [   L       \theta S'S]
+        [   L       theta * S'*S]
 
     Hence its inverse can be factorized symmetrically by using Cholesky factorizations
     of the submatrices TODO: add ref to the phd manuscript.
@@ -941,14 +964,14 @@ def form_cholesky_mk(theta, STS, L, D) -> NDArrayFloat:
     With J*J' = T = theta*Ss + L*D^(-1)*L'; T being definite positive, J is obtained by
     Cholesky factorization of T.
     """
-    # Cholesky returns the upper part so we transpose to get the lower part
-    J = sp.linalg.cholesky(theta * STS + L @ sp.linalg.solve(D, L.T)).T
+    # Cholesky factorization
+    J = sp.linalg.cholesky(theta * STS + L @ sp.linalg.solve(D, L.T), lower=True)
 
     # Note we form the upper triangle and then transpose it to get the lower one
     return np.hstack(
         [
             np.vstack([-np.sqrt(D), sp.linalg.solve(np.sqrt(D), L.T)]),  # upper row
-            np.vstack([np.zeros(D.shape), J.T]),  # lower roow
+            np.vstack([np.zeros(D.shape), J.T]),  # lower row
         ]
     ).T
 
@@ -1374,8 +1397,9 @@ def minimize_lbfgsb(
     mats = LBFGSmat(x.size, maxcor)
 
     # search direction for the minimization problem
-    W = np.zeros([n, 1])
-    M = np.zeros([1, 1])
+    W: NDArrayFloat = np.zeros([n, 1])
+    M: NDArrayFloat = np.zeros([1, 1])
+    invMlt: NDArrayFloat = np.zeros([1, 1])
     theta = 1
 
     # wrapper storing the calls to f and g and handling finite difference approximation
@@ -1422,7 +1446,19 @@ def minimize_lbfgsb(
         # find cauchy point
         # TODO: replace dictCP by a class
         dictCP = get_cauchy_point(
-            x, grad, lb, ub, W, M, mats, theta, len(X), maxcor, iprint, n_iterations
+            x,
+            grad,
+            lb,
+            ub,
+            W,
+            M,
+            invMlt,
+            mats,
+            theta,
+            len(X),
+            maxcor,
+            iprint,
+            n_iterations,
         )
 
         # Get the free variables for the GCP
@@ -1431,7 +1467,7 @@ def minimize_lbfgsb(
 
         # if n_iterations != 0 and dictCP["free_vars"] != 0:
         # Factorization of the matrix K used in the subspace minimization
-        # TODO
+        # TODO: there is something I don't get here...
         # K: NDArrayFloat = formk(X, G, Z, A, theta)
         K = None
 
@@ -1500,7 +1536,7 @@ def minimize_lbfgsb(
             if update_fun_def is not None:
                 f0, grad, G = update_fun_def(x, f0, grad, X, G)
 
-            W, M, theta = get_lbfgs_matrices(
+            W, M, invMlt, theta = get_lbfgs_matrices(
                 x.copy(),  # copy otherwise x might be changed in X when updated
                 grad,
                 X,
@@ -1509,6 +1545,7 @@ def minimize_lbfgsb(
                 mats,
                 W.copy(),
                 M.copy(),
+                invMlt,
                 copy.copy(theta),
                 False,
                 eps_SY,

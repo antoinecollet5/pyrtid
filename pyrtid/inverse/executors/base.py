@@ -526,7 +526,7 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         return np.zeros(m.shape)
 
     @abstractmethod
-    def run(self) -> Optional[Sequence[Any]]:
+    def run(self) -> Optional[Union[Sequence[Any], NDArrayFloat]]:
         """
         Run the history matching.
 

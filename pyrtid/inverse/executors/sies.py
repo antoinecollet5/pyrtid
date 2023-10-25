@@ -206,10 +206,9 @@ class SIESInversionExecutor(BaseInversionExecutor[SIESSolverConfig]):
             self.solver.s_history.append(_m)
         for iteration in range(self.solver_config.n_iterations):  # type: ignore
             logging.info(f"Iteration # {iteration}")
-            d_pred, gradients = self._map_forward_model_with_adjoint(
+            d_pred = self._map_forward_model_wrapper(
                 _m,
                 is_parallel=self.solver_config.is_parallel,
-                is_use_adjoint=self.solver_config.is_use_adjoint,
             )
             self.solver.d_history.append(d_pred)
 
@@ -229,6 +228,25 @@ class SIESInversionExecutor(BaseInversionExecutor[SIESSolverConfig]):
     def s_history(self) -> List[NDArrayFloat]:
         """Return the successive ensembles."""
         return self.solver.s_history
+
+    def _map_forward_model_wrapper(
+        self,
+        s_ensemble: NDArrayFloat,
+        is_parallel: bool = False,
+    ) -> NDArrayFloat:
+        """
+        Call the forward model for all ensemble members, return predicted data.
+
+        Function calling the non-linear observation model (forward_model)
+        for all ensemble members and returning the predicted data for
+        each ensemble member. this function is responsible for the creation of
+        simulation folder etc.
+
+        Returns
+        -------
+        None.
+        """
+        return super()._map_forward_model(s_ensemble, is_parallel)
 
     def _run_forward_model_with_adjoint(
         self,
