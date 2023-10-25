@@ -304,7 +304,7 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         )
 
     @abstractmethod
-    def _init_solver(self, s_init: Optional[NDArrayFloat]) -> None:
+    def _init_solver(self, s_init: NDArrayFloat) -> None:
         """Initiate a solver with its args."""
 
     @abstractmethod
@@ -429,7 +429,6 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         """
         run_n: int = self.inv_model.nb_f_calls
         n_ensemble: int = s_ensemble.shape[1]  # type: ignore
-        print(f"n_ensemble = {n_ensemble}")
         d_pred: NDArrayFloat = np.zeros([self.data_model.d_dim, n_ensemble])
         if is_parallel:
             with ProcessPoolExecutor(
@@ -441,7 +440,7 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
                     range(run_n + 1, run_n + n_ensemble + 1),  # type: ignore
                 )
                 for j, res in enumerate(results):
-                    d_pred[:j] = res
+                    d_pred[:, j] = res
             # self.simu_n += n_ensemble
         else:
             for j in range(n_ensemble):  # type: ignore
@@ -464,7 +463,7 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
                 ),
             )
 
-            self.inv_model.list_f_res.append(ls_loss)
+            self.inv_model.list_losses.append(ls_loss)
 
         return d_pred  # shape (N_obs, N_e)
 
@@ -481,8 +480,11 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         )
 
         # Compute the regularization term:
-        reg_factor = self.solver_config.__dict__.get("reg_factor", "auto")
-        reg_loss = self.inv_model.get_jreg(ls_loss, reg_factor)
+        reg_factor = self.solver_config.__dict__.get("reg_factor", 0.0)
+        if reg_factor == 0:
+            reg_loss = 0.0
+        else:
+            reg_loss = self.inv_model.get_jreg(ls_loss, reg_factor)
         total_loss = ls_loss + reg_loss
 
         # Apply the scaling coefficient
@@ -490,14 +492,19 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
             total_loss
         )
 
+        # Store the last objective function values (ls and reg terms)
+        self.inv_model.ls_loss = ls_loss
+        self.inv_model.reg_loss = reg_loss
+
         logging.info(f"Loss (obs fit)        = {ls_loss}")
         logging.info(f"Loss (regularization) = {reg_loss}")
+        logging.info(f"Regularization weight = {self.inv_model.jreg_weight}")
         logging.info(f"Scaling factor        = {self.inv_model.scaling_factor}")
         logging.info(f"Loss (scaled)         = {scaled_loss}\n")
 
         # Save the loss and the associated regularization weight
         if is_save_state:
-            self.inv_model.list_f_res.append(scaled_loss)
+            self.inv_model.list_losses.append(scaled_loss)
 
         return scaled_loss
 

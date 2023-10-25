@@ -10,6 +10,7 @@ from pyrtid.inverse.params import (
     AdjustableParameters,
     ParameterName,
 )
+from pyrtid.inverse.regularization import RegWeightUpdateStrategy
 from pyrtid.utils.types import NDArrayFloat, object_or_object_sequence_to_list
 
 
@@ -29,10 +30,10 @@ class InverseModel:
         is raised.
     is_use_adjoint: bool
         Whether to use the adjoint for the gradient calculation.
-    list_f_res: List[float]
+    list_losses: List[float]
         List of successive objective functions computed while optimizing.
         Note: the values are not scaled.
-    list_f_res_for_fd_grad: List[float]
+    list_losses_for_fd_grad: List[float]
         List of successive objective functions computed while computing the gradients
         by finite difference. Note: the values are not scaled.
     list_d_pred: List[NDArrayFloat]
@@ -57,8 +58,10 @@ class InverseModel:
         "scaling_factor",
         "is_regularization_at_first_round",
         "nb_g_calls",
-        "list_f_res",
-        "list_f_res_for_fd_grad",
+        "ls_loss",
+        "reg_loss",
+        "list_losses",
+        "list_losses_for_fd_grad",
         "list_d_pred",
         "is_first_loss_function_call_in_round",
         "jreg_weight",
@@ -105,16 +108,18 @@ class InverseModel:
         self.scaling_factor: float = 1.0
         self.is_regularization_at_first_round: bool = True
         self.nb_g_calls = 0
-        self.list_f_res: List[float] = []
-        self.list_f_res_for_fd_grad: List[float] = []
+        self.list_losses: List[float] = []
+        self.list_losses_for_fd_grad: List[float] = []
         self.list_d_pred: List[NDArrayFloat] = []
         self.is_first_loss_function_call_in_round: bool = True
         self.jreg_weight: float = 0.0
+        self.ls_loss: float = 0.0
+        self.reg_loss: float = 0.0
 
     @property
     def nb_f_calls(self) -> int:
         """Return the number of times the objective function has been called."""
-        return len(self.list_f_res) + len(self.list_f_res_for_fd_grad)
+        return len(self.list_losses) + len(self.list_losses_for_fd_grad)
 
     @property
     def nb_adjusted_values(self) -> int:
@@ -215,7 +220,9 @@ class InverseModel:
         else:
             raise ValueError("'observable' should be of type List[Observable]")
 
-    def get_jreg(self, j0: float, reg_factor: Union[float, str]) -> float:
+    def get_jreg(
+        self, j0: float, reg_factor: Union[float, RegWeightUpdateStrategy, str]
+    ) -> float:
         """
         Return the spatial regularization objective function for the parameters.
 
@@ -253,7 +260,10 @@ class InverseModel:
         if self.is_first_loss_function_call_in_round:
             if j0 == 0:
                 self.jreg_weight = 1.0
-            elif reg_factor == "auto":
+            elif reg_factor in [
+                RegWeightUpdateStrategy.AUTO_PER_ROUND,
+                RegWeightUpdateStrategy.AUTO_CONTINUOUS,
+            ]:
                 self.jreg_weight = j0 / jreg
             else:
                 self.jreg_weight = float(reg_factor)

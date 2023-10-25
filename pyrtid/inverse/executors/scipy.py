@@ -21,6 +21,7 @@ from pyrtid.inverse.adjoint.gradients import (
 )
 from pyrtid.inverse.executors.base import BaseInversionExecutor, BaseSolverConfig
 from pyrtid.inverse.params import get_parameters_bounds
+from pyrtid.inverse.regularization import RegWeightUpdateStrategy
 from pyrtid.utils import is_all_close
 from pyrtid.utils.types import NDArrayFloat
 
@@ -65,7 +66,7 @@ class ScipySolverConfig(BaseSolverConfig):
         Whether the gradient The default is False.
     is_use_adjoint: bool = True
     is_regularization_at_first_round: bool = True
-    reg_factor: Union[float, str] = "auto"
+    reg_factor: Union[float, RegWeightUpdateStrategy, str]
         Weight for the regularization part. The default is "auto".
     afpi_eps: float = 1e-5
     is_a_numerical_acceleratiion: bool = False
@@ -80,7 +81,9 @@ class ScipySolverConfig(BaseSolverConfig):
     is_check_gradient: bool = False
     is_use_adjoint: bool = True
     is_regularization_at_first_round: bool = True
-    reg_factor: Union[float, str] = "auto"
+    reg_factor: Union[
+        float, RegWeightUpdateStrategy, str
+    ] = RegWeightUpdateStrategy.AUTO_PER_ROUND
     afpi_eps: float = 1e-5
     is_a_numerical_acceleratiion: bool = False
 
@@ -128,7 +131,7 @@ class ScipyInversionExecutor(BaseInversionExecutor[ScipySolverConfig]):
             self.inv_model.is_first_loss_function_call_in_round = True
             self.inv_model.optimization_round_nb += 1
             logging.info(
-                "Entering optimization loop: %s", self.inv_model.optimization_round_nb
+                f"Entering optimization loop: {self.inv_model.optimization_round_nb}"
             )
             # Update options and stop criteria from the previous loops
             _options: Dict[str, Any] = self._get_options_dict(

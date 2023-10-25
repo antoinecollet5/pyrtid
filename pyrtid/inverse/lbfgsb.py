@@ -10,7 +10,8 @@ The original code can be found here: https://dl.acm.org/doi/10.1145/279232.27923
 
 The aim of this reimplementation was threefold. First, familiarize ourselves with
 the code, its logic and inner optimizations. Second, gain access to certain
-parameters that are hard-coded in the Fortran code and cannot be modified. Third,
+parameters that are hard-coded in the Fortran code and cannot be modified (typically
+wolfe conditions parameters for the line search). Third,
 implement additional functionalities that require significant modification of
 the code core.
 
@@ -133,12 +134,10 @@ def get_cauchy_point(
     It is defined as the first local minimizer of the quadratic
 
     .. math::
-    :nowrap:
         \[\langle grad,s\rangle + \frac{1}{2} \langle s,
         (\theta I + WMW^\intercal)s\rangle\]
 
-    along the projected gradient direction
-    .. math:: $P_[l,u](x-\theta grad).$
+    along the projected gradient direction .. math::`P_[l,u](x-\theta grad).`
 
     Parameters
     ----------
@@ -499,12 +498,13 @@ def direct_primal_subspace_minimization(
     if len(free_vars) == 0:
         return xc
 
-    # Same as W.T.dot(Z.T) but numpy does not handle correctly
+    # Same as W.T.dot(Z) but numpy does not handle correctly
     # numpy_array.dot(sparce_matrix), so we give the responsibility to the
     # sparse matrix
     # Note that here, Z is suppose to have a shape (t, n) with t the number
     # of free_vars and n the number of variables.
-    WTZ = Z.dot(W).T
+    # WTZ = W.T.dot(Z.todense())
+    WTZ = Z.T.dot(W).T
 
     rHat = [(grad + theta * (xc - x) - W.dot(M.dot(c)))[ind] for ind in free_vars]
     v = M.dot(WTZ.dot(rHat))
@@ -638,9 +638,8 @@ def max_allowed_steplength(
       ACM Transactions on Mathematical Software, 38, 1.
     """
     with np.errstate(divide="ignore"):
-        return min(
-            max_steplength, np.nanmin(np.where(d > 0, (ub - x) / d, (lb - x) / d))
-        )
+        _tmp = np.where(d > 0, (ub - x) / d, (lb - x) / d)
+        return min(max_steplength, np.nanmin(_tmp[np.isfinite(_tmp)]))
 
 
 def line_search(
@@ -651,9 +650,9 @@ def line_search(
     above_iter: int,
     max_steplength: float,
     fun_and_grad: Callable[[NDArrayFloat], Tuple[float, NDArrayFloat]],
-    alpha: float = 1e-4,
-    beta: float = 0.9,
-    xtol_minpack: float = 1e-5,
+    ftol: float = 1e-4,  # called ftol and = 1e-3 in algo 778
+    gtol: float = 0.9,  # called gtol and = 0.9 in algo 778
+    xtol: float = 1e-5,  # called xtol = 0.1 in alga 778
     max_iter: int = 30,
     iprint: int = 10,
 ) -> Optional[float]:
@@ -669,9 +668,11 @@ def line_search(
     If alpha is less than beta and if, for example, the functionis bounded below, then
     there is always a step which satisfies both conditions.
 
-    !  This subroutine calls subroutine dcsrch from the Minpack2 library
-    !  to perform the line search.  Subroutine dscrch is safeguarded so
-    !  that all trial points lie within the feasible region.
+    Note
+    ----
+    This subroutine calls subroutine dcsrch from the Minpack2 library
+    to perform the line search.  Subroutine dscrch is safeguarded so
+    that all trial points lie within the feasible region.
 
     Parameters
     ----------
@@ -690,12 +691,46 @@ def line_search(
     fun_and_grad : Callable[[NDArrayFloat], Tuple[float, NDArrayFloat]]
         Function returning both the obejctive function and its gradient with respect to
         a given vector x.
-    alpha : float, optional
-        _description_, by default 1e-4.
-    beta : float, optional
-        Parameters of the decrease and curvature conditions, by default 0.9.
-    xtol_minpack : float, optional
-        Tolerance used in minpack2.dcsrch, by default 1e-5.
+    ftol_linesearch: float, optional
+        Specify a nonnegative tolerance for the sufficient decrease condition in
+        `minpack2.dcsrch <https://ftp.mcs.anl.gov/pub/MINPACK-2/csrch/dcsrch.f>`_
+        (used for the line search). This is :math:`c_1` in
+        the Armijo condition (or Goldstein, Goldstein-Armijo condition) where
+        :math:`\alpha_{k}` is the estimated step.
+
+        .. math::
+
+            f(\mathbf{x}_{k}+\alpha_{k}\mathbf{p}_{k})\leq
+            f(\mathbf{x}_{k})+c_{1}\alpha_{k}\mathbf{p}_{k}^{\mathrm{T}}
+            \nabla f(\mathbf{x}_{k})
+
+        Note that :math:`0 < c_1 < 1`. Usually :math:`c_1` is small, see the Wolfe
+        conditions in :cite:t:`nocedalNumericalOptimization1999`.
+        In the fortran implementation
+        algo 778, it is hardcoded to 1e-3. The default is 1e-4.
+    gtol_linesearch: float, optional
+        Specify a nonnegative tolerance for the curvature condition in
+        `minpack2.dcsrch <https://ftp.mcs.anl.gov/pub/MINPACK-2/csrch/dcsrch.f>`_
+        (used for the line search). This is :math:`c_2` in
+        the Armijo condition (or Goldstein, Goldstein-Armijo condition) where
+        :math:`\alpha_{k}` is the estimated step.
+
+        .. math::
+
+            \left|\mathbf{p}_{k}^{\mathrm {T}}\nabla f(\mathbf{x}_{k}+\alpha_{k}
+            \mathbf{p}_{k})\right|\leq c_{2}\left|\mathbf {p}_{k}^{\mathrm{T}}\nabla
+            f(\mathbf{x}_{k})\right|
+
+        Note that :math:`0 < c_1 < c_2 < 1`. Usually, :math:`c_2` is
+        much larger than :math:`c_2`.
+        see :cite:t:`nocedalNumericalOptimization1999`. In the fortran implementation
+        algo 778, it is hardcoded to 0.9. The default is 0.9.
+    xtol_linesearch: float, optional
+        Specify a nonnegative relative tolerance for an acceptable step in the line
+        search procedure (see
+        `minpack2.dcsrch <https://ftp.mcs.anl.gov/pub/MINPACK-2/csrch/dcsrch.f>`_).
+        In the fortran implementation algo 778, it is hardcoded to 0.1.
+        The default is 1e-5.
     max_iter : int, optional
         Maximum number of linesearch iterations, by default 30.
 
@@ -724,6 +759,8 @@ def line_search(
     dphi_m1 = dphi
     i = 0
 
+    print(f"max_steplength = {max_steplength}")
+
     if above_iter == 0:
         steplength_0 = min(1.0 / np.sqrt(d.dot(d)), max_steplength)
     else:
@@ -741,9 +778,9 @@ def line_search(
             steplength_0,
             f_m1,
             dphi_m1,
-            alpha,
-            beta,
-            xtol_minpack,
+            ftol,
+            gtol,
+            xtol,
             task,
             0,
             max_steplength,
@@ -845,7 +882,7 @@ def get_lbfgs_matrices(
 
     is_current_update_accepted = False
 
-    # TODO: Why do we perform that check ?
+    # TODO: Why do we perform that check ? # See eq. (3.9) in [1].
     if sTy > eps * yTy:
         is_current_update_accepted = True
         X.append(xk)
@@ -859,42 +896,61 @@ def get_lbfgs_matrices(
     # two conditions to update the inverse Hessian approximation
     if is_force_update or is_current_update_accepted:
         # Update the lbfgsb matrices
-        Sarray = np.diff(np.array(X), axis=0).T
-        Yarray = np.diff(np.array(G), axis=0).T
+        Sarray = np.diff(np.array(X), axis=0).T  # shape (n, m - 1)
+        Yarray = np.diff(np.array(G), axis=0).T  # shape (n ,m - 1)
         STS = np.transpose(Sarray).dot(Sarray)
         L = np.transpose(Sarray).dot(Yarray)
-        D = np.diag(-np.diag(L))
+        # We can build a dense matrix because shape is (m, m) with m usually small ~10
+        D = np.diag(np.diag(L))
         L = np.tril(L, -1)
 
         theta = yTy / sTy
         W = np.hstack([Yarray, theta * Sarray])
 
-        # B writes
+        # To avoid forming the limited-memory iteration matrix Bk and allow fast
+        # matrix vector products, we represent it as eq. (3.2) [1].
         # B = theta * I  - W @ M @ W.T
-        # I don't understand what this is useful for ?
-        # J = form_t(theta, STS, L, D)
 
-        # This can probably improve with cholesky
-        M = np.linalg.inv(np.hstack([np.vstack([D, L]), np.vstack([L.T, theta * STS])]))
+        # M (or Mk) can be obtained with
+        M = np.linalg.inv(
+            np.hstack([np.vstack([-D, L]), np.vstack([L.T, theta * STS])])
+        )
+        # However, we can also factorize its inverse and obtain very fast matrix
+        # products
+        form_cholesky_mk(theta, STS, L, D)
 
     return W, M, theta
 
 
-def form_t(theta, STS, L, D) -> NDArrayFloat:
+def form_cholesky_mk(theta, STS, L, D) -> NDArrayFloat:
     """
-    Form the upper half of the pds T = theta*SS + L*D^(-1)*L';
+    Perform the cholesky factorization of the matrix Mk, defined in eq. (3.4) [1].
 
-    Cholesky factorize T to J*J' with
-    Now the inverse of the middle matrix in B is
+    Although Mk is not positive definite, but its inverse reads:
+
+        [  -D       L'        ]
+        [   L       \theta S'S]
+
+    Hence its inverse can be factorized symmetrically by using Cholesky factorizations
+    of the submatrices TODO: add ref to the phd manuscript.
+    Now, the inverse of Mk, the middle matrix in B reads:
 
          [  D^(1/2)      O ] [ -D^(1/2)  D^(-1/2)*L' ]
          [ -L*D^(-1/2)   J ] [  0        J'          ]
 
-    This is useful for the cauchy points.
+    With J*J' = T = theta*Ss + L*D^(-1)*L'; T being definite positive, J is obtained by
+    Cholesky factorization of T.
     """
-    print(theta * STS + L @ (1 / D) @ L.T)
+    # Cholesky returns the upper part so we transpose to get the lower part
+    J = sp.linalg.cholesky(theta * STS + L @ sp.linalg.solve(D, L.T)).T
 
-    return sp.linalg.cholesky(theta * STS + L @ (1 / D) @ L.T).T
+    # Note we form the upper triangle and then transpose it to get the lower one
+    return np.hstack(
+        [
+            np.vstack([-np.sqrt(D), sp.linalg.solve(np.sqrt(D), L.T)]),  # upper row
+            np.vstack([np.zeros(D.shape), J.T]),  # lower roow
+        ]
+    ).T
 
 
 def get_bounds(
@@ -1103,7 +1159,13 @@ def minimize_lbfgsb(
     jac: Optional[Union[Callable[[NDArrayFloat, ...], NDArrayFloat], str, bool]],
     update_fun_def: Optional[
         Callable[
-            [float, NDArrayFloat, Deque[NDArrayFloat], Deque[NDArrayFloat]],
+            [
+                NDArrayFloat,
+                float,
+                NDArrayFloat,
+                Deque[NDArrayFloat],
+                Deque[NDArrayFloat],
+            ],
             Tuple[float, NDArrayFloat, Deque[NDArrayFloat]],
         ]
     ] = None,
@@ -1118,10 +1180,10 @@ def minimize_lbfgsb(
     callback: Optional[Callable] = None,
     maxls: int = 20,
     finite_diff_rel_step: Optional[float] = None,
-    alpha_linesearch: float = 1e-4,
-    beta_linesearch: float = 0.9,
     max_steplength: float = 1e8,
-    xtol_minpack: float = 1e-5,
+    ftol_linesearch: float = 1e-4,
+    gtol_linesearch: float = 0.9,
+    xtol_linesearch: float = 1e-5,
     eps_SY: float = 2.2e-16,
 ) -> OptimizeResult:
     r"""
@@ -1161,17 +1223,15 @@ def minimize_lbfgsb(
         to select a finite difference scheme for numerical estimation of the
         gradient with a relative step size. These finite difference schemes
         obey any specified `bounds`.
-    update_fun_def: Optional[Callable[[Deque[NDArrayFloat], Deque[NDArrayFloat]],
-        TODO: _DESCRIPTION.
-    Deque[NDArrayFloat]]]
-        Method to update the gradient sequence. This is an experimental feature to
+    update_fun_def: Optional[Callable]
+        Function to update the gradient sequence. This is an experimental feature to
         allow changing the objective function definition on the fly. In the first place
         this functionality is dedicated to regularized problems for which the
         regularization weight is computed while optimizing the cost function. In order
         to get a hessian matching the new definition of `fun`, the gradient sequence
         must be updated.
 
-            ``update_fun_def(f0, grad, x_deque, grad_deque)
+            ``update_fun_def(x, f0, grad, x_deque, grad_deque)
             -> f0, grad, updated grad_deque``
 
     bounds : sequence or `Bounds`, optional
@@ -1229,14 +1289,49 @@ def minimize_lbfgsb(
         possibly adjusted to fit into the bounds. For ``method='3-point'``
         the sign of `h` is ignored. If None (default) then step is selected
         automatically.
-    alpha_linesearch: float
-        Parameters for linesearch. The default is 1e-4.
-    beta_linesearch: float
-        Parameters for linesearch. The default is 0.9.
     max_steplength: float
         Maximum steplength allowed. The default is 1e8.
-    xtol_minpack: float
-        Tolerance used by minpack2. The default is 1e-5.
+    ftol_linesearch: float, optional
+        Specify a nonnegative tolerance for the sufficient decrease condition in
+        `minpack2.dcsrch <https://ftp.mcs.anl.gov/pub/MINPACK-2/csrch/dcsrch.f>`_
+        (used for the line search). This is :math:`c_1` in
+        the Armijo condition (or Goldstein, Goldstein-Armijo condition) where
+        :math:`\alpha_{k}` is the estimated step.
+
+        .. math::
+
+            f(\mathbf{x}_{k}+\alpha_{k}\mathbf{p}_{k})\leq
+            f(\mathbf{x}_{k})+c_{1}\alpha_{k}\mathbf{p}_{k}^{\mathrm{T}}
+            \nabla f(\mathbf{x}_{k})
+
+        Note that :math:`0 < c_1 < 1`. Usually :math:`c_1` is small, see the Wolfe
+        conditions in :cite:t:`nocedalNumericalOptimization1999`.
+        In the fortran implementation
+        algo 778, it is hardcoded to 1e-3. The default is 1e-4.
+    gtol_linesearch: float, optional
+        Specify a nonnegative tolerance for the curvature condition in
+        `minpack2.dcsrch <https://ftp.mcs.anl.gov/pub/MINPACK-2/csrch/dcsrch.f>`_
+        (used for the line search). This is :math:`c_2` in
+        the Armijo condition (or Goldstein, Goldstein-Armijo condition) where
+        :math:`\alpha_{k}` is the estimated step.
+
+        .. math::
+
+            \left|\mathbf{p}_{k}^{\mathrm {T}}\nabla f(\mathbf{x}_{k}+\alpha_{k}
+            \mathbf{p}_{k})\right|\leq c_{2}\left|\mathbf {p}_{k}^{\mathrm{T}}\nabla
+            f(\mathbf{x}_{k})\right|
+
+        Note that :math:`0 < c_1 < c_2 < 1`. Usually, :math:`c_2` is
+        much larger than :math:`c_2`.
+        see :cite:t:`nocedalNumericalOptimization1999`. In the fortran implementation
+        algo 778, it is hardcoded to 0.9. The default is 0.9.
+    xtol_linesearch: float, optional
+        Specify a nonnegative relative tolerance for an acceptable step in the line
+        search procedure (see
+        `minpack2.dcsrch <https://ftp.mcs.anl.gov/pub/MINPACK-2/csrch/dcsrch.f>`_).
+        In the fortran implementation algo 778, it is hardcoded to 0.1.
+        The default is 1e-5.
+        See :func:`line_search` parameters.
     eps_SY: float
         Parameter used for updating the L-BFGS matrices. The default is 2.2e-16.
 
@@ -1336,7 +1431,9 @@ def minimize_lbfgsb(
 
         # if n_iterations != 0 and dictCP["free_vars"] != 0:
         # Factorization of the matrix K used in the subspace minimization
-        K: NDArrayFloat = formk(X, G, Z, A, theta)
+        # TODO
+        # K: NDArrayFloat = formk(X, G, Z, A, theta)
+        K = None
 
         # subspace minimization: find the search direction for the minimization problem
         xbar: NDArrayFloat = direct_primal_subspace_minimization(
@@ -1370,9 +1467,9 @@ def minimize_lbfgsb(
             n_iterations,
             max_stpl,
             sf.fun_and_grad,
-            alpha_linesearch,
-            beta_linesearch,
-            xtol_minpack,
+            ftol_linesearch,
+            gtol_linesearch,
+            xtol_linesearch,
             maxls,
             iprint,
         )
@@ -1401,7 +1498,7 @@ def minimize_lbfgsb(
             # perform a potential update of the objective function definition and
             # upgrade the gradient and the past sequence of gradients accordingly
             if update_fun_def is not None:
-                f0, grad, G = update_fun_def(f0, grad, X, G)
+                f0, grad, G = update_fun_def(x, f0, grad, X, G)
 
             W, M, theta = get_lbfgs_matrices(
                 x.copy(),  # copy otherwise x might be changed in X when updated
@@ -1471,6 +1568,8 @@ def minimize_lbfgsb(
         task_str = "STOP: TOTAL NO. of f AND g EVALUATIONS EXCEEDS LIMIT"
         is_sucess = True
         warnflag = 1
+
+    # error: b'ERROR: STPMAX .LT. STPMIN'
 
     return OptimizeResult(
         fun=f0,

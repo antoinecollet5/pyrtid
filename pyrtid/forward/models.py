@@ -300,7 +300,7 @@ class TransportParameters:
         reduce the overall coupling error. However if the timestep is large or the
         system unstable (stiff), it might lead to non-convergence as well. For more
         information, refer to
-        :cite:`lagneauOperatorsplittingbasedReactiveTransport2010a`.. .
+        :cite:`lagneauOperatorsplittingbasedReactiveTransport2010`.
         The default is False.
     fpi_eps: float
        Tolerance on the transport-chemistry coupling error. The default value is 1e-5.

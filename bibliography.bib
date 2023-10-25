@@ -49,6 +49,27 @@
 % ? unused Url ("https://zenodo.org/record/8192031")
 % ? unused Version number ("0.1.0")
 
+@article{evensen2021formulating,
+  title = {Formulating the History Matching Problem with Consistent Error Statistics},
+  author = {Evensen, Geir},
+  year = {2021},
+  month = jun,
+  journal = {Computational Geosciences},
+  volume = {25},
+  number = {3},
+  pages = {945--970},
+  issn = {1573-1499},
+  doi = {10.1007/s10596-021-10032-7},
+  abstract = {It is common to formulate the history-matching problem using Bayes' theorem. From Bayes', the conditional probability density function (pdf) of the uncertain model parameters is proportional to the prior pdf of the model parameters, multiplied by the likelihood of the measurements. The static model parameters are random variables characterizing the reservoir model while the observations include, e.g., historical rates of oil, gas, and water produced from the wells. The reservoir prediction model is assumed perfect, and there are no errors besides those in the static parameters. However, this formulation is flawed. The historical rate data only approximately represent the real production of the reservoir and contain errors. History-matching methods usually take these errors into account in the conditioning but neglect them when forcing the simulation model by the observed rates during the historical integration. Thus, the model prediction depends on some of the same data used in the conditioning. The paper presents a formulation of Bayes' theorem that considers the data dependency of the simulation model. In the new formulation, one must update both the poorly known model parameters and the rate-data errors. The result is an improved posterior ensemble of prediction models that better cover the observations with more substantial and realistic uncertainty. The implementation accounts correctly for correlated measurement errors and demonstrates the critical role of these correlations in reducing the update's magnitude. The paper also shows the consistency of the subspace inversion scheme by Evensen (Ocean Dyn. 54, 539\textendash 560 2004) in the case with correlated measurement errors and demonstrates its accuracy when using a ``larger'' ensemble of perturbations to represent the measurement error covariance matrix.},
+  langid = {english},
+  keywords = {Correlated measurement errors,Iterative ensemble smoother,Reservoir history matching,Subspace EnRML},
+  file = {/home/acollet/Documents/BIBLIOGRAPHY/storage/XJ8WFZLG/Evensen - 2021 - Formulating the history matching problem with cons.pdf}
+}
+% == BibTeX quality report for evensen2021formulating:
+% ? unused Journal abbreviation ("Comput Geosci")
+% ? unused Library catalog ("Springer Link")
+% ? unused Url ("https://doi.org/10.1007/s10596-021-10032-7")
+
 @book{evensenDataAssimilationEnsemble2007,
   title = {Data {{Assimilation}} - {{The Ensemble Kalman Filter}}},
   author = {Evensen, Geir},
@@ -102,7 +123,25 @@
 % ? unused Library catalog ("arc.aiaa.org (Atypon)")
 % ? unused Url ("https://arc.aiaa.org/doi/10.2514/1.J060735")
 
-@article{lagneauOperatorsplittingbasedReactiveTransport2010a,
+@article{lagneau:hal-00505360,
+  title = {{{HYTEC}} Results of the {{MoMas}} Reactive Transport Benchmark},
+  author = {Lagneau, Vincent and {van der Lee}, Jan},
+  year = {2010},
+  journal = {Computational Geosciences},
+  volume = {14},
+  pages = {435--449},
+  publisher = {{Springer Verlag}},
+  doi = {10.1007/s10596-009-9159-5},
+  hal_id = {hal-00505360},
+  hal_version = {v1},
+  pdf = {https://hal-mines-paristech.archives-ouvertes.fr/hal-00505360/file/art\textsubscript{m}omas\textsubscript{l}agneau\textsubscript{r}ev0609.pdf},
+  keywords = {reactive transport × HYTEC × benchmark × numerical methods × MoMas},
+  file = {/home/acollet/Documents/BIBLIOGRAPHY/storage/QAS3QD3V/Lagneau and Van Der Lee - 2010 - HYTEC results of the MoMas reactive transport benc.pdf}
+}
+% == BibTeX quality report for lagneau:hal-00505360:
+% ? unused Url ("https://hal-mines-paristech.archives-ouvertes.fr/hal-00505360")
+
+@article{lagneauOperatorsplittingbasedReactiveTransport2010,
   title = {Operator-Splitting-Based Reactive Transport Models in Strong Feedback of Porosity Change: {{The}} Contribution of Analytical Solutions for Accuracy Validation and Estimator Improvement},
   shorttitle = {Operator-Splitting-Based Reactive Transport Models in Strong Feedback of Porosity Change},
   author = {Lagneau, Vincent and {van der Lee}, Jan},
@@ -119,9 +158,67 @@
   keywords = {Analytical solutions,Chemistry,Clogging,Feedback,Reactive transport,Variable porosity},
   file = {/home/acollet/Documents/BIBLIOGRAPHY/storage/EPHY2MNB/Lagneau and van der Lee - 2010 - Operator-splitting-based reactive transport models.pdf}
 }
-% == BibTeX quality report for lagneauOperatorsplittingbasedReactiveTransport2010a:
+% == BibTeX quality report for lagneauOperatorsplittingbasedReactiveTransport2010:
 % ? unused Library catalog ("ScienceDirect")
 % ? unused Url ("https://www.sciencedirect.com/science/article/pii/S0169772209001612")
+
+@article{meijerinkGuidelinesUsageIncomplete1981,
+  title = {Guidelines for the Usage of Incomplete Decompositions in Solving Sets of Linear Equations as They Occur in Practical Problems},
+  author = {Meijerink, J. A and {van der Vorst}, H. A},
+  year = {1981},
+  month = nov,
+  journal = {Journal of Computational Physics},
+  volume = {44},
+  number = {1},
+  pages = {134--155},
+  issn = {0021-9991},
+  doi = {10.1016/0021-9991(81)90041-3},
+  abstract = {This paper presents incomplete decompositions for various types of matrices as they occur in the implicit discretisation of practical problems. A review is given of methods for the usual five-point discretisation of a self-adjoint elliptic second-order partial differential equation in two dimensions on a square. The matrices which occur in this type of problem are symmetric M-matrices of very regular structure. The convergence behaviour of the different decompositions for this case is demonstrated by numerical experiments. The paper also gives decompositions for the following type of matrices: (i) Symmetric M-matrices of a different structure. (ii) Symmetric positive definite matrices. (iii) Non-symmetric matrices.},
+  file = {/home/acollet/Documents/BIBLIOGRAPHY/storage/GR26JYYI/0021999181900413.html}
+}
+% == BibTeX quality report for meijerinkGuidelinesUsageIncomplete1981:
+% ? unused Library catalog ("ScienceDirect")
+% ? unused Url ("https://www.sciencedirect.com/science/article/pii/0021999181900413")
+
+@book{nocedalNumericalOptimization1999,
+  title = {Numerical {{Optimization}}},
+  editor = {Nocedal, Jorge and Wright, Stephen J.},
+  year = {1999},
+  series = {Springer {{Series}} in {{Operations Research}} and {{Financial Engineering}}},
+  publisher = {{Springer-Verlag}},
+  address = {{New York}},
+  doi = {10.1007/b98874},
+  isbn = {978-0-387-98793-4},
+  langid = {english},
+  keywords = {algorithms,linear optimization,nonlinear optimization,optimization,quadratic programming,Quasi-Newton method},
+  file = {/home/acollet/Documents/BIBLIOGRAPHY/storage/9ZY7E29E/Nocedal and Wright - 1999 - Numerical Optimization.pdf}
+}
+% == BibTeX quality report for nocedalNumericalOptimization1999:
+% ? Title looks like it was stored in title-case in Zotero
+% ? unused Library catalog ("DOI.org (Crossref)")
+% ? unused Url ("http://link.springer.com/10.1007/b98874")
+
+@article{saadGMRESGeneralizedMinimal1986,
+  title = {{{GMRES}}: {{A Generalized Minimal Residual Algorithm}} for {{Solving Nonsymmetric Linear Systems}}},
+  shorttitle = {{{GMRES}}},
+  author = {Saad, Youcef and Schultz, Martin H.},
+  year = {1986},
+  month = jul,
+  journal = {SIAM Journal on Scientific and Statistical Computing},
+  volume = {7},
+  number = {3},
+  pages = {856--869},
+  publisher = {{Society for Industrial and Applied Mathematics}},
+  issn = {0196-5204},
+  doi = {10.1137/0907058},
+  abstract = {The generalized minimum residual method (GMRES) is well known for solving large nonsymmetric systems of linear equations. It generally uses restarting, which slows the convergence. However, some information can be retained at the time of the restart and used in the next cycle. We present algorithms that use implicit restarting in order to retain this information. Approximate eigenvectors determined from the previous subspace are included in the new subspace. This deflates the smallest eigenvalues and thus improves the convergence. The subspace that contains the approximate eigenvectors is itself a Krylov subspace, but not with the usual starting vector. The implicitly restarted FOM algorithm includes standard Ritz vectors in the subspace. The eigenvalue portion of its calculations is equivalent to Sorensen's IRA algorithm. The implicitly restarted GMRES algorithm uses harmonic Ritz vectors. This algorithm also gives a new approach to computing interior eigenvalues.},
+  file = {/home/acollet/Documents/BIBLIOGRAPHY/storage/E8SEVWXH/Saad and Schultz - 1986 - GMRES A Generalized Minimal Residual Algorithm fo.pdf}
+}
+% == BibTeX quality report for saadGMRESGeneralizedMinimal1986:
+% ? Title looks like it was stored in title-case in Zotero
+% ? unused Journal abbreviation ("SIAM J. Sci. and Stat. Comput.")
+% ? unused Library catalog ("epubs.siam.org (Atypon)")
+% ? unused Url ("https://epubs.siam.org/doi/10.1137/0907058")
 
 @misc{wieschollek2016cppoptimizationlibrary,
   title = {{{CppOptimizationLibrary}}},

@@ -386,13 +386,15 @@ class AdjustableParameter:
         It takes into account the preconditioning step and the fact that the
         preconditioner might no be strictly increasing function.
         """
+        # TODO: see if we accept variable bounds ? It could be interesting to give
+        # intervals per values.
         bounds = np.array([self.lbound, self.ubound])
         if is_preconditioned:
             bounds = self.preconditioner(bounds)
-        return np.concatenate(
+        return np.concatenate(  # type: ignore
             [
-                np.full((1, self.size_adjusted_values), min(bounds)),
-                np.full((1, self.size_adjusted_values), max(bounds)),
+                np.full((1, self.size_adjusted_values), min(bounds)),  # type: ignore
+                np.full((1, self.size_adjusted_values), max(bounds)),  # type: ignore
             ]
         ).T
 
@@ -418,9 +420,9 @@ class AdjustableParameter:
             if reg.is_preconditioned:
                 values: NDArrayFloat = self.preconditioner(values)
             if x is not None:
-                if reg.is_preconditioned:
+                if not reg.is_preconditioned:
                     x = self.backconditioner(x)
-                values[self.span] = x
+                values[self.span] = x.reshape(values[self.span].shape)
             _sum += reg.loss_function(values)
         return _sum
 
@@ -438,9 +440,9 @@ class AdjustableParameter:
             if reg.is_preconditioned:
                 values: NDArrayFloat = self.preconditioner(values)
             if x is not None:
-                if reg.is_preconditioned:
+                if not reg.is_preconditioned:
                     x = self.backconditioner(x)
-                values[self.span] = x
+                values[self.span] = x.reshape(values[self.span].shape)
             grad += reg.loss_function_gradient(values)
         return grad
 
@@ -710,7 +712,11 @@ def get_reg_loss_function(
     jreg: float = 0
     idx = 0
     for param in object_or_object_sequence_to_list(params):
-        values = param.get_sliced_field(get_parameter_values_from_model(model, param))
+        # preconditioned values from model
+        values: NDArrayFloat = param.preconditioner(
+            param.get_sliced_field(get_parameter_values_from_model(model, param))
+        )
+        # preconditoned values from input
         if x is not None:
             values = x[idx : idx + values.size]
             idx += values.size
@@ -740,8 +746,8 @@ def get_reg_loss_function_gradient(
     grad: NDArrayFloat = np.array([], dtype=np.float_)
     idx = 0
     for param in object_or_object_sequence_to_list(params):
-        values: NDArrayFloat = param.get_sliced_field(
-            get_parameter_values_from_model(model, param)
+        values: NDArrayFloat = param.preconditioner(
+            param.get_sliced_field(get_parameter_values_from_model(model, param))
         )
         if x is not None:
             values = x[idx : idx + values.size]

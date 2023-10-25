@@ -5,8 +5,27 @@ Created on Mon Feb 14 17:40:16 2022
 """
 from abc import ABC, abstractmethod
 
+from pyrtid.utils import StrEnum
 from pyrtid.utils.finite_differences import finite_gradient
 from pyrtid.utils.types import NDArrayFloat
+
+
+class RegWeightUpdateStrategy(StrEnum):
+    """
+    Strategy to update the regularization weight while optimizing.
+
+    Available strategies are:
+        - auto-per-round: Automatic estimation at the beginning of each optimization
+            round. This means that the objective function definition is modified at the
+            beginning of each round.
+        - auto-continuous: Only valid with PyRTID's LBFGSB implementation. This is an
+            experimental feature. The weight will be updated before each BFGS matrices
+            build, i.e. at each solver internal iteration.
+
+    """
+
+    AUTO_CONTINUOUS = "auto-continuous"
+    AUTO_PER_ROUND = "auto-per-round"
 
 
 class Regularizator(ABC):

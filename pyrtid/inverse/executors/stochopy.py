@@ -20,6 +20,7 @@ from typing_extensions import Literal
 
 from pyrtid.inverse.executors.base import BaseInversionExecutor, BaseSolverConfig
 from pyrtid.inverse.params import get_parameters_bounds
+from pyrtid.utils.types import NDArrayFloat
 
 
 @dataclass
@@ -54,6 +55,10 @@ class StochopySolverConfig(BaseSolverConfig):
 
 class StochopyInversionExecutor(BaseInversionExecutor[StochopySolverConfig]):
     """Represent a inversion executor instance using stochopy's solvers."""
+
+    def _init_solver(self, s_init: NDArrayFloat) -> None:
+        """Careful, s_init is supposed to be preconditioned."""
+        super()._init_solver(s_init)
 
     def _get_solver_name(self) -> str:
         """Return the solver name."""

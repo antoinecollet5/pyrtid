@@ -84,6 +84,7 @@ weight while minimizing without losing inverse hessian approximationc consistenc
 
 from pyesmda import ESMDAInversionType
 
+import pyrtid.inverse.regularization as regularization
 from pyrtid.inverse.adjoint.amain_solver import AdjointSolver
 from pyrtid.inverse.adjoint.amodels import AdjointModel
 from pyrtid.inverse.executors import (
@@ -138,6 +139,7 @@ from pyrtid.inverse.params import (
 )
 
 __all__ = [
+    "regularization",
     "ESMDAInversionType",
     "ESMDAInversionExecutor",
     "ESMDARSInversionExecutor",

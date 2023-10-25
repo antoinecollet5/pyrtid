@@ -21,7 +21,7 @@ import logging
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from enum import Enum
-from typing import Callable, Iterator, List, Optional, Tuple, Union
+from typing import Callable, Iterator, List, Optional, Tuple
 
 import numpy as np
 from iterative_ensemble_smoother import SIES, steplength_exponential
@@ -39,17 +39,34 @@ from pyrtid.utils.types import NDArrayFloat
 
 
 class SIESInversionType(str, Enum):
-    """Inversion type for the computation of (S @ S.T + E @ E.T)^-1.
+    r"""Inversion type for the computation of (S @ S.T + E @ E.T)^-1.
 
     Note
     ----
     It is a hashable string enum and can be iterated.
+
+    Available inversions are:
+
+        * `direct`:
+            Solve Eqn (42) directly, which involves inverting a
+            matrix of shape (num_parameters, num_parameters).
+        * `subspace_exact` :
+            Solve Eqn (42) using Eqn (50), i.e., the Woodbury
+            lemma to invert a matrix of size (ensemble_size, ensemble_size).
+            This is the method of choice when using a diagonal observation error
+            covariance matrix :math:\mathbf{C}_{dd}` (also noted :math:\mathbf{R}`).
+            This is always the
+            case with PyRTID up to now.
+        * `subspace_projected` :
+            Solve Eqn (42) using Section 3.3, i.e., by projecting the covariance
+            onto S. This approach utilizes the truncation factor `truncation`.
+            This is the method of choice when using a full observation error
+            covariance matrix :math:\mathbf{C}_{dd}`.
     """
 
-    NAIVE = "naive"  # direct inversion
-    EXACT = "exact"  # only if cdd is diagonal
-    EXACT_R = "exact_r"  # for big data assimilation this is the recommended method
-    SUBSPACE_RE = "subspace_re"  # using full Cdd
+    DIRECT = "direct"
+    SUBSPACE_EXACT = "subspace_exact"
+    SUBSPACE_PROJECTED = "subspace_projected"
 
     def __str__(self) -> str:
         """Return instance value."""
@@ -96,7 +113,7 @@ class SIESSolverConfig(BaseSolverConfig):
         Number of iterations (:math:`N_{a}`). The default is 4.
     inversion_type: SIESInversionType
         Type of inversion used. See :class:`SIESInversionType` for available types.
-        The default is \"exact\".
+        The default is \"subspace_exact\".
     save_ensembles_history: bool, optional
         Whether to save the history predictions and parameters over
         the assimilations. The default is False.
@@ -114,7 +131,8 @@ class SIESSolverConfig(BaseSolverConfig):
         for the gauss-newton iteration (between 0 and 1.0). By default it uses an
         exponential strategy: (Eq. (49), which calculates a suitable step length for
         the update step, from the book: \"Formulating the history matching problem with
-        consistent error statistics", written by :cite:t:`evensen2021formulating`.
+        consistent error statistics", written by
+        :cite:t:`evensen2021formulating`.
     is_forecast_for_last_assimilation: bool, optional
         Whether to compute the predictions for the ensemble obtained at the
         last assimilation step. The default is True.
@@ -125,16 +143,13 @@ class SIESSolverConfig(BaseSolverConfig):
     """
 
     n_iterations: int = 4
-    inversion_type: SIESInversionType = SIESInversionType.EXACT
+    inversion_type: SIESInversionType = SIESInversionType.SUBSPACE_EXACT
     save_ensembles_history: bool = False
     truncation: float = 0.99
     seed: Optional[int] = None
     steplength_strategy: Callable[[int], float] = steplength_exponential
     is_forecast_for_last_assimilation: bool = True
     is_use_adjoint: bool = False
-    # TODO: do we keep this or not ?
-    # This is for the experimental feature with the gradient update
-    reg_factor: Union[float, str] = "auto"
     afpi_eps: float = 1e-5
     is_a_numerical_acceleratiion: bool = False
 
@@ -178,7 +193,7 @@ class SIESInversionExecutor(BaseInversionExecutor[SIESSolverConfig]):
         """Return the solver name."""
         return "SIES"
 
-    def run(self, s_init: NDArrayFloat) -> NDArrayFloat:
+    def run(self) -> NDArrayFloat:
         """
         Run the history matching.
 
@@ -186,7 +201,7 @@ class SIESInversionExecutor(BaseInversionExecutor[SIESSolverConfig]):
         required by the HM algorithms.
         """
         super().run()
-        _m = s_init.copy()
+        _m = self.solver.X  # stored in the SIES instance
         if self.solver_config.save_ensembles_history:
             self.solver.s_history.append(_m)
         for iteration in range(self.solver_config.n_iterations):  # type: ignore
@@ -297,25 +312,25 @@ class SIESInversionExecutor(BaseInversionExecutor[SIESSolverConfig]):
         None.
         """
         run_n: int = self.inv_model.nb_f_calls
-        n_ensemble: int = s_ensemble.shape[0]  # type: ignore
-        d_pred: NDArrayFloat = np.zeros([n_ensemble, self.data_model.d_dim])
-        gradients: NDArrayFloat = np.zeros([n_ensemble, self.data_model.s_dim])
+        n_ensemble: int = s_ensemble.shape[1]  # type: ignore
+        d_pred: NDArrayFloat = np.zeros([self.data_model.d_dim, n_ensemble])
+        gradients: NDArrayFloat = np.zeros([self.data_model.s_dim, n_ensemble])
         if is_parallel:
             with ProcessPoolExecutor(
                 max_workers=self.solver_config.max_workers
             ) as executor:
                 results: Iterator[NDArrayFloat] = executor.map(
                     self._run_forward_model_with_adjoint,
-                    s_ensemble,
+                    s_ensemble.T,
                     range(run_n + 1, run_n + n_ensemble + 1),  # type: ignore
                 )
                 for j, res in enumerate(results):
-                    d_pred[j, :], gradients[j, :] = res
+                    d_pred[:, j], gradients[:, j] = res
             # self.simu_n += n_ensemble
         else:
             for j in range(n_ensemble):  # type: ignore
-                d_pred[j, :], gradients[j, :] = self._run_forward_model_with_adjoint(
-                    s_ensemble[j, :], run_n + j + 1
+                d_pred[:, j], gradients[:, j] = self._run_forward_model_with_adjoint(
+                    s_ensemble[:, j], run_n + j + 1
                 )
         # update the number of runs
 
@@ -324,9 +339,9 @@ class SIESInversionExecutor(BaseInversionExecutor[SIESSolverConfig]):
         self._check_nans_in_predictions(d_pred, run_n)
 
         # save objective functions. This should be very fast.
-        for i in range(d_pred.shape[0]):  # type: ignore
+        for i in range(d_pred.shape[1]):  # type: ignore
             ls_loss = ls_loss_function(
-                d_pred[i, :],
+                d_pred[:, i],
                 get_observables_values_as_1d_vector(
                     self.inv_model.observables, self.solver_config.hm_end_time
                 ),
@@ -334,6 +349,6 @@ class SIESInversionExecutor(BaseInversionExecutor[SIESSolverConfig]):
                     self.inv_model.observables, self.solver_config.hm_end_time
                 ),
             )
-            self.inv_model.list_f_res.append(ls_loss)
+            self.inv_model.list_losses.append(ls_loss)
 
         return d_pred, gradients

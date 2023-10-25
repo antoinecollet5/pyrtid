@@ -15,6 +15,17 @@ Base class from which to derive regularizator implementations.
 
    Regularizator
 
+Strategies for the weight evaluation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Class to indicate what strategy to use to weight the objective
+function regularization term.
+
+.. autosummary::
+   :toctree: _autosummary
+
+    RegWeightUpdateStrategy
+
 Local
 =====
 
@@ -102,7 +113,7 @@ Stochastic partial differential equation compression (SPDE)
 
 """
 
-from pyrtid.inverse.regularization.base import Regularizator
+from pyrtid.inverse.regularization.base import Regularizator, RegWeightUpdateStrategy
 from pyrtid.inverse.regularization.covariances import (
     CovarianceMatrix,
     CovarianceMatrixbyUd,
@@ -133,6 +144,7 @@ from pyrtid.inverse.regularization.tv import (
 )
 
 __all__ = [
+    "RegWeightUpdateStrategy",
     "Regularizator",
     "TikhonovRegularizatorAnisotropic",
     "TikhonovRegularizatorIsotropic",

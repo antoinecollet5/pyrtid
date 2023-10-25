@@ -120,7 +120,7 @@ def get_super_lu_preconditioner(mat: csc_array) -> Optional[LinearOperator]:
     """
     Get an complete LU preconditioner for the given sparse matrix.
 
-    Reference: :citet:`meijerinkGuidelinesUsageIncomplete1981`.
+    Reference: :cite:t:`meijerinkGuidelinesUsageIncomplete1981`.
 
     Note
     ----
