@@ -242,7 +242,8 @@ class InverseModel:
 
         """
         if self.optimization_round_nb <= 1:
-            if reg_factor == "auto" or not self.is_regularization_at_first_round:
+            if not self.is_regularization_at_first_round:
+                self.jreg_weight = 0.0
                 return 0.0  # we ignore the regularization
 
         jreg = float(
