@@ -30,6 +30,7 @@ Provide utilities to work with regular grids.
     span_to_node_numbers_3d
     get_array_borders_selection
     get_a_not_in_b_1d
+    get_pts_coords_regular_grid
 
 
 .. currentmodule:: pyrtid.utils.wellfield
@@ -171,6 +172,7 @@ from pyrtid.utils.finite_differences import (
 from pyrtid.utils.grid import (
     get_a_not_in_b_1d,
     get_array_borders_selection,
+    get_pts_coords_regular_grid,
     indices_to_node_number,
     node_number_to_indices,
     span_to_node_numbers_2d,
@@ -245,6 +247,7 @@ __all__ = [
     "span_to_node_numbers_2d",
     "span_to_node_numbers_3d",
     "get_array_borders_selection",
+    "get_pts_coords_regular_grid",
     "extract_hess_inv_diag",
     "NDArrayFloat",
     "NDArrayInt",

@@ -3,6 +3,7 @@ import pytest
 from pyrtid.utils import (
     get_a_not_in_b_1d,
     get_array_borders_selection,
+    get_pts_coords_regular_grid,
     indices_to_node_number,
     node_number_to_indices,
     span_to_node_numbers_2d,
@@ -102,3 +103,80 @@ def test_get_array_borders_selection(
 )
 def test_get_a_not_in_b_1d(a, b, expected) -> None:
     np.testing.assert_equal(get_a_not_in_b_1d(a, b).ravel(), expected)
+
+
+@pytest.mark.parametrize(
+    "mesh_dim, shape, expected_output",
+    [
+        (
+            1,
+            10,
+            np.array(
+                [[0.5], [1.5], [2.5], [3.5], [4.5], [5.5], [6.5], [7.5], [8.5], [9.5]]
+            ),
+        ),
+        (
+            [2, 4],
+            (3, 4),
+            np.array(
+                [
+                    [1.0, 2.0],
+                    [3.0, 2.0],
+                    [5.0, 2.0],
+                    [1.0, 6.0],
+                    [3.0, 6.0],
+                    [5.0, 6.0],
+                    [1.0, 10.0],
+                    [3.0, 10.0],
+                    [5.0, 10.0],
+                    [1.0, 14.0],
+                    [3.0, 14.0],
+                    [5.0, 14.0],
+                ]
+            ),
+        ),
+        (
+            [2, 4, 1],
+            (2, 2, 2),
+            np.array(
+                [
+                    [1.0, 2.0, 0.5],
+                    [3.0, 2.0, 0.5],
+                    [1.0, 6.0, 0.5],
+                    [3.0, 6.0, 0.5],
+                    [1.0, 2.0, 1.5],
+                    [3.0, 2.0, 1.5],
+                    [1.0, 6.0, 1.5],
+                    [3.0, 6.0, 1.5],
+                ]
+            ),
+        ),
+        (
+            [2, 4, 1, 1],
+            (2, 2, 2, 2),
+            np.array(
+                [
+                    [1.0, 2.0, 0.5, 0.5],
+                    [3.0, 2.0, 0.5, 0.5],
+                    [1.0, 6.0, 0.5, 0.5],
+                    [3.0, 6.0, 0.5, 0.5],
+                    [1.0, 2.0, 1.5, 0.5],
+                    [3.0, 2.0, 1.5, 0.5],
+                    [1.0, 6.0, 1.5, 0.5],
+                    [3.0, 6.0, 1.5, 0.5],
+                    [1.0, 2.0, 0.5, 1.5],
+                    [3.0, 2.0, 0.5, 1.5],
+                    [1.0, 6.0, 0.5, 1.5],
+                    [3.0, 6.0, 0.5, 1.5],
+                    [1.0, 2.0, 1.5, 1.5],
+                    [3.0, 2.0, 1.5, 1.5],
+                    [1.0, 6.0, 1.5, 1.5],
+                    [3.0, 6.0, 1.5, 1.5],
+                ]
+            ),
+        ),
+    ],
+)
+def test_get_pts_coords_regular_grid(mesh_dim, shape, expected_output) -> None:
+    out = get_pts_coords_regular_grid(mesh_dim, shape)
+    np.testing.assert_equal(expected_output, out)

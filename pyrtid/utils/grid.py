@@ -6,11 +6,11 @@ Provide functions to work with regular grids.
 
 # pylint: disable=C0103  # Do not conform to snake-case naming style
 # pylint: disable=R0913  # Too many arguments
-from typing import Tuple, Union
+from typing import Sequence, Tuple, Union
 
 import numpy as np
 
-from pyrtid.utils.types import Int, NDArrayBool, NDArrayInt
+from pyrtid.utils.types import Int, NDArrayBool, NDArrayFloat, NDArrayInt
 
 
 def indices_to_node_number(
@@ -169,3 +169,48 @@ def get_a_not_in_b_1d(a: NDArrayInt, b: NDArrayInt) -> NDArrayInt:
     if b.size == 0 or a.size == 0:
         return a
     return np.sort(a[np.isin(a, b, invert=True)])
+
+
+def get_pts_coords_regular_grid(
+    mesh_dim: Union[float, Sequence[float], NDArrayFloat],
+    shape: Union[int, Sequence[int], NDArrayInt],
+) -> NDArrayFloat:
+    """
+    Create an array of points coordinates for regular grids.
+
+    It supports from 1 to n dimensions.
+
+    Parameters
+    ----------
+    mesh_dim : NDArrayInt
+        Dimensions of one mesh of the grid.
+    shape : NDArrayInt
+        Shape of the grid (number of meshes along each axis). The number of elements
+        in `shape` much match the number
+        of elements in `mesh_dim`.
+
+    Returns
+    -------
+    NDArrayFloat
+        Array of coordinates with shape (Npts, Ndims).
+    """
+    # convert to numpy array
+    _mesh_dim = np.array([mesh_dim]).ravel()
+    _shape = np.array(shape, dtype=np.int_).ravel()
+    # xmin = center of the first mesh
+    xmin: NDArrayFloat = np.array(_mesh_dim) / 2.0
+    # xmax  = center of the last mesh
+    xmax = (_shape - 0.5) * _mesh_dim
+    return (
+        np.array(
+            np.meshgrid(
+                *[
+                    np.linspace(xmin[i], xmax[i], _shape[i])
+                    for i in range(_shape.size)  # type: ignore
+                ],
+                indexing="ij"
+            )
+        )
+        .reshape(_shape.size, -1, order="F")
+        .T
+    )  # type: ignore
