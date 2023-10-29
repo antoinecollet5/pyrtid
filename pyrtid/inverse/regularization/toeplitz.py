@@ -1,160 +1,118 @@
 """
-    toeplitz matrix-vector multiplication adapted from Arvind Saibaba's code
+Toeplitz matrix-vector multiplication adapted from Arvind Saibaba's code
+https://github.com/arvindks/kle/blob/master/covariance/toeplitz/toeplitz.py
+and PyPCGA:
+https://github.com/jonghyunharrylee/pyPCGA/blob/master/pyPCGA/covariance/toeplitz.py
 """
-from typing import Callable
+from typing import Callable, List, Sequence, Union
 
 import numpy as np
 
 from pyrtid.utils.types import NDArrayFloat, NDArrayInt
 
 
-def get_distances(x, y, theta: NDArrayFloat) -> NDArrayFloat:
-    dim = x.shape[1]
-    DM = np.zeros(x.shape[0])
-
-    if dim == 1:
-        DM = (x[:] - y) ** 2.0 / theta**2.0
-    else:
-        for i in np.arange(dim):
-            DM += (x[:, i] - y[i]) ** 2.0 / theta[i] ** 2.0
-
-    DM = np.sqrt(DM)
-    return DM
-
-
-def create_row(
-    mesh_dim: NDArrayInt,
-    shape: NDArrayInt,
+def create_toepliz_first_row(
+    pts: NDArrayFloat,
     kernel: Callable,
-    theta: NDArrayFloat,
-):
+    lenscale: NDArrayFloat,
+) -> NDArrayFloat:
     """
-    Create row column of covariance matrix
+    Create the first row of the covariance matrix.
+
+    Note
+    ----
+    The first row is also the first column of the matrix
+    because covariance matrices are symmetric.
+
+    Parameters
+    ----------
+    pts : NDArrayFloat
+        Coordinates of the grid mesh centers of shape (Npts, Ndim), with Ndim the number
+        of spatial dimensions between 1 and n.
+    kernel : Callable
+        Covariance kernel.
+    lenscale : NDArrayFloat
+        Correlation length.
+
+    Returns
+    -------
+    NDArrayFloat
+        Array of correlations between the first point of the array and all gridblocks
+        with size Npts.
     """
-
-    xmin: NDArrayFloat = np.array(mesh_dim) / 2.0
-    xmax = (np.array(shape) - 0.5) * mesh_dim
-    dim = shape.size
-
-    if dim == 1:
-        x = np.linspace(xmin[0], xmax[0], shape[0])
-        x = x.reshape(-1, 1)  # make it 2D for consistency
-        R = get_distances(x, x[0], theta)
-    elif dim == 2:
-        x1 = np.linspace(xmin[0], xmax[0], shape[0])
-        x2 = np.linspace(xmin[1], xmax[1], shape[1])
-        xx, yy = np.meshgrid(x1, x2, indexing="ij")
-        x = np.vstack((np.ravel(xx, order="F"), np.ravel(yy, order="F"))).transpose()
-        R = get_distances(x, x[0, :].transpose(), theta)
-    elif dim == 3:
-        x1 = np.linspace(xmin[0], xmax[0], shape[0])
-        x2 = np.linspace(xmin[1], xmax[1], shape[1])
-        x3 = np.linspace(xmin[2], xmax[2], shape[2])
-        xx, yy, zz = np.meshgrid(x1, x2, x3, indexing="ij")
-        x = np.vstack(
-            (np.ravel(xx, order="F"), np.ravel(yy, order="F"), np.ravel(zz, order="F"))
-        ).transpose()
-        R = get_distances(x, x[0, :].transpose(), theta)
-
-    else:
-        raise ValueError("Support 1,2 and 3 dimensions")
-
-    row = kernel(R)
-
-    return row, x
+    # We scale the points coordinates by the correlation length
+    scaled_pts = pts / np.array(lenscale).reshape(1, -1)
+    # Then we compute the distance for the first row of the matrix (between) the first
+    # mesh center and all others. We square the difference over all axis and take the
+    # sqrt of the sum (euclidean distance).
+    scaled_distances = np.sqrt(np.sum((scaled_pts - scaled_pts[0]) ** 2, axis=1))
+    return kernel(scaled_distances)
 
 
-def toeplitz_product(x, row, shape):
-    """Toeplitz matrix times x
-
-    :param x: x for Qx
-    :param row: from CreateRow
-    :param shape: size in each dimension ex) shape = [2,3,4]
-    :return: Qx
+def toeplitz_product(
+    x: NDArrayFloat,
+    first_row: NDArrayFloat,
+    shape: Union[int, Sequence[int], NDArrayInt],
+) -> NDArrayFloat:
     """
-    dim = shape.size
+    Return the product of the covariance matrix with a vector using toeplitz trick.
 
-    if dim == 1:
-        circ = np.concatenate((row, row[-2:0:-1])).reshape(-1)
-        padded = np.concatenate((x, np.zeros(shape[0] - 2)))
-        result = np.fft.ifft(np.fft.fft(circ) * np.fft.fft(padded))
-        result = np.real(result[0 : shape[0]])
+    It is easy to see that covariance matrices corresponding to regular grids
+    (in 2D and 3D) result in block Toeplitz matrices, with Toeplitz sub-blocks (BTTB).
+    We can exploit this to perform fast matrix-vector products.
+    See :cite:t:`saibabaFastAlgorithmsGeostatistical2013`.
 
-    elif dim == 2:
-        circ = np.reshape(row, (shape[0], shape[1]), order="F")
-        circ = np.concatenate((circ, circ[:, -2:0:-1]), axis=1)
-        circ = np.concatenate((circ, circ[-2:0:-1, :]), axis=0)
+    Copied from
+    https://github.com/jonghyunharrylee/pyPCGA/blob/master/pyPCGA/covariance/toeplitz.py
 
-        n = np.shape(circ)
-        padded = np.reshape(x, (shape[0], shape[1]), order="F")
+    Parameters
+    ----------
+    x : NDArrayFloat
+        Input vector to multiply.
+    first_row : NDArrayFloat
+        First row of the covariance matrix.
+    shape : Union[int, Sequence[int], NDArrayInt]
+        Shape of the grid (nx, [ny, nz])
 
-        result = np.fft.ifft2(np.fft.fft2(circ) * np.fft.fft2(padded, n))
-        result = np.real(result[0 : shape[0], 0 : shape[1]])
-        result = np.reshape(result, -1, order="F")
+    Returns
+    -------
+    NDArrayFloat
+        The matrix-vector product.
 
-    elif dim == 3:
-        circ = np.reshape(row, (shape[0], shape[1], shape[2]), order="F")
-        circ = np.concatenate((circ, circ[:, :, -2:0:-1]), axis=2)
-        circ = np.concatenate((circ, circ[:, -2:0:-1, :]), axis=1)
-        circ = np.concatenate((circ, circ[-2:0:-1, :, :]), axis=0)
+    Raises
+    ------
+    ValueError
+        If the given shape does not match 1D, 2D or 3D.
+    """
+    _shape = np.array([shape], dtype=np.int_).ravel()
+    dim: int = _shape.size
 
-        n = np.shape(circ)
-        padded = np.reshape(x, shape, order="F")
+    if dim > 3 or dim == 0:
+        raise ValueError("Support 1,2 and 3 dimensions.")
 
-        result = np.fft.ifftn(np.fft.fftn(circ) * np.fft.fftn(padded, n))
-        result = np.real(result[0 : shape[0], 0 : shape[1], 0 : shape[2]])
-        result = np.reshape(result, -1, order="F")
-    else:
-        raise ValueError("Support 1,2 and 3 dimensions")
+    # Reshape the input vector with domain shape
+    padded = np.reshape(x, _shape, order="F")
 
-    return result
+    # Create the circulant matrix
+    circ = np.reshape(first_row, _shape, order="F")
 
-
-def Realizations(row, shape):
-    dim = shape.size
-    if dim == 1:
-        circ = np.concatenate((row, row[-2:0:-1]))
-        n = circ.shape
-
-        eps = np.random.normal(0, 1, n) + 1j * np.random.normal(0, 1, n)
-        res = np.fft.ifft(np.sqrt(np.fft.fft(circ)) * eps) * np.sqrt(n)
-
-        r1 = np.real(res[0 : shape[0]])
-        r2 = np.imag(res[0 : shape[0]])
-
-    elif dim == 2:
-        circ = np.reshape(row, (shape[0], shape[1]), order="F")
-        circ = np.concatenate((circ, circ[:, -2:0:-1]), axis=1)
-        circ = np.concatenate((circ, circ[-2:0:-1, :]), axis=0)
-
-        n = np.shape(circ)
-        eps = np.random.normal(0, 1, n) + 1j * np.random.normal(0, 1, n)
-
-        res = np.fft.ifft2(np.sqrt(np.fft.fft2(circ)) * eps) * np.sqrt(n[0] * n[1])
-        res = res[0 : shape[0], 0 : shape[1]]
-        res = np.reshape(res, -1, order="F")
-
-        r1 = np.real(res)
-        r2 = np.imag(res)
-
-    elif dim == 3:
-        circ = np.reshape(row, (shape[0], shape[1], shape[2]), order="F")
-        circ = np.concatenate((circ, circ[:, :, -2:0:-1]), axis=2)
-        circ = np.concatenate((circ, circ[:, -2:0:-1, :]), axis=1)
-        circ = np.concatenate((circ, circ[-2:0:-1, :, :]), axis=0)
-
-        n = np.shape(circ)
-        eps = np.random.normal(0, 1, n) + 1j * np.random.normal(0, 1, n)
-
-        res = np.fft.ifftn(np.sqrt(np.fft.fftn(circ)) * eps) * np.sqrt(
-            n[0] * n[1] * n[2]
+    mask: List[slice] = [slice(None) for i in range(dim)]
+    for i in range(dim):
+        # remove first and last element on that axis
+        mask[dim - i - 1] = slice(1, -1)
+        # flip the axis and remove first and last element
+        circ = np.concatenate(
+            (circ, np.flip(circ, axis=dim - i - 1)[*mask]), axis=dim - i - 1
         )
-        res = res[0 : shape[0], 0 : shape[1], 0 : shape[2]]
-        res = np.reshape(res, -1, order="F")
+        # restore the mask to its initial state
+        mask[dim - i - 1] = slice(None)
 
-        r1 = np.real(res)
-        r2 = np.imag(res)
-    else:
-        raise ValueError("Support 1,2 and 3 dimensions")
+    if dim == 1:
+        padded = np.concatenate((x, np.zeros(_shape[0] - 2)))
 
-    return r1, r2, eps
+    result = np.fft.ifftn(np.fft.fftn(circ) * np.fft.fftn(padded, np.shape(circ)))
+
+    # Get the result and return
+    mask = [slice(0, _shape[i]) for i in range(dim)]
+
+    return np.reshape(np.real(result[*mask]), -1, order="F")

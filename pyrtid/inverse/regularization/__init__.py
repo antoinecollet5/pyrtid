@@ -53,12 +53,15 @@ Global
 Geostatistic regularizator
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Provide a class to implement a regularization based on a parameter covariance matrix.
+Provide classes to implement regularization based on a parameter covariance matrix.
+The first one work with a single vector while the second class works with
+an ensemble of realizations.
 
 .. autosummary::
    :toctree: _autosummary
 
     GeostatisticalRegularizator
+    EnsembleRegularizator
 
 
 Covariance classes
@@ -90,6 +93,7 @@ To represent trend through drift matrix. To use along with geostatistical regula
     NullPriorTerm
     ConstantPriorTerm
     MeanPriorTerm
+    EnsembleMeanPriorTerm
     DriftMatrix
     LinearDriftMatrix
 
@@ -125,10 +129,14 @@ from pyrtid.inverse.regularization.covariances import (
     cov_mat_to_ud_mat,
     get_prior_eigen_factorization,
 )
-from pyrtid.inverse.regularization.geostatistical import GeostatisticalRegularizator
+from pyrtid.inverse.regularization.geostatistical import (
+    EnsembleRegularizator,
+    GeostatisticalRegularizator,
+)
 from pyrtid.inverse.regularization.priors import (
     ConstantPriorTerm,
     DriftMatrix,
+    EnsembleMeanPriorTerm,
     LinearDriftMatrix,
     MeanPriorTerm,
     NullPriorTerm,
@@ -161,9 +169,11 @@ __all__ = [
     "NullPriorTerm",
     "ConstantPriorTerm",
     "MeanPriorTerm",
+    "EnsembleMeanPriorTerm",
     "DriftMatrix",
     "LinearDriftMatrix",
     "GeostatisticalRegularizator",
+    "EnsembleRegularizator",
     "get_prior_eigen_factorization",
     "cov_mat_to_ud_mat",
 ]

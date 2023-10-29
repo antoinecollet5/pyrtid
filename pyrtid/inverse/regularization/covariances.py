@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 from abc import abstractmethod
 from time import time
-from typing import Callable, List, Optional, Tuple, Union
+from typing import Callable, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 from numpy.random import Generator, RandomState
@@ -24,7 +24,11 @@ from scipy.spatial.distance import cdist
 
 from pyrtid.inverse.regularization.dense import generate_dense_matrix
 from pyrtid.inverse.regularization.hmatrix import Hmatrix
-from pyrtid.inverse.regularization.toeplitz import create_row, toeplitz_product
+from pyrtid.inverse.regularization.toeplitz import (
+    create_toepliz_first_row,
+    toeplitz_product,
+)
+from pyrtid.utils import get_pts_coords_regular_grid
 from pyrtid.utils.operators import get_super_lu_preconditioner
 from pyrtid.utils.types import NDArrayFloat, NDArrayInt
 
@@ -92,7 +96,7 @@ class CovarianceMatrix(LinearOperator):
     def solve(self, b: NDArrayFloat) -> NDArrayFloat:
         """Solve Ax = b, with A, the current covariance matrix instance."""
 
-    def get_inv_cov_times_vector(self, x: NDArrayFloat) -> NDArrayFloat:
+    def get_inv_cov_dot_vect(self, x: NDArrayFloat) -> NDArrayFloat:
         """Return $Q^{-1} x$."""
         return self.solve(x)
 
@@ -168,16 +172,16 @@ def build_preconditioner(
     hack of using nugget effect.
 
     """
-
-    # Build the tree
-    start: float = time()
-    tree: cKDTree = cKDTree(pts, leafsize=32)
-    end: float = time()
     nb_pts: int = pts.shape[0]
     if nb_pts <= 0:
         raise ValueError("The number of points cannot be null !")
     if nb_pts < k:
         raise ValueError("k must be superior to the number of points !")
+
+    # Build the tree
+    start: float = time()
+    tree: cKDTree = cKDTree(pts, leafsize=32)
+    end: float = time()
 
     logging.log(logging.INFO, f"Tree building time = {end-start}")
 
@@ -197,10 +201,13 @@ def build_preconditioner(
 
     y[0] = 1.0
     start = time()
+
+    # TODO: This is very inefficient and must be re-written
     for i in np.arange(nb_pts):
         Q = kernel(cdist(pts[ind[i, :], :], pts[ind[i, :], :]))
         nui = np.linalg.solve(Q, y)
         nu[i, :] = np.copy(nui.transpose())
+
     end = time()
 
     logging.log(logging.INFO, "Elapsed time = %g" % (end - start))
@@ -361,11 +368,12 @@ class FFTCovarianceMatrix(KernelCovarianceMatrix):
     def __init__(
         self,
         kernel,
-        mesh_dim: Union[NDArrayInt, Tuple[float, float]],
-        domain_shape: Union[NDArrayInt, Tuple[int, int]],
+        mesh_dim: Union[float, NDArrayFloat, Sequence[float]],
+        domain_shape: Union[int, NDArrayInt, Sequence[int]],
         len_scale: NDArrayFloat,
         nugget: float = 0.0,
         k: int = 100,
+        is_use_preconditioner: bool = False,
     ) -> None:
         """_summary_
 
@@ -385,21 +393,26 @@ class FFTCovarianceMatrix(KernelCovarianceMatrix):
             Number of local centers in the preconditioner. Controls the sparity of
             the preconditioner. It should be inferior to the number of points.
             By default 100.
+        is_use_preconditioner: bool
+            Whether to build the preconditioner at instance creation and use it to
+            solve Ax = b systems. The default is False.
         """
         self.param_shape: NDArrayInt = np.array(domain_shape, dtype=np.int8)
-        self.row, pts = create_row(
-            np.array(mesh_dim, dtype=np.int8), self.param_shape, kernel, len_scale
-        )
+        # Coordinates of the points in the grid with shape (Npts, Ndim)
+        pts = get_pts_coords_regular_grid(mesh_dim, self.param_shape)
+
+        self.first_row = create_toepliz_first_row(pts, kernel, len_scale)
         super().__init__(pts, kernel, nugget)
-        self.preconditioner: csr_array = build_preconditioner(pts, kernel, k=k)
+        if is_use_preconditioner:
+            self.preconditioner: Optional[csr_array] = build_preconditioner(
+                pts, kernel, k=k
+            )
+        else:
+            self.preconditioner = None
 
     def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
         """Return the covariance matrix times the vector x."""
-        return toeplitz_product(x, self.row, self.param_shape) * (1 + self.nugget)
-
-    def _rmatvec(self, x: NDArrayFloat) -> NDArrayFloat:
-        """Return the covariance matrix conjugate transpose times the vector x."""
-        return toeplitz_product(x, self.row, self.number_pts)
+        return toeplitz_product(x, self.first_row, self.param_shape) * (1 + self.nugget)
 
     def solve(
         self, b: NDArrayFloat, tol: float = 1e-12, maxiter: int = 1000
@@ -516,7 +529,7 @@ class CovarianceMatrixbyUd(CovarianceMatrix):
         """Return the covariance matrix conjugate transpose times the vector x."""
         return self._matvec(x)
 
-    def get_inv_cov_times_vector(self, x: NDArrayFloat) -> NDArrayFloat:
+    def get_inv_cov_dot_vect(self, x: NDArrayFloat) -> NDArrayFloat:
         """Return $Q^{-1} x = ZD^{-1}Z^{T}x$."""
         # np.dot(invZs.T, invZs)
         # Note: x must be a column vector
@@ -567,7 +580,7 @@ class SparseInvCovarianceMatrix(CovarianceMatrix):
         """Return the covariance matrix conjugate transpose times the vector x."""
         return self.solve(x)
 
-    def get_inv_cov_times_vector(self, x: NDArrayFloat) -> NDArrayFloat:
+    def get_inv_cov_dot_vect(self, x: NDArrayFloat) -> NDArrayFloat:
         """Return $Q^{-1} x."""
         return self.inv_mat.dot(x)
 

@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List, Optional, Union
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
 
@@ -84,7 +84,7 @@ class NullPriorTerm(PriorTerm):
         NDArrayFloat
             Prior gradient-input vector dot product.
         """
-        return 0.0
+        return np.zeros(input.shape)
 
 
 class ConstantPriorTerm(PriorTerm):
@@ -142,7 +142,7 @@ class ConstantPriorTerm(PriorTerm):
         NDArrayFloat
             Prior gradient-input vector dot product.
         """
-        return 0.0
+        return np.zeros(input.shape)
 
 
 class MeanPriorTerm(PriorTerm):
@@ -166,7 +166,7 @@ class MeanPriorTerm(PriorTerm):
         NDArrayFloat
             The prior term values.
         """
-        return np.full(params.size, fill_value=np.mean(params))
+        return np.full(params.size, fill_value=np.sum(params)) / params.size
 
     def get_gradient_dot_product(
         self, input: NDArrayFloat
@@ -185,6 +185,62 @@ class MeanPriorTerm(PriorTerm):
             Prior gradient-input vector dot product.
         """
         return np.full(input.size, fill_value=np.sum(input)) / input.size
+
+
+class EnsembleMeanPriorTerm(PriorTerm):
+    """Represent a mean prior."""
+
+    def __init__(self, shape: Tuple[int, int]) -> None:
+        """Initialize the instance."""
+        super().__init__()
+        if len(shape) != 2:
+            raise ValueError(
+                "The shape of an EnsembleMeanPriorTerm should be (N_s, N_e)"
+                " with N_s the number of adjuted values and N_e the number of"
+                " members in the ensemble."
+            )
+        self.shape: Tuple[int, int] = shape
+
+    def get_values(self, params: NDArrayFloat) -> NDArrayFloat:
+        """
+        Return the values of the prior term.
+
+        Parameters
+        ----------
+        params : NDArrayFloat
+            Values of the parameters for which to compute the prior mean.
+
+        Returns
+        -------
+        NDArrayFloat
+            The prior term values.
+        """
+        if params.shape != self.shape:
+            raise ValueError(f"Expected shape {self.shape}, got {params.shape}.")
+        return np.mean(params, axis=1, keepdims=True)
+
+    def get_gradient_dot_product(
+        self, input: NDArrayFloat
+    ) -> Union[float, NDArrayFloat]:
+        """
+        Return the dot product of the gradient of the prior and the given input vector.
+
+        Parameters
+        ----------
+        params : NDArrayFloat
+            Values with which to compute the prior gradient dot product.
+
+        Returns
+        -------
+        NDArrayFloat
+            Prior gradient-input vector dot product.
+        """
+        if input.shape[0] != self.shape[0]:  # type: ignore
+            raise ValueError(
+                f"Expected a vector of size {self.shape[0]}, got {input.shape}."
+            )
+
+        return input / self.shape[1]
 
 
 class DriftMatrix(PriorTerm):

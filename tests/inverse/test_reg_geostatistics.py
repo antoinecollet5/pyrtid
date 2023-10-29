@@ -1,18 +1,23 @@
 from typing import Tuple
 
 import numpy as np
+import pyrtid.utils.spde as spde
 import pytest
 from pyrtid.inverse.regularization import (  # DriftMatrix,; LinearDriftMatrix,
     ConstantPriorTerm,
     DenseCovarianceMatrix,
     EnsembleCovarianceMatrix,
+    EnsembleMeanPriorTerm,
+    EnsembleRegularizator,
     FFTCovarianceMatrix,
     GeostatisticalRegularizator,
     MeanPriorTerm,
     NullPriorTerm,
+    SparseInvCovarianceMatrix,
     cov_mat_to_ud_mat,
 )
 from pyrtid.utils.types import NDArrayFloat
+from sksparse.cholmod import cholesky
 
 # For now we use the exact parameters, we will complexify a bit later
 prior_std = 1.0
@@ -164,3 +169,63 @@ def test_regularizator_gradients_with_priors_by_fd(prior) -> None:
     )
     grad_reg_analytic = regularizator.loss_function_gradient(param_values)
     np.testing.assert_allclose(grad_reg_fd, grad_reg_analytic, atol=1e-4)
+
+
+def test_ensemble_regularizator() -> None:
+    """In this test we use spde for fast simulation generation."""
+    nx = (
+        10  # number of voxels along the x axis + 4 * 2 for the borders (regularization)
+    )
+    ny = 10  # number of voxels along the y axis
+    nz = 1
+    dx = 5.0  # voxel dimension along the x axis
+    dy = 5.0  # voxel dimension along the y axis
+    dz = 1.0
+
+    len_scale = 20.0  # m
+    kappa = 1 / len_scale
+    alpha = 1.0
+
+    mean = 300.0  # trend of the field
+    std = 150.0  # standard deviation of the field
+
+    # Create a presison matrix
+    Q_ref = spde.get_precision_matrix(
+        nx, ny, nz, dx, dy, dz, kappa, alpha, spatial_dim=2, sigma=std
+    )
+    cholQ_ref = cholesky(Q_ref)
+
+    n_fields = 50
+    # 200 non conditional simulations
+    tmp = []
+    for i in range(n_fields):
+        _field = np.abs(
+            spde.simu_nc(cholQ_ref, random_state=i).reshape(ny, nx).T.reshape(ny, nx).T
+            + mean
+        )
+
+        tmp.append(np.where(_field < 0.0, 0.0, _field).ravel("F"))
+    X = np.array(tmp).T
+
+    cov_mat = SparseInvCovarianceMatrix(Q_ref)
+
+    # Test 1: With a null prior term
+    reg1 = EnsembleRegularizator(cov_mat, NullPriorTerm())
+
+    np.testing.assert_allclose(reg1.loss_function(X), 184, rtol=0.01)
+
+    grad = reg1.loss_function_gradient_analytical(X)
+    grad_fd = reg1.loss_function_gradient(X, is_finite_differences=True)
+
+    np.testing.assert_almost_equal(grad, grad_fd)
+
+    # Test 2: With the mean computed from the ensemble
+    reg2 = EnsembleRegularizator(cov_mat, EnsembleMeanPriorTerm(X.shape))
+
+    # test the objective function
+    np.testing.assert_allclose(reg2.loss_function(X), 49.9953, rtol=0.01)
+
+    grad = reg2.loss_function_gradient_analytical(X)
+    grad_fd = reg2.loss_function_gradient(X, is_finite_differences=True)
+
+    np.testing.assert_almost_equal(grad, grad_fd)
