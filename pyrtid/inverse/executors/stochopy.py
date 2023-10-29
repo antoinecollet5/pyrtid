@@ -18,32 +18,35 @@ from stochopy.optimize import OptimizeResult as StochpyOptimizeResult
 from stochopy.optimize import minimize as stochopy_minimize
 from typing_extensions import Literal
 
-from pyrtid.inverse.executors.base import BaseInversionExecutor, BaseSolverConfig
+from pyrtid.inverse.executors.base import (
+    BaseInversionExecutor,
+    BaseSolverConfig,
+    base_solver_config_params_ds,
+    register_params_ds,
+)
 from pyrtid.inverse.params import get_parameters_bounds
 from pyrtid.utils.types import NDArrayFloat
 
+stochopy_solver_config_params_ds = """
+    solver_name: Literal["cmaes", "cpso", "de", "na", "pso", "vdcma"]
+        The default is "cmaes".
+    solver_options: Optional[Dict[str, Any]]
+        The default is None.
+    max_optimization_round_nb: int
+        The default is 1.
+    max_fun_per_round: int
+        The default is 5.
+"""
 
+
+@register_params_ds(stochopy_solver_config_params_ds)
+@register_params_ds(base_solver_config_params_ds)
 @dataclass
 class StochopySolverConfig(BaseSolverConfig):
     """_summary_
 
     Parameters
     ----------
-    is_verbose: bool
-        Whether to display inversion information. The default True.
-    hm_end_time: Optional[float]
-        Time at which the history matching ends and the forecast begins.
-        This is not to confuse with the simulation `duration` which
-        is already defined by the user in the htc file. The units are the same as
-        given for the `duration` keyword in :term:`HYTEC`.
-        If None, hm_end_time is set to the end of the simulation and
-        all observations covering the simulation duration are taken into account.
-        The default is None.
-    is_parallel: bool, optional
-        Whether to run the calculation one at the time or in a concurrent way.
-    max_workers: int, optional
-        Number of workers to use if the concurrency is enabled. The default is 2.
-
     """
 
     # TODO: add other parameters names

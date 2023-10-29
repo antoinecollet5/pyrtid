@@ -89,7 +89,7 @@ def get_diffusion_term_adjoint_gradient(
         ]
 
         daconc_fx = np.zeros(shape)
-        daconc_fx[:-1, :, 1:] += aconc[1:, :, 1:] - aconc[:-1, :, 1:]
+        daconc_fx[:-1, :, :] += aconc[1:, :, :] - aconc[:-1, :, :]
 
         # Backward scheme
         dconc_bx = np.zeros(shape)
@@ -104,7 +104,7 @@ def get_diffusion_term_adjoint_gradient(
         ]
 
         daconc_bx = np.zeros(shape)
-        daconc_bx[1:, :, 1:] += aconc[:-1, :, 1:] - aconc[1:, :, 1:]
+        daconc_bx[1:, :, :] += aconc[:-1, :, :] - aconc[1:, :, :]
 
         # Gather the two schemes
         grad = (
@@ -127,7 +127,7 @@ def get_diffusion_term_adjoint_gradient(
             :, :, np.newaxis
         ]
         daconc_fy = np.zeros(shape)
-        daconc_fy[:, :-1, 1:] += aconc[:, 1:, 1:] - aconc[:, :-1, 1:]
+        daconc_fy[:, :-1, :] += aconc[:, 1:, :] - aconc[:, :-1, :]
 
         # Bconckward scheme
         dconc_by = np.zeros(shape)
@@ -141,7 +141,7 @@ def get_diffusion_term_adjoint_gradient(
             :, :, np.newaxis
         ]
         daconc_by = np.zeros(shape)
-        daconc_by[:, 1:, 1:] += aconc[:, :-1, 1:] - aconc[:, 1:, 1:]
+        daconc_by[:, 1:, :] += aconc[:, :-1, :] - aconc[:, 1:, :]
 
         # Gather the two schemes
         grad += (
@@ -780,8 +780,12 @@ def compute_adjoint_gradient(
         )
         # 2) regularization loss function gradient
         # -> this already manages the preconditioning
-        param_grad_reg = param.get_regularization_loss_function_gradient() * jreg_weight
-
+        if jreg_weight == 0.0:
+            param_grad_reg = 0.0
+        else:
+            param_grad_reg = (
+                param.get_regularization_loss_function_gradient() * jreg_weight
+            )
         # 3) Take into account the preconditioning to
         # the ls gradient (no need for reg gradient)
         param_grad = (param_grad_ls) / param.preconditioner_1st_derivative(

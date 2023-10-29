@@ -17,6 +17,8 @@ from typing import (
     List,
     Optional,
     Sequence,
+    Tuple,
+    Type,
     TypeVar,
     Union,
 )
@@ -24,8 +26,12 @@ from typing import (
 import numpy as np
 
 from pyrtid.forward import ForwardModel, ForwardSolver
-from pyrtid.inverse.adjoint import AdjointModel
-from pyrtid.inverse.adjoint.gradients import is_adjoint_gradient_correct
+from pyrtid.inverse.adjoint import AdjointModel, AdjointSolver
+from pyrtid.inverse.adjoint.gradients import (
+    compute_adjoint_gradient,
+    compute_fd_gradient,
+    is_adjoint_gradient_correct,
+)
 from pyrtid.inverse.loss_function import ls_loss_function
 from pyrtid.inverse.model import InverseModel
 from pyrtid.inverse.obs import (
@@ -39,18 +45,30 @@ from pyrtid.inverse.params import (
     update_model_with_parameters_values,
     update_parameters_from_model,
 )
+from pyrtid.utils import is_all_close
 from pyrtid.utils.types import NDArrayFloat
 
 
-@dataclass
-class BaseSolverConfig:
+def register_params_ds(params_ds: str):  # type: ignore
     """
-    Base class for solver configuration.
+    Add the given string to the __doc__attribute of the class.
 
-    Attributes
+    Parameters
     ----------
-    is_verbose: bool
-        Whether to display inversion information. The default True.
+    params_ds : str
+        String added to the parameters section.
+    """
+
+    def decorator(klass: Type):  # type: ignore
+        """Decorate the klass."""
+        klass.__doc__ += params_ds
+        return klass
+
+    return decorator
+
+
+base_solver_config_params_ds = """is_verbose: bool
+        Whether to display inversion information. The default is True.
     hm_end_time: Optional[float]
         Time at which the history matching ends and the forecast begins.
         This is not to confuse with the simulation `duration` which
@@ -71,6 +89,17 @@ class BaseSolverConfig:
         seeded with `random_state`.
         If `random_state` is already a ``Generator`` or ``RandomState``
         instance then that instance is used.
+        """
+
+
+@register_params_ds(base_solver_config_params_ds)
+@dataclass
+class BaseSolverConfig:
+    """
+    Base class for solver configuration.
+
+    Attributes
+    ----------
     """
 
     is_verbose: bool = True
@@ -670,3 +699,251 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
                 "\nCheck your inputs if this is not desired."
             )
         return clipped
+
+
+adjoint_solver_config_params_ds = """is_check_gradient: bool
+        Whether the gradient The default is False.
+    is_use_adjoint: bool
+      The default is True.
+    afpi_eps: float
+        The default is 1e-5.
+    is_a_numerical_acceleratiion: bool
+        The default is False.
+        """
+
+
+@register_params_ds(adjoint_solver_config_params_ds)
+@register_params_ds(base_solver_config_params_ds)
+@dataclass
+class AdjointSolverConfig(BaseSolverConfig):
+    r"""
+    Configuration for solvers using the adjoint state model to compute the gradient.
+
+    Note
+    ----
+    This configuration is strictly identical to the one implemented with Scipy. The
+    only difference is that there is not solver name to provide.
+
+    Parameters
+    ----------
+    """
+    is_check_gradient: bool = False
+    is_use_adjoint: bool = True
+    afpi_eps: float = 1e-5
+    is_a_numerical_acceleratiion: bool = False
+
+
+_AdjointSolverConfig = TypeVar("_AdjointSolverConfig", bound=AdjointSolverConfig)
+
+
+class AdjointInversionExecutor(BaseInversionExecutor, Generic[_AdjointSolverConfig]):
+    """Represent a inversion executor instance using the L-BFGS-B from PyRTID."""
+
+    def _init_solver(self, s_init: NDArrayFloat) -> None:
+        """Careful, s_init is supposed to be preconditioned."""
+        super()._init_solver(s_init)
+
+        # Create an adjoint model only if needed
+        self.adj_model = None
+        if self.solver_config.is_use_adjoint:
+            self._init_adjoint_model(
+                self.solver_config.afpi_eps,
+                self.solver_config.is_a_numerical_acceleratiion,
+            )
+
+    def scaled_loss_function_gradient(self, m: NDArrayFloat) -> NDArrayFloat:
+        """
+        Return the gradient of the objective function with regard to `x`.
+
+        Parameters
+        ----------
+        x: NDArrayFloat
+            1D vector of inversed parameters.
+
+        Returns
+        -------
+        objective : NDArrayFloat
+            The gradient vector. Note that the dimension is the same as for x.
+
+        """
+        # Update the number of times the gradient computation has been performed
+        self.inv_model.nb_g_calls += 1
+
+        logging.info("- Running gradient # %s", self.inv_model.nb_g_calls)
+
+        adj_grad = np.array([], dtype=np.float64)
+        fd_grad = np.array([], dtype=np.float64)
+        if self.solver_config.is_use_adjoint or self.solver_config.is_check_gradient:
+            if self.adj_model is not None:
+                crank_flow = self.adj_model.a_fl_model.crank_nicolson
+            else:
+                crank_flow = None
+            # Reinitialize the adjoint model
+            self._init_adjoint_model(
+                self.solver_config.afpi_eps,
+                self.solver_config.is_a_numerical_acceleratiion,
+            )
+            self.adj_model.a_fl_model.set_crank_nicolson(crank_flow)
+
+            # Solve the adjoint system
+            solver = AdjointSolver(self.fwd_model, self.adj_model)
+            solver.solve(self.inv_model.observables, self.solver_config.hm_end_time)
+            # Compute the gradient with the adjoint state method
+            adj_grad = (
+                compute_adjoint_gradient(
+                    self.fwd_model,
+                    self.adj_model,
+                    self.inv_model.parameters_to_adjust,
+                    self.inv_model.jreg_weight,
+                )
+                * self.inv_model.scaling_factor
+            )
+
+        if (
+            not self.solver_config.is_use_adjoint
+            or self.solver_config.is_check_gradient
+        ):
+            # Compute the gradient by finite difference
+            fd_grad = (
+                compute_fd_gradient(
+                    self.fwd_model,
+                    self.inv_model.observables,
+                    self.inv_model.parameters_to_adjust,
+                    self.inv_model.jreg_weight,
+                )
+                * self.inv_model.scaling_factor
+            )
+
+        if self.solver_config.is_check_gradient:
+            if not is_all_close(adj_grad, fd_grad):
+                logging.warning("The adjoint gradient is not correct!")
+            else:
+                logging.info("The adjoint gradient seems correct!")
+
+        logging.info("- Gradient eval # %s over\n", self.inv_model.nb_g_calls)
+        if self.solver_config.is_use_adjoint:
+            return adj_grad
+        return fd_grad
+
+    def _run_forward_model_with_adjoint(
+        self,
+        m: NDArrayFloat,
+        run_n: int,
+        is_save_state: bool = True,
+        is_use_adjoint: bool = False,
+    ) -> Tuple[NDArrayFloat, NDArrayFloat]:
+        """
+        Run the forward model and returns the prediction vector.
+
+        Parameters
+        ----------
+        m : np.array
+            Inverted parameters values as a 1D vector.
+        run_n: int
+            Run number.
+        is_save_state: bool
+            Whether the parameter values must be stored or not.
+            The default is True.
+
+        Returns
+        -------
+        d_pred: np.array
+            Vector of results matching the observations.
+
+        """
+        logging.info("- Running forward model # %s", run_n)
+
+        # Update the model with the new values of x (preconditioned)
+        update_model_with_parameters_values(
+            self.fwd_model,
+            m,
+            self.inv_model.parameters_to_adjust,
+            is_preconditioned=True,
+            is_to_save=is_save_state,  # This is not finite differences
+        )
+
+        # Apply user transformation is needed:
+        if self.pre_run_transformation is not None:
+            self.pre_run_transformation(self.fwd_model)
+
+        # Solve the forward model with the new parameters
+        ForwardSolver(self.fwd_model).solve()
+
+        d_pred = get_predictions_matching_observations(
+            self.fwd_model, self.inv_model.observables, self.solver_config.hm_end_time
+        )
+
+        # AdjointModel()
+        gradient = np.zeros((self.data_model.s_dim), dtype=np.float64)
+
+        # Save the predictions
+        if is_save_state:
+            self.inv_model.list_d_pred.append(d_pred)
+
+        self._check_nans_in_predictions(d_pred, run_n)
+
+        # Read the results at the observation well
+        # Update the prediction vector for the parameters m(j)
+        logging.info("- Run # %s over", run_n)
+
+        return d_pred, gradient
+
+    def _map_forward_model_with_adjoint(
+        self,
+        s_ensemble: NDArrayFloat,
+        is_parallel: bool = False,
+        is_use_adjoint: bool = False,
+    ) -> Tuple[NDArrayFloat, NDArrayFloat]:
+        """
+        Call the forward model for all ensemble members, return predicted data.
+
+        Function calling the non-linear observation model (forward_model)
+        for all ensemble members and returning the predicted data for
+        each ensemble member. this function is responsible for the creation of
+        simulation folder etc.
+
+        Returns
+        -------
+        None.
+        """
+        run_n: int = self.inv_model.nb_f_calls
+        n_ensemble: int = s_ensemble.shape[1]  # type: ignore
+        d_pred: NDArrayFloat = np.zeros([self.data_model.d_dim, n_ensemble])
+        gradients: NDArrayFloat = np.zeros([self.data_model.s_dim, n_ensemble])
+        if is_parallel:
+            with ProcessPoolExecutor(
+                max_workers=self.solver_config.max_workers
+            ) as executor:
+                results: Iterator[NDArrayFloat] = executor.map(
+                    self._run_forward_model_with_adjoint,
+                    s_ensemble.T,
+                    range(run_n + 1, run_n + n_ensemble + 1),  # type: ignore
+                )
+                for j, res in enumerate(results):
+                    d_pred[:, j], gradients[:, j] = res
+            # self.simu_n += n_ensemble
+        else:
+            for j in range(n_ensemble):  # type: ignore
+                d_pred[:, j], gradients[:, j] = self._run_forward_model_with_adjoint(
+                    s_ensemble[:, j], run_n + j + 1
+                )
+        # update the number of runs
+
+        # The check is already done in Forward_model but nan can also be introduced
+        # because of the stacking. So it is necessary to check
+        self._check_nans_in_predictions(d_pred, run_n)
+
+        # save objective functions. This should be very fast.
+        for i in range(d_pred.shape[1]):  # type: ignore
+            ls_loss = ls_loss_function(
+                d_pred[:, i],
+                get_observables_values_as_1d_vector(
+                    self.inv_model.observables, self.solver_config.hm_end_time
+                ),
+                get_observables_uncertainties_as_1d_vector(
+                    self.inv_model.observables, self.solver_config.hm_end_time
+                ),
+            )
+            self.inv_model.list_losses.append(ls_loss)
+
+        return d_pred, gradients

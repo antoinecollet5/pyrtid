@@ -54,10 +54,21 @@ from typing import Any, Dict, Optional, Sequence
 
 from pyPCGA import PCGA
 
-from pyrtid.inverse.executors.base import BaseInversionExecutor, BaseSolverConfig
+from pyrtid.inverse.executors.base import (
+    BaseInversionExecutor,
+    BaseSolverConfig,
+    base_solver_config_params_ds,
+    register_params_ds,
+)
 from pyrtid.utils.types import NDArrayFloat
 
+pcga_solver_config_params_ds = """solver_kwargs: Optional[Dict[str, Any]]
+            Additional arguments for PCGA instance. The default is None.
+    """
 
+
+@register_params_ds(pcga_solver_config_params_ds)
+@register_params_ds(base_solver_config_params_ds)
 @dataclass
 class PCGASolverConfig(BaseSolverConfig):
     """
@@ -65,30 +76,6 @@ class PCGASolverConfig(BaseSolverConfig):
 
     Attributes
     ----------
-    is_verbose: bool
-        Whether to display inversion information. The default True.
-    hm_end_time: Optional[float]
-        Time at which the history matching ends and the forecast begins.
-        This is not to confuse with the simulation `duration` which
-        is already defined by the user in the htc file. The units are the same as
-        given for the `duration` keyword in :term:`HYTEC`.
-        If None, hm_end_time is set to the end of the simulation and
-        all observations covering the simulation duration are taken into account.
-        The default is None.
-    is_parallel: bool, optional
-        Whether to run the calculation one at the time or in a concurrent way.
-    max_workers: int, optional
-        Number of workers to use if the concurrency is enabled. The default is 2.
-    random_state: Optional[Union[int, np.random.Generator, np.random.RandomState]]
-        Pseudorandom number generator state used to generate resamples.
-        If `random_state` is ``None`` (or `np.random`), the
-        `numpy.random.RandomState` singleton is used.
-        If `random_state` is an int, a new ``RandomState`` instance is used,
-        seeded with `random_state`.
-        If `random_state` is already a ``Generator`` or ``RandomState``
-        instance then that instance is used.
-    solver_kwargs: Optional[Dict[str, Any]]
-        Additional arguments for PCGA instance. The default is None.
     """
 
     solver_kwargs: Optional[Dict[str, Any]] = None

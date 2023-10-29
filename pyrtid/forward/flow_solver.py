@@ -7,7 +7,11 @@ import numpy as np
 from scipy.sparse import lil_array
 from scipy.sparse.linalg import gmres
 
-from pyrtid.utils import get_super_lu_preconditioner, harmonic_mean
+from pyrtid.utils import (
+    get_array_borders_selection,
+    get_super_lu_preconditioner,
+    harmonic_mean,
+)
 from pyrtid.utils.types import NDArrayFloat
 
 from .models import (
@@ -335,7 +339,7 @@ def compute_u_darcy(fl_model: FlowModel, geometry: Geometry, time_index: int) ->
     fl_model.lu_darcy_x.append(find_ux_boundary(fl_model, geometry, time_index))
     fl_model.lu_darcy_y.append(find_uy_boundary(fl_model, geometry, time_index))
     # Handle constant head
-    # update_unitflow_cst_head_nodes(fl_model, geometry, time_index)
+    update_unitflow_cst_head_nodes(fl_model, geometry, time_index)
 
 
 def update_unitflow_cst_head_nodes(
@@ -373,35 +377,45 @@ def update_unitflow_cst_head_nodes(
         fl_model.cst_head_indices[0], fl_model.cst_head_indices[1]
     ]
 
-    # TODO: this is to be tested
-    # # 2) Update unitflow for the constant-head nodes
-    # fl_model.lunitflow[time_index][
-    #     fl_model.cst_head_indices[0], fl_model.cst_head_indices[1]
-    # ] = (
-    #     _flow[fl_model.cst_head_indices[0], fl_model.cst_head_indices[1]]
-    #     / geometry.mesh_volume
-    # )
+    # Total boundary length per mesh
+    _ltot = np.zeros(geometry.shape)
+    _ltot[0, :] += geometry.ny
+    _ltot[-1, :] += geometry.ny
+    _ltot[:, 0] += geometry.nx
+    _ltot[:, -1] += geometry.nx
 
-    # # 3) Now creates an artificial flow on the domain boundaries
-    # # to evacuate the overflow
+    # 2) Update unitflow for the constant-head nodes
+    fl_model.lunitflow[time_index][
+        fl_model.cst_head_indices[0], fl_model.cst_head_indices[1]
+    ] = (
+        _flow[fl_model.cst_head_indices[0], fl_model.cst_head_indices[1]]
+        / geometry.mesh_volume
+    )
 
-    # # For constant head on the borders -> unitflow is null
-    # cst_head_border_mask = _flow != 0 & get_array_borders_selection(*geometry.shape)
-    # fl_model.lunitflow[time_index][cst_head_border_mask] = 0.0
+    # 3) Now creates an artificial flow on the domain boundaries
+    # to evacuate the overflow
+    # It means that the unitflow added in step 2) will be set to zero for all cst head
+    # meshes located in the boundary of the domain.
+
+    # 3.1) For constant head in the borders -> unitflow is null
+    cst_head_border_mask = _flow != 0 & get_array_borders_selection(*geometry.shape)
+    fl_model.lunitflow[time_index][cst_head_border_mask] = 0.0
+
+    # 3.2) Report the flow on the boundaries
 
     # on the border, one neighbour maximum on each axis
-    ltot = 0
-    if geometry.nx > 1:
-        ltot += geometry.dy
-    if geometry.ny > 1:
-        ltot += geometry.dx
+    # ltot = 0
+    # if geometry.nx > 1:
+    #     ltot += geometry.dy
+    # if geometry.ny > 1:
+    #     ltot += geometry.dx
 
     # Note: so far, at borders, all flows are 0, so we can apply this to all nodes,
     # constant head or not.
-    fl_model.lu_darcy_x[time_index][0, :] = -_flow[0, :] / ltot
-    fl_model.lu_darcy_x[time_index][-1, :] = _flow[-1, :] / ltot
-    fl_model.lu_darcy_y[time_index][:, 0] = -_flow[:, 0] / ltot
-    fl_model.lu_darcy_y[time_index][:, -1] = _flow[:, -1] / ltot
+    fl_model.lu_darcy_x[time_index][0, :] = -_flow[0, :] / _ltot[0, :]
+    fl_model.lu_darcy_x[time_index][-1, :] = _flow[-1, :] / _ltot[-1, :]
+    fl_model.lu_darcy_y[time_index][:, 0] = -_flow[:, 0] / _ltot[:, 0]
+    fl_model.lu_darcy_y[time_index][:, -1] = _flow[:, -1] / _ltot[:, -1]
 
 
 def compute_u_darcy_div(

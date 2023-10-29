@@ -128,6 +128,9 @@ class ForwardSolver:
             )
         else:
             compute_u_darcy(self.model.fl_model, self.model.geometry, 0)
+            # To reproduce HYTEC's behavior
+            self.model.fl_model.lu_darcy_x[-1][:, :] = 0.0
+            self.model.fl_model.lu_darcy_y[-1][:, :] = 0.0
             compute_u_darcy_div(self.model.fl_model, self.model.geometry, 0)
 
         # Update the flow matrices depending on the flow regime (not modified along

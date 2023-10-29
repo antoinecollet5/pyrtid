@@ -10,70 +10,46 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Union
 
-import numpy as np
 from scipy.optimize import OptimizeResult as ScipyOptimizeResult
 from scipy.optimize import minimize as scipy_minimize
 
-from pyrtid.inverse.adjoint import AdjointSolver
-from pyrtid.inverse.adjoint.gradients import (
-    compute_adjoint_gradient,
-    compute_fd_gradient,
+from pyrtid.inverse.executors.base import (
+    AdjointInversionExecutor,
+    AdjointSolverConfig,
+    adjoint_solver_config_params_ds,
+    base_solver_config_params_ds,
+    register_params_ds,
 )
-from pyrtid.inverse.executors.base import BaseInversionExecutor, BaseSolverConfig
 from pyrtid.inverse.params import get_parameters_bounds
 from pyrtid.inverse.regularization import RegWeightUpdateStrategy
-from pyrtid.utils import is_all_close
 from pyrtid.utils.types import NDArrayFloat
 
-
-@dataclass
-class ScipySolverConfig(BaseSolverConfig):
-    """
-    Configuration for Scipy solvers.
-
-    Parameters
-    ----------
-    is_verbose: bool
-        Whether to display inversion information. The default True.
-    hm_end_time: Optional[float]
-        Time at which the history matching ends and the forecast begins.
-        This is not to confuse with the simulation `duration` which
-        is already defined by the user in the htc file. The units are the same as
-        given for the `duration` keyword in :term:`HYTEC`.
-        If None, hm_end_time is set to the end of the simulation and
-        all observations covering the simulation duration are taken into account.
-        The default is None.
-    is_parallel: bool, optional
-        Whether to run the calculation one at the time or in a concurrent way.
-    max_workers: int, optional
-        Number of workers to use if the concurrency is enabled. The default is 2.
-    random_state: Optional[Union[int, np.random.Generator, np.random.RandomState]]
-        Pseudorandom number generator state used to generate resamples.
-        If `random_state` is ``None`` (or `np.random`), the
-        `numpy.random.RandomState` singleton is used.
-        If `random_state` is an int, a new ``RandomState`` instance is used,
-        seeded with `random_state`.
-        If `random_state` is already a ``Generator`` or ``RandomState``
-        instance then that instance is used.
-    solver_name: str = "L-BFGS-B"
+scipy_solver_config_params_ds = r"""solver_name: str = "L-BFGS-B"
         Name of the solver to use. TODO: point to scipy.
     solver_options: Optional[Dict[str, Any]] = None
     max_optimization_round_nb: int = 1
     max_fun_first_round: int = 5
     max_fun_per_round: int
         The number of function evaluation before a new round  starts.
-    is_check_gradient: bool
-        Whether the gradient The default is False.
-    is_use_adjoint: bool = True
     is_regularization_at_first_round: bool = True
     reg_factor: Union[float, RegWeightUpdateStrategy, str]
         Factor (weight) for the regularization term of the objective function.
         It supports float or automatic strategies. See the
         :class:`RegWeightUpdateStrategy` description for available strategies.
         The default is RegWeightUpdateStrategy.AUTO_PER_ROUND.
-    afpi_eps: float = 1e-5
-    is_a_numerical_acceleratiion: bool = False
+"""
 
+
+@register_params_ds(scipy_solver_config_params_ds)
+@register_params_ds(adjoint_solver_config_params_ds)
+@register_params_ds(base_solver_config_params_ds)
+@dataclass
+class ScipySolverConfig(AdjointSolverConfig):
+    """
+    Configuration for Scipy solvers.
+
+    Parameters
+    ----------
     """
 
     solver_name: str = "L-BFGS-B"
@@ -81,17 +57,13 @@ class ScipySolverConfig(BaseSolverConfig):
     max_optimization_round_nb: int = 1
     max_fun_first_round: int = 5
     max_fun_per_round: int = 5
-    is_check_gradient: bool = False
-    is_use_adjoint: bool = True
     is_regularization_at_first_round: bool = True
     reg_factor: Union[
         float, RegWeightUpdateStrategy, str
     ] = RegWeightUpdateStrategy.AUTO_PER_ROUND
-    afpi_eps: float = 1e-5
-    is_a_numerical_acceleratiion: bool = False
 
 
-class ScipyInversionExecutor(BaseInversionExecutor[ScipySolverConfig]):
+class ScipyInversionExecutor(AdjointInversionExecutor[ScipySolverConfig]):
     """Represent a inversion executor instance using scipy's solvers."""
 
     def _init_solver(self, s_init: NDArrayFloat) -> None:
@@ -180,77 +152,3 @@ class ScipyInversionExecutor(BaseInversionExecutor[ScipySolverConfig]):
             )
         options["maxfun"] = max_fun
         return options
-
-    def scaled_loss_function_gradient(self, m: NDArrayFloat) -> NDArrayFloat:
-        """
-        Return the gradient of the objective function with regard to `x`.
-
-        Parameters
-        ----------
-        x: NDArrayFloat
-            1D vector of inversed parameters.
-
-        Returns
-        -------
-        objective : NDArrayFloat
-            The gradient vector. Note that the dimension is the same as for x.
-
-        """
-        # Update the number of times the gradient computation has been performed
-        self.inv_model.nb_g_calls += 1
-
-        logging.info("- Running gradient # %s", self.inv_model.nb_g_calls)
-
-        adj_grad = np.array([], dtype=np.float64)
-        fd_grad = np.array([], dtype=np.float64)
-        if self.solver_config.is_use_adjoint or self.solver_config.is_check_gradient:
-            if self.adj_model is not None:
-                crank_flow = self.adj_model.a_fl_model.crank_nicolson
-            else:
-                crank_flow = None
-            # Reinitialize the adjoint model
-            self._init_adjoint_model(
-                self.solver_config.afpi_eps,
-                self.solver_config.is_a_numerical_acceleratiion,
-            )
-            self.adj_model.a_fl_model.set_crank_nicolson(crank_flow)
-
-            # Solve the adjoint system
-            solver = AdjointSolver(self.fwd_model, self.adj_model)
-            solver.solve(self.inv_model.observables, self.solver_config.hm_end_time)
-            # Compute the gradient with the adjoint state method
-            adj_grad = (
-                compute_adjoint_gradient(
-                    self.fwd_model,
-                    self.adj_model,
-                    self.inv_model.parameters_to_adjust,
-                    self.inv_model.jreg_weight,
-                )
-                * self.inv_model.scaling_factor
-            )
-
-        if (
-            not self.solver_config.is_use_adjoint
-            or self.solver_config.is_check_gradient
-        ):
-            # Compute the gradient by finite difference
-            fd_grad = (
-                compute_fd_gradient(
-                    self.fwd_model,
-                    self.inv_model.observables,
-                    self.inv_model.parameters_to_adjust,
-                    self.inv_model.jreg_weight,
-                )
-                * self.inv_model.scaling_factor
-            )
-
-        if self.solver_config.is_check_gradient:
-            if not is_all_close(adj_grad, fd_grad):
-                logging.warning("The adjoint gradient is not correct!")
-            else:
-                logging.info("The adjoint gradient seems correct!")
-
-        logging.info("- Gradient eval # %s over\n", self.inv_model.nb_g_calls)
-        if self.solver_config.is_use_adjoint:
-            return adj_grad
-        return fd_grad

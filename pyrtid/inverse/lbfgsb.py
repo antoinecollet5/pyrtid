@@ -539,7 +539,8 @@ def direct_primal_subspace_minimization(
 
     # TODO: new way to perform
     # v = sp.linalg.solve(K, v)
-
+    # Careful, there is an error in the original paper (the negative sign is
+    # missing) !
     dHat = -invThet * (rHat + invThet * np.transpose(WTZ).dot(v))
 
     # Find alpha
@@ -661,8 +662,32 @@ def max_allowed_steplength(
       FORTRAN routines for large scale bound constrained optimization (2011),
       ACM Transactions on Mathematical Software, 38, 1.
     """
+    # Determine the maximum step length.
+
+    if iter == 0:
+        return 1.0  # we are not sure this is a good idea
+    # else:
+    #     for i in range(d.size):
+    #         if d[i] < 0:
+    #             a2 = lb[i] - x[i]
+    #             if a2 >= 0.0:
+    #                 stpmax = 0.0
+    #             elif d[i] * stpmax < a2:
+    #                 stpmax = a2 / d[i]
+    #         elif d[i] > 0.0:
+    #             a2 = ub[i] - x[i]
+    #             if a2 <= 0.0:
+    #                 stpmax = 0.0
+    #             elif d[i] * stpmax > a2:
+    #                 stpmax = a2 / d[i]
+
+    # return stpmax
+
     with np.errstate(divide="ignore"):
-        _tmp = np.where(d > 0, (ub - x) / d, (lb - x) / d)
+        _mask = d != 0
+        _tmp = np.where(
+            d[_mask] > 0, (ub - x)[_mask] / d[_mask], (lb - x)[_mask] / d[_mask]
+        )
         return min(max_steplength, np.nanmin(_tmp[np.isfinite(_tmp)]))
 
 
@@ -679,6 +704,8 @@ def line_search(
     xtol: float = 1e-5,  # called xtol = 0.1 in alga 778
     max_iter: int = 30,
     iprint: int = 10,
+    isave: NDArrayFloat = np.zeros((2,), np.intc),
+    dsave: NDArrayFloat = np.zeros((13,), np.float64),
 ) -> Optional[float]:
     r"""
     Find a step that satisfies both decrease condition and a curvature condition.
@@ -791,8 +818,6 @@ def line_search(
     # print(f"max_steplength = {max_steplength}")
     # print(f"steplength_0 = {steplength_0}")
 
-    isave = np.zeros((2,), np.intc)
-    dsave = np.zeros((13,), float)
     task = b"START"
 
     while i < max_iter:
@@ -1177,7 +1202,10 @@ def display_results(
 def minimize_lbfgsb(
     *,
     x0: NDArrayFloat,
-    fun: Callable[[NDArrayFloat, ...], float],
+    fun_and_jac: Optional[
+        Callable[[NDArrayFloat, ...], Tuple[float, NDArrayFloat]]
+    ] = None,
+    fun: Optional[Callable[[NDArrayFloat, ...], float]] = None,
     args: Tuple = (),
     jac: Optional[Union[Callable[[NDArrayFloat, ...], NDArrayFloat], str, bool]],
     update_fun_def: Optional[
@@ -1204,25 +1232,28 @@ def minimize_lbfgsb(
     maxls: int = 20,
     finite_diff_rel_step: Optional[float] = None,
     max_steplength: float = 1e8,
-    ftol_linesearch: float = 1e-4,
+    ftol_linesearch: float = 1e-3,
     gtol_linesearch: float = 0.9,
-    xtol_linesearch: float = 1e-5,
+    xtol_linesearch: float = 1e-1,
     eps_SY: float = 2.2e-16,
 ) -> OptimizeResult:
     r"""
     Solves bound constrained optimization problems by using the compact formula
     of the limited memory BFGS updates.
 
-    # TODO: try to reproduce the exact behavior of scipy.minimize
-
-    fun :  Callable[[NDArrayFloat, Tuple[Any]], float],
+    fun_and_jac: Optional[Callable[[NDArrayFloat, ...], Tuple[float, NDArrayFloat]]]
+        Combined `fun` and `jac`. The two functions are systematically called together
+        in the code and it might be convenient to return the results at once.
+        If not provided, then `fun` must be given. The default is None.
+    fun :  Optional[Callable[[NDArrayFloat, Tuple[Any]], float]],
         The objective function to be minimized.
 
             ``fun(x, *args) -> float``
 
         where ``x`` is a 1-D array with shape (n,) and ``args``
         is a tuple of the fixed parameters needed to completely
-        specify the function.
+        specify the function. Mandatory if `fun_and_jax` is not specified. The default
+        is None.
     x0 : ndarray, shape (n,)
         Initial guess. Array of real elements of size (n,),
         where ``n`` is the number of independent variables.
@@ -1393,6 +1424,10 @@ def minimize_lbfgsb(
     X: Deque[NDArrayFloat] = deque()
     G: Deque[NDArrayFloat] = deque()
 
+    # Saved parameters in linesearch
+    isave = np.zeros((2,), np.intc)
+    dsave = np.zeros((13,), float)
+
     # Initialize lbfgsb matrices ("Wa", "Ws", "Wy", "Sy", "Ss", "Wn", "Wt", "Snd")
     mats = LBFGSmat(x.size, maxcor)
 
@@ -1412,6 +1447,13 @@ def minimize_lbfgsb(
         bounds=bounds,
         finite_diff_rel_step=finite_diff_rel_step,
     )
+
+    # if fun_and_jac is None and fun is None:
+    #     raise ValueError("At least one of `fun` and`fun_and_jac` must be given!")
+    # if fun_and_jac is not None:
+    #     def _fun_and_jac() -> Tuple[float, NDArrayFloat]:
+    #         _fun_and_jac =
+    #     sf.fun_and_grad = _fun_and_jac
 
     f0, grad = sf.fun_and_grad(x)
 
@@ -1508,6 +1550,8 @@ def minimize_lbfgsb(
             xtol_linesearch,
             maxls,
             iprint,
+            isave,
+            dsave,
         )
 
         if steplength is None:
