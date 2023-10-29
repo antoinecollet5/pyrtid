@@ -67,7 +67,10 @@ class ScipySolverConfig(BaseSolverConfig):
     is_use_adjoint: bool = True
     is_regularization_at_first_round: bool = True
     reg_factor: Union[float, RegWeightUpdateStrategy, str]
-        Weight for the regularization part. The default is "auto".
+        Factor (weight) for the regularization term of the objective function.
+        It supports float or automatic strategies. See the
+        :class:`RegWeightUpdateStrategy` description for available strategies.
+        The default is RegWeightUpdateStrategy.AUTO_PER_ROUND.
     afpi_eps: float = 1e-5
     is_a_numerical_acceleratiion: bool = False
 

@@ -244,9 +244,7 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
             _s_init = _s_init_model
 
         # Need to differentiate flux and grids
-        self.data_model = DataModel(
-            self.obs, _s_init, np.diag(self.std_obs**2), _std_m_prior
-        )
+        self.data_model = DataModel(self.obs, _s_init, self.std_obs**2, _std_m_prior)
 
         # Initialize the solver (this is to be defined in child classes)
         self._init_solver(_s_init)
@@ -484,7 +482,11 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         if reg_factor == 0:
             reg_loss = 0.0
         else:
-            reg_loss = self.inv_model.get_jreg(ls_loss, reg_factor)
+            reg_loss = self.inv_model.get_jreg(
+                ls_loss,
+                reg_factor,
+                n_fun_before_reg=self.solver_config.__dict__.get("n_fun_before_reg", 0),
+            )
         total_loss = ls_loss + reg_loss
 
         # Apply the scaling coefficient

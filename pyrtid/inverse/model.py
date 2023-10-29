@@ -221,7 +221,10 @@ class InverseModel:
             raise ValueError("'observable' should be of type List[Observable]")
 
     def get_jreg(
-        self, j0: float, reg_factor: Union[float, RegWeightUpdateStrategy, str]
+        self,
+        j0: float,
+        reg_factor: Union[float, RegWeightUpdateStrategy, str],
+        n_fun_before_reg: int,
     ) -> float:
         """
         Return the spatial regularization objective function for the parameters.
@@ -233,7 +236,16 @@ class InverseModel:
         Parameters
         ----------
         j0 : float
-            The residuals objective function.
+            The data misfit objective function.
+        reg_factor: Union[float, RegWeightUpdateStrategy, str]
+            Factor (weight) for the regularization term of the objective function.
+            It supports float or automatic strategies. See the
+            :class:`RegWeightUpdateStrategy` description for available strategies.
+            The default is RegWeightUpdateStrategy.AUTO_PER_ROUND.
+        n_fun_before_reg: int
+            The number of objective function evaluation to perform before adding the
+            regularization term. This feature allows to start optimizing with
+            the misfit part only (no risk of overfitting at the beginning).
 
         Returns
         -------
@@ -242,7 +254,10 @@ class InverseModel:
 
         """
         if self.optimization_round_nb <= 1:
-            if not self.is_regularization_at_first_round:
+            if (
+                not self.is_regularization_at_first_round
+                or n_fun_before_reg > self.nb_f_calls
+            ):
                 self.jreg_weight = 0.0
                 return 0.0  # we ignore the regularization
 
