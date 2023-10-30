@@ -1202,12 +1202,9 @@ def display_results(
 def minimize_lbfgsb(
     *,
     x0: NDArrayFloat,
-    fun_and_jac: Optional[
-        Callable[[NDArrayFloat, ...], Tuple[float, NDArrayFloat]]
-    ] = None,
     fun: Optional[Callable[[NDArrayFloat, ...], float]] = None,
     args: Tuple = (),
-    jac: Optional[Union[Callable[[NDArrayFloat, ...], NDArrayFloat], str, bool]],
+    jac: Optional[Union[Callable[[NDArrayFloat, ...], NDArrayFloat], str, bool]] = None,
     update_fun_def: Optional[
         Callable[
             [
@@ -1241,10 +1238,6 @@ def minimize_lbfgsb(
     Solves bound constrained optimization problems by using the compact formula
     of the limited memory BFGS updates.
 
-    fun_and_jac: Optional[Callable[[NDArrayFloat, ...], Tuple[float, NDArrayFloat]]]
-        Combined `fun` and `jac`. The two functions are systematically called together
-        in the code and it might be convenient to return the results at once.
-        If not provided, then `fun` must be given. The default is None.
     fun :  Optional[Callable[[NDArrayFloat, Tuple[Any]], float]],
         The objective function to be minimized.
 
@@ -1447,13 +1440,6 @@ def minimize_lbfgsb(
         bounds=bounds,
         finite_diff_rel_step=finite_diff_rel_step,
     )
-
-    # if fun_and_jac is None and fun is None:
-    #     raise ValueError("At least one of `fun` and`fun_and_jac` must be given!")
-    # if fun_and_jac is not None:
-    #     def _fun_and_jac() -> Tuple[float, NDArrayFloat]:
-    #         _fun_and_jac =
-    #     sf.fun_and_grad = _fun_and_jac
 
     f0, grad = sf.fun_and_grad(x)
 

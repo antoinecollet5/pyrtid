@@ -15,6 +15,7 @@ import logging
 from dataclasses import dataclass
 from typing import Deque, Tuple, Union
 
+import numpy as np
 from scipy.optimize import OptimizeResult as ScipyOptimizeResult
 
 from pyrtid.inverse.executors.base import (
@@ -30,7 +31,7 @@ from pyrtid.inverse.params import (
     get_reg_loss_function,
     get_reg_loss_function_gradient,
 )
-from pyrtid.inverse.regularization import RegWeightUpdateStrategy
+from pyrtid.inverse.regularization import EnsembleRegularizator, RegWeightUpdateStrategy
 from pyrtid.utils.types import NDArrayFloat
 
 lbfgsb_solver_config_params_ds = r"""solver_options: Optional[Dict[str, Any]] = None
@@ -230,6 +231,10 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
 
         # Update the regularization weight
         new_weight: float = j0 / jreg
+
+        if new_weight == old_weight:
+            return j, grad, G
+
         self.inv_model.jreg_weight = new_weight
         # updated j (scaled with the scaling factor)
         updated_j: float = (j0 + new_weight * jreg) * self.inv_model.scaling_factor
@@ -296,7 +301,7 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
             )
             # Update options and stop criteria from the previous loops
             # get max_fun and max_iter
-            maxfun = self._get_maxfun(
+            maxfun = get_maxfun(
                 self.solver_config,
                 self.inv_model.nb_f_calls,
                 self.inv_model.optimization_round_nb,
@@ -336,27 +341,26 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
             n_iter += res.nit
         return res
 
-    @staticmethod  # type: ignore
-    def _get_maxfun(solver_config: LBFGSBSolverConfig, nfev: int, round: int) -> int:
-        """Update optimization stop criteria."""
 
-        maxfun: int = solver_config.maxfun
-        if solver_config.max_optimization_round_nb == 1:
-            return maxfun
-        if round == 1:
-            return min(
-                solver_config.max_fun_first_round,
-                solver_config.max_fun_per_round,
-                maxfun - nfev,
-            )
-        return min(solver_config.max_fun_per_round, maxfun - nfev)
+def get_maxfun(solver_config: LBFGSBSolverConfig, nfev: int, round: int) -> int:
+    """Update optimization stop criteria."""
 
-    # TODO: there is a duplicate with scipy -> see how to do ?
-    # Maybe add the adjoint state all the time ?
+    maxfun: int = solver_config.maxfun
+    if solver_config.max_optimization_round_nb == 1:
+        return maxfun
+    if round == 1:
+        return min(
+            solver_config.max_fun_first_round,
+            solver_config.max_fun_per_round,
+            maxfun - nfev,
+        )
+    return min(solver_config.max_fun_per_round, maxfun - nfev)
 
 
-class LBFGSBEnsembleInversionExecutor(LBFGSBInversionExecutor):
+class LBFGSBEnsembleInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
     """Represent a inversion executor instance using the L-BFGS-B from PyRTID."""
+
+    nb_f_calls = 0
 
     def _get_solver_name(self) -> str:
         """Return the solver name."""
@@ -407,8 +411,8 @@ class LBFGSBEnsembleInversionExecutor(LBFGSBInversionExecutor):
 
         # Get the current regularization term of the objectuve function
         # And compute the new weight for the last X
-        jreg: float = get_reg_loss_function(
-            self.inv_model.parameters_to_adjust, self.fwd_model, x  # type: ignore
+        jreg: float = self.get_reg_loss_function(
+            x.reshape(self.data_model.s_init.shape)
         )
 
         if (
@@ -433,6 +437,10 @@ class LBFGSBEnsembleInversionExecutor(LBFGSBInversionExecutor):
 
         # Update the regularization weight
         new_weight: float = j0 / jreg
+
+        if new_weight == old_weight:
+            return j, grad, G
+
         self.inv_model.jreg_weight = new_weight
         # updated j (scaled with the scaling factor)
         updated_j: float = (j0 + new_weight * jreg) * self.inv_model.scaling_factor
@@ -442,10 +450,11 @@ class LBFGSBEnsembleInversionExecutor(LBFGSBInversionExecutor):
         updated_grad = (
             grad / self.inv_model.scaling_factor
             + coef
-            * get_reg_loss_function_gradient(
-                self.inv_model.parameters_to_adjust, self.fwd_model, x
-            )
+            * self.get_reg_loss_function_gradient(
+                x.reshape(self.data_model.s_init.shape)
+            ).ravel()
         ) * self.inv_model.scaling_factor
+
         # Update all past gradients in G
         for _x in X:
             # we remove the reg part with the old weight and add it back with the
@@ -455,9 +464,9 @@ class LBFGSBEnsembleInversionExecutor(LBFGSBInversionExecutor):
                 (
                     G.popleft() / self.inv_model.scaling_factor
                     + coef
-                    * get_reg_loss_function_gradient(
-                        self.inv_model.parameters_to_adjust, self.fwd_model, _x
-                    )
+                    * self.get_reg_loss_function_gradient(
+                        _x.reshape(self.data_model.s_init.shape)
+                    ).ravel()
                 )
                 * self.inv_model.scaling_factor
             )
@@ -466,6 +475,212 @@ class LBFGSBEnsembleInversionExecutor(LBFGSBInversionExecutor):
         assert len(X) == len(G)
 
         return updated_j, updated_grad, G
+
+    def get_reg_loss_function(self, s_ensemble) -> float:
+        """
+
+
+        Parameters
+        ----------
+        s_ensemble : _type_
+            _description_
+
+        Returns
+        -------
+        float
+            _description_
+        """
+        jreg = 0
+        for param in self.inv_model.parameters_to_adjust:
+            for reg in param.regularizators:
+                if isinstance(reg, EnsembleRegularizator):
+                    jreg += reg.loss_function(s_ensemble)
+        return jreg
+
+    def get_reg_loss_function_gradient(self, s_ensemble) -> NDArrayFloat:
+        """
+
+        Parameters
+        ----------
+        s_ensemble : _type_
+            _description_
+
+        Returns
+        -------
+        NDArrayFloat
+            _description_
+        """
+        reg_grad = np.zeros(s_ensemble.shape)
+        for param in self.inv_model.parameters_to_adjust:
+            for reg in param.regularizators:
+                if isinstance(reg, EnsembleRegularizator):
+                    reg_grad += reg.loss_function_gradient(
+                        s_ensemble.reshape(self.data_model.s_init.shape)
+                    )
+        return reg_grad
+
+    def update_jreg_weight(
+        self,
+        j0: float,
+        jreg: float,
+        reg_factor: Union[float, RegWeightUpdateStrategy, str],
+        n_fun_before_reg: int,
+    ) -> None:
+        """
+        Update the regularization weight.
+
+        The regularization is ignored during the first optimization loop. Then
+        the weights are automatically computed in the first call of each optimization
+        loop.
+
+        Parameters
+        ----------
+        j0 : float
+            The data misfit objective function.
+        reg_factor: Union[float, RegWeightUpdateStrategy, str]
+            Factor (weight) for the regularization term of the objective function.
+            It supports float or automatic strategies. See the
+            :class:`RegWeightUpdateStrategy` description for available strategies.
+            The default is RegWeightUpdateStrategy.AUTO_PER_ROUND.
+        n_fun_before_reg: int
+            The number of objective function evaluation to perform before adding the
+            regularization term. This feature allows to start optimizing with
+            the misfit part only (no risk of overfitting at the beginning).
+
+        Returns
+        -------
+        jreg : float
+            the regularization objective function.
+
+        """
+        if self.inv_model.optimization_round_nb == 1:
+            if (
+                not self.inv_model.is_regularization_at_first_round
+                or n_fun_before_reg > self.nb_f_calls
+            ):
+                self.inv_model.jreg_weight = 0.0
+                return
+
+        if jreg == 0:
+            self.inv_model.jreg_weight = 0.0
+            return
+
+        if self.inv_model.is_first_loss_function_call_in_round:
+            if j0 == 0:
+                self.inv_model.jreg_weight = 1.0
+            elif reg_factor in [
+                RegWeightUpdateStrategy.AUTO_PER_ROUND,
+                RegWeightUpdateStrategy.AUTO_CONTINUOUS,
+            ]:
+                self.inv_model.jreg_weight = j0 / jreg
+            else:
+                self.inv_model.jreg_weight = float(reg_factor)
+            self.inv_model.is_first_loss_function_call_in_round = False
+
+    def scaled_loss_function(
+        self, s_ensemble: NDArrayFloat, is_save_state: bool = True
+    ) -> float:
+        """
+        Return the objective function and the gradient for the ensemble.
+
+        Parameters
+        ----------
+        Parameters
+        ----------
+        s_ensemble : NDArrayFloat
+            Array of shape :math:`(N_{s} \times N_{e})` containing the
+            flatten ensemble of parameter
+            realizations, with :math:`N_{s}` the number of adjusted values and,
+            :math:`N_{e}` the number of members (realizations).
+        is_save_state : bool, optional
+            _description_, by default True
+
+        Returns
+        -------
+        float
+            _description_
+        """
+        return self._scaled_loss_function(
+            s_ensemble.reshape(self.data_model.s_init.shape), is_save_state
+        )
+
+    def _scaled_loss_function(
+        self, s_ensemble: NDArrayFloat, is_save_state: bool = True
+    ) -> float:
+        """
+        Here s_ensemble has shape `(N_{s}, N_{e})` (one column per realization).
+        """
+        # reshape to (Ns, Ne) and run
+        losses, dpred, gradients = self._map_forward_model_with_adjoint(
+            s_ensemble, self.solver_config.is_parallel
+        )
+
+        # The objective function is the mean of member objectuive function (this is
+        # the definition we have chosen).
+        ls_loss: float = float(np.mean(losses))
+
+        # Compute the regularization term:
+        if self.solver_config.reg_factor == 0:
+            reg_loss = 0.0
+        else:
+            reg_loss: float = self.get_reg_loss_function(s_ensemble)
+            self.update_jreg_weight(
+                ls_loss,
+                reg_loss,
+                self.solver_config.reg_factor,
+                n_fun_before_reg=self.solver_config.n_fun_before_reg,
+            )
+            reg_loss *= self.inv_model.jreg_weight
+
+            if self.inv_model.jreg_weight != 0:
+                gradients += (
+                    self.get_reg_loss_function_gradient(s_ensemble)
+                    * self.inv_model.jreg_weight
+                )
+
+        print(gradients.shape)
+
+        total_loss: float = ls_loss + reg_loss
+
+        # Apply the scaling coefficient
+        scaled_loss: float = (
+            total_loss * self.inv_model.get_loss_function_scaling_factor(total_loss)
+        )
+
+        # Store the losses to the inverse model
+        self.inv_model.list_losses += list(losses * self.inv_model.scaling_factor)
+
+        # Need to store this locally because the mechanisms in inverse models
+        self.nb_f_calls += 1
+
+        # Store the last objective function values (ls and reg terms)
+        self.inv_model.ls_loss = ls_loss
+        self.inv_model.reg_loss = reg_loss
+
+        logging.info(f"Loss (obs fit)        = {ls_loss}")
+        logging.info(f"Loss (regularization) = {reg_loss}")
+        logging.info(f"Regularization weight = {self.inv_model.jreg_weight}")
+        logging.info(f"Scaling factor        = {self.inv_model.scaling_factor}")
+        logging.info(f"Loss (scaled)         = {scaled_loss}\n")
+
+        # Save the loss and the associated regularization weight
+        if is_save_state:
+            self.inv_model.list_losses.append(scaled_loss)
+
+        # The loss_ls gradient is the stacking of all members gradient
+        # (independent from each others).
+        # In this specific case, the regularization imposed to the parameters
+        # are ignored and we consider our own regularization approach.
+
+        # TODO: add the regularization terms that might depend on the ensemble.
+        self.grad = gradients * self.inv_model.scaling_factor
+
+        print(self.grad.shape)
+
+        return scaled_loss
+
+    def get_gradient(self, m: NDArrayFloat) -> NDArrayFloat:
+        return self.grad.ravel()
 
     def run(self) -> ScipyOptimizeResult:
         """
@@ -476,7 +691,8 @@ class LBFGSBEnsembleInversionExecutor(LBFGSBInversionExecutor):
         """
         super().run()
         res: ScipyOptimizeResult = ScipyOptimizeResult()
-        x0 = self.data_model.s_init
+        # flatten the ensemble
+        x0 = self.data_model.s_init.ravel()
 
         # If AUTO_CONTINUOUS, rounds do not matter.
         self.inv_model.is_regularization_at_first_round = (
@@ -499,7 +715,7 @@ class LBFGSBEnsembleInversionExecutor(LBFGSBInversionExecutor):
             )
             # Update options and stop criteria from the previous loops
             # get max_fun and max_iter
-            maxfun = self._get_maxfun(
+            maxfun = get_maxfun(
                 self.solver_config,
                 self.inv_model.nb_f_calls,
                 self.inv_model.optimization_round_nb,
@@ -513,20 +729,20 @@ class LBFGSBEnsembleInversionExecutor(LBFGSBInversionExecutor):
             else:
                 update_fun_def = self.update_fun_def
 
-            # We must modify f and g so they are called together at once
-
             res = minimize_lbfgsb(
                 x0=x0,
-                # fun_and_jac=fun_and_jac(),
                 fun=self.scaled_loss_function,
-                jac=self.scaled_loss_function_gradient,  # type: ignore
-                update_fun_def=update_fun_def,
-                bounds=get_parameters_bounds(
-                    self.inv_model.parameters_to_adjust, is_preconditioned=True
-                ),
+                jac=self.get_gradient,  # type: ignore
+                bounds=np.tile(
+                    get_parameters_bounds(
+                        self.inv_model.parameters_to_adjust, is_preconditioned=True
+                    ).T,
+                    self.data_model.n_ensemble,
+                ).T,
                 maxcor=self.solver_config.maxcor,
                 gtol=self.solver_config.gtol,
                 ftol=self.solver_config.ftol,
+                update_fun_def=update_fun_def,
                 max_iter=max_iter,
                 maxfun=maxfun,
                 iprint=self.solver_config.iprint,

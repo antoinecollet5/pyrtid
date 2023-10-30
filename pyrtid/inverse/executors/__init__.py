@@ -21,6 +21,7 @@ Different executors are provided (scipy, stochopy, pyesmda, pypcga, l-bfgs-b, si
     ESMDARSInversionExecutor
     ESMDARSSolverConfig
     LBFGSBInversionExecutor
+    LBFGSBEnsembleInversionExecutor
     LBFGSBSolverConfig
     PCGAInversionExecutor
     PCGASolverConfig
@@ -49,7 +50,11 @@ from pyrtid.inverse.executors.esmda import (
     ESMDARSSolverConfig,
     ESMDASolverConfig,
 )
-from pyrtid.inverse.executors.lbfgsb import LBFGSBInversionExecutor, LBFGSBSolverConfig
+from pyrtid.inverse.executors.lbfgsb import (
+    LBFGSBEnsembleInversionExecutor,
+    LBFGSBInversionExecutor,
+    LBFGSBSolverConfig,
+)
 from pyrtid.inverse.executors.pcga import PCGAInversionExecutor, PCGASolverConfig
 from pyrtid.inverse.executors.scipy import ScipyInversionExecutor, ScipySolverConfig
 from pyrtid.inverse.executors.sies import (
@@ -69,6 +74,7 @@ __all__ = [
     "ESMDARSInversionExecutor",
     "ESMDARSSolverConfig",
     "LBFGSBInversionExecutor",
+    "LBFGSBEnsembleInversionExecutor",
     "LBFGSBSolverConfig",
     "PCGAInversionExecutor",
     "PCGASolverConfig",

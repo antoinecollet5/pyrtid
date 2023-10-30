@@ -149,11 +149,20 @@ class DataModel:
         self.cov_obs = cov_obs
         self.std_m_prior = std_m_prior
 
+    def is_ensemble(self) -> bool:
+        """Return whether the optimization is performed over an ensemble."""
+        return len(self.s_init.shape) == 2
+
+    @property
+    def n_ensemble(self):
+        """Return the length of the parameters vector."""
+        if not self.is_ensemble():
+            return 1
+        return self.s_init.shape[1]  # type: ignore
+
     @property
     def s_dim(self):
         """Return the length of the parameters vector."""
-        if len(self.s_init.shape) == 2:
-            return self.s_init.shape[1]
         return self.s_init.shape[0]  # type: ignore
 
     @property
@@ -481,10 +490,10 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         # save objective functions. This should be very fast.
         for i in range(d_pred.shape[1]):  # type: ignore
             ls_loss = ls_loss_function(
-                d_pred[:, i],
                 get_observables_values_as_1d_vector(
                     self.inv_model.observables, self.solver_config.hm_end_time
                 ),
+                d_pred[:, i],
                 get_observables_uncertainties_as_1d_vector(
                     self.inv_model.observables, self.solver_config.hm_end_time
                 ),
@@ -499,10 +508,10 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
     ) -> float:
         """Compute the model scaled_loss function."""
         ls_loss = ls_loss_function(
+            get_observables_values_as_1d_vector(self.inv_model.observables),
             self._run_forward_model(
                 m, self.inv_model.nb_f_calls + 1, is_save_state=is_save_state
             ),
-            get_observables_values_as_1d_vector(self.inv_model.observables),
             get_observables_uncertainties_as_1d_vector(self.inv_model.observables),
         )
 
@@ -631,45 +640,6 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
             )
         raise Exception(msg)
 
-    def is_adjoint_gradient_correct(
-        self,
-        eps: Optional[float] = None,
-        max_workers: int = 1,
-        is_verbose: bool = False,
-    ) -> bool:
-        """
-        Return whether the adjoint gradient is correct or not.
-
-        Note
-        ----
-        The numerical gradient by finite difference is computed only on the
-        optimized area (sliced parameter values) while the adjoint gradient is
-        computed everywhere. This allows to check the gradient on small portions
-        of big models.
-
-        Parameters
-        ----------
-        eps: float, optional
-            The epsilon for the computation of the approximated gradient by finite
-            difference. If None, it is automatically inferred. The default is None.
-        max_workers: int
-            Number of workers used for the gradient approximation by finite
-            differences. If different from one, the calculation relies on
-            multi-processing to decrease the computation time. The default is 1.
-        is_verbose : bool, optional
-            Whether to display computation infrmation, by default False
-        """
-        return is_adjoint_gradient_correct(
-            self.fwd_model,
-            self.adj_model,
-            self.inv_model.parameters_to_adjust,
-            self.inv_model.observables,
-            eps=eps,
-            max_workers=max_workers,
-            hm_end_time=self.solver_config.hm_end_time,
-            is_verbose=is_verbose,
-        )
-
     def validate_s_init(
         self, s_init: NDArrayFloat, expected_s_dim: int
     ) -> NDArrayFloat:
@@ -751,6 +721,45 @@ class AdjointInversionExecutor(BaseInversionExecutor, Generic[_AdjointSolverConf
                 self.solver_config.is_a_numerical_acceleratiion,
             )
 
+    def is_adjoint_gradient_correct(
+        self,
+        eps: Optional[float] = None,
+        max_workers: int = 1,
+        is_verbose: bool = False,
+    ) -> bool:
+        """
+        Return whether the adjoint gradient is correct or not.
+
+        Note
+        ----
+        The numerical gradient by finite difference is computed only on the
+        optimized area (sliced parameter values) while the adjoint gradient is
+        computed everywhere. This allows to check the gradient on small portions
+        of big models.
+
+        Parameters
+        ----------
+        eps: float, optional
+            The epsilon for the computation of the approximated gradient by finite
+            difference. If None, it is automatically inferred. The default is None.
+        max_workers: int
+            Number of workers used for the gradient approximation by finite
+            differences. If different from one, the calculation relies on
+            multi-processing to decrease the computation time. The default is 1.
+        is_verbose : bool, optional
+            Whether to display computation infrmation, by default False
+        """
+        return is_adjoint_gradient_correct(
+            self.fwd_model,
+            self.adj_model,
+            self.inv_model.parameters_to_adjust,
+            self.inv_model.observables,
+            eps=eps,
+            max_workers=max_workers,
+            hm_end_time=self.solver_config.hm_end_time,
+            is_verbose=is_verbose,
+        )
+
     def scaled_loss_function_gradient(self, m: NDArrayFloat) -> NDArrayFloat:
         """
         Return the gradient of the objective function with regard to `x`.
@@ -830,10 +839,13 @@ class AdjointInversionExecutor(BaseInversionExecutor, Generic[_AdjointSolverConf
         m: NDArrayFloat,
         run_n: int,
         is_save_state: bool = True,
-        is_use_adjoint: bool = False,
-    ) -> Tuple[NDArrayFloat, NDArrayFloat]:
+    ) -> Tuple[float, NDArrayFloat, NDArrayFloat]:
         """
         Run the forward model and returns the prediction vector.
+
+        Note
+        ----
+        We do not apply scaling factor yet.
 
         Parameters
         ----------
@@ -847,8 +859,12 @@ class AdjointInversionExecutor(BaseInversionExecutor, Generic[_AdjointSolverConf
 
         Returns
         -------
-        d_pred: np.array
-            Vector of results matching the observations.
+        ls_loss: float
+            The data misfit part of the objective function (no regularization).
+        d_pred: NDArrayFloat
+            Vector of predictions matching the observations.
+        gradient: NDArrayFloat
+            Gradient of ls_loss w.r.t. the adjusted values.
 
         """
         logging.info("- Running forward model # %s", run_n)
@@ -873,42 +889,88 @@ class AdjointInversionExecutor(BaseInversionExecutor, Generic[_AdjointSolverConf
             self.fwd_model, self.inv_model.observables, self.solver_config.hm_end_time
         )
 
-        # AdjointModel()
-        gradient = np.zeros((self.data_model.s_dim), dtype=np.float64)
+        ls_loss = ls_loss_function(
+            get_observables_values_as_1d_vector(self.inv_model.observables),
+            d_pred,
+            get_observables_uncertainties_as_1d_vector(self.inv_model.observables),
+        )
 
-        # Save the predictions
-        if is_save_state:
-            self.inv_model.list_d_pred.append(d_pred)
+        logging.info(f"- Forward model run # {run_n} over")
+        logging.info(f"- Running gradient # {run_n}")
+
+        adj_grad = np.array([], dtype=np.float64)
+        if self.solver_config.is_use_adjoint or self.solver_config.is_check_gradient:
+            if self.adj_model is not None:
+                crank_flow = self.adj_model.a_fl_model.crank_nicolson
+            else:
+                crank_flow = None
+            # Reinitialize the adjoint model
+            self._init_adjoint_model(
+                self.solver_config.afpi_eps,
+                self.solver_config.is_a_numerical_acceleratiion,
+            )
+            self.adj_model.a_fl_model.set_crank_nicolson(crank_flow)
+
+            # Solve the adjoint system
+            solver = AdjointSolver(self.fwd_model, self.adj_model)
+            solver.solve(self.inv_model.observables, self.solver_config.hm_end_time)
+            # Compute the gradient with the adjoint state method
+            adj_grad = compute_adjoint_gradient(
+                self.fwd_model,
+                self.adj_model,
+                self.inv_model.parameters_to_adjust,
+                0.0,  # set the regularization weight to zero
+            )
+
+        logging.info(f"- Gradient eval # {run_n} over\n")
 
         self._check_nans_in_predictions(d_pred, run_n)
 
-        # Read the results at the observation well
-        # Update the prediction vector for the parameters m(j)
-        logging.info("- Run # %s over", run_n)
+        return ls_loss, d_pred, adj_grad
 
-        return d_pred, gradient
-
+    # Add an option for the regularization term
     def _map_forward_model_with_adjoint(
         self,
         s_ensemble: NDArrayFloat,
         is_parallel: bool = False,
-        is_use_adjoint: bool = False,
-    ) -> Tuple[NDArrayFloat, NDArrayFloat]:
-        """
-        Call the forward model for all ensemble members, return predicted data.
+    ) -> Tuple[NDArrayFloat, NDArrayFloat, NDArrayFloat]:
+        r"""
+        Return both predicted data and associated gradients for the ensemble.
 
         Function calling the non-linear observation model (forward_model)
         for all ensemble members and returning the predicted data for
         each ensemble member. this function is responsible for the creation of
         simulation folder etc.
 
+        Note
+        ----
+        The objective function returned is without regularization, only with the
+        observed data misfits.
+
+        Parameters
+        ----------
+        s_ensemble : NDArrayFloat
+            Array of shape :math:`(N_{s}, N_{e})` containing the ensemble of parameter
+            realizations, with :math:`N_{s}` the number of adjusted values and,
+            :math:`N_{e}` the number of members (realizations).
+        is_parallel : bool, optional
+            Whether to use multiprocessing, by default False
+
         Returns
         -------
-        None.
+        Tuple[NDArrayFloat, NDArrayFloat]
+            The array of predictions of shape :math:`(N_{\mathrm{obs}}, N_{e})` and
+            associated gradients of shape :math:`(N_{s}, N_{e})`,
+            with :math:`N_{\mathrm{obs}}` the number of observations,
+            :math:`N_{s}` the number of adjusted values and,
+            :math:`N_{e}` the number of members (realizations).
+
         """
         run_n: int = self.inv_model.nb_f_calls
         n_ensemble: int = s_ensemble.shape[1]  # type: ignore
         d_pred: NDArrayFloat = np.zeros([self.data_model.d_dim, n_ensemble])
+        # loss functions
+        losses_array = np.zeros([n_ensemble])
         gradients: NDArrayFloat = np.zeros([self.data_model.s_dim, n_ensemble])
         if is_parallel:
             with ProcessPoolExecutor(
@@ -920,30 +982,19 @@ class AdjointInversionExecutor(BaseInversionExecutor, Generic[_AdjointSolverConf
                     range(run_n + 1, run_n + n_ensemble + 1),  # type: ignore
                 )
                 for j, res in enumerate(results):
-                    d_pred[:, j], gradients[:, j] = res
-            # self.simu_n += n_ensemble
+                    losses_array[j], d_pred[:, j], gradients[:, j] = res
         else:
             for j in range(n_ensemble):  # type: ignore
-                d_pred[:, j], gradients[:, j] = self._run_forward_model_with_adjoint(
-                    s_ensemble[:, j], run_n + j + 1
+                (
+                    losses_array[j],
+                    d_pred[:, j],
+                    gradients[:, j],
+                ) = self._run_forward_model_with_adjoint(
+                    s_ensemble[:, j], run_n + j + 1, is_save_state=False
                 )
-        # update the number of runs
 
         # The check is already done in Forward_model but nan can also be introduced
         # because of the stacking. So it is necessary to check
         self._check_nans_in_predictions(d_pred, run_n)
 
-        # save objective functions. This should be very fast.
-        for i in range(d_pred.shape[1]):  # type: ignore
-            ls_loss = ls_loss_function(
-                d_pred[:, i],
-                get_observables_values_as_1d_vector(
-                    self.inv_model.observables, self.solver_config.hm_end_time
-                ),
-                get_observables_uncertainties_as_1d_vector(
-                    self.inv_model.observables, self.solver_config.hm_end_time
-                ),
-            )
-            self.inv_model.list_losses.append(ls_loss)
-
-        return d_pred, gradients
+        return losses_array, d_pred, gradients

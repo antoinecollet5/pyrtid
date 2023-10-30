@@ -52,13 +52,9 @@ esmda_solver_config_params_ds_common = r"""inversion_type: ESMDAInversionType
         the docs interpshinx. + Add to ESMDARS.
         The default is ESMDAInversionType.NAIVE.
     cov_ss_inflation_factor: float
-        Factor used to inflate the initial adjusted parameters covariance
-        Each realization of the ensemble at the end of each update step i,
-        is linearly inflated around its mean.
-        Must match the number of data assimilations (:math:`N_{a}`).
+        Factor used to inflate the initial ensemble around its mean.
         See :cite:p:`andersonExploringNeedLocalization2007`.
-        If None, the default is 1.0. at each iteration (no inflation).
-        The default is None.
+        The default is 1.0 i.e., no inflation.
     dd_correlation_matrix : Optional[Union[NDArrayFloat, spmatrix]]
         Correlation matrix based on spatial and temporal distances between
         observations and observations :math:`\rho_{DD}`. It is used to localize the
@@ -143,7 +139,7 @@ class ESMDAInversionExecutor(BaseInversionExecutor[ESMDASolverConfig]):
             n_assimilations=self.solver_config.n_assimilations,
             inversion_type=self.solver_config.inversion_type,
             cov_obs_inflation_factors=self.solver_config.cov_obs_inflation_factors,
-            cov_mm_inflation_factors=self.solver_config.cov_ss_inflation_factor,
+            cov_mm_inflation_factor=self.solver_config.cov_ss_inflation_factor,
             dd_correlation_matrix=self.solver_config.dd_correlation_matrix,
             md_correlation_matrix=self.solver_config.sd_correlation_matrix,
             save_ensembles_history=self.solver_config.save_ensembles_history,
