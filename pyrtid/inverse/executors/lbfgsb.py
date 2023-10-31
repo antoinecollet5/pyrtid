@@ -25,13 +25,13 @@ from pyrtid.inverse.executors.base import (
     base_solver_config_params_ds,
     register_params_ds,
 )
-from pyrtid.inverse.lbfgsb import minimize_lbfgsb
 from pyrtid.inverse.params import (
     get_parameters_bounds,
     get_reg_loss_function,
     get_reg_loss_function_gradient,
 )
 from pyrtid.inverse.regularization import EnsembleRegularizator, RegWeightUpdateStrategy
+from pyrtid.inverse.solvers.lbfgsb import minimize_lbfgsb
 from pyrtid.utils.types import NDArrayFloat
 
 lbfgsb_solver_config_params_ds = r"""solver_options: Optional[Dict[str, Any]] = None

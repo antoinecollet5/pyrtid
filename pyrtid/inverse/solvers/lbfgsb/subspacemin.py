@@ -1,0 +1,293 @@
+"""
+Subspace minimization procedure of the L-BFGS-B algorithm,
+mainly for internal use.
+
+The target of subspace minimization is to minimize the quadratic function m(x)
+over the free variables, subject to the bound condition.
+Free variables stand for coordinates that are not at the boundary in xcp,
+the generalized Cauchy point.
+
+In the classical implementation of L-BFGS-B [1], the minimization is done by first
+ignoring the box constraints, followed by a line search.
+
+TODO: Our implementation is
+an exact minimization subject to the bounds, based on the BOXCQP algorithm [2].
+
+Reference:
+[1] R. H. Byrd, P. Lu, and J. Nocedal (1995). A limited memory algorithm for bound
+constrained optimization.
+[2] C. Voglis and I. E. Lagaris (2004). BOXCQP: An algorithm for bound constrained
+convex quadratic problems.
+"""
+
+from typing import Deque, Optional, Tuple
+
+import numpy as np
+import scipy as sp
+from scipy.sparse import lil_array, spmatrix
+
+from pyrtid.utils import NDArrayFloat, NDArrayInt
+
+
+def freev(
+    x_cp: NDArrayFloat,
+    lb: NDArrayFloat,
+    ub: NDArrayFloat,
+    iprint: int,
+    iter: int,
+    free_vars_old: Optional[NDArrayInt] = None,
+) -> Tuple[NDArrayInt, spmatrix, spmatrix]:
+    """
+    Get the free variables and build Z and A matrices (sparse).
+
+    Parameters
+    ----------
+    x_cp : NDArrayFloat
+        Generalized cauchy point.
+    lb : NDArrayFloat
+        Lower bounds.
+    ub : NDArrayFloat
+        Upper bounds.
+    free_vars_old : NDArrayInt
+        Free variables at x_cp at the previous iteration.
+    iprint : int
+        Level of display.
+    iter : int
+        Iteration number.
+
+    Returns
+    -------
+    Tuple[NDArrayInt, spmatrix, spmatrix]
+        The free variables and sparse matrices Z and A.
+    """
+    # number of variables
+    n: int = x_cp.size
+
+    # Array of free variable and active variable indices (from 0 to n-1)
+    free_vars: NDArrayInt = ((x_cp != ub) & (x_cp != lb)).nonzero()[0]
+    active_vars: NDArrayInt = (
+        ~np.isin(np.arange(n), free_vars)  # type: ignore
+    ).nonzero()[0]
+
+    nb_free_vars: int = free_vars.size
+    nb_active_vars: int = active_vars.size
+
+    # See section 5 of [1]: We define Z to be the (n , t) matrix whose columns are
+    # unit vectors (i.e., columns of the identity matrix) that span the subspace of the
+    # free variables at zc.Similarly A denotes the (n, (n- t)) matrix of active
+    # constraint gradients at zc,which consists of n - t unit vectors.
+    # Note that A^{T}Z = 0 and that  AA^T + ZZ^T == I.
+
+    # We use sparse formats to save memory and get faster matrix products
+    Z = lil_array((n, nb_free_vars))
+    A = lil_array((n, nb_active_vars))
+    # Affect one
+    Z[free_vars, np.arange(nb_free_vars)] = 1
+    A[active_vars, np.arange(nb_active_vars)] = 1
+
+    # Test: we should have Z @ Z.T + A @ A.T == I
+
+    # Some display
+    # 1) Indicate which variable is leaving the free variables and which is
+    # entering the free variables -> Not for the first iteration
+    if iprint > 100 and iter > 0 and free_vars_old is not None:
+        # Variables leaving the free variables
+        leaving_vars = active_vars[np.isin(active_vars, free_vars_old)]
+        print(f"Variables leaving the free variables set = {leaving_vars}")
+        entering_vars = free_vars[~np.isin(free_vars, free_vars_old)]
+        print(f"Variables entering the free variables set = {entering_vars}")
+        print(
+            f"N variables leaving = {leaving_vars.size} \t,"
+            f" N variables entering = {entering_vars.size}"
+        )
+    # 2) Display the total of free variables at x_cp
+    if iprint > 99:
+        print(f"{free_vars.size} variables are free at GCP, iter = {iter + 1}")
+
+    return free_vars, Z.tocsc(), A.tocsc()
+
+
+def formk(X: Deque, G: Deque, Z: spmatrix, A: spmatrix, theta: float) -> NDArrayFloat:
+    """Form mk
+
+    Form  the LEL^T factorization of the indefinite
+    matrix    K = [-D -Y'ZZ'Y/theta     L_a'-R_z'  ]
+                    [L_a -R_z           theta*S'AA'S ]
+    where     E = [-I  0]
+                    [ 0  I]
+
+    TODO
+
+    Parameters
+    ----------
+    """
+    # form S and Y
+    S = np.diff(np.array(X), axis=0).T
+    Y = np.diff(np.array(G), axis=0).T
+    D: NDArrayFloat = np.diag(np.diag(S.T @ Y))
+
+    # K sub-blocks
+
+    # LZ is the upper triangular part
+    if Z.size == 0:
+        YTZZTY = np.array([0.0])
+        LZ = np.array([0.0])
+    else:
+        YTZZTY = Y.T @ Z @ Z.T @ Y
+        LZ = np.triu(YTZZTY)
+
+    # LA is the strict lower triangle of S^{T}AA^{T}S
+    if A.size == 0:
+        STAATS = np.array([0.0])
+        LA = np.array([0.0])
+    else:
+        STAATS = S.T @ A @ A.T @ S
+        LA = np.tril(STAATS, -1)
+
+    K11: NDArrayFloat = -D - 1 / theta * YTZZTY
+    K21: NDArrayFloat = LA - LZ
+
+    if A.size == 0:
+        K22 = np.zeros(K21.shape)
+    else:
+        K22 = theta * STAATS
+
+    try:
+        print(K11)
+        L11 = sp.linalg.cholesky(K11, lower=True)
+        print(L11)
+        S = K22 - K21 @ sp.linalg.cho_solve((L11, True), K21.T)
+    except ValueError:
+        S = 0.0
+    # print(K11.shape)
+    # print(K21.shape)
+    # print(K22.shape)
+
+    return np.hstack([np.vstack([K11, K21]), np.vstack([K21.T, K22])])
+
+
+# There are three methods for this one and we need to find the correct one.
+def direct_primal_subspace_minimization(
+    x: NDArrayFloat,
+    xc: NDArrayFloat,
+    free_vars: NDArrayInt,
+    Z: spmatrix,
+    c: NDArrayFloat,
+    grad: NDArrayFloat,
+    lb: NDArrayFloat,
+    ub: NDArrayFloat,
+    W: NDArrayFloat,
+    M: NDArrayFloat,
+    theta: float,
+    K: NDArrayFloat,
+) -> NDArrayFloat:
+    r"""
+    Computes an approximate solution of the subspace problem.
+
+    This is following section 5.1 in Byrd et al. (1995).
+
+    .. math::
+        :nowrap:
+
+       \[\begin{aligned}
+            \min& &\langle r, (x-xcp)\rangle + 1/2 \langle x-xcp, B (x-xcp)\rangle\\
+            \text{s.t.}& &l<=x<=u\\
+                       & & x_i=xcp_i \text{for all} i \in A(xcp)
+        \]
+
+    along the subspace unconstrained Newton direction
+    .. math:: $d = -(Z'BZ)^(-1) r.$
+
+
+    # TODO Normally, free_vars is already defined in compute_Cauchy_point in F.
+
+    Parameters
+    ----------
+    x : NDArrayFloat
+        Starting point for the GCP computation
+    xc : NDArrayFloat
+        Cauchy point.
+    c : NDArrayFloat
+        W^T(xc-x), computed with the Cauchy point.
+    grad : NDArrayFloat
+        Gradient of f(x). grad must be a nonzero vector.
+    lb : NDArrayFloat
+        Lower bound vector.
+    ub : NDArrayFloat
+        Upper bound vector.
+    W : NDArrayFloat
+        Part of limited memory BFGS Hessian approximation.
+    M : NDArrayFloat
+        Part of limited memory BFGS Hessian approximation.
+    theta : float
+        Part of limited memory BFGS Hessian approximation.
+    Z: spmatrix
+        Warning: it has shape (n, t)
+
+    Returns
+    -------
+    NDArrayFloat
+        xbar
+
+    References
+    ----------
+    * R. H. Byrd, P. Lu and J. Nocedal. A Limited Memory Algorithm for Bound
+      Constrained Optimization, (1995), SIAM Journal on Scientific and
+      Statistical Computing, 16, 5, pp. 1190-1208.
+    * C. Zhu, R. H. Byrd and J. Nocedal. L-BFGS-B: Algorithm 778: L-BFGS-B,
+      FORTRAN routines for large scale bound constrained optimization (1997),
+      ACM Transactions on Mathematical Software, 23, 4, pp. 550 - 560.
+    * J.L. Morales and J. Nocedal. L-BFGS-B: Remark on Algorithm 778: L-BFGS-B,
+      FORTRAN routines for large scale bound constrained optimization (2011),
+      ACM Transactions on Mathematical Software, 38, 1.
+    """
+    # Direct primal method
+
+    invThet = 1.0 / theta
+
+    if len(free_vars) == 0:
+        return xc
+
+    # Same as W.T.dot(Z) but numpy does not handle correctly
+    # numpy_array.dot(sparce_matrix), so we give the responsibility to the
+    # sparse matrix
+    # Note that here, Z is suppose to have a shape (t, n) with t the number
+    # of free_vars and n the number of variables.
+    # WTZ = W.T.dot(Z.todense())
+    WTZ = Z.T.dot(W).T
+
+    rHat = [(grad + theta * (xc - x) - W.dot(M.dot(c)))[ind] for ind in free_vars]
+    v = M.dot(WTZ.dot(rHat))
+
+    N = -M.dot(invThet * WTZ.dot(np.transpose(WTZ)))
+    # N = invThet * WTZ.dot(np.transpose(WTZ))
+    # Add the identitu matrix: this is the same as N = np.eye(N.shape[0]) - M.dot(N)
+    # but much faster
+    np.fill_diagonal(N, N.diagonal() + 1)
+
+    # TODO: this is not efficient at all and we should try to remove it
+    v = np.linalg.solve(N, v)
+
+    # TODO: new way to perform
+    # v = sp.linalg.solve(K, v)
+    # Careful, there is an error in the original paper (the negative sign is
+    # missing) !
+    dHat = -invThet * (rHat + invThet * np.transpose(WTZ).dot(v))
+
+    # Find alpha
+    # TODO: remove the loop
+    alpha_star = 1
+    for i in range(len(free_vars)):
+        idx = free_vars[i]
+        if dHat[i] > 0:
+            alpha_star = min(alpha_star, (ub[idx] - xc[idx]) / dHat[i])
+        elif dHat[i] < 0:
+            alpha_star = min(alpha_star, (lb[idx] - xc[idx]) / dHat[i])
+
+    d_star = alpha_star * dHat
+    xbar = xc
+    for i in range(len(free_vars)):
+        idx = free_vars[i]
+        xbar[idx] += d_star[i]
+
+    return xbar

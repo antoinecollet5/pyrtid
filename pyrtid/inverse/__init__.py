@@ -76,9 +76,8 @@ weight while minimizing without losing inverse hessian approximationc consistenc
 .. autosummary::
    :toctree: _autosummary
 
-   minimize_lbfgsb
    get_cauchy_point
-   get_lbfgs_matrices
+   update_lbfgs_matrices
 
 """
 
@@ -105,7 +104,6 @@ from pyrtid.inverse.executors import (
     StochopyInversionExecutor,
     StochopySolverConfig,
 )
-from pyrtid.inverse.lbfgsb import get_cauchy_point, get_lbfgs_matrices, minimize_lbfgsb
 from pyrtid.inverse.loss_function import (
     get_model_loss_function,
     get_model_ls_loss_function,
@@ -138,6 +136,7 @@ from pyrtid.inverse.params import (
     get_parameters_values_from_model,
     update_model_with_parameters_values,
 )
+from pyrtid.inverse.solvers.lbfgsb import minimize_ensemble_lbfgsb, minimize_lbfgsb
 
 __all__ = [
     "regularization",
@@ -187,6 +186,5 @@ __all__ = [
     "get_model_reg_loss_function",
     "get_model_loss_function",
     "minimize_lbfgsb",
-    "get_cauchy_point",
-    "get_lbfgs_matrices",
+    "minimize_ensemble_lbfgsb",
 ]
