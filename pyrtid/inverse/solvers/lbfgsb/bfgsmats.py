@@ -265,15 +265,209 @@ def update_X_and_G(
     return False
 
 
-def update_lbfgs_matrices_ensemble(
+def update_X_and_G_ensemble(
     xk: NDArrayFloat,
-    old_xk,
+    xk_old: NDArrayFloat,
     gk: NDArrayFloat,
-    old_gk,
+    gk_old: NDArrayFloat,
+    X: Deque[NDArrayFloat],
+    G: Deque[NDArrayFloat],
+    X_old: Deque[NDArrayFloat],
+    G_old: Deque[NDArrayFloat],
+    maxcor: int,
+    eps: float = 2.2e-16,
+) -> bool:
+    """
+
+    Parameters
+    ----------
+    xk : NDArrayFloat
+        _description_
+    gk : NDArrayFloat
+        _description_
+    X : Deque[NDArrayFloat]
+        _description_
+    G : Deque[NDArrayFloat]
+        _description_
+    maxcor : int
+        _description_
+    eps : float, optional
+        _description_, by default 2.2e-16
+
+    Returns
+    -------
+    bool
+        Whether the current step as been accepted.
+    """
+    yk = gk - gk_old
+    sTy = (xk - xk_old).dot(yk)  # type: ignore
+    yTy = (yk).dot(yk)  # type: ignore
+
+    # TODO: Why do we perform that check ? # See eq. (3.9) in [1].
+    # One can show that BFGS update (2.19) generates positive definite approximations
+    # whenever the initial approximation B0 is positive definite and sT k yk > 0.
+    # We discuss these issues further in Chapter 6. (See Numerical optimization in
+    # Noecedal and Wright)
+    if sTy > eps * yTy:
+        X.append(xk)
+        X_old.append(xk_old)
+        G.append(gk)
+        G_old.append(gk_old)
+        if len(X) > maxcor:
+            X.popleft()
+            X_old.popleft()
+            G.popleft()
+            G_old.popleft()
+        return True
+    return False
+
+
+def initialize_lbfgs_matrices_ensemble(
+    f,
+    x,
+    grad,
+    X_old: Deque[NDArrayFloat],
+    G_old: Deque[NDArrayFloat],
     X: Deque[NDArrayFloat],
     G: Deque[NDArrayFloat],
     maxcor: int,
-    mats: LBFGSmat,
+    W: NDArrayFloat,
+    M: NDArrayFloat,
+    invMlt: NDArrayFloat,
+    theta: float,
+    eps: float = 2.2e-16,
+) -> Tuple[NDArrayFloat, NDArrayFloat, NDArrayFloat, float]:
+    r"""
+    Update lists S and Y, and form the L-BFGS Hessian approximation thet, W and M.
+
+    Instead of storing sk and yk, we store the gradients and the parameters.
+
+    2 conditions for update
+    - The current step update is accepted
+    - The all sequence of x and g has been modified (reg case)
+
+    Parameters
+    ----------
+    xk : NDArrayFloat
+        New x parameter.
+    gk : NDArrayFloat
+        New gradient parameter g.
+    X : deque
+        List of successive parameters x.
+    G : deque
+        List of successive gradients.
+    maxcor : int
+        The maximum number of variable metric corrections used to
+        define the limited memory matrix. (The limited memory BFGS
+        method does not store the full hessian but uses this many terms
+        in an approximation to it.)
+    W : NDArrayFloat
+        L-BFGS matrices.
+    M : NDArrayFloat
+        L-BFGS matrices.
+    thet : float
+        L-BFGS float parameter (multiply the identity matrix).
+    is_force_update: bool
+        Whether to perform an update even if the current step update is rejected.
+        This is useful if the sequence of X and G has been modified during the
+        optimization. See TODO: add ref, for the use.
+    eps : float, optional
+        Positive stability parameter for accepting current step for updating.
+        By default 2.2e-16.
+
+    Returns
+    -------
+    List[NDArrayFloat, NDArrayFloat, float]
+        Updated [W, M, thet]
+
+    References
+    ----------
+    * R. H. Byrd, P. Lu and J. Nocedal. A Limited Memory Algorithm for Bound
+      Constrained Optimization, (1995), SIAM Journal on Scientific and
+      Statistical Computing, 16, 5, pp. 1190-1208.
+    * C. Zhu, R. H. Byrd and J. Nocedal. L-BFGS-B: Algorithm 778: L-BFGS-B,
+      FORTRAN routines for large scale bound constrained optimization (1997),
+      ACM Transactions on Mathematical Software, 23, 4, pp. 550 - 560.
+    * J.L. Morales and J. Nocedal. L-BFGS-B: Remark on Algorithm 778: L-BFGS-B,
+      FORTRAN routines for large scale bound constrained optimization (2011),
+      ACM Transactions on Mathematical Software, 38, 1.
+    """
+    # Store first res to X and G and update the BFGS matrices with the ensemble.
+    # Note: we do not use the gradient of members for which the projection
+    # criterion (pgtol) is already met
+    # First get the index of the first valid member
+
+    # TODO: ici on a déja Ne gradient. On peut donc mettre à jour les matrices
+    # directement.
+    # For the first Hessian approximation, we find the minimum objective function
+    minf_index = np.argsort(np.array(f))[0]
+
+    is_current_update_accepted = False
+
+    # For this
+    for rindex in range(x.shape[0]):
+        if rindex != minf_index:
+            res: bool = update_X_and_G_ensemble(
+                x[:, minf_index],
+                x[:, rindex],
+                grad[:, minf_index],
+                grad[:, rindex],
+                X,
+                X_old,
+                G,
+                G_old,
+                maxcor,
+                eps,
+            )
+            if res:
+                is_current_update_accepted = True
+
+    # two conditions to update the inverse Hessian approximation
+    if is_current_update_accepted:
+        # TODO: see how we choose theta ???
+        yk = G[-1] - G_old[-1]
+        sTy = (X[-1] - X_old[-1]).dot(yk)  # type: ignore
+        yTy = (yk).dot(yk)  # type: ignore
+
+        # Update the lbfgsb matrices
+        Sarray = (np.array(X) - np.array(X_old)).T  # shape (n, m - 1)
+        Yarray = (np.array(G) - np.array(G_old)).T  # shape (n ,m - 1)
+        STS = np.transpose(Sarray).dot(Sarray)
+        L = np.transpose(Sarray).dot(Yarray)
+        # We can build a dense matrix because shape is (m, m) with m usually small ~10
+        D = np.diag(np.diag(L))
+        L = np.tril(L, -1)
+
+        print(f"L = {L}")
+
+        theta = yTy / sTy
+        W = np.hstack([Yarray, theta * Sarray])
+
+        # To avoid forming the limited-memory iteration matrix Bk and allow fast
+        # matrix vector products, we represent it as eq. (3.2) [1].
+        # B = theta * I  - W @ M @ W.T
+
+        # M (or Mk) can be obtained with
+        M = np.linalg.inv(
+            np.hstack([np.vstack([-D, L]), np.vstack([L.T, theta * STS])])
+        )
+        # However, we can also factorize its inverse and obtain very fast matrix
+        # products: lower triangle of M inverse
+        invMlt = form_invMlt(theta, STS, L, D)
+
+    return W, M, invMlt, theta
+
+
+def update_lbfgs_matrices_ensemble(
+    xk: NDArrayFloat,  # copy otherwise x might be changed in X when updated
+    xk_old: NDArrayFloat,
+    gk: NDArrayFloat,
+    gk_old: NDArrayFloat,
+    X: Deque[NDArrayFloat],
+    G: Deque[NDArrayFloat],
+    X_old: Deque[NDArrayFloat],
+    G_old: Deque[NDArrayFloat],
+    maxcor: int,
     W: NDArrayFloat,
     M: NDArrayFloat,
     invMlt: NDArrayFloat,
@@ -336,27 +530,34 @@ def update_lbfgs_matrices_ensemble(
       FORTRAN routines for large scale bound constrained optimization (2011),
       ACM Transactions on Mathematical Software, 38, 1.
     """
-    if xk.ndim == 2:
-        # Case of an ensemble (xk and gk)
-        is_current_update_accepted = False
-        # TODO: Can we do a bit better than a for loop ?
-        for i, _x in enumerate(xk.T):
-            if update_X_and_G(_x, gk[:, i], X, G, maxcor, eps):
-                is_current_update_accepted = True
-    else:
-        # Case of a vector
-        is_current_update_accepted: bool = update_X_and_G(xk, gk, X, G, maxcor, eps)
+    # Case of an ensemble (xk and gk)
+    is_current_update_accepted = False
+    # TODO: Can we do a bit better than a for loop ?
+    for rindex in range(xk.shape[1]):
+        if update_X_and_G_ensemble(
+            xk[:, rindex],
+            xk_old[:, rindex],
+            gk[:, rindex],
+            gk_old[:, rindex],
+            X,
+            G,
+            X_old,
+            G_old,
+            maxcor,
+            eps,
+        ):
+            is_current_update_accepted = True
 
     # two conditions to update the inverse Hessian approximation
     if is_force_update or is_current_update_accepted:
         # TODO: see how we choose theta ???
-        yk = gk - G[-1]
-        sTy = (xk - X[-1]).dot(yk)  # type: ignore
+        yk = G[-1] - G_old[-1]
+        sTy = (X[-1] - X_old[-1]).dot(yk)  # type: ignore
         yTy = (yk).dot(yk)  # type: ignore
 
         # Update the lbfgsb matrices
-        Sarray = np.diff(np.array(X), axis=0).T  # shape (n, m - 1)
-        Yarray = np.diff(np.array(G), axis=0).T  # shape (n ,m - 1)
+        Sarray = (np.array(X) - np.array(X_old)).T  # shape (n, m - 1)
+        Yarray = (np.array(G) - np.array(G_old)).T  # shape (n ,m - 1)
         STS = np.transpose(Sarray).dot(Sarray)
         L = np.transpose(Sarray).dot(Yarray)
         # We can build a dense matrix because shape is (m, m) with m usually small ~10

@@ -348,7 +348,6 @@ def minimize_lbfgsb(
         )
 
         # Get the free variables for the GCP
-
         free_vars, Z, A = freev(dictCP["xc"], lb, ub, iprint, n_iterations, free_vars)
 
         # if n_iterations != 0 and dictCP["free_vars"] != 0:
@@ -412,6 +411,7 @@ def minimize_lbfgsb(
             # x update
             x += steplength * d
 
+            # new evaluation
             f0, grad = sf.fun_and_grad(x)
 
             # perform a potential update of the objective function definition and

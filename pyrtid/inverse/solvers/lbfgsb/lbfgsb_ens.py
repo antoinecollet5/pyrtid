@@ -17,7 +17,8 @@ from pyrtid.inverse.solvers.lbfgsb.base import (
     projgr_ens,
 )
 from pyrtid.inverse.solvers.lbfgsb.bfgsmats import (
-    update_lbfgs_matrices,
+    initialize_lbfgs_matrices_ensemble,
+    update_lbfgs_matrices_ensemble,
 )
 from pyrtid.inverse.solvers.lbfgsb.cauchy import get_cauchy_point
 from pyrtid.inverse.solvers.lbfgsb.linesearch import line_search
@@ -28,17 +29,38 @@ from pyrtid.inverse.solvers.lbfgsb.subspacemin import (
 from pyrtid.utils import NDArrayBool, NDArrayFloat
 
 
-@dataclass
 class ScalarFunction:
-    fun_and_jac: Callable[[NDArrayFloat], Tuple[float, NDArrayFloat]]
-    args: Tuple
-    nfev: int = 0
-    ngev: int = 0
+    def __init__(
+        self,
+        fun_and_jac: Callable[[NDArrayFloat], Tuple[float, NDArrayFloat]],
+        args: Tuple,
+    ) -> None:
+        """
+        Initialize the instance.
+
+        Parameters
+        ----------
+        fun_and_jac : _type_
+            _description_
+        args: Tuple
+            _description_
+        """
+        self._fun_and_jac = fun_and_jac
+        self.args = args
+        self.nfev: int = 0
+        self.ngev: int = 0
+        # This is for the cache mechanism
+        self.x: NDArrayBool = np.array([], dtype=np.float_)
+        self.f: float = 0
+        self.g: NDArrayFloat = np.array([], dtype=np.float_)
 
     def fun_and_grad(self, x: NDArrayFloat) -> Tuple[float, NDArrayFloat]:
-        self.nfev += 1
-        self.ngev += 1
-        return self.fun_and_jac(x, *self.args)
+        if not np.array_equal(x, self.x):
+            self.nfev += 1
+            self.ngev += 1
+            self.x = np.copy(x)
+            self.f, self.g = self._fun_and_jac(x, *self.args)
+        return self.f, self.g
 
 
 @dataclass
@@ -91,6 +113,7 @@ def minimize_ensemble_lbfgsb(
     gtol_linesearch: float = 0.9,
     xtol_linesearch: float = 1e-1,
     eps_SY: float = 2.2e-16,
+    is_initialize_bfgs_matrices_from_ensemble: bool = False,
 ) -> OptimizeResult:
     r"""
     Solves bound constrained optimization problems by using the compact formula
@@ -295,8 +318,8 @@ def minimize_ensemble_lbfgsb(
 
     # Deque = similar to list but with faster operations to remove and add
     # values to extremities. This is more expensive
-    deque()
-    deque()
+    X_old: Deque[NDArrayFloat] = deque()
+    G_old: Deque[NDArrayFloat] = deque()
     X: Deque[NDArrayFloat] = deque()
     G: Deque[NDArrayFloat] = deque()
 
@@ -339,54 +362,39 @@ def minimize_ensemble_lbfgsb(
     # Initialized with the projected gradient
     has_converged = sbgnrm <= iparams.gtol
 
-    print(has_converged)
-
-    # Store first res to X and G and update the BFGS matrices with the ensemble.
-    # Note: we do not use the gradient of members for which the projection
-    # criterion (pgtol) is already met
-    # First get the index of the first valid member
-    fst_index: int = np.nonzero(~has_converged)[0][0]
-    print(f"fist_index: {fst_index}")
-
-    # TODO: ici on a déja Ne gradient. On peut donc mettre à jour les matrices
-    # directement.
-    # For the first Hessian approximation, we find the minimum objective function
-    minf_index = np.argsort(np.array(flist))[0]
-
-    # For this
-    X.append(x[:, fst_index])
-    G.append(glist[fst_index])
-
-    print(minf_index)
-
-    W, M, invMlt, theta = update_lbfgs_matrices(
-        x[:, fst_index + 1 :],
-        np.array(glist).T[:, fst_index + 1 :],
-        X,
-        G,
-        maxcor,
-        W.copy(),
-        M.copy(),
-        invMlt,
-        copy.copy(theta),
-        False,
-        iparams.eps_SY,
-    )
+    if is_initialize_bfgs_matrices_from_ensemble:
+        W, M, invMlt, theta = initialize_lbfgs_matrices_ensemble(
+            np.array(flist),
+            x,
+            grad,
+            X_old,
+            G_old,
+            X,
+            G,
+            maxcor,
+            W,
+            M,
+            invMlt,
+            theta,
+            iparams.eps_SY,
+        )
 
     # Note that interruptions due to maxfun are postponed
     # until the completion of the current minimization iteration.
-    while not has_converged.all() and n_iterations < max_iter and sf.nfev < maxfun:
+    while (
+        not has_converged.all() and iparams.n_iterations < max_iter and sf.nfev < maxfun
+    ):
         if iprint > 99:
-            print(f"\nITERATION {n_iterations + 1}\n")
+            print(f"\nITERATION {iparams.n_iterations + 1}\n")
 
-        x.copy()
-        grad.copy()
+        x_old = x.copy()
+        grad_old = grad.copy()
 
         for rindex in range(iparams.ne):
             # do not update members that have converged
             if has_converged[rindex]:
                 continue
-            update_member(
+            x[:, rindex], flist[0], grad[:, rindex] = update_member(
                 x[:, rindex],
                 grad[:, rindex],
                 rindex,
@@ -396,7 +404,7 @@ def minimize_ensemble_lbfgsb(
                 sf,
                 W,
                 M,
-                len(X),
+                len(X) + 1,
                 invMlt,
                 theta,
                 iparams,
@@ -406,23 +414,22 @@ def minimize_ensemble_lbfgsb(
             # upgrade the gradient and the past sequence of gradients accordingly
 
         # Update the matrices only with
-        W, M, invMlt, theta = update_lbfgs_matrices(
-            x,  # copy otherwise x might be changed in X when updated
-            # old_x,
-            grad,
-            # old_grad,
+        W, M, invMlt, theta = update_lbfgs_matrices_ensemble(
+            x.copy(),  # copy otherwise x might be changed in X when updated
+            x_old,
+            grad.copy(),
+            grad_old,
             X,
             G,
+            X_old,
+            G_old,
             maxcor,
-            W.copy(),
-            M.copy(),
+            W,
+            M,
             invMlt,
             copy.copy(theta),
-            False,
             eps_SY,
         )
-
-        print(has_converged)
 
         # TODO: handle the callbacks
         # # callback is a user defined mechanism to stop optimization
@@ -463,12 +470,10 @@ def minimize_ensemble_lbfgsb(
         # if update_fun_def is not None:
         #     f0, grad, G = update_fun_def(_x, f0, _grad, X, G)
 
-        n_iterations += 1
+        iparams.n_iterations += 1
 
     # Final display
     # display_results(iprint, n_iterations, max_iter, x, grad, lb, ub, f0, gtol, True)
-
-    print(projgr_ens(x, grad, lb, ub))
 
     if (projgr_ens(x, grad, lb, ub) <= gtol).any():
         task_str = "CONVERGENCE: NORM_OF_PROJECTED_GRADIENT_<=_PGTOL"
@@ -482,8 +487,6 @@ def minimize_ensemble_lbfgsb(
         task_str = "STOP: TOTAL NO. of f AND g EVALUATIONS EXCEEDS LIMIT"
         is_sucess = True
         warnflag = 1
-
-    print(flist)
 
     # error: b'ERROR: STPMAX .LT. STPMIN'
     return OptimizeResult(
@@ -517,7 +520,10 @@ def update_member(
     theta: float,
     iparams: InternalParams,
     has_converged: NDArrayBool,
-) -> None:
+) -> Tuple[NDArrayFloat, float, NDArrayFloat]:
+    x.copy()
+    grad.copy()
+
     # Step 1) find cauchy point
     # TODO: replace dictCP by a class
     dictCP = get_cauchy_point(
@@ -563,6 +569,9 @@ def update_member(
     )
     d = xbar - x
 
+    isave = np.zeros((2,), np.intc)
+    dsave = np.zeros((13,), float)
+
     # Step 4)
     steplength = line_search(
         x,
@@ -574,11 +583,13 @@ def update_member(
         iparams.n_iterations,
         iparams.max_steplength_user,
         sf.fun_and_grad,
-        iparams.ftol_linesearch,
-        iparams.gtol_linesearch,
-        iparams.xtol_linesearch,
-        iparams.maxls,
-        iparams.iprint,
+        ftol=iparams.ftol_linesearch,
+        gtol=iparams.gtol_linesearch,
+        xtol=iparams.xtol_linesearch,
+        max_iter=iparams.maxls,
+        iprint=iparams.iprint,
+        isave=isave,
+        dsave=dsave,
     )
 
     if steplength is None:
@@ -589,7 +600,7 @@ def update_member(
         # then we will try again at the next iteration with the updated
         # Hessian. Since x has not been update, no need to recompute the
         # gradient nor the objective function.
-        return  # -> end the loop over the realizations
+        return x, flist[rindex], grad  # -> end the loop over the realizations
 
     # x update in place
     x += steplength * d
@@ -603,5 +614,8 @@ def update_member(
     # Check the convergence of the ensemble member
     if projgr(x, grad, lb, ub) <= iparams.gtol:
         has_converged[rindex] = True
+        print(f"{rindex} has converged")
     if (oldf0 - f0) / max(abs(oldf0), abs(f0), 1) < iparams.ftol:
         has_converged[rindex] = True
+        print(f"{rindex} has converged")
+    return x, f0, grad
