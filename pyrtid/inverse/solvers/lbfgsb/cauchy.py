@@ -20,8 +20,8 @@ constrained optimization.
 import copy
 
 import numpy as np
-import scipy as sp
 
+from pyrtid.inverse.solvers.lbfgsb.bfgsmats import bmv
 from pyrtid.utils import NDArrayFloat
 
 
@@ -32,7 +32,7 @@ def get_cauchy_point(
     ub: NDArrayFloat,
     W: NDArrayFloat,
     M: NDArrayFloat,
-    invMlt: NDArrayFloat,
+    invMfactors: NDArrayFloat,
     theta: float,
     col: int,
     max_cor: int,
@@ -147,12 +147,10 @@ def get_cauchy_point(
     f_sec0: float = copy.deepcopy(f_second)
     # Update f2 with - d^{T} @ W @ M @ W^{T} @ d = - p^{T} @ M @ p
     # old way: f_second = f_second - p.dot(M.dot(p))  # O(m^{2}) operations
-    # new_way: not at first iteration -> invMlt and M are worse zero.
+    # new_way: not at first iteration -> invMfactors and M are worse zero.
     # And cho_solve produces nan
     if iter != 0:
-        f_second = f_second - p.dot(
-            sp.linalg.cho_solve((invMlt, True), p)
-        )  # O(m^{2}) operations
+        f_second = f_second - p.dot(bmv(invMfactors, p))  # O(m^{2}) operations
 
     # dtm in the fortran code
     Dt_min: float = -f_prime / f_second
@@ -221,13 +219,11 @@ def get_cauchy_point(
             # 2) New way with the cholesky factorization
             f_prime += Dt * f_second + g_b * (g_b + theta * zb)
             f_second -= g_b * (g_b * theta)
-            # First iteration -> invMlt and M are worse zero.
+            # First iteration -> invMfactors and M are worse zero.
             # And cho_solve produces nan
             if iter != 0:
-                f_prime -= g_b * W_b.dot(sp.linalg.cho_solve((invMlt, True), c))
-                f_second -= g_b * W_b.dot(
-                    sp.linalg.cho_solve((invMlt, True), (2 * p + g_b * W_b))
-                )
+                f_prime -= g_b * W_b.dot(bmv(invMfactors, c))
+                f_second -= g_b * W_b.dot(bmv(invMfactors, (2 * p + g_b * W_b)))
 
             f_second = min(f_second, eps_f_sec * f_sec0)
 

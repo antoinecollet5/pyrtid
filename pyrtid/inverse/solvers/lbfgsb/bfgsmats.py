@@ -16,7 +16,7 @@ from typing import Deque, Tuple
 import numpy as np
 import scipy as sp
 
-from pyrtid.utils import NDArrayFloat
+from pyrtid.utils import NDArrayBool, NDArrayFloat
 
 
 class LBFGSmat:
@@ -72,7 +72,37 @@ class LBFGSmat:
         self.Snd = np.zeros((2 * m, 2 * m), dtype=np.float_)
 
 
-def form_invMlt(theta, STS, L, D) -> NDArrayFloat:
+def bmv(
+    invMfactors: Tuple[NDArrayFloat, NDArrayFloat], v: NDArrayFloat
+) -> NDArrayFloat:
+    """
+    This subroutine computes the product of the 2m x 2m middle matrix with a vector v.
+
+    In the compact L-BFGS formula of B and a 2m vector `v`;
+    it returns the product in `p`.
+
+    Parameters
+    ----------
+    invMfactors : Tuple[NDArrayFloat, NDArrayFloat]
+        _description_
+    v : NDArrayFloat
+        _description_
+
+    Returns
+    -------
+    NDArrayFloat
+        _description_
+    """
+    # PART I: solve [  D^(1/2)      O ] [ p1 ] = [ v1 ]
+    #               [ -L*D^(-1/2)   J ] [ p2 ]   [ v2 ].
+    p = sp.linalg.solve_triangular(invMfactors[0], v, lower=True)
+
+    # PART II: solve [ -D^(1/2)   D^(-1/2)*L'  ] [ p1 ] = [ p1 ]
+    #                [  0         J'           ] [ p2 ]   [ p2 ].
+    return sp.linalg.solve_triangular(invMfactors[1], p, lower=False)
+
+
+def form_invMfactors(theta, STS, L, D) -> NDArrayFloat:
     r"""
     Perform the cholesky factorization of the inverse of M_k, defined in eq. (3.4) [1].
 
@@ -81,7 +111,8 @@ def form_invMlt(theta, STS, L, D) -> NDArrayFloat:
         [  -D       L'        ]
         [   L       theta * S'*S]
 
-    Hence its inverse can be factorized symmetrically by using Cholesky factorizations
+    Hence its inverse can be factorized almost "symmetrically" by using Cholesky
+    factorizations
     of the submatrices TODO: add ref to the phd manuscript.
     Now, the inverse of Mk, the middle matrix in B reads:
 
@@ -90,17 +121,32 @@ def form_invMlt(theta, STS, L, D) -> NDArrayFloat:
 
     With J*J' = T = theta*Ss + L*D^(-1)*L'; T being definite positive, J is obtained by
     Cholesky factorization of T.
+
+    REF: see algo 3.2 in :cite:t:`byrdRepresentationsQuasiNewtonMatrices1994`.
     """
     # Cholesky factorization
-    J = sp.linalg.cholesky(theta * STS + L @ sp.linalg.solve(D, L.T), lower=True)
+    J = sp.linalg.cholesky(
+        theta * STS + L @ sp.linalg.cho_solve((np.sqrt(D), True), L.T), lower=True
+    )
+    # J = sp.linalg.cholesky(theta * STS + L @ sp.linalg.solve(D, L.T), lower=True)
 
     # Note we form the upper triangle and then transpose it to get the lower one
-    return np.hstack(
-        [
-            np.vstack([-np.sqrt(D), sp.linalg.solve(np.sqrt(D), L.T)]),  # upper row
-            np.vstack([np.zeros(D.shape), J.T]),  # lower row
-        ]
-    ).T
+    return (
+        np.hstack(
+            [
+                np.vstack(
+                    [np.sqrt(D), -sp.linalg.solve(np.sqrt(D), L.T).T]
+                ),  # upper row
+                np.vstack([np.zeros(D.shape), J]),  # lower row
+            ]
+        ),
+        np.hstack(
+            [
+                np.vstack([-np.sqrt(D), np.zeros(D.shape)]),  # upper row
+                np.vstack([sp.linalg.solve(np.sqrt(D), L.T), J.T]),  # lower row
+            ]
+        ),
+    )
 
 
 def update_lbfgs_matrices(
@@ -111,7 +157,7 @@ def update_lbfgs_matrices(
     maxcor: int,
     W: NDArrayFloat,
     M: NDArrayFloat,
-    invMlt: NDArrayFloat,
+    invMfactors: NDArrayFloat,
     theta: float,
     is_force_update: bool,
     eps: float = 2.2e-16,
@@ -211,9 +257,14 @@ def update_lbfgs_matrices(
         )
         # However, we can also factorize its inverse and obtain very fast matrix
         # products: lower triangle of M inverse
-        invMlt = form_invMlt(theta, STS, L, D)
+        invMfactors = form_invMfactors(theta, STS, L, D)
 
-    return W, M, invMlt, theta
+        np.testing.assert_allclose(
+            invMfactors[0] @ invMfactors[1],
+            np.hstack([np.vstack([-D, L]), np.vstack([L.T, theta * STS])]),
+        )
+
+    return W, M, invMfactors, theta
 
 
 def update_X_and_G(
@@ -396,7 +447,8 @@ def initialize_lbfgs_matrices_ensemble(
     maxcor: int,
     W: NDArrayFloat,
     M: NDArrayFloat,
-    invMlt: NDArrayFloat,
+    has_converged: NDArrayBool,
+    invMfactors: NDArrayFloat,
     theta: float,
     eps: float = 2.2e-16,
 ) -> Tuple[NDArrayFloat, NDArrayFloat, NDArrayFloat, float]:
@@ -466,7 +518,7 @@ def initialize_lbfgs_matrices_ensemble(
 
     # sort the objective functions by decreasing order -> like a sequence of
     # optimization. Consider only the m lowest values (maxcor).
-    sorted_f_indices = np.argsort(np.array(f))[::-1]
+    sorted_f_indices = np.argsort(np.array(f))[~has_converged][::-1]
 
     idx = np.round(
         np.linspace(
@@ -526,9 +578,9 @@ def initialize_lbfgs_matrices_ensemble(
         )
         # However, we can also factorize its inverse and obtain very fast matrix
         # products: lower triangle of M inverse
-        invMlt = form_invMlt(theta, STS, L, D)
+        invMfactors = form_invMfactors(theta, STS, L, D)
 
-    return W, M, invMlt, theta
+    return W, M, invMfactors, theta
 
 
 # def update_lbfgs_matrices_ensemble(
@@ -543,7 +595,7 @@ def initialize_lbfgs_matrices_ensemble(
 #     maxcor: int,
 #     W: NDArrayFloat,
 #     M: NDArrayFloat,
-#     invMlt: NDArrayFloat,
+#     invMfactors: NDArrayFloat,
 #     theta: float,
 #     is_force_update: bool,
 #     eps: float = 2.2e-16,
@@ -650,9 +702,9 @@ def initialize_lbfgs_matrices_ensemble(
 #         )
 #         # However, we can also factorize its inverse and obtain very fast matrix
 #         # products: lower triangle of M inverse
-#         invMlt = form_invMlt(theta, STS, L, D)
+#         invMfactors = form_invMfactors(theta, STS, L, D)
 
-#     return W, M, invMlt, theta
+#     return W, M, invMfactors, theta
 
 
 def update_lbfgs_matrices_ensemble_new(
@@ -665,7 +717,7 @@ def update_lbfgs_matrices_ensemble_new(
     maxcor: int,
     W: NDArrayFloat,
     M: NDArrayFloat,
-    invMlt: NDArrayFloat,
+    invMfactors: NDArrayFloat,
     theta: float,
     is_force_update: bool,
     eps: float = 2.2e-16,
@@ -769,6 +821,6 @@ def update_lbfgs_matrices_ensemble_new(
         )
         # However, we can also factorize its inverse and obtain very fast matrix
         # products: lower triangle of M inverse
-        invMlt = form_invMlt(theta, STS, L, D)
+        invMfactors = form_invMfactors(theta, STS, L, D)
 
-    return W, M, invMlt, theta
+    return W, M, invMfactors, theta

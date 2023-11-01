@@ -26,6 +26,7 @@ import numpy as np
 import scipy as sp
 from scipy.sparse import lil_array, spmatrix
 
+from pyrtid.inverse.solvers.lbfgsb.bfgsmats import bmv
 from pyrtid.utils import NDArrayFloat, NDArrayInt
 
 
@@ -107,7 +108,14 @@ def freev(
     return free_vars, Z.tocsc(), A.tocsc()
 
 
-def formk(X: Deque, G: Deque, Z: spmatrix, A: spmatrix, theta: float) -> NDArrayFloat:
+def formk(
+    X: Deque,
+    G: Deque,
+    Z: spmatrix,
+    A: spmatrix,
+    theta: float,
+    is_assert_correct: bool = True,
+) -> Optional[NDArrayFloat]:
     """Form mk
 
     Form  the LEL^T factorization of the indefinite
@@ -126,44 +134,55 @@ def formk(X: Deque, G: Deque, Z: spmatrix, A: spmatrix, theta: float) -> NDArray
     Y = np.diff(np.array(G), axis=0).T
     D: NDArrayFloat = np.diag(np.diag(S.T @ Y))
 
-    # K sub-blocks
-
-    # LZ is the upper triangular part
+    # 1) RZ is the upper triangular part of S'ZZ'Y.
     if Z.size == 0:
-        YTZZTY = np.array([0.0])
-        LZ = np.array([0.0])
+        YTZZTY = np.zeros((Y.shape[1], Y.shape[1]))
+        RZ = YTZZTY.copy()
     else:
         YTZZTY = Y.T @ Z @ Z.T @ Y
-        LZ = np.triu(YTZZTY)
+        RZ = np.triu(YTZZTY)
 
-    # LA is the strict lower triangle of S^{T}AA^{T}S
+    # 2) LA is the strict lower triangle of S^{T}AA^{T}S
     if A.size == 0:
-        STAATS = np.array([0.0])
-        LA = np.array([0.0])
+        STAATS = np.zeros((S.shape[1], S.shape[1]))
+        LA = STAATS.copy()
     else:
         STAATS = S.T @ A @ A.T @ S
         LA = np.tril(STAATS, -1)
 
-    K11: NDArrayFloat = -D - 1 / theta * YTZZTY
-    K21: NDArrayFloat = LA - LZ
+    # D+Y' ZZ'Y/theta -> Positive definite
+    K11: NDArrayFloat = D + (1 / theta) * YTZZTY
 
-    if A.size == 0:
-        K22 = np.zeros(K21.shape)
-    else:
-        K22 = theta * STAATS
+    # -L_a'+R_z'
+    K12: NDArrayFloat = (RZ - LA).T
+    K22 = theta * STAATS
 
-    try:
-        print(K11)
-        L11 = sp.linalg.cholesky(K11, lower=True)
-        print(L11)
-        S = K22 - K21 @ sp.linalg.cho_solve((L11, True), K21.T)
-    except ValueError:
-        S = 0.0
-    # print(K11.shape)
-    # print(K21.shape)
-    # print(K22.shape)
+    if K11.size == 0 or K12.size == 0:
+        return None
 
-    return np.hstack([np.vstack([K11, K21]), np.vstack([K21.T, K22])])
+    # Form L, the lower part of LL' = D+Y' ZZ'Y/theta
+    L11 = sp.linalg.cholesky(K11, lower=True, overwrite_a=False)
+
+    # then form L^-1(-L_a'+R_z') in the (1,2) block.
+    L12 = sp.linalg.solve_triangular(L11, K12, lower=True, trans="N")
+
+    # Form L22 from S'AA'S*theta + (L^-1(-L_a'+R_z'))'L^-1(-L_a'+R_z')
+    L22 = sp.linalg.cholesky(K22 + L12.T @ L12, lower=True)
+
+    # K is a lower triangle matrix
+    LK = np.hstack([np.vstack([L11, L12.T]), np.vstack([np.zeros(L12.shape), L22])])
+
+    # Test the factorization
+    if is_assert_correct:
+        K = np.hstack([np.vstack([-K11, -K12.T]), np.vstack([-K12, K22])])
+        E = np.identity(n=K.shape[0])
+        E[: int(E.shape[0] / 2), : int(E.shape[0] / 2)] *= -1
+        # print(f"K11 = {K11}")
+        # print(f"K = {K}")
+        # print(f"E = {E}")
+        # print(f"LK = {LK}")
+        np.testing.assert_allclose(LK @ E @ LK.T, K, atol=1e-8)
+    return LK
 
 
 # There are three methods for this one and we need to find the correct one.
@@ -178,8 +197,9 @@ def direct_primal_subspace_minimization(
     ub: NDArrayFloat,
     W: NDArrayFloat,
     M: NDArrayFloat,
+    invMfactors: NDArrayFloat,
     theta: float,
-    K: NDArrayFloat,
+    LK: Optional[NDArrayFloat],
 ) -> NDArrayFloat:
     r"""
     Computes an approximate solution of the subspace problem.
@@ -245,6 +265,8 @@ def direct_primal_subspace_minimization(
 
     invThet = 1.0 / theta
 
+    # d = (1/theta)r + (1/theta*2) Z'WK^(-1)W'Z r.
+
     if len(free_vars) == 0:
         return xc
 
@@ -256,23 +278,46 @@ def direct_primal_subspace_minimization(
     # WTZ = W.T.dot(Z.todense())
     WTZ = Z.T.dot(W).T
 
-    rHat = [(grad + theta * (xc - x) - W.dot(M.dot(c)))[ind] for ind in free_vars]
-    v = M.dot(WTZ.dot(rHat))
+    r = grad + theta * (xc - x) - W.dot(bmv(invMfactors, c))
+    rHat = [r[ind] for ind in free_vars]
+    v = WTZ.dot(rHat)
 
-    N = -M.dot(invThet * WTZ.dot(np.transpose(WTZ)))
-    # N = invThet * WTZ.dot(np.transpose(WTZ))
+    if LK is not None:
+        # K is the lowest triangle of the cholesky factorization
+        # of (I - 1/theta M WT Z @ ZT @ W)^{-1} M.
+        v2 = sp.linalg.solve_triangular(LK, v.copy(), lower=True)
+        v2[: int(LK.shape[0] / 2)] *= -1
+        v2 = sp.linalg.solve_triangular(LK.T, v2, lower=False)
+        print(f"v2 = {v2}")
+
+        # E = np.identity(n=LK.shape[0])
+        # E[: int(E.shape[0] / 2), : int(E.shape[0] / 2)] *= -1
+        # K = LK @ E @ LK.T
+
+        # v3 = sp.linalg.solve(K, v.copy())
+        # print(f"v3 = {v3}")
+
+    # v = M.dot(v)
+    # N = -M.dot(invThet * WTZ.dot(np.transpose(WTZ)))
+    v = bmv(invMfactors, v)
+    N = -bmv(invMfactors, invThet * WTZ.dot(np.transpose(WTZ)))
+
     # Add the identitu matrix: this is the same as N = np.eye(N.shape[0]) - M.dot(N)
     # but much faster
     np.fill_diagonal(N, N.diagonal() + 1)
-
-    # TODO: this is not efficient at all and we should try to remove it
     v = np.linalg.solve(N, v)
 
-    # TODO: new way to perform
-    # v = sp.linalg.solve(K, v)
+    print(f"v = {v}")
+
     # Careful, there is an error in the original paper (the negative sign is
     # missing) !
     dHat = -invThet * (rHat + invThet * np.transpose(WTZ).dot(v))
+
+    # dHat2 = invThet * (rHat + invThet * np.transpose(WTZ).dot(v2))
+
+    print(f"dhat = {dHat}")
+    # print(f"dhat2 = {dHat2}")
+    # dHat = dHat2.copy()
 
     # Find alpha
     # TODO: remove the loop

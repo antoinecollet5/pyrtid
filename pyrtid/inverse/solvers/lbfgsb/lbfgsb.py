@@ -54,6 +54,7 @@ from pyrtid.inverse.solvers.lbfgsb.cauchy import get_cauchy_point
 from pyrtid.inverse.solvers.lbfgsb.linesearch import line_search
 from pyrtid.inverse.solvers.lbfgsb.subspacemin import (
     direct_primal_subspace_minimization,
+    formk,
     freev,
 )
 from pyrtid.utils import NDArrayFloat
@@ -286,7 +287,10 @@ def minimize_lbfgsb(
     # search direction for the minimization problem
     W: NDArrayFloat = np.zeros([n, 1])
     M: NDArrayFloat = np.zeros([1, 1])
-    invMlt: NDArrayFloat = np.zeros([1, 1])
+    invMfactors: Tuple[NDArrayFloat, NDArrayFloat] = (
+        np.zeros([1, 1]),
+        np.zeros([1, 1]),
+    )
     theta = 1
 
     # wrapper storing the calls to f and g and handling finite difference approximation
@@ -339,7 +343,7 @@ def minimize_lbfgsb(
             ub,
             W,
             M,
-            invMlt,
+            invMfactors,
             theta,
             len(X),
             maxcor,
@@ -352,9 +356,7 @@ def minimize_lbfgsb(
 
         # if n_iterations != 0 and dictCP["free_vars"] != 0:
         # Factorization of the matrix K used in the subspace minimization
-        # TODO: there is something I don't get here...
-        # K: NDArrayFloat = formk(X, G, Z, A, theta)
-        K = None
+        LK: Optional[NDArrayFloat] = formk(X, G, Z, A, theta)
 
         # subspace minimization: find the search direction for the minimization problem
         xbar: NDArrayFloat = direct_primal_subspace_minimization(
@@ -368,8 +370,9 @@ def minimize_lbfgsb(
             ub,
             W,
             M,
+            invMfactors,
             theta,
-            K,
+            LK,
         )
         d = xbar - x
 
@@ -419,7 +422,7 @@ def minimize_lbfgsb(
             if update_fun_def is not None:
                 f0, grad, G = update_fun_def(x, f0, grad, X, G)
 
-            W, M, invMlt, theta = update_lbfgs_matrices(
+            W, M, invMfactors, theta = update_lbfgs_matrices(
                 x.copy(),  # copy otherwise x might be changed in X when updated
                 grad,
                 X,
@@ -427,7 +430,7 @@ def minimize_lbfgsb(
                 maxcor,
                 W.copy(),
                 M.copy(),
-                invMlt,
+                invMfactors,
                 copy.copy(theta),
                 False,
                 eps_SY,

@@ -87,6 +87,8 @@ def max_allowed_steplength(
         _tmp = np.where(
             d[_mask] > 0, (ub - x)[_mask] / d[_mask], (lb - x)[_mask] / d[_mask]
         )
+        if _tmp[np.isfinite(_tmp)].size == 0:
+            return max_steplength
         return min(max_steplength, np.nanmin(_tmp[np.isfinite(_tmp)]))
 
 

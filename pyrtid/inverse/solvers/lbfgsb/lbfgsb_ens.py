@@ -16,13 +16,12 @@ from pyrtid.inverse.solvers.lbfgsb.base import (
     projgr,
     projgr_ens,
 )
-from pyrtid.inverse.solvers.lbfgsb.bfgsmats import (
-    initialize_lbfgs_matrices_ensemble,
-)
+from pyrtid.inverse.solvers.lbfgsb.bfgsmats import initialize_lbfgs_matrices_ensemble
 from pyrtid.inverse.solvers.lbfgsb.cauchy import get_cauchy_point
 from pyrtid.inverse.solvers.lbfgsb.linesearch import line_search
 from pyrtid.inverse.solvers.lbfgsb.subspacemin import (
     direct_primal_subspace_minimization,
+    formk,
     freev,
 )
 from pyrtid.utils import NDArrayBool, NDArrayFloat
@@ -326,7 +325,7 @@ def minimize_ensemble_lbfgsb(
     # search direction for the minimization problem
     W: NDArrayFloat = np.zeros([iparams.n, 1])
     M: NDArrayFloat = np.zeros([1, 1])
-    invMlt: NDArrayFloat = np.zeros([1, 1])
+    invMfactors: NDArrayFloat = np.zeros([1, 1])
     theta = 1
 
     # wrapper storing the calls to f and g and handling finite difference approximation
@@ -363,7 +362,7 @@ def minimize_ensemble_lbfgsb(
     has_converged = sbgnrm <= iparams.gtol
 
     if is_initialize_bfgs_matrices_from_ensemble:
-        W, M, invMlt, theta = initialize_lbfgs_matrices_ensemble(
+        W, M, invMfactors, theta = initialize_lbfgs_matrices_ensemble(
             np.array(flist),
             x,
             grad,
@@ -373,7 +372,8 @@ def minimize_ensemble_lbfgsb(
             maxcor,
             W,
             M,
-            invMlt,
+            has_converged,
+            invMfactors,
             theta,
             iparams.eps_SY,
         )
@@ -410,8 +410,10 @@ def minimize_ensemble_lbfgsb(
                 sf,
                 W,
                 M,
+                X,
+                G,
                 len(X) + 1,
-                invMlt,
+                invMfactors,
                 theta,
                 iparams,
                 has_converged,
@@ -420,7 +422,7 @@ def minimize_ensemble_lbfgsb(
             # upgrade the gradient and the past sequence of gradients accordingly
 
         # Update the matrices only with
-        # W, M, invMlt, theta = update_lbfgs_matrices_ensemble(
+        # W, M, invMfactors, theta = update_lbfgs_matrices_ensemble(
         #     x.copy(),  # copy otherwise x might be changed in X when updated
         #     x_old,
         #     grad.copy(),
@@ -432,11 +434,11 @@ def minimize_ensemble_lbfgsb(
         #     maxcor,
         #     W,
         #     M,
-        #     invMlt,
+        #     invMfactors,
         #     copy.copy(theta),
         #     eps_SY,
         # )
-        # W, M, invMlt, theta = update_lbfgs_matrices_ensemble_new(
+        # W, M, invMfactors, theta = update_lbfgs_matrices_ensemble_new(
         #     np.array(flist),
         #     x.copy(),  # copy otherwise x might be changed in X when updated
         #     grad.copy(),
@@ -446,12 +448,12 @@ def minimize_ensemble_lbfgsb(
         #     maxcor,
         #     W,
         #     M,
-        #     invMlt,
+        #     invMfactors,
         #     copy.copy(theta),
         #     False,
         #     eps_SY,
         # )
-        W, M, invMlt, theta = initialize_lbfgs_matrices_ensemble(
+        W, M, invMfactors, theta = initialize_lbfgs_matrices_ensemble(
             np.array(flist),
             x,
             grad,
@@ -461,7 +463,8 @@ def minimize_ensemble_lbfgsb(
             maxcor,
             W,
             M,
-            invMlt,
+            has_converged,
+            invMfactors,
             theta,
             iparams.eps_SY,
         )
@@ -550,8 +553,10 @@ def update_member(
     sf: ScalarFunction,
     W: NDArrayFloat,
     M: NDArrayFloat,
+    X,
+    G,
     ncor: int,
-    invMlt: NDArrayFloat,
+    invMfactors: NDArrayFloat,
     theta: float,
     iparams: InternalParams,
     has_converged: NDArrayBool,
@@ -570,7 +575,7 @@ def update_member(
         ub,
         W,
         M,
-        invMlt,
+        invMfactors,
         theta,
         ncor,
         iparams.maxcor,
@@ -584,9 +589,8 @@ def update_member(
 
     # if n_iterations != 0 and dictCP["free_vars"] != 0:
     # Factorization of the matrix K used in the subspace minimization
-    # TODO: there is something I don't get here...
-    # K: NDArrayFloat = formk(X, G, Z, A, theta)
-    K = None
+    K: NDArrayFloat = formk(X, G, Z, A, theta)
+    # K = None
 
     # Step 3) subspace minimization: find the search direction for the minimization
     # problem
