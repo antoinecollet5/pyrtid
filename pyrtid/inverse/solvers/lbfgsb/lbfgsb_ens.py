@@ -18,7 +18,6 @@ from pyrtid.inverse.solvers.lbfgsb.base import (
 )
 from pyrtid.inverse.solvers.lbfgsb.bfgsmats import (
     initialize_lbfgs_matrices_ensemble,
-    update_lbfgs_matrices_ensemble,
 )
 from pyrtid.inverse.solvers.lbfgsb.cauchy import get_cauchy_point
 from pyrtid.inverse.solvers.lbfgsb.linesearch import line_search
@@ -318,8 +317,9 @@ def minimize_ensemble_lbfgsb(
 
     # Deque = similar to list but with faster operations to remove and add
     # values to extremities. This is more expensive
-    X_old: Deque[NDArrayFloat] = deque()
-    G_old: Deque[NDArrayFloat] = deque()
+    deque()
+    deque()
+    F: Deque[float] = deque()
     X: Deque[NDArrayFloat] = deque()
     G: Deque[NDArrayFloat] = deque()
 
@@ -367,8 +367,7 @@ def minimize_ensemble_lbfgsb(
             np.array(flist),
             x,
             grad,
-            X_old,
-            G_old,
+            F,
             X,
             G,
             maxcor,
@@ -379,6 +378,9 @@ def minimize_ensemble_lbfgsb(
             iparams.eps_SY,
         )
 
+    print(f"F = {F}")
+    print(f"X = {X}")
+
     # Note that interruptions due to maxfun are postponed
     # until the completion of the current minimization iteration.
     while (
@@ -387,16 +389,20 @@ def minimize_ensemble_lbfgsb(
         if iprint > 99:
             print(f"\nITERATION {iparams.n_iterations + 1}\n")
 
-        x_old = x.copy()
-        grad_old = grad.copy()
+        x.copy()
+        grad.copy()
+        flist.copy()
 
         for rindex in range(iparams.ne):
             # do not update members that have converged
             if has_converged[rindex]:
                 continue
-            x[:, rindex], flist[0], grad[:, rindex] = update_member(
-                x[:, rindex],
-                grad[:, rindex],
+
+            print(f"F = {F}")
+            print(f"X = {X}")
+            x[:, rindex], flist[rindex], grad[:, rindex] = update_member(
+                x[:, rindex].copy(),
+                grad[:, rindex].copy(),
                 rindex,
                 flist,
                 lb,
@@ -414,21 +420,50 @@ def minimize_ensemble_lbfgsb(
             # upgrade the gradient and the past sequence of gradients accordingly
 
         # Update the matrices only with
-        W, M, invMlt, theta = update_lbfgs_matrices_ensemble(
-            x.copy(),  # copy otherwise x might be changed in X when updated
-            x_old,
-            grad.copy(),
-            grad_old,
+        # W, M, invMlt, theta = update_lbfgs_matrices_ensemble(
+        #     x.copy(),  # copy otherwise x might be changed in X when updated
+        #     x_old,
+        #     grad.copy(),
+        #     grad_old,
+        #     X,
+        #     G,
+        #     X_old,
+        #     G_old,
+        #     maxcor,
+        #     W,
+        #     M,
+        #     invMlt,
+        #     copy.copy(theta),
+        #     eps_SY,
+        # )
+        # W, M, invMlt, theta = update_lbfgs_matrices_ensemble_new(
+        #     np.array(flist),
+        #     x.copy(),  # copy otherwise x might be changed in X when updated
+        #     grad.copy(),
+        #     F,
+        #     X,
+        #     G,
+        #     maxcor,
+        #     W,
+        #     M,
+        #     invMlt,
+        #     copy.copy(theta),
+        #     False,
+        #     eps_SY,
+        # )
+        W, M, invMlt, theta = initialize_lbfgs_matrices_ensemble(
+            np.array(flist),
+            x,
+            grad,
+            F,
             X,
             G,
-            X_old,
-            G_old,
             maxcor,
             W,
             M,
             invMlt,
-            copy.copy(theta),
-            eps_SY,
+            theta,
+            iparams.eps_SY,
         )
 
         # TODO: handle the callbacks
@@ -524,6 +559,8 @@ def update_member(
     x.copy()
     grad.copy()
 
+    print(f"x = {x}")
+
     # Step 1) find cauchy point
     # TODO: replace dictCP by a class
     dictCP = get_cauchy_point(
@@ -604,6 +641,8 @@ def update_member(
 
     # x update in place
     x += steplength * d
+
+    print(f"New x = {x}")
 
     oldf0 = flist[rindex].copy()
     # Update the objective function and the gradient
