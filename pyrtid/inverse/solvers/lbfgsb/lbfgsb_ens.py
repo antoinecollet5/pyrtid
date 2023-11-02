@@ -21,7 +21,6 @@ from pyrtid.inverse.solvers.lbfgsb.cauchy import get_cauchy_point
 from pyrtid.inverse.solvers.lbfgsb.linesearch import line_search
 from pyrtid.inverse.solvers.lbfgsb.subspacemin import (
     direct_primal_subspace_minimization,
-    formk,
     freev,
 )
 from pyrtid.utils import NDArrayBool, NDArrayFloat
@@ -556,7 +555,7 @@ def update_member(
     X,
     G,
     ncor: int,
-    invMfactors: NDArrayFloat,
+    invMfactors: Tuple[NDArrayFloat, NDArrayFloat],
     theta: float,
     iparams: InternalParams,
     has_converged: NDArrayBool,
@@ -584,13 +583,7 @@ def update_member(
     )
 
     # Step 2) Get the free variables for the GCP
-
     free_vars, Z, A = freev(dictCP["xc"], lb, ub, iparams.iprint, iparams.n_iterations)
-
-    # if n_iterations != 0 and dictCP["free_vars"] != 0:
-    # Factorization of the matrix K used in the subspace minimization
-    K: NDArrayFloat = formk(X, G, Z, A, theta)
-    # K = None
 
     # Step 3) subspace minimization: find the search direction for the minimization
     # problem
@@ -604,9 +597,8 @@ def update_member(
         lb,
         ub,
         W,
-        M,
+        invMfactors,
         theta,
-        K,
     )
     d = xbar - x
 

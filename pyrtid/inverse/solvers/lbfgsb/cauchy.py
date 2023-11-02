@@ -18,6 +18,7 @@ constrained optimization.
 """
 
 import copy
+from typing import Tuple
 
 import numpy as np
 
@@ -32,7 +33,7 @@ def get_cauchy_point(
     ub: NDArrayFloat,
     W: NDArrayFloat,
     M: NDArrayFloat,
-    invMfactors: NDArrayFloat,
+    invMfactors: Tuple[NDArrayFloat, NDArrayFloat],
     theta: float,
     col: int,
     max_cor: int,

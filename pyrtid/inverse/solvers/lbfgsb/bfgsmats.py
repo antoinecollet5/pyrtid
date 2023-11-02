@@ -102,7 +102,7 @@ def bmv(
     return sp.linalg.solve_triangular(invMfactors[1], p, lower=False)
 
 
-def form_invMfactors(theta, STS, L, D) -> NDArrayFloat:
+def form_invMfactors(theta, STS, L, D) -> Tuple[NDArrayFloat, NDArrayFloat]:
     r"""
     Perform the cholesky factorization of the inverse of M_k, defined in eq. (3.4) [1].
 
@@ -157,7 +157,7 @@ def update_lbfgs_matrices(
     maxcor: int,
     W: NDArrayFloat,
     M: NDArrayFloat,
-    invMfactors: NDArrayFloat,
+    invMfactors: Tuple[NDArrayFloat, NDArrayFloat],
     theta: float,
     is_force_update: bool,
     eps: float = 2.2e-16,
@@ -239,8 +239,8 @@ def update_lbfgs_matrices(
         # Update the lbfgsb matrices
         Sarray = np.diff(np.array(X), axis=0).T  # shape (n, m - 1)
         Yarray = np.diff(np.array(G), axis=0).T  # shape (n ,m - 1)
-        STS = np.transpose(Sarray).dot(Sarray)
-        L = np.transpose(Sarray).dot(Yarray)
+        STS = Sarray.T @ Sarray
+        L = Sarray.T @ Yarray
         # We can build a dense matrix because shape is (m, m) with m usually small ~10
         D = np.diag(np.diag(L))
         L = np.tril(L, -1)
@@ -448,7 +448,7 @@ def initialize_lbfgs_matrices_ensemble(
     W: NDArrayFloat,
     M: NDArrayFloat,
     has_converged: NDArrayBool,
-    invMfactors: NDArrayFloat,
+    invMfactors: Tuple[NDArrayFloat, NDArrayFloat],
     theta: float,
     eps: float = 2.2e-16,
 ) -> Tuple[NDArrayFloat, NDArrayFloat, NDArrayFloat, float]:
@@ -717,7 +717,7 @@ def update_lbfgs_matrices_ensemble_new(
     maxcor: int,
     W: NDArrayFloat,
     M: NDArrayFloat,
-    invMfactors: NDArrayFloat,
+    invMfactors: Tuple[NDArrayFloat, NDArrayFloat],
     theta: float,
     is_force_update: bool,
     eps: float = 2.2e-16,

@@ -20,7 +20,7 @@ constrained optimization.
 convex quadratic problems.
 """
 
-from typing import Deque, Optional, Tuple
+from typing import Optional, Tuple
 
 import numpy as np
 import scipy as sp
@@ -109,10 +109,8 @@ def freev(
 
 
 def formk(
-    X: Deque,
-    G: Deque,
-    Z: spmatrix,
-    A: spmatrix,
+    WTZ: NDArrayFloat,
+    invMfactors: Tuple[NDArrayFloat, NDArrayFloat],
     theta: float,
     is_assert_correct: bool = True,
 ) -> Optional[NDArrayFloat]:
@@ -129,36 +127,57 @@ def formk(
     Parameters
     ----------
     """
-    # form S and Y
-    S = np.diff(np.array(X), axis=0).T
-    Y = np.diff(np.array(G), axis=0).T
-    D: NDArrayFloat = np.diag(np.diag(S.T @ Y))
+    # This was the old approach that did not work:
+    # # form S and Y
+    # S = np.diff(np.array(X), axis=0).T
+    # Y = np.diff(np.array(G), axis=0).T
+    # D: NDArrayFloat = np.diag(np.diag(S.T @ Y))
 
-    # 1) RZ is the upper triangular part of S'ZZ'Y.
-    if Z.size == 0:
-        YTZZTY = np.zeros((Y.shape[1], Y.shape[1]))
-        RZ = YTZZTY.copy()
-    else:
-        YTZZTY = Y.T @ Z @ Z.T @ Y
-        RZ = np.triu(YTZZTY)
+    # # 1) RZ is the upper triangular part of S'ZZ'Y.
+    # if Z.size == 0:
+    #     YTZZTY = np.zeros((Y.shape[1], Y.shape[1]))
+    #     RZ = YTZZTY.copy()
+    # else:
+    #     YTZZTY = Y.T @ Z @ Z.T @ Y
+    #     RZ = YTZZTY # np.triu(YTZZTY)
 
-    # 2) LA is the strict lower triangle of S^{T}AA^{T}S
-    if A.size == 0:
-        STAATS = np.zeros((S.shape[1], S.shape[1]))
-        LA = STAATS.copy()
-    else:
-        STAATS = S.T @ A @ A.T @ S
-        LA = np.tril(STAATS, -1)
+    # # 2) LA is the strict lower triangle of S^{T}AA^{T}S
+    # if A.size == 0:
+    #     STAATS = np.zeros((S.shape[1], S.shape[1]))
+    #     LA = STAATS.copy()
+    # else:
+    #     STAATS = S.T @ A @ A.T @ S
+    #     LA = STAATS # np.tril(STAATS, -1)
 
-    # D+Y' ZZ'Y/theta -> Positive definite
-    K11: NDArrayFloat = D + (1 / theta) * YTZZTY
+    # # D+Y' ZZ'Y/theta -> Positive definite
+    # K11: NDArrayFloat = D + (1 / theta) * YTZZTY
 
-    # -L_a'+R_z'
-    K12: NDArrayFloat = (RZ - LA).T
-    K22 = theta * STAATS
+    # # -L_a'+R_z'
+    # K12: NDArrayFloat = (RZ - LA).T
+    # K22 = theta * STAATS
 
-    if K11.size == 0 or K12.size == 0:
+    # if K11.size == 0 or K12.size == 0:
+    #     return None
+
+    # Instead we build K directly as M^{-1}(I - 1/theta M WT Z @ ZT @ W))
+    K = invMfactors[0] @ invMfactors[1]
+    N = -1 / theta * bmv(invMfactors, WTZ.dot(np.transpose(WTZ)))
+    np.fill_diagonal(N, N.diagonal() + 1)
+    K = K @ N
+
+    # The factorization only makes sense if K is at least (2, 2).
+    if K.size < 4:
         return None
+
+    m = int(K.shape[0] / 2)
+    K11 = -K[:m, :m]
+    K12 = -K[:m, m:]
+    K22 = K[m:, m:]
+
+    # print(f"K.shape = {K.shape}")
+    # print(f"K11.shape = {K11.shape}")
+    # print(f"K12.shape = {K12.shape}")
+    # print(f"K22.shape = {K22.shape}")
 
     # Form L, the lower part of LL' = D+Y' ZZ'Y/theta
     L11 = sp.linalg.cholesky(K11, lower=True, overwrite_a=False)
@@ -172,15 +191,16 @@ def formk(
     # K is a lower triangle matrix
     LK = np.hstack([np.vstack([L11, L12.T]), np.vstack([np.zeros(L12.shape), L22])])
 
-    # Test the factorization
+    # Test the factorization # TODO: create a specific function
     if is_assert_correct:
-        K = np.hstack([np.vstack([-K11, -K12.T]), np.vstack([-K12, K22])])
-        E = np.identity(n=K.shape[0])
+        K2 = np.hstack([np.vstack([-K11, -K12.T]), np.vstack([-K12, K22])])
+        E = np.identity(n=K2.shape[0])
         E[: int(E.shape[0] / 2), : int(E.shape[0] / 2)] *= -1
         # print(f"K11 = {K11}")
         # print(f"K = {K}")
         # print(f"E = {E}")
         # print(f"LK = {LK}")
+        np.testing.assert_allclose(LK @ E @ LK.T, K2, atol=1e-8)
         np.testing.assert_allclose(LK @ E @ LK.T, K, atol=1e-8)
     return LK
 
@@ -196,10 +216,8 @@ def direct_primal_subspace_minimization(
     lb: NDArrayFloat,
     ub: NDArrayFloat,
     W: NDArrayFloat,
-    M: NDArrayFloat,
-    invMfactors: NDArrayFloat,
+    invMfactors: Tuple[NDArrayFloat, NDArrayFloat],
     theta: float,
-    LK: Optional[NDArrayFloat],
 ) -> NDArrayFloat:
     r"""
     Computes an approximate solution of the subspace problem.
@@ -282,42 +300,26 @@ def direct_primal_subspace_minimization(
     rHat = [r[ind] for ind in free_vars]
     v = WTZ.dot(rHat)
 
+    # Factorization of M^{-1}(I - 1/theta M WT Z @ ZT @ W))
+    LK: Optional[NDArrayFloat] = formk(WTZ, invMfactors, theta)
+
     if LK is not None:
-        # K is the lowest triangle of the cholesky factorization
+        # LK is the lowest triangle of the cholesky factorization
         # of (I - 1/theta M WT Z @ ZT @ W)^{-1} M.
-        v2 = sp.linalg.solve_triangular(LK, v.copy(), lower=True)
-        v2[: int(LK.shape[0] / 2)] *= -1
-        v2 = sp.linalg.solve_triangular(LK.T, v2, lower=False)
-        print(f"v2 = {v2}")
-
-        # E = np.identity(n=LK.shape[0])
-        # E[: int(E.shape[0] / 2), : int(E.shape[0] / 2)] *= -1
-        # K = LK @ E @ LK.T
-
-        # v3 = sp.linalg.solve(K, v.copy())
-        # print(f"v3 = {v3}")
-
-    # v = M.dot(v)
-    # N = -M.dot(invThet * WTZ.dot(np.transpose(WTZ)))
-    v = bmv(invMfactors, v)
-    N = -bmv(invMfactors, invThet * WTZ.dot(np.transpose(WTZ)))
-
-    # Add the identitu matrix: this is the same as N = np.eye(N.shape[0]) - M.dot(N)
-    # but much faster
-    np.fill_diagonal(N, N.diagonal() + 1)
-    v = np.linalg.solve(N, v)
-
-    print(f"v = {v}")
+        v = sp.linalg.solve_triangular(LK, v, lower=True)
+        v[: int(LK.shape[0] / 2)] *= -1
+        v = sp.linalg.solve_triangular(LK.T, v, lower=False)
+    else:
+        v = bmv(invMfactors, v)
+        N = -bmv(invMfactors, invThet * WTZ.dot(np.transpose(WTZ)))
+        # Add the identity matrix: this is the same as N = np.eye(N.shape[0]) - M.dot(N)
+        # but much faster
+        np.fill_diagonal(N, N.diagonal() + 1)
+        v = np.linalg.solve(N, v)
 
     # Careful, there is an error in the original paper (the negative sign is
     # missing) !
     dHat = -invThet * (rHat + invThet * np.transpose(WTZ).dot(v))
-
-    # dHat2 = invThet * (rHat + invThet * np.transpose(WTZ).dot(v2))
-
-    print(f"dhat = {dHat}")
-    # print(f"dhat2 = {dHat2}")
-    # dHat = dHat2.copy()
 
     # Find alpha
     # TODO: remove the loop

@@ -54,7 +54,6 @@ from pyrtid.inverse.solvers.lbfgsb.cauchy import get_cauchy_point
 from pyrtid.inverse.solvers.lbfgsb.linesearch import line_search
 from pyrtid.inverse.solvers.lbfgsb.subspacemin import (
     direct_primal_subspace_minimization,
-    formk,
     freev,
 )
 from pyrtid.utils import NDArrayFloat
@@ -354,10 +353,6 @@ def minimize_lbfgsb(
         # Get the free variables for the GCP
         free_vars, Z, A = freev(dictCP["xc"], lb, ub, iprint, n_iterations, free_vars)
 
-        # if n_iterations != 0 and dictCP["free_vars"] != 0:
-        # Factorization of the matrix K used in the subspace minimization
-        LK: Optional[NDArrayFloat] = formk(X, G, Z, A, theta)
-
         # subspace minimization: find the search direction for the minimization problem
         xbar: NDArrayFloat = direct_primal_subspace_minimization(
             x,
@@ -369,10 +364,8 @@ def minimize_lbfgsb(
             lb,
             ub,
             W,
-            M,
             invMfactors,
             theta,
-            LK,
         )
         d = xbar - x
 
