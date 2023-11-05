@@ -114,6 +114,8 @@ class PCGA:
         # Store parameters
         self.params = params
 
+        self.Q: CovarianceMatrixbyUd = Q
+
         ##### Inversion Setting
         # inversion setting
         self.m = np.size(s_init, 0)
@@ -180,45 +182,11 @@ class PCGA:
             self.parallel = False
             self.ncores = 1
 
-        ##### Prior Information
-        # Covariance matrix
-        self.Q = None
-        self.matvec = params["matvec"]  # method for mat-vector multiplication
-        self.prior_std = params["prior_std"]  # prior std
-
-        # Eigenvalues and eigenvectors of the prior covariance matrix
-        self.priorU = None
-        self.priord = None
-
         # Random state for v0 vector used by eigsh and svds
         if random_state is not None:
             self.random_state = check_random_state(random_state)
         else:
             self.random_state = None
-
-        if self.matvec == "FFT":
-            self.xmin = params["xmin"]
-            self.xmax = params["xmax"]
-            self.N = params["N"]
-            self.prior_cov_scale = params["prior_cov_scale"]
-            self.kernel = params["kernel"]
-
-            if np.size(self.xmin, 0) != np.size(self.xmax, 0):
-                raise ValueError("np.size(xmin,0) != np.size(xmax,0)")
-            if np.size(self.xmin, 0) != np.size(self.N, 0):
-                raise ValueError("np.size(xmin,0) != np.size(N,0)")
-            if np.size(self.xmin, 0) != np.size(self.prior_cov_scale, 0):
-                raise ValueError("np.size(xmin,0) != np.size(theta,0)")
-        elif self.matvec == "Dense":
-            self.prior_cov_scale = params["prior_cov_scale"]
-            self.kernel = params["kernel"]
-        else:  # currently not implemented - we will support Hmatrix and FMM
-            self.prior_cov_scale = params["prior_cov_scale"]
-            self.kernel = params["kernel"]
-            self.priord = params["priord"]
-            self.priorU = params["priorU"]
-            # change below to one using LinearOperator
-            self.Q = CovarianceMatrixbyUd(self.priord, self.priorU)
 
         # number of principal components, default 5 times # of cores
         self.n_pc = 5 * self.ncores if "n_pc" not in params else params["n_pc"]
@@ -467,68 +435,6 @@ class PCGA:
             self.X = np.ones((self.m, 1), dtype="d") / np.sqrt(self.m)
         return
 
-    def ComputePriorEig(self, n_pc=None):
-        """
-        Compute Eigenmodes of Prior Covariance
-        """
-        print("##### 3. Eigendecomposition of Prior Covariance")
-        self.m
-        self.n
-        self.p
-
-        if n_pc is None:
-            n_pc = self.n_pc
-
-        if self.Q is None:  # have to input Q
-            raise ValueError("Q should be assigned")
-
-        method = (
-            "arpack"
-            if "precondeigen" not in self.params
-            else self.params["precondeigen"]
-        )
-
-        # twopass = False if not 'twopass' in self.params else self.params['twopass']
-        start = time()
-        if method == "arpack":
-            # from scipy.sparse.linalg import eigsh
-            # debug_here()
-            self.priord, self.priorU = eigsh(
-                self.Q, k=n_pc, v0=self.get_v0(self.Q.shape[0])
-            )
-            self.priord = self.priord[::-1]
-            # make a column vector
-            self.priord = self.priord.reshape(-1, 1)
-            self.priorU = self.priorU[:, ::-1]
-        # elif method == 'randomized':
-        #    # randomized method to be implemented!
-        #    from eigen import RandomizedEIG
-        #    self.priorU, self.priorD = RandomizedEIG(self.Q, k =k, twopass = twopass)
-        else:
-            raise NotImplementedError
-
-        print(
-            "- time for eigendecomposition with k = %d is %g sec"
-            % (n_pc, round(time() - start))
-        )
-
-        if (self.priord > 0).sum() < n_pc:
-            self.n_pc = (self.priord > 0).sum()
-            self.priord = self.priord[: self.n_pc, :]
-            self.priorU = self.priorU[:, : self.n_pc]
-            print("Warning: n_pc changed to %d for positive eigenvalues" % (self.n_pc))
-
-        print(
-            "- 1st eigv : %g, %d-th eigv : %g, ratio: %g"
-            % (
-                self.priord[0],
-                self.n_pc,
-                self.priord[-1],
-                self.priord[-1] / self.priord[0],
-            )
-        )
-        return
-
     def ForwardSolve(self, s):
         """
         provide additional settings for your function forward_model
@@ -672,7 +578,7 @@ class PCGA:
 
         return obs, obs_true
 
-    def ObjectiveFunction(self, s_cur, beta_cur, simul_obs, approx=True):
+    def ObjectiveFunction(self, s_cur, beta_cur, simul_obs) -> float:
         """
         0.5(y-h(s))^TR^{-1}(y-h(s)) + 0.5*(s-Xb)^TQ^{-1}(s-Xb)
         """
@@ -682,19 +588,15 @@ class PCGA:
         smxb = s_cur - np.dot(self.X, beta_cur)
         ymhs = self.obs - simul_obs
 
-        if approx:
-            invZs = np.multiply(1.0 / np.sqrt(self.priord), np.dot(self.priorU.T, smxb))
-            obj = 0.5 * np.dot(ymhs.T, np.divide(ymhs, self.R)) + 0.5 * np.dot(
-                invZs.T, invZs
-            )
-        else:
-            invQs = self.Q.solve(smxb)
-            obj = 0.5 * np.dot(ymhs.T, np.divide(ymhs, self.R)) + 0.5 * np.dot(
-                smxb.T, invQs
-            )
+        invQs = self.Q.solve(smxb)
+        obj = 0.5 * np.dot(ymhs.T, np.divide(ymhs, self.R)) + 0.5 * np.dot(
+            smxb.T, invQs
+        )
         return obj
 
-    def ObjectiveFunctionNoBeta(self, s_cur, simul_obs, approx=True):
+    def ObjectiveFunctionNoBeta(
+        self, s_cur, simul_obs, is_approx: bool = True
+    ) -> float:
         """
         marginalized objective w.r.t. beta
         0.5(y-h(s))^TR^{-1}(y-h(s)) + 0.5*(s-Xb)^TQ^{-1}(s-Xb)
@@ -702,16 +604,17 @@ class PCGA:
         if simul_obs is None:
             simul_obs = self.ForwardSolve(s_cur)
 
-        priord = self.priord
-        priorU = self.priorU
         X = self.X
         p = self.p
 
         ymhs = self.obs - simul_obs
-
-        if approx:
-            invZs = np.multiply(1.0 / np.sqrt(priord), np.dot(priorU.T, s_cur))
-            invZX = np.multiply(1.0 / np.sqrt(priord), np.dot(priorU.T, X))
+        if is_approx:
+            invZs = np.multiply(
+                1.0 / np.sqrt(self.Q.prior_d), np.dot(self.Q.prior_u.T, s_cur)
+            )
+            invZX = np.multiply(
+                1.0 / np.sqrt(self.Q.prior_d), np.dot(self.Q.prior_u.T, X)
+            )
             XTinvQs = np.dot(invZX.T, invZs)
             XTinvQX = np.dot(invZX.T, invZX)
             tmp = np.linalg.solve(
@@ -1909,9 +1812,6 @@ class PCGA:
 
     def Run(self):
         start = time()
-        # TODO: change that
-        if self.priorU is None or self.priord is None:
-            self.ComputePriorEig()
 
         s_hat, simul_obs, post_diagv, iter_best = self.GaussNewton()
         # start = time()
