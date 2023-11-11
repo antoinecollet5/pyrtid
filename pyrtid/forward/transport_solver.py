@@ -329,7 +329,7 @@ def _add_advection_to_transport_matrices(
 
     _apply_transport_sink_term(fl_model, tr_model, q_next, q_prev, time_index)
 
-    # _apply_divergence_effect(fl_model, tr_model, q_next, q_prev, time_index)
+    _apply_divergence_effect(fl_model, tr_model, q_next, q_prev, time_index)
 
     # Handle boundary conditions
     # TODO: refactor this
