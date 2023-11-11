@@ -134,20 +134,18 @@ class DataModel:
         covariance given by `covariance`.
     """
 
-    __slots__ = ["obs", "s_init", "_cov_obs", "std_m_prior"]
+    __slots__ = ["obs", "s_init", "_cov_obs"]
 
     def __init__(
         self,
         obs: NDArrayFloat,
         s_init: NDArrayFloat,
         cov_obs: NDArrayFloat,
-        std_m_prior: NDArrayFloat,
     ) -> None:
         """Construct the instance."""
         self.obs = obs
         self.s_init = s_init
         self.cov_obs = cov_obs
-        self.std_m_prior = std_m_prior
 
     def is_ensemble(self) -> bool:
         """Return whether the optimization is performed over an ensemble."""
@@ -267,9 +265,6 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         # Update parameters (only if the values haven't been defined for the parameters)
         update_parameters_from_model(fwd_model, self.inv_model.parameters_to_adjust)
 
-        # _std_m_prior = self.source_simulation.get_std_m_prior()
-        _std_m_prior = np.array([])
-
         # Get the initial values from the model
         _s_init_model = get_parameters_values_from_model(
             fwd_model, inv_model.parameters_to_adjust, is_preconditioned=True
@@ -282,7 +277,7 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
             _s_init = _s_init_model
 
         # Need to differentiate flux and grids
-        self.data_model = DataModel(self.obs, _s_init, self.std_obs**2, _std_m_prior)
+        self.data_model = DataModel(self.obs, _s_init, self.std_obs**2)
 
         # Initialize the solver (this is to be defined in child classes)
         self._init_solver(_s_init)

@@ -332,7 +332,6 @@ def _add_advection_to_transport_matrices(
     _apply_divergence_effect(fl_model, tr_model, q_next, q_prev, time_index)
 
     # Handle boundary conditions
-    # TODO: refactor this
     # _add_transport_boundary_conditions(
     #     geometry, fl_model, tr_model, q_next, q_prev, time_index
     # )
@@ -389,7 +388,7 @@ def _add_transport_boundary_conditions(
     """Add the boundary conditions to the matrix."""
     # We get the indices of the four borders and we apply a zero-conc gradient.
 
-    if geometry.nx >= 2:
+    if geometry.nx > 1:
         idc_left, idc_right = get_owner_neigh_indices(
             geometry,
             (slice(0, 1), slice(None)),
@@ -420,7 +419,7 @@ def _add_transport_boundary_conditions(
         )  # type: ignore
 
     # # Y contribution
-    if geometry.ny >= 2:
+    if geometry.ny > 1:
         # We get the indices of the four borders and we apply a zero-conc gradient.
         idc_left, idc_right = get_owner_neigh_indices(
             geometry,

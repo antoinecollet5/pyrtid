@@ -100,7 +100,7 @@ class GeostatisticalRegularizator(Regularizator):
             0.5
             * np.dot(
                 residuals.T,
-                self.cov_m.get_inv_cov_dot_vect(residuals),
+                self.cov_m.solve(residuals),
             )
         )
 
@@ -121,7 +121,7 @@ class GeostatisticalRegularizator(Regularizator):
         _values = self.transform(values[:, ::-1].ravel("F"))
         residuals: NDArrayFloat = _values - self.prior.get_values(_values)
         # right part $Q^{-1} * (m - m_{prior})$
-        _right_part = self.cov_m.get_inv_cov_dot_vect(residuals).ravel()
+        _right_part = self.cov_m.solve(residuals).ravel()
         # left part gradient -> special method to get more efficient
         # $ [I - dm_{prior}/dm]^{T} Q^{-1} (m - m_{prior})$
         return (
@@ -172,19 +172,10 @@ class EnsembleRegularizator(GeostatisticalRegularizator):
         residuals: NDArrayFloat = _values - self.prior.get_values(_values)
         # residuals = - self.prior.get_values(_values)
 
-        # This is a for loop way:
-        # jreg = 0.0
-        # for j in range(ens.shape[1]): # type: ignore
-        #     jreg += 0.5 * np.dot(
-        #         residuals[:, j].T,
-        #         self.cov_m.get_inv_cov_dot_vect(residuals[:, j]),
-        #     )
-        # return jreg / ens.shape[1] # type: ignore
-
         # And this is strictly equivalent (element wise multiplication)
         return (
             0.5
-            * np.sum(residuals * self.cov_m.get_inv_cov_dot_vect(residuals))
+            * np.sum(residuals * self.cov_m.solve(residuals))
             / ens.shape[1]  # type: ignore
         )
 
@@ -208,7 +199,7 @@ class EnsembleRegularizator(GeostatisticalRegularizator):
         # residuals = _values * 0.0 - self.prior.get_values(_values)
 
         # right part $Q^{-1} * (m - m_{prior})$
-        _right_part = self.cov_m.get_inv_cov_dot_vect(residuals)
+        _right_part = self.cov_m.solve(residuals)
 
         # We should have the same shape
         assert _right_part.shape == ens.shape
@@ -259,8 +250,8 @@ class EnsembleRegularizator(GeostatisticalRegularizator):
 #         The best beta.
 #     """
 #     # This is valid for the linear one only.
-#     invQs = cov_m.get_inv_cov_dot_vect(values)
-#     invQX = cov_m.get_inv_cov_dot_vect(drift_matrix.mat)
+#     invQs = cov_m.solve(values)
+#     invQX = cov_m.solve(drift_matrix.mat)
 
 #     XTinvQs = np.dot(drift_matrix.mat.T, invQs)
 #     XTinvQX = np.dot(drift_matrix.mat.T, invQX)

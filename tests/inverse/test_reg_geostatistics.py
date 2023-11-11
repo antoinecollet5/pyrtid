@@ -5,7 +5,6 @@ import pyrtid.utils.spde as spde
 import pytest
 from pyrtid.inverse.regularization import (  # DriftMatrix,; LinearDriftMatrix,
     ConstantPriorTerm,
-    DenseCovarianceMatrix,
     EnsembleCovarianceMatrix,
     EnsembleMeanPriorTerm,
     EnsembleRegularizator,
@@ -14,7 +13,8 @@ from pyrtid.inverse.regularization import (  # DriftMatrix,; LinearDriftMatrix,
     MeanPriorTerm,
     NullPriorTerm,
     SparseInvCovarianceMatrix,
-    cov_mat_to_ud_mat,
+    eigen_factorize_cov_mat,
+    generate_dense_matrix,
 )
 from pyrtid.utils.types import NDArrayFloat
 from sksparse.cholmod import cholesky
@@ -69,7 +69,7 @@ def get_param_values() -> NDArrayFloat:
     "cov_mat,atol",
     [
         (
-            DenseCovarianceMatrix(
+            generate_dense_matrix(
                 pts=get_pts(),
                 kernel=exponential_kernel,
                 len_scale=len_scale,
@@ -77,8 +77,8 @@ def get_param_values() -> NDArrayFloat:
             1e-4,
         ),
         (
-            cov_mat_to_ud_mat(
-                DenseCovarianceMatrix(
+            eigen_factorize_cov_mat(
+                generate_dense_matrix(
                     pts=get_pts(), kernel=exponential_kernel, len_scale=len_scale
                 ),
                 n_pc=32,
@@ -96,7 +96,7 @@ def get_param_values() -> NDArrayFloat:
             1e-2,
         ),
         (
-            cov_mat_to_ud_mat(
+            eigen_factorize_cov_mat(
                 FFTCovarianceMatrix(
                     kernel=exponential_kernel,
                     mesh_dim=get_mesh_dim(),
@@ -149,7 +149,7 @@ def test_regularizator_gradients_with_priors_by_fd(prior) -> None:
     """Test the correctness of the gradients by finite differences."""
     param_values = get_param_values()
 
-    cov_mat = cov_mat_to_ud_mat(
+    cov_mat = eigen_factorize_cov_mat(
         FFTCovarianceMatrix(
             kernel=exponential_kernel,
             mesh_dim=get_mesh_dim(),

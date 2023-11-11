@@ -76,10 +76,11 @@ To represent covariance matrices.
     DenseCovarianceMatrix
     EnsembleCovarianceMatrix
     FFTCovarianceMatrix
-    CovarianceMatrixbyUd
+    EigenFactorizedCovarianceMatrix
     SparseInvCovarianceMatrix
     HCovarianceMatrix
     SparseInvCovarianceMatrix
+    generate_dense_matrix
 
 Working with priors and trends
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -106,27 +107,28 @@ Eigen decomposition
    :toctree: _autosummary
 
     get_prior_eigen_factorization
-    cov_mat_to_ud_mat
+    eigen_factorize_cov_mat
 
 Stochastic partial differential equation compression (SPDE)
 
 .. autosummary::
    :toctree: _autosummary
 
-    cov_mat_to_ud_mat
+    eigen_factorize_cov_mat
 
 """
 
 from pyrtid.inverse.regularization.base import Regularizator, RegWeightUpdateStrategy
 from pyrtid.inverse.regularization.covariances import (
     CovarianceMatrix,
-    CovarianceMatrixbyUd,
     DenseCovarianceMatrix,
+    EigenFactorizedCovarianceMatrix,
     EnsembleCovarianceMatrix,
     FFTCovarianceMatrix,
     HCovarianceMatrix,
     SparseInvCovarianceMatrix,
-    cov_mat_to_ud_mat,
+    eigen_factorize_cov_mat,
+    generate_dense_matrix,
     get_prior_eigen_factorization,
 )
 from pyrtid.inverse.regularization.geostatistical import (
@@ -163,7 +165,7 @@ __all__ = [
     "FFTCovarianceMatrix",
     "HCovarianceMatrix",
     "CovarianceMatrix",
-    "CovarianceMatrixbyUd",
+    "EigenFactorizedCovarianceMatrix",
     "SparseInvCovarianceMatrix",
     "PriorTerm",
     "NullPriorTerm",
@@ -175,5 +177,6 @@ __all__ = [
     "GeostatisticalRegularizator",
     "EnsembleRegularizator",
     "get_prior_eigen_factorization",
-    "cov_mat_to_ud_mat",
+    "eigen_factorize_cov_mat",
+    "generate_dense_matrix",
 ]

@@ -19,10 +19,9 @@ from scipy._lib._util import check_random_state  # To handle random_state
 from scipy.linalg import solve
 from scipy.sparse import csc_array, csr_array
 from scipy.sparse.linalg import LinearOperator, eigsh, gmres, lgmres
-from scipy.spatial import cKDTree
+from scipy.spatial import cKDTree, distance_matrix
 from scipy.spatial.distance import cdist
 
-from pyrtid.inverse.regularization.dense import generate_dense_matrix
 from pyrtid.inverse.regularization.hmatrix import Hmatrix
 from pyrtid.inverse.regularization.toeplitz import (
     create_toepliz_first_row,
@@ -95,10 +94,6 @@ class CovarianceMatrix(LinearOperator):
     @abstractmethod
     def solve(self, b: NDArrayFloat) -> NDArrayFloat:
         """Solve Ax = b, with A, the current covariance matrix instance."""
-
-    def get_inv_cov_dot_vect(self, x: NDArrayFloat) -> NDArrayFloat:
-        """Return $Q^{-1} x$."""
-        return self.solve(x)
 
     @abstractmethod
     def get_diagonal(self) -> NDArrayFloat:
@@ -220,18 +215,17 @@ def build_preconditioner(
     return csr_array((data, ij.transpose()), shape=(nb_pts, nb_pts), dtype="d")
 
 
-class DenseCovarianceMatrix(KernelCovarianceMatrix):
+class DenseCovarianceMatrix(CovarianceMatrix):
     """Represents a dense covariance matrix."""
 
     def __init__(
         self,
-        pts: NDArrayFloat,
-        kernel: Callable,
-        len_scale: NDArrayFloat,
+        mat: NDArrayFloat,
         nugget: float = 0,
     ) -> None:
-        super().__init__(pts, kernel, nugget)
-        self.mat = generate_dense_matrix(pts, kernel, len_scale)
+        self.mat = mat
+        self.nugget = nugget
+        super().__init__((mat.shape[0], mat.shape[0]))
 
     def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
         """Return the covariance matrix times the vector x."""
@@ -252,6 +246,37 @@ class DenseCovarianceMatrix(KernelCovarianceMatrix):
     def get_trace(self) -> NDArrayFloat:
         """Return the trace of the covariance matrix."""
         return self.mat.trace()
+
+
+def generate_dense_matrix(
+    pts: NDArrayFloat, kernel: Callable, len_scale: NDArrayFloat, nugget: float = 0.0
+) -> DenseCovarianceMatrix:
+    """
+    Generate a dense matrix.
+
+    Compute O(dim^2) interactions.
+
+    Parameters
+    ----------
+    pts : NDArrayFloat
+        DESCRIPTION.
+    kernel : TYPE
+        DESCRIPTION.
+    len_scale: NDArrayFloat
+        DESCRIPTION.
+
+    Returns
+    -------
+    NDArrayFloat
+        The dense matrix.
+    """
+    # Scale the points coordinates
+    scaled_pts = np.array(pts, copy=True)
+    for dim in range(scaled_pts.shape[1]):
+        scaled_pts[:, dim] /= len_scale[dim]
+    return DenseCovarianceMatrix(
+        kernel(distance_matrix(scaled_pts, scaled_pts)), nugget=nugget
+    )
 
 
 class EnsembleCovarianceMatrix(CovarianceMatrix):
@@ -505,58 +530,64 @@ class HCovarianceMatrix(KernelCovarianceMatrix):
         return float(np.sum(self.get_diagonal()))
 
 
-class CovarianceMatrixbyUd(CovarianceMatrix):
+class EigenFactorizedCovarianceMatrix(CovarianceMatrix):
     """Compressed version of the covariance matrix."""
 
     def __init__(
         self,
-        prior_d: NDArrayFloat,
-        prior_u: NDArrayFloat,
+        eig_vals: NDArrayFloat,
+        eig_vects: NDArrayFloat,
     ) -> None:
         """Initialize the instance."""
-        super().__init__((prior_d.size, prior_d.size))
-        self.prior_d: NDArrayFloat = prior_d
-        self.prior_u: NDArrayFloat = prior_u
+        super().__init__((eig_vects.shape[0], eig_vects.shape[0]))
+        self.eig_vals: NDArrayFloat = eig_vals
+        self.eig_vects: NDArrayFloat = eig_vects
 
     @property
     def n_pc(self) -> int:
         """
-        Return the number of principal component.
+        Return the number of eigen vectors/values, i.e. principal components.
 
         It is determined from the eigen values vector size.
         """
-        return self.prior_d.size
+        return self.eig_vals.size
 
     def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
         """Return the covariance matrix times the vector x."""
         return np.dot(
-            self.prior_u,
-            np.multiply(self.prior_d, (np.dot(self.prior_u.T, x.reshape(-1, 1)))),
+            self.eig_vects,
+            np.multiply(self.eig_vals, (np.dot(self.eig_vects.T, x.reshape(-1, 1)))),
         )
 
-    def _rmatvec(self, x: NDArrayFloat) -> NDArrayFloat:
-        """Return the covariance matrix conjugate transpose times the vector x."""
-        return self._matvec(x)
-
     def solve(self, x: NDArrayFloat) -> NDArrayFloat:
-        return self.get_inv_cov_dot_vect(x)
-
-    def get_inv_cov_dot_vect(self, x: NDArrayFloat) -> NDArrayFloat:
         """Return $Q^{-1} x = ZD^{-1}Z^{T}x$."""
         # np.dot(invZs.T, invZs)
         # Note: x must be a column vector
         return np.dot(
-            self.prior_u,
-            np.multiply(1.0 / self.prior_d, np.dot(self.prior_u.T, x.reshape(-1, 1))),
+            self.eig_vects,
+            np.multiply(
+                1.0 / self.eig_vals, np.dot(self.eig_vects.T, x.reshape(-1, 1))
+            ),
         )
 
     def get_diagonal(self) -> NDArrayFloat:
-        """Return the diagonal entries of the matrix (variances)."""
-        raise NotImplementedError()
+        """
+        Return the diagonal entries of the matrix (variances).
 
-    def get_trace(self) -> NDArrayFloat:
+        The matrix is never built explicitly. Instead the matvec interface is
+        used to multiply all column of the identity matrix.
+        """
+        approx_diag = np.zeros(self.number_pts)
+        for i in range(self.number_pts):
+            # construct the ith row of the identity matrix
+            v = np.zeros(self.number_pts)
+            v[i] = 1.0
+            approx_diag[i] = self.matvec(v)[i]
+        return approx_diag
+
+    def get_trace(self) -> float:
         """Return the trace of the covariance matrix."""
-        raise NotImplementedError()
+        return float(np.sum(self.eig_vals))
 
 
 class SparseInvCovarianceMatrix(CovarianceMatrix):
@@ -586,37 +617,33 @@ class SparseInvCovarianceMatrix(CovarianceMatrix):
 
     def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
         """Return the covariance matrix times the vector x."""
-        return self.solve(x)
-
-    def _rmatvec(self, x: NDArrayFloat) -> NDArrayFloat:
-        """Return the covariance matrix conjugate transpose times the vector x."""
-        return self.solve(x)
-
-    def get_inv_cov_dot_vect(self, x: NDArrayFloat) -> NDArrayFloat:
-        """Return $Q^{-1} x."""
-        return self.inv_mat.dot(x)
-
-    def solve(
-        self, b: NDArrayFloat, tol: float = 1e-8, maxiter: int = 100
-    ) -> NDArrayFloat:
-        """Solve Ax = b, with A, the current covariance matrix instance."""
         residual = CallBack()
-        x, info = gmres(
+        res, info = gmres(
             self.inv_mat,
-            b,
-            tol=tol,
-            maxiter=maxiter,
+            x,
+            tol=1e-8,
+            maxiter=100,
             callback=residual,
             atol=0.0,
             M=self.preconditioner,
             callback_type="legacy",
         )
         self.solvmatvecs += residual.itercount
-        return x
+        return res
+
+    def solve(self, x: NDArrayFloat) -> NDArrayFloat:
+        """Return $Q^{-1} x."""
+        return self.inv_mat.dot(x)
 
     def get_diagonal(self) -> NDArrayFloat:
         """Return the diagonal entries of the matrix (variances)."""
-        raise NotImplementedError
+        approx_diag = np.zeros(self.number_pts)
+        for i in range(self.number_pts):
+            # construct the ith row of the identity matrix
+            v = np.zeros(self.number_pts)
+            v[i] = 1.0
+            approx_diag[i] = self.matvec(v)[i]
+        return approx_diag
 
     def get_trace(self) -> NDArrayFloat:
         """Return the trace of the covariance matrix."""
@@ -626,7 +653,6 @@ class SparseInvCovarianceMatrix(CovarianceMatrix):
 def get_prior_eigen_factorization(
     cov_mat: CovarianceMatrix,
     n_pc: int,
-    method: str = "arpack",
     random_state: Optional[Union[int, RandomState, Generator]] = None,
 ) -> Tuple[NDArrayFloat, NDArrayFloat]:
     """
@@ -638,9 +664,6 @@ def get_prior_eigen_factorization(
         The covariance matrix instance to decompose.
     n_pc : int
         Number of principal component in the matrix.
-    method : str, optional
-        Method used for the decomposition. Only arpack is supported for now,
-        by default "arpack".
     random_state: Optional[Union[int, np.random.Generator, np.random.RandomState]]
         Pseudorandom number generator state used to generate resamples.
         If `random_state` is ``None`` (or `np.random`), the
@@ -672,40 +695,36 @@ def get_prior_eigen_factorization(
     else:
         v0 = None
 
-    if method == "arpack":
-        prior_d, prior_u = eigsh(cov_mat, k=n_pc, v0=v0)
-        prior_d = prior_d[::-1]
-        prior_d = prior_d.reshape(-1, 1)  # make a column vector
-        prior_u = prior_u[:, ::-1]
-    else:
-        raise NotImplementedError
+    eig_vals, eig_vects = eigsh(cov_mat, k=n_pc, v0=v0)
+    eig_vals = eig_vals[::-1]
+    eig_vals = eig_vals.reshape(-1, 1)  # make a column vector
+    eig_vects = eig_vects[:, ::-1]
 
     logging.info(
         "- time for eigendecomposition with k = %d is %g sec"
         % (n_pc, round(time() - start))
     )
 
-    if (prior_d > 0).sum() < n_pc:
-        n_pc = (prior_d > 0).sum()
-        prior_d = prior_d[:n_pc, :]
-        prior_u = prior_u[:, :n_pc]
+    if (eig_vals > 0).sum() < n_pc:
+        n_pc = (eig_vals > 0).sum()
+        eig_vals = eig_vals[:n_pc, :]
+        eig_vects = eig_vects[:, :n_pc]
         logging.warning("Warning: n_pc changed to %d for positive eigenvalues" % (n_pc))
 
     logging.info(
         "- 1st eigv : %g, %d-th eigv : %g, ratio: %g"
-        % (prior_d[0], n_pc, prior_d[-1], prior_d[-1] / prior_d[0])
+        % (eig_vals[0], n_pc, eig_vals[-1], eig_vals[-1] / eig_vals[0])
     )
-    return prior_d, prior_u
+    return eig_vals, eig_vects
 
 
-def cov_mat_to_ud_mat(
+def eigen_factorize_cov_mat(
     cov_mat: CovarianceMatrix,
     n_pc: int,
-    method: str = "arpack",
     random_state: Optional[Union[int, RandomState, Generator]] = None,
-) -> CovarianceMatrixbyUd:
+) -> EigenFactorizedCovarianceMatrix:
     """
-    Convert any covariance matrix to a Ud matrix by eigen decomposition.
+    Return an eigen factorized covariance matrix from the input covariance matrix.
 
     Parameters
     ----------
@@ -713,9 +732,6 @@ def cov_mat_to_ud_mat(
         The covariance matrix instance to decompose.
     n_pc : int
         Number of principal component in the matrix.
-    method : str, optional
-        Method used for the decomposition. Only arpack is supported for now,
-        by default "arpack".
     random_state: Optional[Union[int, np.random.Generator, np.random.RandomState]]
         Pseudorandom number generator state used to generate resamples.
         If `random_state` is ``None`` (or `np.random`), the
@@ -727,15 +743,13 @@ def cov_mat_to_ud_mat(
 
     Returns
     -------
-    CovarianceMatrixbyUd
+    EigenFactorizedCovarianceMatrix
         Decomposed matrix instance.
     """
-    if isinstance(cov_mat, CovarianceMatrixbyUd):
+    if isinstance(cov_mat, EigenFactorizedCovarianceMatrix):
         return cov_mat
-    prior_d, prior_u = get_prior_eigen_factorization(
-        cov_mat, n_pc, method, random_state
-    )
-    return CovarianceMatrixbyUd(prior_d, prior_u)
+    eig_vals, eig_vects = get_prior_eigen_factorization(cov_mat, n_pc, random_state)
+    return EigenFactorizedCovarianceMatrix(eig_vals, eig_vects)
 
 
 def get_explained_var(
