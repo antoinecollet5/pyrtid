@@ -26,15 +26,23 @@ def solve_adj_geochem(
     try:
         am_old = a_tr_model.a_grade[:, :, time_index + 1]
         ac_old = a_tr_model.a_conc[:, :, time_index + 1]
+        c_old = tr_model.lconc[time_index + 1]
+        dt_cur = time_params.ldt[time_index]
     except IndexError:
         # Handle the Tmax (first timestep going backward)
         # or adjoint state initialization
         am_old = 0.0
         ac_old = 0.0
+        c_old = 1.0
+        dt_cur = 1.0  # should be zero but we avoid a zero division here
 
     # Adjoint concentration at current timestep
-    if a_tr_model.is_adj_numerical_acceleration and nafpi == 1:
-        ac_cur = ac_old
+    if (
+        a_tr_model.is_adj_numerical_acceleration
+        and nafpi == 1
+        and time_index != time_params.nts
+    ):
+        ac_cur = a_tr_model.a_conc[:, :, time_index + 1]
     else:
         ac_cur = a_tr_model.a_conc[:, :, time_index]
 
@@ -42,10 +50,9 @@ def solve_adj_geochem(
     a_tr_model.a_conc_prev = copy(ac_cur)
 
     # Forward variables
-    c_old = tr_model.lconc[time_index]
+
     # Timesteps
-    dt_cur = time_params.ldt[time_index - 1]
-    dt_next = time_params.ldt[time_index - 2]
+    dt_next = time_params.ldt[time_index - 1]
 
     # Update mineral value
     a_tr_model.a_grade[:, :, time_index] = (
@@ -61,7 +68,7 @@ def solve_adj_geochem(
     # available in the transport operator - and consequently its adjoint.
     a_tr_model.a_gch_src_term = (
         a_tr_model.a_grade[:, :, time_index]
-        * time_params.ldt[time_index - 1]
+        * dt_next
         * gch_params.kv
         * gch_params.As
         * (tr_model.lgrade[time_index - 1] / gch_params.Ks)

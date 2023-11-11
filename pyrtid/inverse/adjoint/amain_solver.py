@@ -105,7 +105,6 @@ class AdjointSolver:
         # Initialize transport matrices with diffusion (advection is added on the fly)
         # Consequently, the preconditioner is built on the fly too.
         self.initialize_ajd_transport_matrices()
-
         for time_index in range(
             self.fwd_model.time_params.nts, -1, -1  # type: ignore
         ):  # Reverse order in time, and reverse order in operator sequence

@@ -20,7 +20,7 @@ constrained optimization.
 convex quadratic problems.
 """
 
-from typing import Optional, Tuple
+from typing import Deque, Optional, Tuple
 
 import numpy as np
 import scipy as sp
@@ -108,7 +108,85 @@ def freev(
     return free_vars, Z.tocsc(), A.tocsc()
 
 
+def form_k_from_xgza(
+    X: Deque[NDArrayFloat],
+    G: Deque[NDArrayFloat],
+    Z: spmatrix,
+    A: spmatrix,
+    theta: float,
+) -> NDArrayFloat:
+    """Form the matrix K.
+
+    The matrix K is defined by:
+
+    K = [-D -Y'ZZ'Y/theta     L_a'-R_z'  ]
+        [L_a -R_z           theta*S'AA'S ]
+
+    Parameters
+    ----------
+    """
+    # This was the old approach that did not work:
+    # form S and Y
+    S = np.diff(np.array(X), axis=0).T
+    Y = np.diff(np.array(G), axis=0).T
+    D: NDArrayFloat = np.diag(np.diag(S.T @ Y))
+
+    # 1) RZ is the upper triangular part of S'ZZ'Y.
+    if Z.size == 0:
+        YTZZTY = np.zeros((Y.shape[1], Y.shape[1]))
+        RZ = YTZZTY.copy()
+    else:
+        YTZZTY = Y.T @ Z @ Z.T @ Y
+        print(YTZZTY)
+        RZ = sp.linalg.cholesky(
+            YTZZTY, lower=False, overwrite_a=False
+        )  # np.triu(YTZZTY)
+
+    # 2) LA is the strict lower triangle of S^{T}AA^{T}S
+    if A.size == 0:
+        STAATS = np.zeros((S.shape[1], S.shape[1]))
+        LA = STAATS.copy()
+    else:
+        STAATS = S.T @ A @ A.T @ S
+        LA = sp.linalg.cholesky(
+            STAATS, lower=True, overwrite_a=False
+        )  # np.tril(STAATS, -1)
+
+    m = LA.shape[0]
+    K = np.zeros((m * 2, m * 2))
+
+    K[:m, :m] = -D - (1 / theta) * YTZZTY
+    K[:m, m:] = (LA - RZ).T
+    K[m:, :m] = LA - RZ
+    K[m:, m:] = theta * STAATS
+
+    return K
+
+
+def form_k_from_wm(
+    WTZ: NDArrayFloat,
+    invMfactors: Tuple[NDArrayFloat, NDArrayFloat],
+    theta: float,
+) -> NDArrayFloat:
+    """Form the matrix K.
+
+    The matrix K is defined as M^{-1}(I - 1/theta M WT Z @ ZT @ W)).
+
+    Parameters
+    ----------
+    """
+    # Instead we build K directly as M^{-1}(I - 1/theta M WT Z @ ZT @ W))
+    K = invMfactors[0] @ invMfactors[1]
+    N = -1 / theta * bmv(invMfactors, WTZ.dot(np.transpose(WTZ)))
+    np.fill_diagonal(N, N.diagonal() + 1)
+    return K @ N
+
+
 def formk(
+    X: Deque[NDArrayFloat],
+    G: Deque[NDArrayFloat],
+    Z: spmatrix,
+    A: spmatrix,
     WTZ: NDArrayFloat,
     invMfactors: Tuple[NDArrayFloat, NDArrayFloat],
     theta: float,
@@ -122,48 +200,17 @@ def formk(
     where     E = [-I  0]
                     [ 0  I]
 
-    TODO
-
     Parameters
     ----------
     """
-    # This was the old approach that did not work:
-    # # form S and Y
-    # S = np.diff(np.array(X), axis=0).T
-    # Y = np.diff(np.array(G), axis=0).T
-    # D: NDArrayFloat = np.diag(np.diag(S.T @ Y))
+    K = form_k_from_wm(WTZ, invMfactors, theta)
+    # TODO: K2 is not exactly equal to what it should
+    # We must do the computation
+    # K2 = form_k_from_xgza(X, G, Z, A, theta)
 
-    # # 1) RZ is the upper triangular part of S'ZZ'Y.
-    # if Z.size == 0:
-    #     YTZZTY = np.zeros((Y.shape[1], Y.shape[1]))
-    #     RZ = YTZZTY.copy()
-    # else:
-    #     YTZZTY = Y.T @ Z @ Z.T @ Y
-    #     RZ = YTZZTY # np.triu(YTZZTY)
-
-    # # 2) LA is the strict lower triangle of S^{T}AA^{T}S
-    # if A.size == 0:
-    #     STAATS = np.zeros((S.shape[1], S.shape[1]))
-    #     LA = STAATS.copy()
-    # else:
-    #     STAATS = S.T @ A @ A.T @ S
-    #     LA = STAATS # np.tril(STAATS, -1)
-
-    # # D+Y' ZZ'Y/theta -> Positive definite
-    # K11: NDArrayFloat = D + (1 / theta) * YTZZTY
-
-    # # -L_a'+R_z'
-    # K12: NDArrayFloat = (RZ - LA).T
-    # K22 = theta * STAATS
-
-    # if K11.size == 0 or K12.size == 0:
-    #     return None
-
-    # Instead we build K directly as M^{-1}(I - 1/theta M WT Z @ ZT @ W))
-    K = invMfactors[0] @ invMfactors[1]
-    N = -1 / theta * bmv(invMfactors, WTZ.dot(np.transpose(WTZ)))
-    np.fill_diagonal(N, N.diagonal() + 1)
-    K = K @ N
+    # np.testing.assert_allclose(K, K2, atol=1e-8)
+    # print(f"K = {K}")
+    # print(f"K2 = {K2}")
 
     # The factorization only makes sense if K is at least (2, 2).
     if K.size < 4:
@@ -207,10 +254,13 @@ def formk(
 
 # There are three methods for this one and we need to find the correct one.
 def direct_primal_subspace_minimization(
+    X,
+    G,
     x: NDArrayFloat,
     xc: NDArrayFloat,
     free_vars: NDArrayInt,
     Z: spmatrix,
+    A: spmatrix,
     c: NDArrayFloat,
     grad: NDArrayFloat,
     lb: NDArrayFloat,
@@ -301,7 +351,7 @@ def direct_primal_subspace_minimization(
     v = WTZ.dot(rHat)
 
     # Factorization of M^{-1}(I - 1/theta M WT Z @ ZT @ W))
-    LK: Optional[NDArrayFloat] = formk(WTZ, invMfactors, theta)
+    LK: Optional[NDArrayFloat] = formk(X, G, Z, A, WTZ, invMfactors, theta)
 
     if LK is not None:
         # LK is the lowest triangle of the cholesky factorization

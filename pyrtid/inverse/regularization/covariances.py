@@ -518,6 +518,15 @@ class CovarianceMatrixbyUd(CovarianceMatrix):
         self.prior_d: NDArrayFloat = prior_d
         self.prior_u: NDArrayFloat = prior_u
 
+    @property
+    def n_pc(self) -> int:
+        """
+        Return the number of principal component.
+
+        It is determined from the eigen values vector size.
+        """
+        return self.prior_d.size
+
     def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
         """Return the covariance matrix times the vector x."""
         return np.dot(
@@ -528,6 +537,9 @@ class CovarianceMatrixbyUd(CovarianceMatrix):
     def _rmatvec(self, x: NDArrayFloat) -> NDArrayFloat:
         """Return the covariance matrix conjugate transpose times the vector x."""
         return self._matvec(x)
+
+    def solve(self, x: NDArrayFloat) -> NDArrayFloat:
+        return self.get_inv_cov_dot_vect(x)
 
     def get_inv_cov_dot_vect(self, x: NDArrayFloat) -> NDArrayFloat:
         """Return $Q^{-1} x = ZD^{-1}Z^{T}x$."""

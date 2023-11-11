@@ -355,10 +355,13 @@ def minimize_lbfgsb(
 
         # subspace minimization: find the search direction for the minimization problem
         xbar: NDArrayFloat = direct_primal_subspace_minimization(
+            X,
+            G,
             x,
             dictCP["xc"],
             free_vars,
             Z,
+            A,
             dictCP["c"],
             grad,
             lb,
