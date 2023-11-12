@@ -256,7 +256,7 @@ class DriftMatrix(PriorTerm):
         Parameters
         ----------
         mat : NDArrayFloat
-            Matrix of coefficients: X.
+            Matrix of coefficients: X. with shape (Ns, Nbeta)
         beta : Optional[Union[NDArrayFloat, float]], optional
             P Coefficients, by default None. # TODO: add references and comment better.
         """
@@ -273,6 +273,14 @@ class DriftMatrix(PriorTerm):
                     f"beta has shape {shape} while it should be shape "
                     f"({mat.shape[1]},) to match the given coefficient matrix."
                 )
+
+    @property
+    def s_dim(self) -> int:
+        return self.mat.shape[0]
+
+    @property
+    def beta_dim(self) -> int:
+        return self.mat.shape[1]
 
     def dot(self, beta: Union[float, NDArrayFloat]) -> NDArrayFloat:
         """Return the dot product."""
@@ -319,6 +327,23 @@ class DriftMatrix(PriorTerm):
             Prior gradient-input vector dot product.
         """
         return 0.0
+
+
+class ConstantDriftMatrix(DriftMatrix):
+    """Represent a constant drift matrix (trend)."""
+
+    # TODO: complete this one and complexify a bit
+
+    def __init__(self, n_pts: int) -> None:
+        """_summary_
+
+        Parameters
+        ----------
+        pts : NDArrayFloat
+            _description_
+        """
+        mat: NDArrayFloat = np.ones((n_pts, 1), dtype="d") / np.sqrt(n_pts)
+        super().__init__(mat)
 
 
 class LinearDriftMatrix(DriftMatrix):

@@ -96,6 +96,7 @@ To represent trend through drift matrix. To use along with geostatistical regula
     MeanPriorTerm
     EnsembleMeanPriorTerm
     DriftMatrix
+    ConstantDriftMatrix
     LinearDriftMatrix
 
 Matrix compression
@@ -136,6 +137,7 @@ from pyrtid.inverse.regularization.geostatistical import (
     GeostatisticalRegularizator,
 )
 from pyrtid.inverse.regularization.priors import (
+    ConstantDriftMatrix,
     ConstantPriorTerm,
     DriftMatrix,
     EnsembleMeanPriorTerm,
@@ -173,6 +175,7 @@ __all__ = [
     "MeanPriorTerm",
     "EnsembleMeanPriorTerm",
     "DriftMatrix",
+    "ConstantDriftMatrix",
     "LinearDriftMatrix",
     "GeostatisticalRegularizator",
     "EnsembleRegularizator",
