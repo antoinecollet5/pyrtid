@@ -95,13 +95,24 @@ class CovarianceMatrix(LinearOperator):
     def solve(self, b: NDArrayFloat) -> NDArrayFloat:
         """Solve Ax = b, with A, the current covariance matrix instance."""
 
-    @abstractmethod
     def get_diagonal(self) -> NDArrayFloat:
-        """Return the diagonal entries of the matrix (variances)."""
+        """
+        Return the diagonal entries of the matrix (variances).
 
-    @abstractmethod
-    def get_trace(self) -> NDArrayFloat:
+        The matrix is never built explicitly. Instead the matvec interface is
+        used to multiply all column of the identity matrix.
+        """
+        approx_diag = np.zeros(self.number_pts)
+        for i in range(self.number_pts):
+            # construct the ith row of the identity matrix
+            v = np.zeros(self.number_pts)
+            v[i] = 1.0
+            approx_diag[i] = self.matvec(v)[i]
+        return approx_diag
+
+    def get_trace(self) -> float:
         """Return the trace of the covariance matrix."""
+        return float(np.sum(self.get_diagonal()))
 
 
 class KernelCovarianceMatrix(CovarianceMatrix):
@@ -377,10 +388,6 @@ class EnsembleCovarianceMatrix(CovarianceMatrix):
         """Return the diagonal entries of the matrix (variances)."""
         return np.sum((self.anomalies**2), axis=0) / (self.n_ens - 1.0)
 
-    def get_trace(self) -> float:
-        """Return the trace of the covariance matrix."""
-        return float(np.sum(self.get_diagonal()))
-
 
 class FFTCovarianceMatrix(KernelCovarianceMatrix):
     """
@@ -570,21 +577,6 @@ class EigenFactorizedCovarianceMatrix(CovarianceMatrix):
             ),
         )
 
-    def get_diagonal(self) -> NDArrayFloat:
-        """
-        Return the diagonal entries of the matrix (variances).
-
-        The matrix is never built explicitly. Instead the matvec interface is
-        used to multiply all column of the identity matrix.
-        """
-        approx_diag = np.zeros(self.number_pts)
-        for i in range(self.number_pts):
-            # construct the ith row of the identity matrix
-            v = np.zeros(self.number_pts)
-            v[i] = 1.0
-            approx_diag[i] = self.matvec(v)[i]
-        return approx_diag
-
     def get_trace(self) -> float:
         """Return the trace of the covariance matrix."""
         return float(np.sum(self.eig_vals))
@@ -634,20 +626,6 @@ class SparseInvCovarianceMatrix(CovarianceMatrix):
     def solve(self, x: NDArrayFloat) -> NDArrayFloat:
         """Return $Q^{-1} x."""
         return self.inv_mat.dot(x)
-
-    def get_diagonal(self) -> NDArrayFloat:
-        """Return the diagonal entries of the matrix (variances)."""
-        approx_diag = np.zeros(self.number_pts)
-        for i in range(self.number_pts):
-            # construct the ith row of the identity matrix
-            v = np.zeros(self.number_pts)
-            v[i] = 1.0
-            approx_diag[i] = self.matvec(v)[i]
-        return approx_diag
-
-    def get_trace(self) -> NDArrayFloat:
-        """Return the trace of the covariance matrix."""
-        return np.sum(1 / self.inv_mat.get_diagonal())
 
 
 def get_prior_eigen_factorization(
