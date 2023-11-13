@@ -14,13 +14,7 @@ from typing import Callable, List, Optional, Tuple, Union
 import numpy as np
 import scipy as sp
 from scipy._lib._util import check_random_state  # To handle random_state
-from scipy.sparse.linalg import (
-    LinearOperator,
-    eigsh,
-    gmres,
-    minres,
-    svds,
-)
+from scipy.sparse.linalg import LinearOperator, eigsh, gmres, minres, svds
 
 from pyrtid.inverse.regularization import (
     ConstantDriftMatrix,
@@ -29,7 +23,6 @@ from pyrtid.inverse.regularization import (
 )
 from pyrtid.utils import NDArrayFloat, StrEnum
 
-__all__ = ["PCGA"]
 VERY_LARGE_NUMBER = 1.0e20
 
 
@@ -82,7 +75,7 @@ class PCGA:
         self,
         s_init: NDArrayFloat,
         obs: NDArrayFloat,
-        cov_obs: NDArrayFloat,
+        cov_obs: Union[float, NDArrayFloat],
         forward_model: Callable,
         Q: EigenFactorizedCovarianceMatrix,
         drift: Optional[DriftMatrix] = None,
@@ -184,7 +177,7 @@ class PCGA:
         self.s_init = np.array(s_init).reshape(-1, 1)
         # Observations
         self.obs = np.array(obs).reshape(-1, 1)
-        self.cov_obs = cov_obs
+        self.cov_obs = np.asarray(cov_obs)
         # forward solver setting should be done externally as a blackbox
         # including the parallelization
         self.forward_model = forward_model
@@ -310,17 +303,22 @@ class PCGA:
         It must be a 2D array, or a 1D array if the covariance matrix is diagonal.
         """
         error = ValueError(
-            "cov_obs must be a 2D matrix with "
-            f"dimensions ({self.d_dim}, {self.d_dim})."
+            "cov_obs must be either a 1D matrix of {self.s_dim} elements, or "
+            f"a 2D matrix with dimensions ({self.d_dim}, {self.d_dim})."
         )
-        if len(cov.shape) > 2:
-            raise error
-        if cov.shape[0] != self.obs.size:  # type: ignore
-            raise error
-        if cov.ndim == 2:
-            if cov.shape[0] != cov.shape[1]:  # type: ignore
-                raise error
 
+        if cov.size == 1:
+            # Case of a float
+            cov = np.ones((self.d_dim)) * cov
+        else:
+            # Case of 1D or 2D array with more than one value
+            if cov.ndim > 2:
+                raise error
+            if cov.shape[0] != self.obs.size:  # type: ignore
+                raise error
+            if cov.ndim == 2:
+                if cov.shape[0] != cov.shape[1]:  # type: ignore
+                    raise error
         # From iterative_ensemble_smoother code
         # Only compute the covariance factorization once
         # If it's a full matrix, we gain speedup by only computing cholesky once
@@ -331,6 +329,7 @@ class PCGA:
             self.cov_obs_cholesky = np.sqrt(cov)  # type: ignore
 
         # For now only 1D arrays are supported
+        # TODO: add support for 2D arrays
         self._cov_obs: NDArrayFloat = cov.reshape(-1, 1)
 
     @property
@@ -1530,19 +1529,16 @@ class PCGA:
         else:
             return s_hat, simul_obs, iter_best
 
-    def ComputePosteriorDiagonalEntriesDirect(self, HZ, HX, i_best, R):
-        """
-        Computing posterior diagonal entries
-        Don't use this for large number of measurements!
-        Works best for small measurements O(100)
-        """
-
+    def ComputePosteriorDiagonalEntriesDirect(
+        self, HZ, HX, i_best, cov_obs, is_use_cholesky: bool = True
+    ) -> NDArrayFloat:
+        """Computing posterior diagonal entries using cholesky."""
         m = self.s_dim
         n = self.d_dim
         p = self.drift.beta_dim
 
         alpha = 10 ** (np.linspace(0.0, np.log10(self.alphamax_lm), self.nopts_lm))
-        Ri = np.multiply(alpha[i_best], R)
+        Ri = np.multiply(alpha[i_best], cov_obs)
 
         n_pc = self.Q.n_pc
         Z = np.zeros((m, n_pc), dtype="d")
@@ -1551,56 +1547,44 @@ class PCGA:
                 sqrt(self.Q.eig_vals[i]), self.Q.eig_vects[:, i : i + 1]
             )  # use sqrt to make it scalar
 
-        v = np.zeros((m, 1), dtype="d")
-
         # Construct Psi directly
-        if isinstance(Ri, float):
-            Psi = np.dot(HZ, HZ.T) + np.multiply(Ri, np.eye(n, dtype="d"))
-        elif Ri.shape[0] == 1 and Ri.ndim == 1:
-            Psi = np.dot(HZ, HZ.T) + np.multiply(Ri, np.eye(n, dtype="d"))
+        Psi: NDArrayFloat = np.dot(HZ, HZ.T)  # HQH^{t}
+        # Add the R matrix
+        if Ri.shape[1] == 1:
+            # Ri is diagonal
+            np.fill_diagonal(Psi, Psi.diagonal() + Ri[:, 0])
         else:
-            Psi = np.dot(HZ, HZ.T) + np.diag(
-                Ri.reshape(-1)
-            )  # reshape Ri from (n,1) to (n,) for np.diag
+            # If Ri is 2D
+            Psi += Ri
 
-        HQ = np.dot(HZ, Z.T)
+        # [HQ, X^{T}]
+        b_all = np.vstack([np.dot(HZ, Z.T), self.drift.mat.T])
 
-        # Create matrix system and solve it
-        # cokriging matrix
+        # Option 1: use cholesky -> should be much faster
+        if is_use_cholesky:
+            # HQH^{T} and R are positive semi-definite
+            # Then we just need to factorize L11
+            # Cholesky:
+            L11 = sp.linalg.cholesky(Psi, lower=True)
+            L12 = sp.linalg.solve_triangular(L11, HX, lower=True, trans="N")
+            L22 = sp.linalg.cholesky(L12.T @ L12, lower=True)
+            LA = np.hstack(
+                [np.vstack([L11, L12.T]), np.vstack([np.zeros(L12.shape), L22])]
+            )
+            return (
+                self.prior_s_var
+                - np.sum(b_all * sp.linalg.cho_solve((LA, True), b_all), axis=0)
+            ).reshape(-1, 1)
+
+        # Option 2: classic direct solve (should be much longer)
+        # Otherwise create the dense cokriging matrix
         A = np.zeros((n + p, n + p), dtype="d")
-        b = np.zeros((n + p, 1), dtype="d")
-
         A[0:n, 0:n] = np.copy(Psi)
         A[0:n, n : n + p] = np.copy(HX)
         A[n : n + p, 0:n] = np.copy(HX.T)
-
-        # HQX = np.vstack((HQ,self.drift.mat.T))
-        # diagred = np.diag(np.dot(HQX.T, np.linalg.solve(A, HQX)))
-        # diagred1 = np.diag(np.dot(HQ.T, np.linalg.solve(Psi, HQ)))
-        # HQX1 = np.vstack((HQ,self.drift.mat[:,0].T))
-        # A1 = np.zeros((n+1,n+1),dtype='d')
-        # A1[0:n,0:n] = np.copy(Psi)
-        # A1[0:n,n:n+1] = np.copy(HX[:,0:1])
-        # A1[n:n+1,0:n] = np.copy(HX[:,0:1].T)
-
-        # diagred2 = np.diag(np.dot(HQX1.T, np.linalg.solve(A1, HQX1)))
-        # v1 = priorvar - diagred
-
-        print("We have reached that point !")
-
-        for i in range(m):
-            b = np.zeros((n + p, 1), dtype="d")
-            b[0:n] = HQ[:, i : i + 1]
-            b[n : n + p] = self.drift.mat[i : i + 1, :].T
-            tmp = np.dot(b.T, np.linalg.solve(A, b))
-            v[i] = self.prior_s_var[i] - tmp
-            # if v[i] <= 0:
-            #    print("%d-th element negative" % (i))
-            if i % 1000 == 0:
-                print("%d-th element evaluated" % (i))
-
-        # print("compute variance: %f sec" % (time() - start))
-        return v
+        return (
+            self.prior_s_var - np.sum(b_all * sp.linalg.solve(A, b_all), axis=0)
+        ).reshape(-1, 1)
 
     def ComputePosteriorDiagonalEntries(self, HZ, HX, i_best, R):
         """
