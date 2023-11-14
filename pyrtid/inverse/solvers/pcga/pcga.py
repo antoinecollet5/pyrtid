@@ -543,12 +543,7 @@ class PCGA:
         if simul_obs is None:
             simul_obs = self.forward_model(s_cur)
 
-        Z = np.zeros((m, self.Q.n_pc), dtype="d")
-        for i in range(self.Q.n_pc):
-            Z[:, i : i + 1] = np.dot(
-                sqrt(self.Q.eig_vals[i]), self.Q.eig_vects[:, i : i + 1]
-            )  # use sqrt to make it scalar
-
+        Z = np.sqrt(self.Q.eig_vals).T * self.Q.eig_vects
         # Compute Jacobian-Matrix products
         start1 = time()
         HX, HZ, Hs, U_data = self.jac_mat(s_cur, simul_obs, Z)
@@ -622,23 +617,31 @@ class PCGA:
 
         for i in range(nopts):  # sequential evaluation for now
             # Construct Psi directly
+            # Psi = self.get_psi(HZ, i, R)
             Psi = np.dot(HZ, HZ.T) + np.multiply(
                 np.multiply(alpha[i], R), np.eye(n, dtype="d")
             )
 
-            # Create matrix system and solve it
-            # cokriging matrix
-            A = np.zeros((n + p, n + p), dtype="d")
             b = np.zeros((n + p, 1), dtype="d")
-
-            A[0:n, 0:n] = np.copy(Psi)
-            A[0:n, n : n + p] = np.copy(HX)
-            A[n : n + p, 0:n] = np.copy(HX.T)
-
             # Ax = b, b = obs - h(s) + Hs
             b[:n] = self.obs[:] - simul_obs + Hs[:]
+            LA = self.build_cholesky(Psi, HX)
+            x = self.solve_cholesky(LA, b, self.Q.n_pc)
 
-            x = np.linalg.solve(A, b)
+            # A = self.build_dense_A(Psi, HX)
+            # # Create matrix system and solve it
+            # # cokriging matrix
+            # x = sp.linalg.solve(A, b)
+            # self.x = x
+            # self.x2 = x2
+            # A2 = self.build_dense_A_from_cholesky(LA, self.Q.n_pc)
+            # self.A = A
+            # self.A2 = A2
+            # self.LA = LA
+            # # x2 = np.linalg.solve(A2, b)
+            # np.testing.assert_allclose(A, A2, atol=1e-6)
+            # # TODO: this does not work... why ???
+            # np.testing.assert_allclose(x2, x)
 
             ##Extract components and return final solution
             # x dimension (n+p,1)
@@ -731,11 +734,7 @@ class PCGA:
         n_pc = self.Q.n_pc
         R = self.cov_obs
 
-        Z = np.zeros((m, n_pc), dtype="d")
-        for i in range(n_pc):
-            Z[:, i : i + 1] = np.dot(
-                sqrt(self.Q.eig_vals[i]), self.Q.eig_vects[:, i : i + 1]
-            )  # use sqrt to make it scalar
+        Z = np.sqrt(self.Q.eig_vals).T * self.Q.eig_vects
 
         if simul_obs is None:
             simul_obs = self.forward_model(s_cur)
@@ -1529,23 +1528,12 @@ class PCGA:
         else:
             return s_hat, simul_obs, iter_best
 
-    def ComputePosteriorDiagonalEntriesDirect(
-        self, HZ, HX, i_best, cov_obs, is_use_cholesky: bool = True
+    def get_psi(
+        self, HZ: NDArrayFloat, i_best: int, cov_obs: NDArrayFloat
     ) -> NDArrayFloat:
-        """Computing posterior diagonal entries using cholesky."""
-        m = self.s_dim
-        n = self.d_dim
-        p = self.drift.beta_dim
-
+        """Get the matrix HQH^{T} + R."""
         alpha = 10 ** (np.linspace(0.0, np.log10(self.alphamax_lm), self.nopts_lm))
         Ri = np.multiply(alpha[i_best], cov_obs)
-
-        n_pc = self.Q.n_pc
-        Z = np.zeros((m, n_pc), dtype="d")
-        for i in range(n_pc):
-            Z[:, i : i + 1] = np.dot(
-                sqrt(self.Q.eig_vals[i]), self.Q.eig_vects[:, i : i + 1]
-            )  # use sqrt to make it scalar
 
         # Construct Psi directly
         Psi: NDArrayFloat = np.dot(HZ, HZ.T)  # HQH^{t}
@@ -1556,34 +1544,60 @@ class PCGA:
         else:
             # If Ri is 2D
             Psi += Ri
+        return Psi
 
-        # [HQ, X^{T}]
-        b_all = np.vstack([np.dot(HZ, Z.T), self.drift.mat.T])
+    @staticmethod
+    def build_cholesky(Psi: NDArrayFloat, HX: NDArrayFloat) -> NDArrayFloat:
+        # HQH^{T} and R are positive semi-definite
+        # Then we just need to factorize L11
+        # Cholesky:
+        L11 = sp.linalg.cholesky(Psi, lower=True)
+        L12 = sp.linalg.solve_triangular(L11, HX, lower=True, trans="N")
+        L22 = sp.linalg.cholesky(L12.T @ L12, lower=True)
+        return np.hstack(
+            [np.vstack([L11, L12.T]), np.vstack([np.zeros(L12.shape), L22])]
+        )
 
-        # Option 1: use cholesky -> should be much faster
-        if is_use_cholesky:
-            # HQH^{T} and R are positive semi-definite
-            # Then we just need to factorize L11
-            # Cholesky:
-            L11 = sp.linalg.cholesky(Psi, lower=True)
-            L12 = sp.linalg.solve_triangular(L11, HX, lower=True, trans="N")
-            L22 = sp.linalg.cholesky(L12.T @ L12, lower=True)
-            LA = np.hstack(
-                [np.vstack([L11, L12.T]), np.vstack([np.zeros(L12.shape), L22])]
-            )
-            return (
-                self.prior_s_var
-                - np.sum(b_all * sp.linalg.cho_solve((LA, True), b_all), axis=0)
-            ).reshape(-1, 1)
+    @staticmethod
+    def build_dense_A_from_cholesky(LA: NDArrayFloat, n_pc: int) -> NDArrayFloat:
+        # We don't build explicitly E, we just build the diagonal values
+        Ev = np.ones(LA.shape[0])
+        Ev[n_pc + 1 :] *= -1
+        return (LA * Ev) @ LA.T
 
-        # Option 2: classic direct solve (should be much longer)
-        # Otherwise create the dense cokriging matrix
+    @staticmethod
+    def solve_cholesky(LA: NDArrayFloat, v: NDArrayFloat, n_pc: int) -> NDArrayFloat:
+        # LA is the lowest triangle of the cholesky factorization LA @ E @ LA.T.
+        Ev = np.ones(LA.shape[0])
+        Ev[n_pc + 1 :] *= -1
+        v = sp.linalg.solve_triangular(LA * Ev, v, lower=True)
+        return sp.linalg.solve_triangular(LA.T, v, lower=False)
+
+    @staticmethod
+    def build_dense_A(Psi: NDArrayFloat, HX: NDArrayFloat) -> NDArrayFloat:
+        n: int = Psi.shape[0]
+        p: int = HX.shape[1]
         A = np.zeros((n + p, n + p), dtype="d")
         A[0:n, 0:n] = np.copy(Psi)
         A[0:n, n : n + p] = np.copy(HX)
         A[n : n + p, 0:n] = np.copy(HX.T)
+        return A
+
+    def ComputePosteriorDiagonalEntriesDirect(
+        self, HZ, HX, i_best, cov_obs, is_use_cholesky: bool = True
+    ) -> NDArrayFloat:
+        """Computing posterior diagonal entries using cholesky."""
+
+        Psi = self.get_psi(HZ, i_best, cov_obs)
+        Z = np.sqrt(self.Q.eig_vals).T * self.Q.eig_vects
+
+        # [HQ, X^{T}]
+        b_all = np.vstack([np.dot(HZ, Z.T), self.drift.mat.T])
+        # Use cholesky factorization to solve the system
+        LA = self.build_cholesky(Psi, HX)
         return (
-            self.prior_s_var - np.sum(b_all * sp.linalg.solve(A, b_all), axis=0)
+            self.prior_s_var
+            - np.sum(b_all * self.solve_cholesky(LA, b_all, self.Q.n_pc), axis=0)
         ).reshape(-1, 1)
 
     def ComputePosteriorDiagonalEntries(self, HZ, HX, i_best, R):
