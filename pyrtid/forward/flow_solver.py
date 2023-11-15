@@ -375,6 +375,7 @@ def update_unitflow_cst_head_nodes(
         flow[:, :] -= fl_model.lu_darcy_y[time_index][:, 1:] * geometry.dx
 
     # Trick: Set the flow to zero where the head is not constant
+    # Q: est-ce que c'est juste pour les constant head ????
     _flow[fl_model.cst_head_indices[0], fl_model.cst_head_indices[1]] = flow[
         fl_model.cst_head_indices[0], fl_model.cst_head_indices[1]
     ]
@@ -382,11 +383,13 @@ def update_unitflow_cst_head_nodes(
     # Total boundary length per mesh
     _ltot = np.zeros(geometry.shape)
     if geometry.nx > 1:
-        _ltot[0, :] += geometry.dy
-        _ltot[-1, :] += geometry.dy
+        # evacuation along x
+        _ltot[0, fl_model.is_boundary_west] += geometry.dy
+        _ltot[-1, fl_model.is_boundary_east] += geometry.dy
     if geometry.ny > 1:
-        _ltot[:, 0] += geometry.dx
-        _ltot[:, -1] += geometry.dx
+        # evacuation along y
+        _ltot[fl_model.is_boundary_north, 0] += geometry.dx
+        _ltot[fl_model.is_boundary_south, -1] += geometry.dx
 
     # 2) Update unitflow for the constant-head nodes
     fl_model.lunitflow[time_index][
@@ -406,15 +409,22 @@ def update_unitflow_cst_head_nodes(
     fl_model.lunitflow[time_index][cst_head_border_mask] = 0.0
 
     # 3.2) Report the flow on the boundaries
-
-    # Note: so far, at borders, all flows are 0, so we can apply this to all nodes,
-    # constant head or not.
+    # Note: so far, at borders, all flows are 0
     if geometry.nx > 1:
-        fl_model.lu_darcy_x[time_index][0, :] = -_flow[0, :] / _ltot[0, :]
-        fl_model.lu_darcy_x[time_index][-1, :] = +_flow[-1, :] / _ltot[-1, :]
+        fl_model.lu_darcy_x[time_index][0, fl_model.is_boundary_west] = (
+            -_flow[0, fl_model.is_boundary_west] / _ltot[0, fl_model.is_boundary_west]
+        )
+        fl_model.lu_darcy_x[time_index][-1, fl_model.is_boundary_east] = (
+            +_flow[-1, fl_model.is_boundary_east] / _ltot[-1, fl_model.is_boundary_east]
+        )
     if geometry.ny > 1:
-        fl_model.lu_darcy_y[time_index][:, 0] = -_flow[:, 0] / _ltot[:, 0]
-        fl_model.lu_darcy_y[time_index][:, -1] = +_flow[:, -1] / _ltot[:, -1]
+        fl_model.lu_darcy_y[time_index][fl_model.is_boundary_south, 0] = (
+            -_flow[fl_model.is_boundary_south, 0] / _ltot[fl_model.is_boundary_south, 0]
+        )
+        fl_model.lu_darcy_y[time_index][fl_model.is_boundary_north, -1] = (
+            +_flow[fl_model.is_boundary_north, -1]
+            / _ltot[fl_model.is_boundary_north, -1]
+        )
 
 
 def compute_u_darcy_div(

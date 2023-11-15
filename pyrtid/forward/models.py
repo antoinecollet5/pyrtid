@@ -617,6 +617,10 @@ class FlowModel(ABC):
         "q_prev",
         "q_next",
         "tolerance",
+        "is_boundary_east",
+        "is_boundary_west",
+        "is_boundary_north",
+        "is_boundary_south",
     ]
 
     def __init__(
@@ -650,6 +654,16 @@ class FlowModel(ABC):
             VerticalAxis.DY: geometry.dy,
             VerticalAxis.DZ: geometry.dz,
         }[fl_params.vertical_axis]
+
+        # Indicate whether there is a boundary on the border of the domain
+        # right border
+        self.is_boundary_east: NDArrayBool = np.zeros(geometry.ny, dtype=np.bool_)
+        # left border
+        self.is_boundary_west: NDArrayBool = np.zeros(geometry.ny, dtype=np.bool_)
+        # top border
+        self.is_boundary_north: NDArrayBool = np.zeros(geometry.nx, dtype=np.bool_)
+        # right border
+        self.is_boundary_south: NDArrayBool = np.zeros(geometry.nx, dtype=np.bool_)
 
         # These are list of ndarrays
         self.lhead: List[NDArrayFloat] = [
@@ -757,16 +771,32 @@ class FlowModel(ABC):
         node_numbers = np.array([], dtype=np.int32)
         for condition in self.boundary_conditions:
             if isinstance(condition, ConstantHead):
-                node_numbers = np.hstack(
-                    [
-                        node_numbers,
-                        span_to_node_numbers_2d(
-                            condition.span,
-                            self.lhead[0].shape[0],
-                            self.lhead[0].shape[1],
-                        ),
-                    ]
+                # 1) Get the new constant head node numbers
+                new_nn: NDArrayInt = span_to_node_numbers_2d(
+                    condition.span,
+                    self.lhead[0].shape[0],
+                    self.lhead[0].shape[1],
                 )
+                # 2) add the new nn to the global list of nn
+                node_numbers = np.hstack([node_numbers, new_nn])
+                # 3) determine if the segment is along one of the 4 borders of the
+                # domain. First we start by getting the indices in the grid
+                idx = node_number_to_indices(
+                    new_nn, self.lhead[0].shape[0], self.lhead[0].shape[1]
+                )
+                # The span must be continuous (rectangular group of meshes),
+                # so we can estimate the direction of constant head segment:
+                # must be more than 2 values on one of the borders
+                if np.count_nonzero(idx[0] == 0) > 1:
+                    self.is_boundary_west[idx[1]] = True
+                if np.count_nonzero(idx[0] == self.lhead[0].shape[0] - 1) > 1:
+                    self.is_boundary_east[idx[1]] = True
+                if np.count_nonzero(idx[1] == 0) > 1:
+                    self.is_boundary_north[idx[1]] = True
+                if np.count_nonzero(idx[1] == self.lhead[0].shape[1] - 1) > 1:
+                    self.is_boundary_south[idx[1]] = True
+
+        # remove duplicates from the global list
         self.cst_head_nn: NDArrayInt = np.unique(node_numbers.flatten())
 
     @property
@@ -810,19 +840,33 @@ class FlowModel(ABC):
     @property
     def u_darcy_x_center(self) -> NDArrayFloat:
         """The darcy x-velocities estimated at the mesh centers."""
+        # Compute the average velocity
         tmp = np.zeros((self.head.shape))
         tmp += self.u_darcy_x[:-1, :, :]
         tmp += self.u_darcy_x[1:, :, :]
-        tmp /= 2
+        # All nodes have 2 boundaries along the y axis, except for the
+        # borders meshes
+        tmp[1:-1, :, :] /= 2
+        # for the borders we need to check if a boundary (flow) exist or not
+        # this is a consequence of constant head and imposed flux
+        tmp[0, self.is_boundary_west] /= 2
+        tmp[-1, self.is_boundary_east] /= 2
         return tmp
 
     @property
     def u_darcy_y_center(self) -> NDArrayFloat:
         """The darcy y-velocities estimated at the mesh centers."""
+        # Compute the average velocity
         tmp = np.zeros((self.head.shape))
         tmp += self.u_darcy_y[:, :-1, :]
         tmp += self.u_darcy_y[:, 1:, :]
-        tmp /= 2
+        tmp[:, 1:-1, :] /= 2
+        # All nodes have 2 boundaries along the x axis, except for the
+        # borders meshes
+        # for the borders we need to check if a boundary (flow) exist or not
+        # this is a consequence of constant head and imposed flux
+        tmp[self.is_boundary_south, 0] /= 2
+        tmp[self.is_boundary_north, -1] /= 2
         return tmp
 
     def get_vertical_dim(self) -> int:

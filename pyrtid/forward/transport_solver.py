@@ -332,9 +332,9 @@ def _add_advection_to_transport_matrices(
     _apply_divergence_effect(fl_model, tr_model, q_next, q_prev, time_index)
 
     # Handle boundary conditions
-    # _add_transport_boundary_conditions(
-    #     geometry, fl_model, tr_model, q_next, q_prev, time_index
-    # )
+    _add_transport_boundary_conditions(
+        geometry, fl_model, tr_model, q_next, q_prev, time_index
+    )
 
 
 def _apply_transport_sink_term(
@@ -386,35 +386,35 @@ def _add_transport_boundary_conditions(
     time_index: int,
 ) -> None:
     """Add the boundary conditions to the matrix."""
-    # We get the indices of the four borders and we apply a zero-conc gradient.
+    # We get the indices of the four borders and we apply a zero gradient.
 
     if geometry.nx > 1:
-        idc_left, idc_right = get_owner_neigh_indices(
+        idc_left_border, idc_right_border = get_owner_neigh_indices(
             geometry,
             (slice(0, 1), slice(None)),
             (slice(geometry.nx - 1, geometry.nx), slice(None)),
-            np.array([]),
         )
         tmp = geometry.dy / geometry.mesh_volume
 
-        _un = fl_model.u_darcy_x[:-1, :, time_index].ravel("F")[idc_left]
-        _un_old = fl_model.u_darcy_x[:-1, :, time_index - 1].ravel("F")[idc_left]
+        _un = fl_model.u_darcy_x[:-1, :, time_index].ravel("F")[idc_left_border]
+        _un_old = fl_model.u_darcy_x[:-1, :, time_index - 1].ravel("F")[idc_left_border]
         normal = -1.0
 
-        q_next[idc_left, idc_left] += (
+        q_next[idc_left_border, idc_left_border] += (
             tr_model.crank_nicolson_advection * _un * tmp * normal
         )  # type: ignore
-        q_prev[idc_left, idc_left] -= (
+        q_prev[idc_left_border, idc_left_border] -= (
             (1 - tr_model.crank_nicolson_advection) * _un_old * tmp * normal
         )  # type: ignore
 
-        _un = fl_model.u_darcy_x[1:, :, time_index].ravel("F")[idc_right]
-        _un_old = fl_model.u_darcy_x[1:, :, time_index - 1].ravel("F")[idc_right]
+        # right border
+        _un = fl_model.u_darcy_x[1:, :, time_index].ravel("F")[idc_right_border]
+        _un_old = fl_model.u_darcy_x[1:, :, time_index - 1].ravel("F")[idc_right_border]
         normal = 1.0
-        q_next[idc_right, idc_right] += (
+        q_next[idc_right_border, idc_right_border] += (
             tr_model.crank_nicolson_advection * _un * tmp * normal
         )  # type: ignore
-        q_prev[idc_right, idc_right] -= (
+        q_prev[idc_right_border, idc_right_border] -= (
             (1 - tr_model.crank_nicolson_advection) * _un_old * tmp * normal
         )  # type: ignore
 
