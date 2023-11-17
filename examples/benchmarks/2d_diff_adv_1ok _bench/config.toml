@@ -1,0 +1,3 @@
+is_run_all = true
+max_workers = 2
+language = "english"

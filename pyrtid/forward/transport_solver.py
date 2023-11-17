@@ -535,6 +535,6 @@ def solve_transport_semi_implicit(
         q_next.tocsc(), tmp, M=preconditioner, atol=tr_model.tolerance
     )
 
-    tr_model.lconc[time_index] = res.reshape(geometry.ny, geometry.nx).T
+    tr_model.lconc[time_index] = res.reshape(geometry.nx, geometry.ny, order="F")
 
     return exit_code

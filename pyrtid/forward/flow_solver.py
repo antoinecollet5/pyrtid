@@ -153,6 +153,7 @@ def make_transient_flow_matrices(
     # X contribution
     if geometry.nx >= 2:
         kmean = get_kmean(geometry, fl_model, 0)
+        rhomean = get_rhomean(geometry, tr_model, 0)
 
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
@@ -162,25 +163,26 @@ def make_transient_flow_matrices(
             owner_indices_to_keep=fl_model.free_head_nn,
         )
 
-        tmp = geometry.dy / geometry.dx / geometry.mesh_volume / stocoeff[idc_owner]
+        tmp = (
+            geometry.dy
+            / geometry.dx
+            / geometry.mesh_volume
+            / stocoeff[idc_owner]
+            * kmean[idc_owner]
+        )
 
         # Add gravity effect
         if fl_model.is_gravity:
-            rhomean = get_rhomean(geometry, tr_model, 0)
             tmp *= rhomean[idc_owner] / WATER_DENSITY
 
-        q_next[idc_owner, idc_neigh] -= (
-            fl_model.crank_nicolson * kmean[idc_owner] * tmp
-        )  # type: ignore
-        q_next[idc_owner, idc_owner] += (
-            fl_model.crank_nicolson * kmean[idc_owner] * tmp
-        )  # type: ignore
+        q_next[idc_owner, idc_neigh] -= fl_model.crank_nicolson * tmp  # type: ignore
+        q_next[idc_owner, idc_owner] += fl_model.crank_nicolson * tmp  # type: ignore
         q_prev[idc_owner, idc_neigh] += (
-            (1.0 - fl_model.crank_nicolson) * kmean[idc_owner] * tmp
-        )  # type: ignore
+            1.0 - fl_model.crank_nicolson
+        ) * tmp  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
-            (1.0 - fl_model.crank_nicolson) * kmean[idc_owner] * tmp
-        )  # type: ignore
+            1.0 - fl_model.crank_nicolson
+        ) * tmp  # type: ignore
 
         # Backward scheme
         idc_owner, idc_neigh = get_owner_neigh_indices(
@@ -190,24 +192,31 @@ def make_transient_flow_matrices(
             owner_indices_to_keep=fl_model.free_head_nn,
         )
 
-        tmp = geometry.dy / geometry.dx / geometry.mesh_volume / stocoeff[idc_owner]
+        tmp = (
+            geometry.dy
+            / geometry.dx
+            / geometry.mesh_volume
+            / stocoeff[idc_owner]
+            * kmean[idc_neigh]
+        )
 
-        q_next[idc_owner, idc_neigh] -= (
-            fl_model.crank_nicolson * kmean[idc_neigh] * tmp
-        )  # type: ignore
-        q_next[idc_owner, idc_owner] += (
-            fl_model.crank_nicolson * kmean[idc_neigh] * tmp
-        )  # type: ignore
+        # Add gravity effect
+        if fl_model.is_gravity:
+            tmp *= rhomean[idc_neigh] / WATER_DENSITY
+
+        q_next[idc_owner, idc_neigh] -= fl_model.crank_nicolson * tmp  # type: ignore
+        q_next[idc_owner, idc_owner] += fl_model.crank_nicolson * tmp  # type: ignore
         q_prev[idc_owner, idc_neigh] += (
-            (1.0 - fl_model.crank_nicolson) * kmean[idc_neigh] * tmp
-        )  # type: ignore
+            1.0 - fl_model.crank_nicolson
+        ) * tmp  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
-            (1.0 - fl_model.crank_nicolson) * kmean[idc_neigh] * tmp
-        )  # type: ignore
+            1.0 - fl_model.crank_nicolson
+        ) * tmp  # type: ignore
 
     # Y contribution
     if geometry.ny >= 2:
         kmean = get_kmean(geometry, fl_model, 1)
+        rhomean = get_rhomean(geometry, tr_model, 1)
 
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
@@ -217,25 +226,26 @@ def make_transient_flow_matrices(
             owner_indices_to_keep=fl_model.free_head_nn,
         )
 
-        tmp = geometry.dx / geometry.dy / geometry.mesh_volume / stocoeff[idc_owner]
+        tmp = (
+            geometry.dx
+            / geometry.dy
+            / geometry.mesh_volume
+            / stocoeff[idc_owner]
+            * kmean[idc_owner]
+        )
 
         # Add gravity effect
         if fl_model.is_gravity:
-            rhomean = get_rhomean(geometry, tr_model, 1)
             tmp *= rhomean[idc_owner] / WATER_DENSITY
 
-        q_next[idc_owner, idc_neigh] -= (
-            fl_model.crank_nicolson * kmean[idc_owner] * tmp
-        )  # type: ignore
-        q_next[idc_owner, idc_owner] += (
-            fl_model.crank_nicolson * kmean[idc_owner] * tmp
-        )  # type: ignore
+        q_next[idc_owner, idc_neigh] -= fl_model.crank_nicolson * tmp  # type: ignore
+        q_next[idc_owner, idc_owner] += fl_model.crank_nicolson * tmp  # type: ignore
         q_prev[idc_owner, idc_neigh] += (
-            (1.0 - fl_model.crank_nicolson) * kmean[idc_owner] * tmp
-        )  # type: ignore
+            1.0 - fl_model.crank_nicolson
+        ) * tmp  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
-            (1.0 - fl_model.crank_nicolson) * kmean[idc_owner] * tmp
-        )  # type: ignore
+            1.0 - fl_model.crank_nicolson
+        ) * tmp  # type: ignore
 
         # Backward scheme
         idc_owner, idc_neigh = get_owner_neigh_indices(
@@ -245,24 +255,26 @@ def make_transient_flow_matrices(
             owner_indices_to_keep=fl_model.free_head_nn,
         )
 
-        tmp = geometry.dx / geometry.dy / geometry.mesh_volume / stocoeff[idc_owner]
+        tmp = (
+            geometry.dx
+            / geometry.dy
+            / geometry.mesh_volume
+            / stocoeff[idc_owner]
+            * kmean[idc_neigh]
+        )
 
-        q_next[idc_owner, idc_neigh] -= (
-            fl_model.crank_nicolson * kmean[idc_neigh] * tmp
-        )  # type: ignore
-        q_next[idc_owner, idc_owner] += (
-            fl_model.crank_nicolson * kmean[idc_neigh] * tmp
-        )  # type: ignore
+        # Add gravity effect
+        if fl_model.is_gravity:
+            tmp *= rhomean[idc_neigh] / WATER_DENSITY
+
+        q_next[idc_owner, idc_neigh] -= fl_model.crank_nicolson * tmp  # type: ignore
+        q_next[idc_owner, idc_owner] += fl_model.crank_nicolson * tmp  # type: ignore
         q_prev[idc_owner, idc_neigh] += (
-            (1.0 - fl_model.crank_nicolson) * kmean[idc_neigh] * tmp
-        )  # type: ignore
+            1.0 - fl_model.crank_nicolson
+        ) * tmp  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
-            (1.0 - fl_model.crank_nicolson) * kmean[idc_neigh] * tmp
-        )  # type: ignore
-
-        # Take constant head into account
-        q_next[fl_model.cst_head_nn, fl_model.cst_head_nn] = 1.0
-        q_prev[fl_model.cst_head_nn, fl_model.cst_head_nn] = 0.0
+            1.0 - fl_model.crank_nicolson
+        ) * tmp  # type: ignore
 
     return q_next, q_prev
 
@@ -308,7 +320,7 @@ def solve_flow_stationary(
         * tr_model.ldensity[0]
     )
 
-    compute_u_darcy(fl_model, geometry, time_index)
+    compute_u_darcy(fl_model, tr_model, geometry, time_index)
 
     compute_u_darcy_div(fl_model, geometry, time_index)
 
@@ -389,7 +401,7 @@ def find_ux_boundary_density(
     rhomean = arithmetic_mean(
         tr_model.ldensity[-1][:-1, :], tr_model.ldensity[-1][1:, :]
     )
-    if fl_model.get_vertical_dim() == VerticalAxis.DX:
+    if fl_model.vertical_axis == VerticalAxis.DX:
         coef = rhomean * GRAVITY
     else:
         coef = 0.0
@@ -427,10 +439,11 @@ def find_uy_boundary_density(
     rhomean = arithmetic_mean(
         tr_model.ldensity[-1][:, :-1], tr_model.ldensity[-1][:, 1:]
     )
-    if fl_model.get_vertical_dim() == VerticalAxis.DY:
+    if fl_model.vertical_axis == VerticalAxis.DY:
         coef = rhomean * GRAVITY
     else:
         coef = 0.0
+
     out[:, 1:-1] = (
         -kmean
         / WATER_DENSITY
@@ -606,7 +619,7 @@ def get_gravity_gradient(
             owner_indices_to_keep=fl_model.free_head_nn,
         )
 
-        tmp[idc_owner] += (
+        tmp[idc_owner] -= (
             1.0
             / geometry.mesh_volume
             / stocoeff[idc_owner]
@@ -659,8 +672,6 @@ def get_gravity_gradient(
             * kmean[idc_neigh]
         )
 
-    # print(tmp)
-
     return tmp
 
 
@@ -691,6 +702,10 @@ def solve_flow_transient_semi_implicit(
     # Only for free head
     _q_next.setdiag(_q_next.diagonal() + 1 / time_params.dt)
     _q_prev.setdiag(_q_prev.diagonal() + 1 / time_params.dt)
+
+    # Take constant head into account
+    _q_next[fl_model.cst_head_nn, fl_model.cst_head_nn] = 1.0
+    _q_prev[fl_model.cst_head_nn, fl_model.cst_head_nn] = 0.0
 
     # csc format for efficiency
     _q_next = _q_next.tocsc()
@@ -730,23 +745,20 @@ def solve_flow_transient_semi_implicit(
     )
 
     if fl_model.is_gravity:
-        fl_model.lpressure.append(res.reshape(geometry.ny, geometry.nx).T)
+        fl_model.lpressure.append(res.reshape(geometry.nx, geometry.ny, order="F"))
     else:
-        fl_model.lhead.append(res.reshape(geometry.ny, geometry.nx).T)
+        fl_model.lhead.append(res.reshape(geometry.nx, geometry.ny, order="F"))
 
     if fl_model.is_gravity:
         # update the pressure field
         fl_model.lhead.append(
-            (res.reshape(geometry.ny, geometry.nx).T / GRAVITY / tr_model.ldensity[-1])
+            (fl_model.lpressure[-1] / GRAVITY / tr_model.ldensity[-1])
             + fl_model._get_mesh_center_vertical_pos().T
         )
     else:
         # update the pressure field
         fl_model.lpressure.append(
-            (
-                res.reshape(geometry.ny, geometry.nx).T
-                - fl_model._get_mesh_center_vertical_pos().T
-            )
+            (fl_model.lhead[-1] - fl_model._get_mesh_center_vertical_pos().T)
             * GRAVITY
             * WATER_DENSITY
         )
