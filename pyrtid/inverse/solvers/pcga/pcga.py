@@ -100,8 +100,8 @@ class PCGA:
         is_post_cov: bool = False,
         is_verbose: bool = True,
         is_save_jac: bool = False,
-        # PCGA parameters (purturbation size)
-        precision=1.0e-8,
+        # PCGA parameters (perturbation size)
+        eps=1.0e-8,
     ) -> None:
         """
 
@@ -169,7 +169,7 @@ class PCGA:
             _description_, by default True
         is_save_jac : bool, optional
             _description_, by default False
-        precision : _type_, optional
+        eps : _type_, optional
             _description_, by default 1.0e-8
         """
         ##### Forward Model
@@ -194,7 +194,7 @@ class PCGA:
         self.lm_smax: Optional[float] = lm_smax
         self.max_it_ls: int = max_it_ls
         self.maxiter: int = maxiter
-        self.restol = restol
+        self.restol: float = restol
         self.is_post_cov: bool = is_post_cov
         self.is_verbose: bool = is_verbose
         self.post_cov_estimation: Optional[PostCovEstimation] = post_cov_estimation
@@ -205,7 +205,7 @@ class PCGA:
             self.post_cov_estimation = PostCovEstimation.DIRECT
 
         # PCGA parameters (purturbation size)
-        self.precision: float = precision
+        self.eps: float = eps
 
         # TODO: parametrize
         self.nopts_lm = 4
@@ -261,7 +261,7 @@ class PCGA:
             "Number of observations": self.d_dim,
             "Number of principal components (n_pc)": self.Q.n_pc,
             "Maximum Gauss-Newton iterations": self.maxiter,
-            "Machine precision (delta = sqrt(precision))": self.precision,
+            "Machine eps (delta = sqrt(eps))": self.eps,
             "Tol for iterations (norm(sol_diff)/norm(sol))": self.restol,
             "Levenberg-Marquardt (is_lm)": self.is_lm,
             "Posterior covariance computation": self.post_cov_estimation,
@@ -369,7 +369,7 @@ class PCGA:
         else:
             return None
 
-    def jac_vect(self, x, s, simul_obs, precision, delta=None):
+    def jac_vect(self, x, s, simul_obs, eps, delta=None):
         """
         Jacobian times Matrix (Vectors) in Parallel
         perturbation interval delta determined following Brown and Saad [1990]
@@ -391,26 +391,26 @@ class PCGA:
 
                 deltas[i] = (
                     signmag
-                    * sqrt(precision)
+                    * sqrt(eps)
                     * (max(abs(mag), absmag))
                     / ((np.linalg.norm(x[:, i : i + 1]) + np.finfo(float).eps) ** 2)
                 )
 
                 if deltas[i] == 0:  # s = 0 or x = 0
                     print(
-                        "%d-th delta: signmag %g, precision %g, max abs %g, norm %g"
+                        "%d-th delta: signmag %g, eps %g, max abs %g, norm %g"
                         % (
                             i,
                             signmag,
-                            precision,
+                            eps,
                             (max(abs(mag), absmag)),
                             (np.linalg.norm(x) ** 2),
                         )
                     )
 
-                    deltas[i] = sqrt(precision)
+                    deltas[i] = sqrt(eps)
 
-                    print("%d-th delta: assigned as sqrt(precision) - %g", deltas[i])
+                    print("%d-th delta: assigned as sqrt(eps) - %g", deltas[i])
                     # raise ValueError('delta is zero? - plz check your
                     # s_init is within a reasonable range')
 
@@ -496,7 +496,7 @@ class PCGA:
         m: int = self.s_dim
         p: int = self.drift.beta_dim
         n_pc: int = self.Q.n_pc
-        precision: float = self.precision
+        eps: float = self.eps
 
         temp = np.zeros((m, p + n_pc + 1), dtype="d")  # [HX, HZ, Hs]
 
@@ -504,7 +504,7 @@ class PCGA:
         temp[:, p : p + n_pc] = np.copy(Z)
         temp[:, p + n_pc : p + n_pc + 1] = np.copy(s_cur)
 
-        Htemp = self.jac_vect(temp, s_cur, simul_obs, precision)
+        Htemp = self.jac_vect(temp, s_cur, simul_obs, eps)
 
         HX = Htemp[:, 0:p]
         HZ = Htemp[:, p : p + n_pc]
@@ -1365,7 +1365,6 @@ class PCGA:
 
         s_init = self.s_init
         self.maxiter
-        restol = self.restol
 
         obj = VERY_LARGE_NUMBER
 
@@ -1458,7 +1457,7 @@ class PCGA:
 
             self.istate.objvals.append(float(obj))
 
-            if res < restol:
+            if res < self.restol:
                 i + 1
                 break
 

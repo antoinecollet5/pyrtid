@@ -49,10 +49,9 @@ Heterogeneities Using Inverse Reactive Transport Modeling: an Example Relevant f
 Characterizing Arsenic Mobilization and Distribution, Advances in
 Water Resources, 88: 186-197, 2016
 """
-from dataclasses import dataclass
-from typing import Any, Dict, Optional, Sequence
-
-from pyPCGA import PCGA
+import multiprocessing
+from dataclasses import astuple, dataclass
+from typing import Any, Callable, Optional, Sequence, Union
 
 from pyrtid.inverse.executors.base import (
     BaseInversionExecutor,
@@ -60,6 +59,8 @@ from pyrtid.inverse.executors.base import (
     base_solver_config_params_ds,
     register_params_ds,
 )
+from pyrtid.inverse.regularization import DriftMatrix, EigenFactorizedCovarianceMatrix
+from pyrtid.inverse.solvers import PCGA, PostCovEstimation
 from pyrtid.utils.types import NDArrayFloat
 
 pcga_solver_config_params_ds = """solver_kwargs: Optional[Dict[str, Any]]
@@ -78,7 +79,30 @@ class PCGASolverConfig(BaseSolverConfig):
     ----------
     """
 
-    solver_kwargs: Optional[Dict[str, Any]] = None
+    eig_cov: Optional[EigenFactorizedCovarianceMatrix] = None
+    drift: Optional[DriftMatrix] = None
+    prior_s_var: Optional[Union[float, NDArrayFloat]] = None
+    callback: Optional[Callable] = None
+    is_line_search: bool = False
+    is_lm: bool = False
+    is_direct_solve: bool = False
+    is_use_preconditioner: bool = False
+    post_cov_estimation: Optional[PostCovEstimation] = None
+    is_objfun_exact: bool = False  # former objeval
+    max_it_lm: int = multiprocessing.cpu_count()
+    alphamax_lm: float = 10.0**3.0  # does it sound ok?
+    lm_smin: Optional[float] = None
+    lm_smax: Optional[float] = None
+    max_it_ls: int = 20
+    maxiter: int = 10
+    restol: float = 1e-2
+    is_post_cov: bool = False
+    is_verbose: bool = True
+    is_save_jac: bool = False
+    eps = 1.0e-8
+
+    def __iter__(self):
+        return iter(astuple(self))
 
 
 class PCGAInversionExecutor(BaseInversionExecutor[PCGASolverConfig]):
@@ -88,15 +112,37 @@ class PCGAInversionExecutor(BaseInversionExecutor[PCGASolverConfig]):
         """Initiate a solver with its args."""
         # Array with grid coordinates. (X, Y, Z)...
         # Note: for regular grid you don't need to specify pts.
-        self.pts = None
-        self.solver: PCGA = PCGA(
-            self._map_forward_model_wrapper,
-            self.data_model.s_init.ravel(),  # Need to be a vector
-            self.pts,
-            params=self.solver_config.solver_kwargs,
-            obs=self.data_model.obs,
-            random_state=self.solver_config.random_state,
-        )
+        if self.solver_config.eig_cov is not None:
+            self.solver: PCGA = PCGA(
+                self.data_model.s_init.ravel(),  # Must be a vector
+                self.data_model.obs,
+                self.data_model.cov_obs,
+                self._map_forward_model_wrapper,
+                self.solver_config.eig_cov,
+                drift=self.solver_config.drift,
+                prior_s_var=self.solver_config.prior_s_var,
+                callback=self.solver_config.callback,
+                is_line_search=self.solver_config.is_line_search,
+                is_lm=self.solver_config.is_lm,
+                is_direct_solve=self.solver_config.is_direct_solve,
+                is_use_preconditioner=self.solver_config.is_use_preconditioner,
+                random_state=self.solver_config.random_state,
+                post_cov_estimation=self.solver_config.post_cov_estimation,
+                is_objfun_exact=self.solver_config.is_objfun_exact,
+                max_it_lm=self.solver_config.max_it_lm,
+                alphamax_lm=self.solver_config.alphamax_lm,
+                lm_smin=self.solver_config.lm_smin,
+                lm_smax=self.solver_config.lm_smax,
+                max_it_ls=self.solver_config.max_it_ls,
+                maxiter=self.solver_config.maxiter,
+                restol=self.solver_config.restol,
+                is_post_cov=self.solver_config.is_post_cov,
+                is_verbose=self.solver_config.is_verbose,
+                is_save_jac=self.solver_config.is_save_jac,
+                eps=self.solver_config.eps,
+            )
+        else:
+            raise ValueError()
 
     def _get_solver_name(self) -> str:
         """Return the solver name."""
@@ -110,7 +156,7 @@ class PCGAInversionExecutor(BaseInversionExecutor[PCGASolverConfig]):
         required by the HM algorithms.
         """
         super().run()
-        return self.solver.Run()
+        return self.solver.run()
 
     def _map_forward_model_wrapper(
         self, s_ensemble: NDArrayFloat, is_parallel: bool = False, ncores: int = 1

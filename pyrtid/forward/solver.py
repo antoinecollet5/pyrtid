@@ -80,7 +80,7 @@ class ForwardSolver:
                 self.model.fl_model.q_next,
                 self.model.fl_model.q_prev,
             ) = make_transient_flow_matrices(
-                self.model.geometry, self.model.fl_model, self.model.time_params
+                self.model.geometry, self.model.fl_model, self.model.tr_model
             )
 
     def initialize_transport_matrices(self) -> None:
@@ -114,7 +114,7 @@ class ForwardSolver:
 
         # Update the initial density
         self.model.tr_model.ldensity[0] = get_density(
-            self.model.tr_model.lconc[0], self.model.gch_params.mw
+            self.model.tr_model.lconc[0], self.model.gch_params.Ms
         )
 
         if self.model.fl_model.regime == FlowRegime.STATIONARY:
@@ -127,7 +127,9 @@ class ForwardSolver:
                 0,
             )
         else:
-            compute_u_darcy(self.model.fl_model, self.model.geometry, 0)
+            compute_u_darcy(
+                self.model.fl_model, self.model.tr_model, self.model.geometry, 0
+            )
             # To reproduce HYTEC's behavior
             self.model.fl_model.lu_darcy_x[-1][:, :] = 0.0
             self.model.fl_model.lu_darcy_y[-1][:, :] = 0.0
@@ -211,10 +213,6 @@ class ForwardSolver:
             # Update the number of FPI
             self.model.time_params.nfpi += 1
 
-            self.model.tr_model.ldensity.append(
-                get_density(self.model.tr_model.lconc[-1], self.model.gch_params.mw)
-            )
-
             # Solve the transport
             solve_transport_semi_implicit(
                 self.model.geometry,
@@ -251,6 +249,11 @@ class ForwardSolver:
         # Save the number of fixed point iterations required
         self.model.time_params.save_nfpi()
 
+        # Update the density for the current timestep
+        self.model.tr_model.ldensity.append(
+            get_density(self.model.tr_model.lconc[-1], self.model.gch_params.Ms)
+        )
+
 
 def get_density(conc: NDArrayFloat, mw: float) -> NDArrayFloat:
     """
@@ -258,9 +261,9 @@ def get_density(conc: NDArrayFloat, mw: float) -> NDArrayFloat:
     Parameters
     ----------
     conc : NDArrayFloat
-        Array of concentration (2D) with shape (Nx, Ny).
+        Array of concentration (2D) with shape (Nx, Ny) in mol/kg.
     mv: float
-        Molar weight of the species.
+        Molar weight of the species (g/mol).
 
     Returns
     -------
@@ -274,7 +277,7 @@ def get_density(conc: NDArrayFloat, mw: float) -> NDArrayFloat:
     # the molar weight of water (sum of the two previous).
     # tds += H_PLUS_CONC * WATER_MW;
     tds = np.ones(conc.shape) * H_PLUS_CONC * WATER_MW
-    tds += conc * mw
+    tds += conc * mw / 1000  # we divide per 1000 because we need kg/mol
 
     # 2) compute the density (this is implemented only for water solvent)
     # in kg/l
