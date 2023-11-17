@@ -740,31 +740,35 @@ class FlowModel(ABC):
     def set_constant_head_indices(self) -> None:
         """Set the indices of nodes with constant head."""
         node_numbers = np.array([], dtype=np.int32)
+        nx: int = self.lhead[0].shape[0]  # type: ignore
+        ny: int = self.lhead[0].shape[1]  # type: ignore
         for condition in self.boundary_conditions:
             if isinstance(condition, ConstantHead):
                 # 1) Get the new constant head node numbers
                 new_nn: NDArrayInt = span_to_node_numbers_2d(
                     condition.span,
-                    self.lhead[0].shape[0],
-                    self.lhead[0].shape[1],
+                    nx,
+                    ny,
                 )
                 # 2) add the new nn to the global list of nn
                 node_numbers = np.hstack([node_numbers, new_nn])
                 # 3) determine if the segment is along one of the 4 borders of the
                 # domain. First we start by getting the indices in the grid
-                idx = node_number_to_indices(
-                    new_nn, self.lhead[0].shape[0], self.lhead[0].shape[1]
-                )
+                idx = node_number_to_indices(new_nn, nx, ny)
                 # The span must be continuous (rectangular group of meshes),
                 # so we can estimate the direction of constant head segment:
                 # must be more than 2 values on one of the borders
-                if np.count_nonzero(idx[0] == 0) > 1:
+                non_zero_west: int = np.count_nonzero(idx[0] == 0)
+                if non_zero_west > 1 or (non_zero_west == 1 and ny == 1):
                     self.is_boundary_west[idx[1]] = True
-                if np.count_nonzero(idx[0] == self.lhead[0].shape[0] - 1) > 1:
+                non_zero_east: int = np.count_nonzero(idx[0] == nx - 1)
+                if non_zero_east > 1 or (non_zero_east == 1 and ny == 1):
                     self.is_boundary_east[idx[1]] = True
-                if np.count_nonzero(idx[1] == 0) > 1:
+                non_zero_north: int = np.count_nonzero(idx[1] == 0)
+                if non_zero_north > 1 or (non_zero_north == 1 and nx == 1):
                     self.is_boundary_north[idx[1]] = True
-                if np.count_nonzero(idx[1] == self.lhead[0].shape[1] - 1) > 1:
+                non_zero_south: int = np.count_nonzero(idx[1] == ny - 1)
+                if non_zero_south > 1 or (non_zero_south == 1 and nx == 1):
                     self.is_boundary_south[idx[1]] = True
 
         # remove duplicates from the global list
