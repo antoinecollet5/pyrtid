@@ -523,7 +523,6 @@ class HCovarianceMatrix(KernelCovarianceMatrix):
             callback=residual,
             M=self.preconditioner,
             atol=0.0,
-            callback_type="legacy",
         )
         self.solvmatvecs += residual.itercount
         return x
@@ -545,10 +544,22 @@ class EigenFactorizedCovarianceMatrix(CovarianceMatrix):
         eig_vals: NDArrayFloat,
         eig_vects: NDArrayFloat,
     ) -> None:
-        """Initialize the instance."""
+        """
+        Initialize the instance.
+
+        Parameters
+        ----------
+        eig_vals : NDArrayFloat
+            1D vector of eigen values with size `n_pc`.
+        eig_vects : NDArrayFloat
+            2D arrays of eigen vectors (columns) with size `(Ns, n_pc)`. Ns being the
+            number of elements in the original covariance matrix.
+        """
         super().__init__((eig_vects.shape[0], eig_vects.shape[0]))
         self.eig_vals: NDArrayFloat = eig_vals
         self.eig_vects: NDArrayFloat = eig_vects
+
+        assert self.eig_vals.size == self.eig_vects.shape[1]
 
     @property
     def n_pc(self) -> int:
@@ -563,7 +574,7 @@ class EigenFactorizedCovarianceMatrix(CovarianceMatrix):
         """Return the covariance matrix times the vector x."""
         return np.dot(
             self.eig_vects,
-            np.multiply(self.eig_vals, (np.dot(self.eig_vects.T, x.reshape(-1, 1)))),
+            np.multiply(self.eig_vals, np.dot(self.eig_vects.T, x.reshape(-1, 1))),
         )
 
     def solve(self, x: NDArrayFloat) -> NDArrayFloat:
@@ -690,8 +701,8 @@ def get_prior_eigen_factorization(
         logging.warning("Warning: n_pc changed to %d for positive eigenvalues" % (n_pc))
 
     logging.info(
-        "- 1st eigv : %g, %d-th eigv : %g, ratio: %g"
-        % (eig_vals[0], n_pc, eig_vals[-1], eig_vals[-1] / eig_vals[0])
+        f"- 1st eigv : {eig_vals[0]}, {n_pc}-th eigv : {eig_vals[-1]}, "
+        f"ratio: {eig_vals[-1] / eig_vals[0]}"
     )
     return eig_vals, eig_vects
 
