@@ -369,6 +369,7 @@ def minimize_lbfgsb(
             W,
             invMfactors,
             theta,
+            n_iterations,
         )
         d = xbar - x
 

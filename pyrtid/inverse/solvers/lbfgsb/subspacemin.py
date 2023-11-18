@@ -268,6 +268,7 @@ def direct_primal_subspace_minimization(
     W: NDArrayFloat,
     invMfactors: Tuple[NDArrayFloat, NDArrayFloat],
     theta: float,
+    n_iterations: int,
 ) -> NDArrayFloat:
     r"""
     Computes an approximate solution of the subspace problem.
@@ -346,12 +347,19 @@ def direct_primal_subspace_minimization(
     # WTZ = W.T.dot(Z.todense())
     WTZ = Z.T.dot(W).T
 
-    r = grad + theta * (xc - x) - W.dot(bmv(invMfactors, c))
+    r = grad + theta * (xc - x)
+    # At iter 0, M is [[0.0]] and so is invMfactors
+    if n_iterations != 0:
+        r -= W.dot(bmv(invMfactors, c))
+
     rHat = [r[ind] for ind in free_vars]
     v = WTZ.dot(rHat)
 
     # Factorization of M^{-1}(I - 1/theta M WT Z @ ZT @ W))
-    LK: Optional[NDArrayFloat] = formk(X, G, Z, A, WTZ, invMfactors, theta)
+    if n_iterations != 0:
+        LK: Optional[NDArrayFloat] = formk(X, G, Z, A, WTZ, invMfactors, theta)
+    else:
+        LK = None
 
     if LK is not None:
         # LK is the lowest triangle of the cholesky factorization
@@ -360,8 +368,13 @@ def direct_primal_subspace_minimization(
         v[: int(LK.shape[0] / 2)] *= -1
         v = sp.linalg.solve_triangular(LK.T, v, lower=False)
     else:
-        v = bmv(invMfactors, v)
-        N = -bmv(invMfactors, invThet * WTZ.dot(np.transpose(WTZ)))
+        if n_iterations != 0:
+            v = bmv(invMfactors, v)
+            N = -bmv(invMfactors, invThet * WTZ.dot(np.transpose(WTZ)))
+        else:
+            M = invMfactors[0] @ invMfactors[1]
+            v = M.dot(v)
+            N = -M.dot(invThet * WTZ.dot(np.transpose(WTZ)))
         # Add the identity matrix: this is the same as N = np.eye(N.shape[0]) - M.dot(N)
         # but much faster
         np.fill_diagonal(N, N.diagonal() + 1)
