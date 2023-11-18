@@ -658,9 +658,9 @@ def solve_adj_flow(
     )
 
     # Add the source terms from mob observations (adjoint transport)
-    # tmp += _get_adjoint_transport_src_terms(
-    #     geometry, fl_model, a_fl_model, time_index, True
-    # )
+    tmp += _get_adjoint_transport_src_terms(
+        geometry, fl_model, a_fl_model, time_index, True
+    )
 
     # Solve Ax = b with A sparse using LU preconditioner
     res, exit_code = gmres(_q_next, tmp, M=preconditioner, atol=1e-15)

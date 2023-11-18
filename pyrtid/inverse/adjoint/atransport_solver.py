@@ -472,18 +472,54 @@ def solve_adj_transport_transient_semi_implicit(
             geometry, fl_model, tr_model, a_tr_model, q_next, q_prev, time_index
         )
 
+        a_tr_model.a_conc[:, :, -1].size
+
+        # # Add 1/dt for the left term contribution: only for free head
+        # diag = np.zeros(shape)
+        # diag[fl_model.free_head_nn] += float(1.0 / time_params.ldt[time_index - 1])
+        # # One for the cts head -> we must divide by storage coef and mesh volume
+        # because
+        # # we divide the other terms in _q_prev and q_next (better conditionning)
+        # diag[fl_model.cst_head_nn] += (
+        #     1.0
+        #     / fl_model.storage_coefficient.ravel("F")[fl_model.cst_head_nn]
+        #     / geometry.mesh_volume
+        # )
+
+        # _q_next.setdiag(_q_next.diagonal() + diag)
+        # diag = np.zeros(a_fl_model.a_head[:, :, -1].size)
+        # # Need a try - except for n = N_{ts} resolution:
+        # then \Delta t^{N_{ts}+1} does not
+        # # exists
+        # try:
+        #     diag[fl_model.free_head_nn] += float(1.0 / time_params.ldt[time_index])
+        #     diag[fl_model.cst_head_nn] += (
+        #         1.0
+        #         / fl_model.storage_coefficient.ravel("F")[fl_model.cst_head_nn]
+        #         / geometry.mesh_volume
+        #     )
+        # except IndexError:
+        #     pass
+        # _q_prev.setdiag(_q_prev.diagonal() + diag)
+
         # Add 1/dt * \omgea for the left term contribution
         # Note; if the porosity and the timesteps are added here, it is to get the
         # highest values as possible on the diagonal of the matrices
         # -> better conditionning and easier LU preconditioning.
         q_next.setdiag(
             q_next.diagonal()
-            + tr_model.porosity.flatten("F") / time_params.ldt[time_index - 2]
-        )
-        q_prev.setdiag(
-            q_prev.diagonal()
             + tr_model.porosity.flatten("F") / time_params.ldt[time_index - 1]
         )
+
+        # Need a try - except for n = N_{ts} resolution: then \Delta t^{N_{ts}+1} does
+        # not exists
+        try:
+            q_prev.setdiag(
+                q_prev.diagonal()
+                + tr_model.porosity.flatten("F") / time_params.ldt[time_index]
+            )
+        except IndexError:
+            pass
 
         a_tr_model.q_next = q_next
         a_tr_model.q_prev = q_prev

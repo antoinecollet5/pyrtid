@@ -253,7 +253,7 @@ def get_permeability_adjoint_gradient(
     """
     grad = _get_perm_gradient_from_diffusivity_eq(
         fwd_model, adj_model
-    )  # + _get_perm_gradient_from_darcy_eq(fwd_model, adj_model)
+    ) + _get_perm_gradient_from_darcy_eq(fwd_model, adj_model)
     # Add the adjoint sources for initial time (t0)
     return grad + adj_model.a_fl_model.a_permeability_sources.getcol(
         0
