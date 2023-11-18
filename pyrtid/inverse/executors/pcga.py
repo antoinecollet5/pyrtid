@@ -142,7 +142,10 @@ class PCGAInversionExecutor(BaseInversionExecutor[PCGASolverConfig]):
                 eps=self.solver_config.eps,
             )
         else:
-            raise ValueError()
+            raise ValueError(
+                "You must provide a factorized covariance "
+                "matrix through the `eig_cov` argument in the configuration!"
+            )
 
     def _get_solver_name(self) -> str:
         """Return the solver name."""

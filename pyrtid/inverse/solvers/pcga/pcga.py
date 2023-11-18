@@ -52,7 +52,7 @@ class IntervalState:
     # keep track of some values (best, init)
     s_best = None
     beta_best = None
-    simul_obs_best = None
+    simul_obs_best = np.inf
     iter_best = 0
     obj_best = 1.0e20
     simul_obs_init = None
@@ -322,6 +322,7 @@ class PCGA:
         # From iterative_ensemble_smoother code
         # Only compute the covariance factorization once
         # If it's a full matrix, we gain speedup by only computing cholesky once
+        # Note that we store the upper triangle.
         # If it's a diagonal, we gain speedup by never having to compute cholesky
         if cov.ndim == 2:
             self.cov_obs_cholesky: NDArrayFloat = sp.linalg.cholesky(cov, lower=False)
@@ -329,8 +330,16 @@ class PCGA:
             self.cov_obs_cholesky = np.sqrt(cov)  # type: ignore
 
         # For now only 1D arrays are supported
-        # TODO: add support for 2D arrays
-        self._cov_obs: NDArrayFloat = cov.reshape(-1, 1)
+        self._cov_obs: NDArrayFloat = cov
+
+    def cov_obs_solve(self, v: NDArrayFloat) -> NDArrayFloat:
+        """Return cov_obs^{-1} @ v."""
+        if self.cov_obs.ndim == 2:
+            # The false means we use the upper triangle which is store in
+            # self.cov_obs
+            return sp.linalg.cho_solve((self.cov_obs_solve, False), v)
+        # Case 1D, the inverse of cov_obs (R matrix) is a diagonal matrix
+        return (1.0 / self.cov_obs) * v
 
     @property
     def prior_s_var(self) -> NDArrayFloat:
@@ -354,14 +363,6 @@ class PCGA:
     @property
     def sqrtR(self) -> NDArrayFloat:
         return np.sqrt(self.cov_obs)
-
-    @property
-    def invsqrtR(self) -> NDArrayFloat:
-        return 1.0 / np.sqrt(self.cov_obs)
-
-    @property
-    def invR(self) -> NDArrayFloat:
-        return 1.0 / self.cov_obs
 
     def get_v0(self, size) -> Optional[NDArrayFloat]:
         if self.random_state is not None:
@@ -452,16 +453,17 @@ class PCGA:
         if simul_obs is None:
             simul_obs = self.forward_model(s_cur)
 
-        # TODO: replace with prior for the obj fun
         smxb = s_cur - np.dot(self.drift.mat, beta_cur)
         ymhs = self.obs - simul_obs
 
-        invQs = self.Q.solve(smxb)
-        # TODO: replace with solve
-        obj = 0.5 * np.dot(ymhs.T, np.divide(ymhs, self.cov_obs)) + 0.5 * np.dot(
-            smxb.T, invQs
+        smxb = (s_cur - np.dot(self.drift.mat, beta_cur)).ravel()
+        ymhs = (self.obs - simul_obs).ravel()
+        return float(
+            (
+                0.5 * ymhs.T.dot(self.cov_obs_solve(ymhs))
+                + 0.5 * smxb.T.dot(self.Q.solve(smxb))
+            )[0]
         )
-        return obj
 
     def objective_function_no_beta(self, s_cur, simul_obs) -> float:
         """
@@ -487,10 +489,9 @@ class PCGA:
         tmp = np.linalg.solve(
             XTinvQX, XTinvQs
         )  # inexpensive solve p by p where p <= 3, usually p = 1 (scalar division)
-        obj = 0.5 * np.dot(ymhs.T, np.divide(ymhs, self.cov_obs)) + 0.5 * (
+        return 0.5 * ymhs.T.dot(self.cov_obs_solve(ymhs)) + 0.5 * (
             np.dot(invZs.T, invZs) - np.dot(XTinvQs.T, tmp)
         )
-        return obj
 
     def jac_mat(self, s_cur, simul_obs, Z):
         m: int = self.s_dim
@@ -663,22 +664,17 @@ class PCGA:
 
             tmp_cR = np.zeros((n - p, 1), "d")
 
-            if R.shape[0] == 1:
-                tmp_cR[:] = np.multiply(alpha[i], self.cov_obs)
-                tmp_cR[: sigma_cR.shape[0]] = (
-                    tmp_cR[: sigma_cR.shape[0]] + (sigma_cR[:, np.newaxis]) ** 2
-                )
-            else:  # need to fix this part later 12/7/2020
-                tmp_cR[:] = np.multiply(alpha[i], R[:-p])
+            # TODO: need to fix this part later 12/7/2020
+            tmp_cR[:] = np.multiply(alpha[i], R[:-p]).reshape(-1, 1)
 
-                uniqueR = np.unique(R)
-                lenR = len(uniqueR)
-                lenRi = int((n - sigma_cR.shape[0]) / lenR)
-                strtidx = sigma_cR.shape[0]
-                for iR in range(lenR):
-                    tmp_cR[strtidx : strtidx + lenRi] = alpha[iR] * uniqueR[iR]
-                    strtidx = strtidx + lenRi
-                tmp_cR[strtidx:] = alpha[iR] * uniqueR[iR]
+            uniqueR = np.unique(R)
+            lenR = len(uniqueR)
+            lenRi = int((n - sigma_cR.shape[0]) / lenR)
+            strtidx = sigma_cR.shape[0]
+            for iR in range(lenR):
+                tmp_cR[strtidx : strtidx + lenRi] = alpha[iR] * uniqueR[iR]
+                strtidx = strtidx + lenRi
+            tmp_cR[strtidx:] = alpha[iR] * uniqueR[iR]
 
             tmp_cR[tmp_cR <= 0] = 1.0e-16  # temporary fix for zero tmp_cR
             cR_all[:, i : i + 1] = Q2_all[:, i : i + 1] * np.exp(
@@ -805,40 +801,23 @@ class PCGA:
         # will add more description here
         if self.is_use_preconditioner:
             tStart_precond = time()
+
             # GHEP : HQHT u = lamdba R u => u = R^{-1/2} y
-            if R.shape[0] == 1:
-                # original implementation was sqrt of R^{-1/2} HZ n by n_pc
-                # svds cannot compute entire n_pc eigenvalues so do this for
-                # n by n matrix
-                # this leads to double the cost
-                def pmv(v):
-                    return np.multiply(
-                        self.invsqrtR,
-                        np.dot(HZ, (np.dot(HZ.T, np.multiply(self.invsqrtR, v)))),
-                    )
-                    # return np.multiply(self.invsqrtR,np.dot(HZ,v))
+            # original implementation was sqrt of R^{-1/2} HZ n by n_pc
+            # svds cannot compute entire n_pc eigenvalues so do this for
+            # n by n matrix
+            # this leads to double the cost
+            # TODO: this is not working for 2D R matrix
+            def pmv(v):
+                return np.multiply(
+                    1 / np.sqrt(R),
+                    np.dot(HZ, (np.dot(HZ.T, np.multiply(1 / np.sqrt(R), v)))),
+                )
+                # TODO: why is it different ?
+                # return np.multiply(self.invsqrtR,np.dot(HZ,v))
 
-                def prmv(v):
-                    # return np.dot(HZ.T,np.multiply(self.invsqrtR,v))
-                    return pmv(v)
-
-            else:
-                # n by n
-                def pmv(v):
-                    return np.multiply(
-                        self.invsqrtR.reshape(v.shape),
-                        np.dot(
-                            HZ,
-                            (
-                                np.dot(
-                                    HZ.T, np.multiply(self.invsqrtR.reshape(v.shape), v)
-                                )
-                            ),
-                        ),
-                    )
-
-                def prmv(v):
-                    return pmv(v)
+            def prmv(v):
+                return pmv(v)
 
             # if self.is_verbose:
             #    print('preconditioner construction using Generalized
@@ -873,7 +852,8 @@ class PCGA:
             # % (Psi_sigma[0], Psi_sigma.min(), Psi_sigma.max()))
             # print(Psi_sigma)
 
-            Psi_U = np.multiply(self.invsqrtR, Psi_U)
+            # TODO: change
+            Psi_U = np.multiply(1 / np.sqrt(R).reshape(-1, 1), Psi_U)
             # if R.shape[0] == 1:
             # Psi_sigma = Psi_sigma**2 # because we use svd(HZ)
             # instead of svd(HQHT+R)
@@ -1000,8 +980,9 @@ class PCGA:
                             Psi_U_i.T, v
                         )  # n_pc by n * v (can be (n,) or (n,p)) = (n_pc,) or (n_pc,p)
 
-                        alphainvRv = np.multiply(
-                            np.multiply((1.0 / alpha[i]), self.invR), v
+                        # TODO: remove these stupid reshapes
+                        alphainvRv = (1.0 / alpha[i]) * self.cov_obs_solve(v).reshape(
+                            -1, 1
                         )
 
                         if Psi_UTv.ndim == 1:
@@ -1034,14 +1015,10 @@ class PCGA:
                         )
                         Psi_U_i = np.multiply((1.0 / sqrt(alpha[i])), Psi_U)
                         Psi_UTv = np.dot(Psi_U_i.T, v)
-
+                        # TODO: remove these stupid reshape by using vectors
+                        # and matrices
+                        alphainvRv = (1.0 / alpha[i]) * self.cov_obs_solve(v)
                         if Psi_UTv.ndim == 1:
-                            alphainvRv = np.multiply(
-                                np.multiply(
-                                    (1.0 / alpha[i]), self.invR.reshape(v.shape)
-                                ),
-                                v,
-                            )
                             PsiDPsiTv = np.dot(
                                 Psi_U_i,
                                 np.multiply(
@@ -1050,13 +1027,9 @@ class PCGA:
                                 ),
                             )
                         elif Psi_UTv.ndim == 2:  # for invPsi(HX)
-                            # 14/06/2018 Harry
-                            # may need to change this later in a more general way
-                            RMat = np.tile(
-                                np.multiply((1.0 / alpha[i]), self.invR),
-                                Psi_UTv.shape[1],
-                            )
-                            alphainvRv = np.multiply(RMat, v)
+                            alphainvRv = (
+                                (1.0 / alpha[i]) * self.cov_obs_solve(v.ravel())
+                            ).reshape(-1, 1)
                             Dmat = np.tile(
                                 Dvec[: Psi_U_i.shape[1]], (Psi_UTv.shape[1], 1)
                             ).T  # n_pc by p
@@ -1098,6 +1071,8 @@ class PCGA:
                     maxiter=solver_maxiter,
                     callback=callback,
                     M=P,
+                    atol=itertol,
+                    callback_type="legacy",
                 )
                 if self.is_verbose:
                     print(
@@ -1136,6 +1111,8 @@ class PCGA:
                         tol=itertol,
                         maxiter=solver_maxiter,
                         callback=callback,
+                        atol=itertol,
+                        callback_type="legacy",
                     )
                     print(
                         "-- Number of iterations for gmres: %g, info: %d, tol: %f"
@@ -1234,7 +1211,9 @@ class PCGA:
                 )
 
                 tmp_cR = np.zeros((n - p, 1), "d")
-                tmp_cR[:] = np.multiply(alpha[i], R[:-p])
+                tmp_cR[:] = np.multiply(alpha[i], R[:-p]).reshape(
+                    -1, 1
+                )  # TODO: remove the reshape
 
                 tmp_cR[: sigma_cR.shape[0]] = sigma_cR[:, np.newaxis]
 
@@ -1296,7 +1275,7 @@ class PCGA:
                 if self.is_verbose:
                     print(
                         "{:d}-th solution obj {} (alpha {}, beta {})".format(
-                            i, obj.reshape(-1), alpha[i], beta.reshape(-1).tolist()
+                            i, obj, alpha[i], np.array(beta).ravel().tolist()
                         )
                     )
 
@@ -1309,7 +1288,7 @@ class PCGA:
         if self.post_cov_estimation is not None:
             self.HZ = HZ
             self.HX = HX
-            self.R_LM = np.multiply(alpha[i_best], self.cov_obs)
+            self.R_LM = self.cov_obs * alpha[i_best]
 
         self.istate.i_best = i_best  # keep track of best LM solution
         return s_hat, beta, simul_obs_new
@@ -1322,7 +1301,7 @@ class PCGA:
             s_hat, beta, simul_obs_new = self.iterative_solve(
                 s_cur, simul_obs, precond=self.is_use_preconditioner
             )
-        obj = self.objective_function(s_hat, beta, simul_obs_new)
+        obj: float = self.objective_function(s_hat, beta, simul_obs_new)
 
         return s_hat, beta, simul_obs_new, obj
 
@@ -1377,11 +1356,9 @@ class PCGA:
         simul_obs_init = self.forward_model(s_init)
 
         self.simul_obs_init = simul_obs_init
-        residuals = simul_obs_init - self.obs
+        residuals = (simul_obs_init - self.obs).ravel()
         RMSE_init = np.linalg.norm(residuals) / np.sqrt(self.d_dim)
-        nRMSE_init = np.linalg.norm(np.divide(residuals, self.sqrtR)) / np.sqrt(
-            self.d_dim
-        )
+        nRMSE_init = residuals.dot(self.cov_obs_solve(residuals)) / np.sqrt(self.d_dim)
         print(
             f"- obs. RMSE (norm(obs. diff.)/sqrt(nobs)): {RMSE_init}\n"
             f"- normalized obs. RMSE (norm(obs. diff./sqrtR)/sqrt(nobs)): {nRMSE_init}"
@@ -1410,7 +1387,7 @@ class PCGA:
                 self.istate.obj_best = obj
                 self.istate.s_best = s_cur
                 self.istate.beta_best = beta_cur
-                self.istate.simul_obs_init = simul_obs_cur
+                self.istate.simul_obs_best = simul_obs_cur
                 self.istate.iter_best = i + 1
                 self.istate.Q2_best = self.istate.Q2_cur
                 self.istate.cR_best = self.istate.cR_cur
@@ -1421,7 +1398,7 @@ class PCGA:
                     if obj < self.istate.iter_best:
                         self.istate.obj_best = obj
                         self.istate.s_best = s_cur
-                        self.istate.simul_obs_init = simul_obs_cur
+                        self.istate.simul_obs_best = simul_obs_cur
                         self.istate.iter_best = i + 1
                     else:
                         if i > 1:
@@ -1441,10 +1418,12 @@ class PCGA:
                     break
 
             res = np.linalg.norm(s_past - s_cur) / np.linalg.norm(s_past)
-            RMSE_cur = np.linalg.norm(simul_obs_cur - self.obs) / np.sqrt(self.d_dim)
-            nRMSE_cur = np.linalg.norm(
-                np.divide(simul_obs_cur - self.obs, self.sqrtR)
-            ) / np.sqrt(self.d_dim)
+            residuals = (simul_obs_cur - self.obs).ravel()
+
+            RMSE_cur = np.linalg.norm(residuals) / np.sqrt(self.d_dim)
+            nRMSE_cur = residuals.dot(self.cov_obs_solve(residuals)) / np.sqrt(
+                self.d_dim
+            )
 
             print("== iteration %d summary ==" % (i + 1))
             print(
@@ -1489,25 +1468,27 @@ class PCGA:
         # return s_cur, beta_cur, simul_obs, iter_cur
         print("------------ Inversion Summary ---------------------------")
         print(f"** Found solution at iteration {self.istate.iter_best}")
+        residuals = (self.istate.simul_obs_best - self.obs).ravel()
+        RMSE_best: float = np.linalg.norm(residuals) / np.sqrt(self.d_dim)
+        nRMSE_best: float = residuals.dot(self.cov_obs_solve(residuals)) / np.sqrt(
+            self.d_dim
+        )
+
         print(
             "** Solution obs. RMSE %g , initial obs. RMSE %g, "
             "where RMSE = (norm(obs. diff.)/sqrt(nobs)), "
             "Solution obs. nRMSE %g, init. obs. nRMSE %g"
             % (
-                np.linalg.norm(self.istate.simul_obs_init - self.obs)
-                / np.sqrt(self.d_dim),
+                RMSE_best,
                 RMSE_init,
-                np.linalg.norm(
-                    np.divide(self.istate.simul_obs_init - self.obs, self.sqrtR)
-                )
-                / np.sqrt(self.d_dim),
+                nRMSE_best,
                 nRMSE_init,
             )
         )
         print(f"** Final objective function value is {self.istate.obj_best}")
         print(
             "** Final predictive model checking Q2, cR is %e, %e"
-            % (self.istate.Q2_best, self.istate.cR_best)
+            % (self.istate.Q2_best[0], self.istate.cR_best[0])
         )
 
         return (
@@ -1537,9 +1518,9 @@ class PCGA:
         # Construct Psi directly
         Psi: NDArrayFloat = np.dot(HZ, HZ.T)  # HQH^{t}
         # Add the R matrix
-        if Ri.shape[1] == 1:
+        if Ri.ndim == 1:
             # Ri is diagonal
-            np.fill_diagonal(Psi, Psi.diagonal() + Ri[:, 0])
+            np.fill_diagonal(Psi, Psi.diagonal() + Ri)
         else:
             # If Ri is 2D
             Psi += Ri
@@ -1630,21 +1611,10 @@ class PCGA:
             )
             Psi_U = np.multiply((1.0 / sqrt(alpha[i_best])), self.Psi_U)
             Psi_UTv = np.dot(Psi_U.T, v)
-
-            if R.shape[0] == 1:
-                alphainvRv = np.multiply(
-                    np.multiply((1.0 / alpha[i_best]), self.invR), v
-                )
-            elif Psi_UTv.ndim == 1:
-                alphainvRv = np.multiply(
-                    np.multiply((1.0 / alpha[i_best]), self.invR.reshape(v.shape)),
-                    v,
-                )
-            else:
-                RMat = np.tile(
-                    np.multiply((1.0 / alpha[i_best]), self.invR), Psi_UTv.shape[1]
-                )
-                alphainvRv = np.multiply(RMat, v)
+            # TODO: remove these stupid reshape by using vectors and matrices
+            alphainvRv = (
+                (1.0 / alpha[i_best]) * self.cov_obs_solve(v.ravel())
+            ).reshape(-1, 1)
 
             if Psi_UTv.ndim == 1:
                 PsiDPsiTv = np.dot(
@@ -1703,22 +1673,7 @@ class PCGA:
             )
             b[n : n + p] = self.drift.mat[i : i + 1, :].T
 
-            # invAb, info = gmres(Afun, b, tol=itertol,
-            # maxiter=solver_maxiter, callback=callback, M=P)
-            ##invAb, info = minres(Afun, b, tol=itertol,
-            # maxiter=solver_maxiter, callback=callback, M=P)
-
             v[i] = self.prior_s_var[i] - np.dot(b.T, P(b))
-
-            # if i < 15:
-            #    tmp = np.dot(b.T, np.linalg.solve(A, b))
-            #    callback = Residual()
-            #    invAb, info = gmres(Afun, b, tol=itertol,
-            # maxiter=solver_maxiter, callback=callback, M=P)
-            #    print("-- Number of iterations for gmres %g
-            # and info %d" % (callback.itercount(), info))
-            #    print("%d: %g %g %g" % (i, v[i], priorvar
-            # - np.dot(b.T, invAb.reshape(-1,1)),priorvar - tmp))
 
             if i % 10000 == 0 and i > 0 and self.is_verbose:
                 print("%d-th element evaluation done.." % (i))
