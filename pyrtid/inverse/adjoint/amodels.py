@@ -26,11 +26,12 @@ class AdjointFlowModel(ABC):
     """Represent an adjoint flow model."""
 
     __slots__ = [
+        "a_head",
+        "a_pressure",
         "a_u_darcy_x",
         "a_u_darcy_y",
         "a_head_sources",
         "a_pressure_sources",
-        "a_density_sources",
         "a_permeability_sources",
         "a_storage_coefficient_sources",
         "q_prev",
@@ -42,6 +43,12 @@ class AdjointFlowModel(ABC):
 
     def __init__(self, geometry: Geometry, time_params: TimeParameters) -> None:
         """Initialize the instance."""
+        self.a_head = np.zeros(
+            (geometry.nx, geometry.ny, time_params.nt), dtype=np.float64
+        )
+        self.a_pressure = np.zeros(
+            (geometry.nx, geometry.ny, time_params.nt), dtype=np.float64
+        )
         self.a_u_darcy_x = np.zeros(
             (geometry.nx - 1, geometry.ny, time_params.nt), dtype=np.float64
         )
@@ -56,9 +63,6 @@ class AdjointFlowModel(ABC):
             (geometry.nx * geometry.ny, time_params.nt), dtype=np.float64
         )
         self.a_pressure_sources: csc_array = csc_array(
-            (geometry.nx * geometry.ny, time_params.nt), dtype=np.float64
-        )
-        self.a_density_sources: csc_array = csc_array(
             (geometry.nx * geometry.ny, time_params.nt), dtype=np.float64
         )
         # does not vary in time
@@ -85,7 +89,6 @@ class AdjointFlowModel(ABC):
         """
         self.a_head_sources = csc_array(self.a_head_sources.shape)
         self.a_pressure_sources = csc_array(self.a_pressure_sources.shape)
-        self.a_density_sources = csc_array(self.a_density_sources.shape)
         self.a_permeability_sources = csc_array(self.a_permeability_sources.shape)
         self.a_storage_coefficient_sources = csc_array(
             self.a_storage_coefficient_sources.shape
@@ -100,10 +103,6 @@ class SaturatedAdjointFlowModel(AdjointFlowModel):
     Saturated Adjoint Flow Model.
     """
 
-    __slots__ = [
-        "a_head",
-    ]
-
     def __init__(self, geometry: Geometry, time_params: TimeParameters) -> None:
         """
         Initialize the instance.
@@ -116,9 +115,6 @@ class SaturatedAdjointFlowModel(AdjointFlowModel):
             Time parameters from the forward problem.
         """
         super().__init__(geometry, time_params)
-        self.a_head = np.zeros(
-            (geometry.nx, geometry.ny, time_params.nt), dtype=np.float64
-        )
 
 
 class DensityAdjointFlowModel(AdjointFlowModel):
@@ -126,10 +122,6 @@ class DensityAdjointFlowModel(AdjointFlowModel):
     Density Adjoint Flow Model.
     """
 
-    __slots__ = [
-        "a_pressure",
-    ]
-
     def __init__(self, geometry: Geometry, time_params: TimeParameters) -> None:
         """
         Initialize the instance.
@@ -142,9 +134,6 @@ class DensityAdjointFlowModel(AdjointFlowModel):
             Time parameters from the forward problem.
         """
         super().__init__(geometry, time_params)
-        self.a_pressure = np.zeros(
-            (geometry.nx, geometry.ny, time_params.nt), dtype=np.float64
-        )
 
 
 class AdjointTransportModel:
@@ -232,6 +221,9 @@ class AdjointTransportModel:
         self.a_diffusion_sources = csc_array(
             (geometry.nx * geometry.ny, 1), dtype=np.float64
         )
+        self.a_density_sources: csc_array = csc_array(
+            (geometry.nx * geometry.ny, time_params.nt), dtype=np.float64
+        )
 
         # Adjoint source term from the adjoint geochem to the adjoint transport
         self.a_gch_src_term = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
@@ -249,6 +241,7 @@ class AdjointTransportModel:
         self.a_grade_sources = csc_array(self.a_grade_sources.shape)
         self.a_porosity_sources = csc_array(self.a_porosity_sources.shape)
         self.a_diffusion_sources = csc_array(self.a_diffusion_sources.shape)
+        self.a_density_sources = csc_array(self.a_density_sources.shape)
 
 
 class AdjointModel:
@@ -337,7 +330,7 @@ class AdjointModel:
 
             array = {
                 StateVariable.CONCENTRATION: self.a_tr_model.a_conc_sources,
-                StateVariable.DENSITY: self.a_fl_model.a_density_sources,
+                StateVariable.DENSITY: self.a_tr_model.a_density_sources,
                 StateVariable.DIFFUSION: self.a_tr_model.a_diffusion_sources,
                 StateVariable.HEAD: self.a_fl_model.a_head_sources,
                 StateVariable.GRADE: self.a_tr_model.a_grade_sources,
@@ -359,7 +352,7 @@ class AdjointModel:
             if obs.state_variable == StateVariable.CONCENTRATION:
                 self.a_tr_model.a_conc_sources += res
             elif obs.state_variable == StateVariable.DENSITY:
-                self.a_fl_model.a_density_sources += res
+                self.a_tr_model.a_density_sources += res
             elif obs.state_variable == StateVariable.DIFFUSION:
                 self.a_tr_model.a_diffusion_sources += res
             elif obs.state_variable == StateVariable.HEAD:
