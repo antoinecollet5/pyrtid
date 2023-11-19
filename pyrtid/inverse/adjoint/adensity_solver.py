@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import numpy as np
-
 from pyrtid.forward.models import (  # ConstantHead,; ZeroConcGradient,
-    GRAVITY,
     TDS_LINEAR_COEFFICIENT,
     WATER_DENSITY,
     FlowModel,
@@ -25,23 +22,28 @@ def solve_adj_density(
 ) -> None:
     shape = tr_model.ldensity[0].shape
 
-    # This is the case if gravity is not on
+    # Add the density observations derivative
+    a_tr_model.a_density[:, :, time_index] += (
+        a_tr_model.a_density_sources.getcol(time_index)
+        .todense()
+        .reshape(shape, order="F")
+    )
 
-    # Handle the first time step
-    try:
-        # Adjoint variables
-        apressure: NDArrayFloat = a_fl_model.a_pressure[:, :, time_index + 1]
-        head: NDArrayFloat = fl_model.head[:, :, time_index + 1]
-    except IndexError:
-        # Handle the Tmax (first timestep going backward)
-        # or adjoint state initialization
-        apressure = np.array([0.0])
-        head = np.array([0.0])
+    if fl_model.is_gravity:
+        # Handle the first time step
+        try:
+            # Adjoint variables
+            ahead: NDArrayFloat = a_fl_model.a_head[:, :, time_index + 1]
+            pressure: NDArrayFloat = fl_model.pressure[:, :, time_index + 1]
+            # TODO: need to refactor this
+            # - apressure * (head - fl_model._get_mesh_center_vertical_pos().T)
+            # * GRAVITY
+            a_tr_model.a_density[:, :, time_index] += -ahead * pressure / 2
 
-    # TODO: this is only valid if the gravity is on
-    a_tr_model.a_density[:, :, time_index] = (
-        -apressure * (head - fl_model._get_mesh_center_vertical_pos().T) * GRAVITY
-    ) + a_tr_model.a_density_sources.getcol(time_index).reshape(shape, order="F")
+        except IndexError:
+            # Handle the Tmax (first timestep going backward)
+            # or adjoint state initialization
+            pass
 
     # Create a density src term for the transport
     a_tr_model.a_density_src_term = (

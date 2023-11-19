@@ -756,7 +756,8 @@ def solve_flow_transient_semi_implicit(
             + fl_model._get_mesh_center_vertical_pos().T
         )
     else:
-        # update the pressure field
+        # update the pressure field -> here we use the water density to be consistent
+        # with HYTEC.
         fl_model.lpressure.append(
             (fl_model.lhead[-1] - fl_model._get_mesh_center_vertical_pos().T)
             * GRAVITY

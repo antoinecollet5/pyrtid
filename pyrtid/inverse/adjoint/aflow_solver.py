@@ -9,6 +9,7 @@ from scipy.sparse.linalg import gmres
 
 from pyrtid.forward.models import (  # ConstantHead,; ZeroConcGradient,
     GRAVITY,
+    WATER_DENSITY,
     FlowModel,
     FlowRegime,
     Geometry,
@@ -634,9 +635,11 @@ def solve_adj_flow(
     else:
         # So the adjoint pressure is simply the derivative if the observations on the
         # pressure field
-        a_fl_model.a_pressure[:, :, time_index] = a_fl_model.a_pressure_sources.getcol(
-            time_index
-        ).todense()
+        a_fl_model.a_pressure[:, :, time_index] = (
+            a_fl_model.a_pressure_sources.getcol(time_index)
+            .todense()
+            .reshape(geometry.nx, geometry.ny, order="F")
+        )
 
     # Need a try - except for n = N_{ts} resolution: then \Delta t^{N_{ts}+1} does not
     # exists
@@ -668,7 +671,7 @@ def solve_adj_flow(
             / fl_model.storage_coefficient.ravel("F")
             / geometry.mesh_volume
         )
-        * tr_model.ldensity[time_index].ravel("F")
+        * WATER_DENSITY
         * GRAVITY
     )
 

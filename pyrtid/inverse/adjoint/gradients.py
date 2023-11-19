@@ -7,7 +7,7 @@ from typing import List, Optional
 import numpy as np
 
 from pyrtid.forward import ForwardModel, ForwardSolver
-from pyrtid.forward.models import GRAVITY, FlowRegime
+from pyrtid.forward.models import GRAVITY, WATER_DENSITY, FlowRegime
 from pyrtid.inverse.adjoint import AdjointModel, AdjointSolver
 from pyrtid.inverse.adjoint.aflow_solver import make_initial_adj_flow_matrices
 from pyrtid.inverse.loss_function import get_model_loss_function
@@ -616,7 +616,7 @@ def get_initial_head_adjoint_gradient(
     grad += (
         adj_model.a_fl_model.a_pressure_sources.getcol(0).todense().ravel("F")
         * GRAVITY
-        * fwd_model.tr_model.ldensity[0].ravel("F")  # type: ignore
+        * WATER_DENSITY
     )
 
     # Add adjoint sources for time t=0
