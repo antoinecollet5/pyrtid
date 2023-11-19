@@ -478,7 +478,6 @@ def solve_transport_semi_implicit(
     nfpi:
         Number of fixed point iterations.
     """
-
     # The matrix with respect to the diffusion never changes.
     # The matrix with respect to the advection only needs to be updated if the head
     # have changed.

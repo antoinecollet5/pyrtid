@@ -5,6 +5,7 @@ import logging
 from typing import Optional
 
 from pyrtid.forward.models import FlowRegime, ForwardModel
+from pyrtid.inverse.adjoint.adensity_solver import solve_adj_density
 from pyrtid.inverse.adjoint.aflow_solver import (
     make_initial_adj_flow_matrices,
     make_transient_adj_flow_matrices,
@@ -105,6 +106,7 @@ class AdjointSolver:
         # Initialize transport matrices with diffusion (advection is added on the fly)
         # Consequently, the preconditioner is built on the fly too.
         self.initialize_ajd_transport_matrices()
+
         for time_index in range(
             self.fwd_model.time_params.nts, -1, -1  # type: ignore
         ):  # Reverse order in time, and reverse order in operator sequence
@@ -118,9 +120,20 @@ class AdjointSolver:
         nafpi = 1  # number of coupling (Fixed Point) iterations
         has_converged = False
 
-        # Iterate the chemistry transport system while the convergence is no meet
+        # 1) Start by computing the adjoint density which is the last thing computed
+        # in the forward problem.
+        solve_adj_density(
+            self.fwd_model.fl_model,
+            self.fwd_model.tr_model,
+            self.adj_model.a_fl_model,
+            self.adj_model.a_tr_model,
+            time_index,
+            self.fwd_model.gch_params.Ms,
+        )
+
+        # 2) Iterate the chemistry transport system while the convergence is no meet
         while not has_converged:
-            # 1) Start by solving adjoint geochemistry
+            # 2.1) Start by solving adjoint geochemistry
             solve_adj_geochem(
                 self.fwd_model.tr_model,
                 self.adj_model.a_tr_model,
@@ -131,7 +144,7 @@ class AdjointSolver:
                 nafpi=nafpi,
             )
 
-            # 2) Solve the adjoint transport
+            # 2.2) Solve the adjoint transport
             solve_adj_transport_transient_semi_implicit(
                 self.fwd_model.geometry,
                 self.fwd_model.fl_model,

@@ -160,6 +160,7 @@ class AdjointTransportModel:
         "a_conc",
         "a_conc_prev",
         "a_grade",
+        "a_density",
         "a_conc_sources",
         "a_grade_sources",
         "a_porosity_sources",
@@ -170,6 +171,7 @@ class AdjointTransportModel:
         "q_prev",
         "q_next",
         "a_gch_src_term",
+        "a_density_src_term",
         "afpi_eps",
         "is_adj_numerical_acceleration",
     ]
@@ -204,6 +206,9 @@ class AdjointTransportModel:
         self.a_grade: NDArrayFloat = np.zeros(
             (geometry.nx, geometry.ny, time_params.nt), dtype=np.float64
         )
+        self.a_density: NDArrayFloat = np.zeros(
+            (geometry.nx, geometry.ny, time_params.nt), dtype=np.float64
+        )
 
         # Generally, not so many observations, so only a few adjoint variable,
         # so use a sparse matrix instead of a dense array
@@ -227,6 +232,9 @@ class AdjointTransportModel:
 
         # Adjoint source term from the adjoint geochem to the adjoint transport
         self.a_gch_src_term = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
+
+        # Adjoint source term from the adjoint density to the adjoint transport
+        self.a_density_src_term = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
 
         self.q_prev_diffusion: lil_matrix = lil_array(geometry.nx * geometry.ny)
         self.q_next_diffusion: lil_matrix = lil_array(geometry.nx * geometry.ny)

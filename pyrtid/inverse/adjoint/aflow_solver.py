@@ -485,7 +485,7 @@ def update_adjoint_u_darcy(
     tr_model: TransportModel,
     a_tr_model: AdjointTransportModel,
     fl_model: FlowModel,
-    a_fl_model: SaturatedAdjointFlowModel,
+    a_fl_model: AdjointFlowModel,
     time_index: int,
 ) -> None:
     crank_adv = tr_model.crank_nicolson_advection
@@ -609,7 +609,7 @@ def solve_adj_flow(
     geometry: Geometry,
     fl_model: FlowModel,
     tr_model: TransportModel,
-    a_fl_model: SaturatedAdjointFlowModel,
+    a_fl_model: AdjointFlowModel,
     time_params: TimeParameters,
     time_index: int,
 ) -> int:
@@ -622,6 +622,21 @@ def solve_adj_flow(
     _q_next, _q_prev = get_aflow_matrices(
         geometry, fl_model, a_fl_model, time_params, time_index
     )
+
+    # If gravity is on we solve the adjoint pressure
+    if fl_model.is_gravity:
+        # So the adjoint head is simply the derivative if the observations on the
+        # head field
+        a_fl_model.a_head[:, :, time_index] = a_fl_model.a_head_sources.getcol(
+            time_index
+        ).todense()
+    # otherwise we solve the adjoint head
+    else:
+        # So the adjoint pressure is simply the derivative if the observations on the
+        # pressure field
+        a_fl_model.a_pressure[:, :, time_index] = a_fl_model.a_pressure_sources.getcol(
+            time_index
+        ).todense()
 
     # Need a try - except for n = N_{ts} resolution: then \Delta t^{N_{ts}+1} does not
     # exists
@@ -649,7 +664,7 @@ def solve_adj_flow(
     # Use the adjoint pressure instead of the adjoint head
     tmp += (
         (
-            a_fl_model.a_pressure_sources.getcol(time_index).todense().ravel("F")
+            a_fl_model.a_pressure[:, :, time_index].ravel("F")
             / fl_model.storage_coefficient.ravel("F")
             / geometry.mesh_volume
         )
