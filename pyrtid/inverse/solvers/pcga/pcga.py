@@ -360,10 +360,6 @@ class PCGA:
                 "array with the same number of elements as in s_init!"
             )
 
-    @property
-    def sqrtR(self) -> NDArrayFloat:
-        return np.sqrt(self.cov_obs)
-
     def get_v0(self, size) -> Optional[NDArrayFloat]:
         if self.random_state is not None:
             return self.random_state.uniform(size=(size,))
@@ -450,9 +446,6 @@ class PCGA:
         """
         0.5(y-h(s))^TR^{-1}(y-h(s)) + 0.5*(s-Xb)^TQ^{-1}(s-Xb)
         """
-        if simul_obs is None:
-            simul_obs = self.forward_model(s_cur)
-
         smxb = s_cur - np.dot(self.drift.mat, beta_cur)
         ymhs = self.obs - simul_obs
 
@@ -470,9 +463,6 @@ class PCGA:
         marginalized objective w.r.t. beta
         0.5(y-h(s))^TR^{-1}(y-h(s)) + 0.5*(s-Xb)^TQ^{-1}(s-Xb)
         """
-        if simul_obs is None:
-            simul_obs = self.forward_model(s_cur)
-
         X = self.drift.mat
         self.drift.beta_dim
 
@@ -529,7 +519,7 @@ class PCGA:
             raise NotImplementedError
         return HX, HZ, Hs, U_data
 
-    def direct_solve(self, s_cur, simul_obs=None):
+    def direct_solve(self, s_cur: NDArrayFloat, simul_obs: NDArrayFloat):
         """
         Solve the geostatistical system using a direct solver.
         Not to be used unless the number of measurements are small O(100)
@@ -540,9 +530,6 @@ class PCGA:
         p = self.drift.beta_dim
         n_pc = self.Q.n_pc
         R = self.cov_obs
-
-        if simul_obs is None:
-            simul_obs = self.forward_model(s_cur)
 
         Z = np.sqrt(self.Q.eig_vals).T * self.Q.eig_vects
         # Compute Jacobian-Matrix products
@@ -586,8 +573,6 @@ class PCGA:
             )
 
         print("computed Jacobian-Matrix products in : %f secs" % (start1 - start2))
-        # print("computed Jacobian-Matrix products in : %f secs, eig. val.
-        # of generalized data covariance : %f secs" % (start1 - start2,time()-start2))
 
         # Construct HQ directly
         HQ = np.dot(HZ, Z.T)
@@ -720,7 +705,7 @@ class PCGA:
 
         return s_hat, beta, simul_obs_new
 
-    def iterative_solve(self, s_cur, simul_obs=None, precond=False):
+    def iterative_solve(self, s_cur: NDArrayFloat, simul_obs: NDArrayFloat):
         """
         Iterative Solve
         """
@@ -731,9 +716,6 @@ class PCGA:
         R = self.cov_obs
 
         Z = np.sqrt(self.Q.eig_vals).T * self.Q.eig_vects
-
-        if simul_obs is None:
-            simul_obs = self.forward_model(s_cur)
 
         # Compute Jacobian-Matrix products
         start1 = time()
@@ -788,14 +770,12 @@ class PCGA:
                     "%f secs (%8.2e, %8.2e, %8.2e)"
                     % (time() - start2, sigma_cR[0], sigma_cR.min(), sigma_cR.max())
                 )
-            # print("computed Jacobian-Matrix products in %f secs, eig. val.
             # of generalized data covariance : %f secs (%8.2e, %8.2e, %8.2e)"
             # % (start2 - start1, time()-start2,sigma_cR[0],sigma_cR.min(),
             # sigma_cR.max()))
         else:  # Compute eig(P*(HQHT+R)*P) approximately by svd(P*(HZ*HZ' + R)*P)
             # need to do for each alpha[i]*R
             pass
-            # print("computed Jacobian-Matrix products in %f secs" % (start2 - start1))
 
         # preconditioner construction
         # will add more description here
@@ -1298,9 +1278,7 @@ class PCGA:
         if self.is_direct_solve:
             s_hat, beta, simul_obs_new = self.direct_solve(s_cur, simul_obs)
         else:
-            s_hat, beta, simul_obs_new = self.iterative_solve(
-                s_cur, simul_obs, precond=self.is_use_preconditioner
-            )
+            s_hat, beta, simul_obs_new = self.iterative_solve(s_cur, simul_obs)
         obj: float = self.objective_function(s_hat, beta, simul_obs_new)
 
         return s_hat, beta, simul_obs_new, obj
@@ -1337,7 +1315,7 @@ class PCGA:
 
         return s_hat, simul_obs_new, obj_best
 
-    def gauss_newton(self):
+    def gauss_newton(self) -> Tuple[NDArrayFloat, NDArrayFloat, NDArrayFloat, int]:
         """
         Gauss-newton iteration
         """
@@ -1493,7 +1471,7 @@ class PCGA:
 
         return (
             self.istate.s_best,
-            self.istate.simul_obs_init,
+            self.istate.simul_obs_best,
             self.post_diagv,
             self.istate.iter_best,
         )
@@ -1503,10 +1481,7 @@ class PCGA:
         s_hat, simul_obs, post_diagv, iter_best = self.gauss_newton()
         print(f"** Total elapsed time is {(time() - start)} secs")
         print("----------------------------------------------------------")
-        if self.post_cov_estimation is not None:
-            return s_hat, simul_obs, post_diagv, iter_best
-        else:
-            return s_hat, simul_obs, iter_best
+        return s_hat, simul_obs, post_diagv, iter_best
 
     def get_psi(
         self, HZ: NDArrayFloat, i_best: int, cov_obs: NDArrayFloat
