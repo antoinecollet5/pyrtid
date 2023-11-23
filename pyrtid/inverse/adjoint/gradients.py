@@ -588,7 +588,7 @@ def _get_perm_gradient_from_darcy_eq_saturated(
         # Forward scheme
         dhead_fx = np.zeros(shape)
         dhead_fx[:-1, :, :] += (
-            ((head[:-1, :, :] - head[1:, :, :]))
+            ((head[1:, :, :] - head[:-1, :, :]))
             * dxi_harmonic_mean(permeability[:-1, :], permeability[1:, :])[
                 :, :, np.newaxis
             ]
@@ -598,7 +598,7 @@ def _get_perm_gradient_from_darcy_eq_saturated(
         # Bconckward scheme
         dhead_bx = np.zeros(shape)
         dhead_bx[1:, :, :] -= (
-            ((head[1:, :, :] - head[:-1, :, :]))
+            ((head[:-1, :, :] - head[1:, :, :]))
             * dxi_harmonic_mean(permeability[1:, :], permeability[:-1, :])[
                 :, :, np.newaxis
             ]
@@ -614,7 +614,7 @@ def _get_perm_gradient_from_darcy_eq_saturated(
         # Forward scheme
         dhead_fy = np.zeros(shape)
         dhead_fy[:, :-1, :] += (
-            ((head[:, :-1, :] - head[:, 1:, :]))
+            ((head[:, 1:, :] - head[:, :-1, :]))
             * dxi_harmonic_mean(permeability[:, :-1], permeability[:, 1:])[
                 :, :, np.newaxis
             ]
@@ -624,7 +624,7 @@ def _get_perm_gradient_from_darcy_eq_saturated(
         # Bconckward scheme
         dhead_by = np.zeros(shape)
         dhead_by[:, 1:, :] -= (
-            ((head[:, 1:, :] - head[:, :-1, :]))
+            ((head[:, :-1, :] - head[:, 1:, :]))
             * dxi_harmonic_mean(permeability[:, 1:], permeability[:, :-1])[
                 :, :, np.newaxis
             ]
