@@ -18,10 +18,7 @@ from pyrtid.forward.models import (  # ConstantHead,; ZeroConcGradient,
     TransportModel,
     get_owner_neigh_indices,
 )
-from pyrtid.inverse.adjoint.amodels import (
-    AdjointFlowModel,
-    AdjointTransportModel,
-)
+from pyrtid.inverse.adjoint.amodels import AdjointFlowModel, AdjointTransportModel
 from pyrtid.utils import arithmetic_mean, get_super_lu_preconditioner, harmonic_mean
 from pyrtid.utils.types import NDArrayFloat
 
@@ -497,116 +494,65 @@ def update_adjoint_u_darcy(
         # prev_vector = a_fl_model.a_head[:, :, time_index + 1].ravel("F")
     except IndexError:
         # prev_vector = np.zeros(a_fl_model.a_head[:, :, 0].size)
-        a_conc_old = np.zeros(a_tr_model.a_conc[:, :, 0].shape)
+        a_conc_old = np.zeros_like(a_conc)
         # a_tr_model.a_conc[:, :, time_index + 1]
+
+    if time_index == 0:
+        a_conc = np.zeros_like(a_conc)
+
+    # TODO: need to take the boundary into account
 
     # X contribution
     if geometry.nx > 1:
         un_x = fl_model.u_darcy_x[1:-1, :, time_index]
 
-        conc_fx = np.where(
+        conc_ij_x = np.where(
             un_x > 0.0, conc[:-1, :], conc[1:, :]
         )  # take the conc depending on the forward flow direction
+        conc_ij_x[un_x == 0] = 0
 
-        # Forward
         # 1) advective term
-        a_fl_model.a_u_darcy_x[:, :, time_index] += geometry.dy * (
+        a_fl_model.a_u_darcy_x[1:-1, :, time_index] += geometry.dy * (
             (
-                crank_adv * (a_conc[:-1, :] - a_conc[1:, :])
-                + (1.0 - crank_adv) * (a_conc_old[:-1, :] - a_conc_old[1:, :])
+                crank_adv * (a_conc[1:, :] - a_conc[:-1, :])
+                + (1.0 - crank_adv) * (a_conc_old[1:, :] - a_conc_old[:-1, :])
             )
-            * conc_fx
-            / 2.0
+            * conc_ij_x
         )
         # 2) U divergence term
-        a_fl_model.a_u_darcy_x[:, :, time_index] -= geometry.dy * (
+        a_fl_model.a_u_darcy_x[1:-1, :, time_index] += geometry.dy * (
             (
                 crank_adv
                 * (a_conc[:-1, :] * conc[:-1, :] - a_conc[1:, :] * conc[1:, :])
                 + (1.0 - crank_adv)
                 * (a_conc_old[:-1, :] * conc[:-1, :] - a_conc_old[1:, :] * conc[1:, :])
             )
-            / 2.0
         )
 
-        conc_bx = np.where(
-            un_x <= 0.0, conc[1:, :], conc[:-1, :]
-        )  # take the conc depending on the forward flow direction
-
-        # Backward
-        # 1) advective term
-        a_fl_model.a_u_darcy_x[:, :, time_index] -= geometry.dy * (
-            (
-                crank_adv * (a_conc[1:, :] - a_conc[:-1, :])
-                + (1.0 - crank_adv) * (a_conc_old[1:, :] - a_conc_old[:-1, :])
-            )
-            * conc_bx
-            / 2.0
-        )
-        # 2) U divergence
-        a_fl_model.a_u_darcy_x[:, :, time_index] += geometry.dy * (
-            (
-                crank_adv
-                * (a_conc[1:, :] * conc[1:, :] - a_conc[:-1, :] * conc[:-1, :])
-                + (1.0 - crank_adv)
-                * (a_conc_old[1:, :] * conc[1:, :] - a_conc_old[:-1, :] * conc[:-1, :])
-            )
-            / 2.0
-        )
-
-    # TODO: peut-être un problème avec les old non ? Pour la divergence
     # Y contribution
     if geometry.ny > 1:
         un_y = fl_model.u_darcy_y[:, 1:-1, time_index]
-
-        conc_fy = np.where(
+        conc_ij_y = np.where(
             un_y > 0.0, conc[:, :-1], conc[:, 1:]
         )  # take the conc depending on the forward flow direction
+        conc_ij_y[un_y == 0] = 0
 
-        # Forward
         # 1) advective term
-        a_fl_model.a_u_darcy_y[:, :, time_index] += geometry.dx * (
+        a_fl_model.a_u_darcy_y[:, 1:-1, time_index] += geometry.dx * (
             (
-                crank_adv * (a_conc[:, :-1] - a_conc[:, 1:])
-                + (1.0 - crank_adv) * (a_conc_old[:, :-1] - a_conc_old[:, 1:])
+                crank_adv * (a_conc[:, 1:] - a_conc[:, :-1])
+                + (1.0 - crank_adv) * (a_conc_old[:, 1:] - a_conc_old[:, :-1])
             )
-            * conc_fy
-            / 2.0
+            * conc_ij_y
         )
         # 2) U divergence term
-        a_fl_model.a_u_darcy_y[:, :, time_index] -= geometry.dx * (
+        a_fl_model.a_u_darcy_y[:, 1:-1, time_index] += geometry.dx * (
             (
                 crank_adv
                 * (a_conc[:, :-1] * conc[:, :-1] - a_conc[:, 1:] * conc[:, 1:])
                 + (1.0 - crank_adv)
                 * (a_conc_old[:, :-1] * conc[:, :-1] - a_conc_old[:, 1:] * conc[:, 1:])
             )
-            / 2.0
-        )
-
-        conc_by = np.where(
-            un_y <= 0.0, conc[:, 1:], conc[:, :-1]
-        )  # take the conc depending on the forward flow direction
-
-        # Backward
-        # 1) advective term
-        a_fl_model.a_u_darcy_y[:, :, time_index] -= geometry.dx * (
-            (
-                crank_adv * (a_conc[:, 1:] - a_conc[:, :-1])
-                + (1.0 - crank_adv) * (a_conc_old[:, 1:] - a_conc_old[:, :-1])
-            )
-            * conc_by
-            / 2.0
-        )
-        # 2) U divergence
-        a_fl_model.a_u_darcy_y[:, :, time_index] += geometry.dx * (
-            (
-                crank_adv
-                * (a_conc[:, 1:] * conc[:, 1:] - a_conc[:, :-1] * conc[:, :-1])
-                + (1.0 - crank_adv)
-                * (a_conc_old[:, 1:] * conc[:, 1:] - a_conc_old[:, :-1] * conc[:, :-1])
-            )
-            / 2.0
         )
 
 
@@ -687,7 +633,7 @@ def solve_adj_flow_saturated(
     )
 
     # 6) Add the source terms from mob observations (adjoint transport)
-    tmp += _get_adjoint_transport_src_terms(
+    tmp += get_adjoint_transport_src_terms(
         geometry, fl_model, a_fl_model, time_index, True
     )
 
@@ -766,7 +712,7 @@ def solve_adj_flow_density(
     )
 
     # 6) Add the source terms from mob observations (adjoint transport)
-    tmp += _get_adjoint_transport_src_terms(
+    tmp += get_adjoint_transport_src_terms(
         geometry, fl_model, a_fl_model, time_index, True
     )
 
@@ -783,7 +729,7 @@ def solve_adj_flow_density(
     return exit_code
 
 
-def _get_adjoint_transport_src_terms(
+def get_adjoint_transport_src_terms(
     geometry: Geometry,
     fl_model: FlowModel,
     a_fl_model: AdjointFlowModel,
@@ -825,17 +771,17 @@ def _get_adjoint_transport_src_terms(
         )
 
         # Forward
-        src[:-1, :] -= (
+        src[:-1, :] += (
             kmean_x
-            * a_fl_model.a_u_darcy_x[:, :, time_index]
+            * a_fl_model.a_u_darcy_x[1:-1, :, time_index]
             / geometry.dx
             / geometry.mesh_volume
         ) * tmp
 
         # Backward
-        src[1:, :] += (
+        src[1:, :] -= (
             kmean_x
-            * a_fl_model.a_u_darcy_x[:, :, time_index]
+            * a_fl_model.a_u_darcy_x[1:-1, :, time_index]
             / geometry.dx
             / geometry.mesh_volume
         ) * tmp
@@ -848,17 +794,17 @@ def _get_adjoint_transport_src_terms(
         )
 
         # Forward
-        src[:, :-1] -= (
+        src[:, :-1] += (
             kmean_y
-            * a_fl_model.a_u_darcy_y[:, :, time_index]
+            * a_fl_model.a_u_darcy_y[:, 1:-1, time_index]
             / geometry.dy
             / geometry.mesh_volume
         ) * tmp
 
         # Backward
-        src[:, 1:] += (
+        src[:, 1:] -= (
             kmean_y
-            * a_fl_model.a_u_darcy_y[:, :, time_index]
+            * a_fl_model.a_u_darcy_y[:, 1:-1, time_index]
             / geometry.dy
             / geometry.mesh_volume
         ) * tmp
