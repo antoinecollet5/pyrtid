@@ -442,9 +442,9 @@ def _get_perm_gradient_from_diffusivity_eq_density(
 
     pressure = fwd_model.fl_model.pressure
     apressure = adj_model.a_fl_model.a_pressure
-    ma_ahead = np.zeros(apressure.shape)
+    ma_apressure = np.zeros(apressure.shape)
     free_head_indices = fwd_model.fl_model.free_head_indices
-    ma_ahead[free_head_indices[0], free_head_indices[1], :] = apressure[
+    ma_apressure[free_head_indices[0], free_head_indices[1], :] = apressure[
         free_head_indices[0], free_head_indices[1], :
     ]
     grad = np.zeros(shape)
@@ -452,16 +452,16 @@ def _get_perm_gradient_from_diffusivity_eq_density(
     # Consider the x axis
     if shape[0] > 1:
         # Forward scheme
-        dhead_fx = np.zeros(shape)
-        dhead_fx[:-1, :, 1:] += (
+        dpressure_fx = np.zeros(shape)
+        dpressure_fx[:-1, :, 1:] += (
             crank_flow * (pressure[1:, :, 1:] - pressure[:-1, :, 1:])
             + (1.0 - crank_flow) * (pressure[1:, :, :-1] - pressure[:-1, :, :-1])
         ) * dxi_harmonic_mean(permeability[:-1, :], permeability[1:, :])[
             :, :, np.newaxis
         ]
 
-        dahead_fx = np.zeros(shape)
-        dahead_fx[:-1, :, :] += ma_ahead[1:, :, :] - ma_ahead[:-1, :, :]
+        dapressure_fx = np.zeros(shape)
+        dapressure_fx[:-1, :, :] += ma_apressure[1:, :, :] - ma_apressure[:-1, :, :]
 
         # Handle the stationary case
         # if fwd_model.fl_model.regime == FlowRegime.STATIONARY:
@@ -472,16 +472,16 @@ def _get_perm_gradient_from_diffusivity_eq_density(
         #     ]
 
         # Bheadkward scheme
-        dhead_bx = np.zeros(shape)
-        dhead_bx[1:, :, 1:] += (
+        dpressure_bx = np.zeros(shape)
+        dpressure_bx[1:, :, 1:] += (
             crank_flow * (pressure[:-1, :, 1:] - pressure[1:, :, 1:])
             + (1.0 - crank_flow) * (pressure[:-1, :, :-1] - pressure[1:, :, :-1])
         ) * dxi_harmonic_mean(permeability[1:, :], permeability[:-1, :])[
             :, :, np.newaxis
         ]
-        dahead_bx = np.zeros(shape)
+        dapressure_bx = np.zeros(shape)
 
-        dahead_bx[1:, :, :] += ma_ahead[:-1, :, :] - ma_ahead[1:, :, :]
+        dapressure_bx[1:, :, :] += ma_apressure[:-1, :, :] - ma_apressure[1:, :, :]
 
         # Handle the stationary case
         # if fwd_model.fl_model.regime == FlowRegime.STATIONARY:
@@ -493,7 +493,7 @@ def _get_perm_gradient_from_diffusivity_eq_density(
 
         # Gather the two schemes
         grad += (
-            (dhead_fx * dahead_fx + dhead_bx * dahead_bx)
+            (dpressure_fx * dapressure_fx + dpressure_bx * dapressure_bx)
             * fwd_model.geometry.dy
             / fwd_model.geometry.dx
         )
@@ -501,15 +501,15 @@ def _get_perm_gradient_from_diffusivity_eq_density(
     # Consider the y axis for 2D cases
     if shape[1] > 1:
         # Forward scheme
-        dhead_fy = np.zeros(shape)
-        dhead_fy[:, :-1, 1:] += (
+        dpressure_fy = np.zeros(shape)
+        dpressure_fy[:, :-1, 1:] += (
             crank_flow * (pressure[:, 1:, 1:] - pressure[:, :-1, 1:])
             + (1.0 - crank_flow) * (pressure[:, 1:, :-1] - pressure[:, :-1, :-1])
         ) * dxi_harmonic_mean(permeability[:, :-1], permeability[:, 1:])[
             :, :, np.newaxis
         ]
-        dahead_fy = np.zeros(shape)
-        dahead_fy[:, :-1, :] += ma_ahead[:, 1:, :] - ma_ahead[:, :-1, :]
+        dapressure_fy = np.zeros(shape)
+        dapressure_fy[:, :-1, :] += ma_apressure[:, 1:, :] - ma_apressure[:, :-1, :]
 
         # Handle the stationary case
         # if fwd_model.fl_model.regime == FlowRegime.STATIONARY:
@@ -520,15 +520,15 @@ def _get_perm_gradient_from_diffusivity_eq_density(
         #     ]
 
         # Bheadkward scheme
-        dhead_by = np.zeros(shape)
-        dhead_by[:, 1:, 1:] += (
+        dpressure_by = np.zeros(shape)
+        dpressure_by[:, 1:, 1:] += (
             crank_flow * (pressure[:, :-1, 1:] - pressure[:, 1:, 1:])
             + (1.0 - crank_flow) * (pressure[:, :-1, :-1] - pressure[:, 1:, :-1])
         ) * dxi_harmonic_mean(permeability[:, 1:], permeability[:, :-1])[
             :, :, np.newaxis
         ]
-        dahead_by = np.zeros(shape)
-        dahead_by[:, 1:, :] += ma_ahead[:, :-1, :] - ma_ahead[:, 1:, :]
+        dapressure_by = np.zeros(shape)
+        dapressure_by[:, 1:, :] += ma_apressure[:, :-1, :] - ma_apressure[:, 1:, :]
         # Handle the stationary case
 
         # if fwd_model.fl_model.regime == FlowRegime.STATIONARY:
@@ -540,7 +540,7 @@ def _get_perm_gradient_from_diffusivity_eq_density(
 
         # Gather the two schemes
         grad += (
-            (dhead_fy * dahead_fy + dhead_by * dahead_by)
+            (dpressure_fy * dapressure_fy + dpressure_by * dapressure_by)
             * fwd_model.geometry.dx
             / fwd_model.geometry.dy
         )
@@ -734,7 +734,35 @@ def _get_perm_gradient_from_darcy_eq_density(
     return -np.sum(grad, axis=-1)
 
 
-def get_storage_coefficient_adjoint_gradient(
+def get_sc_adjoint_gradient(
+    fwd_model: ForwardModel, adj_model: AdjointModel
+) -> NDArrayFloat:
+    """
+    Compute the gradient with respect to the storage coefficient.
+
+    Parameters
+    ----------
+    fwd_model : ForwardModel
+        The forward model which contains all forward variables and parameters.
+    adj_model : AdjointModel
+        The adjoint model which contains all adjoint variables and parameters.
+
+    Note
+    ----
+    Parameter span is not taken into account which means that the gradient is
+    computed on the full domain (grid).
+
+    Returns
+    -------
+    NDArrayFloat
+        Gradient with respect to the storage coefficient.
+    """
+    if fwd_model.fl_model.is_gravity:
+        return get_sc_adjoint_gradient_density(fwd_model, adj_model)
+    return get_sc_adjoint_gradient_saturated(fwd_model, adj_model)
+
+
+def get_sc_adjoint_gradient_saturated(
     fwd_model: ForwardModel, adj_model: AdjointModel
 ) -> NDArrayFloat:
     """
@@ -768,6 +796,52 @@ def get_storage_coefficient_adjoint_gradient(
     grad = (
         (head[:, :, 1:] - head[:, :, :-1])
         * ma_ahead[:, :, 1:]
+        / np.array(fwd_model.time_params.ldt)[np.newaxis, np.newaxis, :]
+        * fwd_model.geometry.mesh_volume
+    )
+
+    # We sum along the temporal axis
+    return -np.sum(
+        grad, axis=-1
+    ) + adj_model.a_fl_model.a_storage_coefficient_sources.getcol(0).todense().reshape(
+        (fwd_model.geometry.nx, fwd_model.geometry.ny), order="F"
+    )
+
+
+def get_sc_adjoint_gradient_density(
+    fwd_model: ForwardModel, adj_model: AdjointModel
+) -> NDArrayFloat:
+    """
+    Compute the gradient with respect to the storage coefficient.
+
+    Parameters
+    ----------
+    fwd_model : ForwardModel
+        The forward model which contains all forward variables and parameters.
+    adj_model : AdjointModel
+        The adjoint model which contains all adjoint variables and parameters.
+
+    Note
+    ----
+    Parameter span is not taken into account which means that the gradient is
+    computed on the full domain (grid).
+
+    Returns
+    -------
+    NDArrayFloat
+        Gradient with respect to the storage coefficient.
+    """
+    pressure = fwd_model.fl_model.pressure
+    apressure = adj_model.a_fl_model.a_pressure
+    ma_apressure = np.zeros_like(apressure)
+    free_head_indices = fwd_model.fl_model.free_head_indices
+    ma_apressure[free_head_indices[0], free_head_indices[1], :] = apressure[
+        free_head_indices[0], free_head_indices[1], :
+    ]
+
+    grad = (
+        (pressure[:, :, 1:] - pressure[:, :, :-1])
+        * ma_apressure[:, :, 1:]
         / np.array(fwd_model.time_params.ldt)[np.newaxis, np.newaxis, :]
         * fwd_model.geometry.mesh_volume
     )
@@ -1058,7 +1132,7 @@ def compute_param_adjoint_ls_loss_function_gradient(
             )
         return get_initial_head_adjoint_gradient(fwd_model, adj_model)
     if param.name == ParameterName.STORAGE_COEFFICIENT:
-        return get_storage_coefficient_adjoint_gradient(fwd_model, adj_model)
+        return get_sc_adjoint_gradient(fwd_model, adj_model)
     if param.name == ParameterName.INITIAL_PRESSURE:
         if not fwd_model.fl_model.is_gravity:
             raise RuntimeError(

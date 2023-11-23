@@ -281,4 +281,5 @@ def get_density(conc: NDArrayFloat, mw: float) -> NDArrayFloat:
 
     # 2) compute the density (this is implemented only for water solvent)
     # in kg/l
+    tds[:, :] = 0.1
     return WATER_DENSITY * (TDS_LINEAR_COEFFICIENT * tds + 1.0)

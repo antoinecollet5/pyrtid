@@ -546,7 +546,7 @@ def solve_adj_transport_transient_semi_implicit(
     tmp -= a_tr_model.a_gch_src_term.ravel(order="F") / geometry.mesh_volume
 
     # Add the adjoint density source term
-    tmp -= a_tr_model.a_density_src_term.ravel(order="F") / geometry.mesh_volume
+    # tmp -= a_tr_model.a_density_src_term.ravel(order="F") / geometry.mesh_volume
 
     # Build the LU preconditioning
     preconditioner = get_super_lu_preconditioner(q_next.tocsc())
