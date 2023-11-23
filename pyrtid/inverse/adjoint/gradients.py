@@ -9,7 +9,10 @@ import numpy as np
 from pyrtid.forward import ForwardModel, ForwardSolver
 from pyrtid.forward.models import GRAVITY, WATER_DENSITY, FlowRegime
 from pyrtid.inverse.adjoint import AdjointModel, AdjointSolver
-from pyrtid.inverse.adjoint.aflow_solver import make_initial_adj_flow_matrices
+from pyrtid.inverse.adjoint.aflow_solver import (
+    get_adjoint_transport_src_terms,
+    make_initial_adj_flow_matrices,
+)
 from pyrtid.inverse.loss_function import get_model_loss_function
 from pyrtid.inverse.obs import Observable, Observables
 from pyrtid.inverse.params import (
@@ -575,31 +578,39 @@ def _get_perm_gradient_from_darcy_eq_saturated(
     permeability = fwd_model.fl_model.permeability
 
     head = fwd_model.fl_model.head
-    a_u_darcy_x = adj_model.a_fl_model.a_u_darcy_x
 
-    # Consider the x axis
-    # Forward scheme
-    dhead_fx = np.zeros(shape)
-    dhead_fx[:-1, :, :] += (
-        ((head[:-1, :, :] - head[1:, :, :]))
-        * dxi_harmonic_mean(permeability[:-1, :], permeability[1:, :])[:, :, np.newaxis]
-        * a_u_darcy_x
-    )
+    grad = np.zeros_like(head)
 
-    # Bconckward scheme
-    dhead_bx = np.zeros(shape)
-    dhead_bx[1:, :, :] -= (
-        ((head[1:, :, :] - head[:-1, :, :]))
-        * dxi_harmonic_mean(permeability[1:, :], permeability[:-1, :])[:, :, np.newaxis]
-        * a_u_darcy_x
-    )
+    if fwd_model.geometry.nx > 1:
+        a_u_darcy_x = adj_model.a_fl_model.a_u_darcy_x[1:-1, :, :]
 
-    # Gather the two schemes
-    grad = (dhead_fx + dhead_bx) / fwd_model.geometry.dx
+        # Consider the x axis
+        # Forward scheme
+        dhead_fx = np.zeros(shape)
+        dhead_fx[:-1, :, :] += (
+            ((head[:-1, :, :] - head[1:, :, :]))
+            * dxi_harmonic_mean(permeability[:-1, :], permeability[1:, :])[
+                :, :, np.newaxis
+            ]
+            * a_u_darcy_x
+        )
+
+        # Bconckward scheme
+        dhead_bx = np.zeros(shape)
+        dhead_bx[1:, :, :] -= (
+            ((head[1:, :, :] - head[:-1, :, :]))
+            * dxi_harmonic_mean(permeability[1:, :], permeability[:-1, :])[
+                :, :, np.newaxis
+            ]
+            * a_u_darcy_x
+        )
+
+        # Gather the two schemes
+        grad += (dhead_fx + dhead_bx) / fwd_model.geometry.dx
 
     # Consider the y axis for 2D cases
-    if shape[1] != 1:
-        a_u_darcy_y = adj_model.a_fl_model.a_u_darcy_y
+    if fwd_model.geometry.ny > 1:
+        a_u_darcy_y = adj_model.a_fl_model.a_u_darcy_y[:, 1:-1, :]
         # Forward scheme
         dhead_fy = np.zeros(shape)
         dhead_fy[:, :-1, :] += (
@@ -655,33 +666,43 @@ def _get_perm_gradient_from_darcy_eq_density(
     permeability = fwd_model.fl_model.permeability
 
     pressure = fwd_model.fl_model.pressure
-    a_u_darcy_x = adj_model.a_fl_model.a_u_darcy_x
+    grad = np.zeros_like(pressure)
 
-    # Consider the x axis
-    # Forward scheme
-    dpressure_fx = np.zeros(shape)
-    dpressure_fx[:-1, :, :] += (
-        ((pressure[:-1, :, :] - pressure[1:, :, :]))
-        * dxi_harmonic_mean(permeability[:-1, :], permeability[1:, :])[:, :, np.newaxis]
-        * a_u_darcy_x
-    )
+    if fwd_model.geometry.nx > 1:
+        a_u_darcy_x = adj_model.a_fl_model.a_u_darcy_x[1:-1, :, :]
 
-    # Bconckward scheme
-    dpressure_bx = np.zeros(shape)
-    dpressure_bx[1:, :, :] -= (
-        ((pressure[1:, :, :] - pressure[:-1, :, :]))
-        * dxi_harmonic_mean(permeability[1:, :], permeability[:-1, :])[:, :, np.newaxis]
-        * a_u_darcy_x
-    )
+        # Consider the x axis
+        # Forward scheme
+        dpressure_fx = np.zeros(shape)
+        dpressure_fx[:-1, :, :] += (
+            ((pressure[:-1, :, :] - pressure[1:, :, :]))
+            * dxi_harmonic_mean(permeability[:-1, :], permeability[1:, :])[
+                :, :, np.newaxis
+            ]
+            * a_u_darcy_x
+        )
 
-    # Gather the two schemes
-    grad = (
-        (dpressure_fx + dpressure_bx) / fwd_model.geometry.dx / GRAVITY / WATER_DENSITY
-    )
+        # Bconckward scheme
+        dpressure_bx = np.zeros(shape)
+        dpressure_bx[1:, :, :] -= (
+            ((pressure[1:, :, :] - pressure[:-1, :, :]))
+            * dxi_harmonic_mean(permeability[1:, :], permeability[:-1, :])[
+                :, :, np.newaxis
+            ]
+            * a_u_darcy_x
+        )
+
+        # Gather the two schemes
+        grad += (
+            (dpressure_fx + dpressure_bx)
+            / fwd_model.geometry.dx
+            / GRAVITY
+            / WATER_DENSITY
+        )
 
     # Consider the y axis for 2D cases
-    if shape[1] != 1:
-        a_u_darcy_y = adj_model.a_fl_model.a_u_darcy_y
+    if fwd_model.geometry.ny > 1:
+        a_u_darcy_y = adj_model.a_fl_model.a_u_darcy_y[1:-1, :, :]
         # Forward scheme
         dpressure_fy = np.zeros(shape)
         dpressure_fy[:, :-1, :] += (
@@ -841,6 +862,11 @@ def get_initial_head_adjoint_gradient(
         q_next.dot(a_head[:, 0])
         * fwd_model.geometry.mesh_volume
         * fwd_model.fl_model.storage_coefficient.ravel("F")
+    )
+
+    # Derivative of the darcy equation
+    grad += get_adjoint_transport_src_terms(
+        fwd_model.geometry, fwd_model.fl_model, adj_model.a_fl_model, 0, True
     )
 
     # Add adjoint sources for t=0
