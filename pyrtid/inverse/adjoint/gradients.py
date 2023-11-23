@@ -702,7 +702,7 @@ def _get_perm_gradient_from_darcy_eq_density(
 
     # Consider the y axis for 2D cases
     if fwd_model.geometry.ny > 1:
-        a_u_darcy_y = adj_model.a_fl_model.a_u_darcy_y[1:-1, :, :]
+        a_u_darcy_y = adj_model.a_fl_model.a_u_darcy_y[:, 1:-1, :]
         # Forward scheme
         dpressure_fy = np.zeros(shape)
         dpressure_fy[:, :-1, :] += (
