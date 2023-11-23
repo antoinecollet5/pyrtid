@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pyrtid.forward.models import (  # ConstantHead,; ZeroConcGradient,
+    GRAVITY,
     TDS_LINEAR_COEFFICIENT,
     WATER_DENSITY,
     FlowModel,
@@ -34,11 +35,17 @@ def solve_adj_density(
         try:
             # Adjoint variables
             ahead: NDArrayFloat = a_fl_model.a_head[:, :, time_index + 1]
-            pressure: NDArrayFloat = fl_model.pressure[:, :, time_index + 1]
-            # TODO: need to refactor this
-            # - apressure * (head - fl_model._get_mesh_center_vertical_pos().T)
-            # * GRAVITY
-            a_tr_model.a_density[:, :, time_index] += -ahead * pressure / 2
+            pressure: NDArrayFloat = fl_model.lpressure[time_index + 1]
+            density = tr_model.ldensity[time_index]
+
+            # 1) Contribution from the head equation
+            a_tr_model.a_density[:, :, time_index] -= (
+                ahead * pressure / (density**2 * GRAVITY)
+            )
+            # 2) Contribution from the darcy equation
+            a_tr_model.a_density[:, :, time_index] += 0.0
+
+            # 3) Contribution from the diffusivity equation
 
         except IndexError:
             # Handle the Tmax (first timestep going backward)
