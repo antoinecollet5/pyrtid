@@ -459,7 +459,6 @@ def _get_perm_gradient_from_diffusivity_eq_density(
         tmp = 0.0
         if fwd_model.fl_model.vertical_axis == VerticalAxis.DX:
             tmp = rhomean_x * GRAVITY
-            print("XXX")
 
         # Forward scheme
         dpressure_fx = np.zeros(shape)
@@ -538,7 +537,6 @@ def _get_perm_gradient_from_diffusivity_eq_density(
         tmp = 0.0
         if fwd_model.fl_model.vertical_axis == VerticalAxis.DY:
             tmp = rhomean_y * GRAVITY
-            print("YYY")
 
         # Forward scheme
         dpressure_fy = np.zeros(shape)
