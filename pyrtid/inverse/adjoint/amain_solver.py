@@ -53,6 +53,7 @@ class AdjointSolver:
         ) = make_initial_adj_flow_matrices(
             self.fwd_model.geometry,
             self.fwd_model.fl_model,
+            self.fwd_model.tr_model,
             self.adj_model.a_fl_model,
             self.fwd_model.time_params,
             is_q_prev_for_gradient=False,
@@ -63,8 +64,10 @@ class AdjointSolver:
         ) = make_transient_adj_flow_matrices(
             self.fwd_model.geometry,
             self.fwd_model.fl_model,
+            self.fwd_model.tr_model,
             self.adj_model.a_fl_model,
             self.fwd_model.time_params,
+            self.fwd_model.time_params.nts,
         )
 
     def initialize_ajd_transport_matrices(self) -> None:

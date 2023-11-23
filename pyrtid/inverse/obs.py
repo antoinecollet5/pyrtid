@@ -355,7 +355,7 @@ def get_observables_values_as_1d_vector(
     observables
         Sequence of observable instances.
     max_obs_time : Optional[float], optional
-        Maximum time for which to consider an obervation value, by default None.
+        Maximum time for which to consider an observation value, by default None.
     """
     return np.hstack(
         [
@@ -381,7 +381,7 @@ def get_observables_uncertainties_as_1d_vector(
     observables
         Sequence of observable instances.
     max_obs_time : Optional[float], optional
-        Maximum time for which to consider an obervation value, by default None.
+        Maximum time for which to consider an observation value, by default None.
 
     """
     return np.hstack(
@@ -396,7 +396,7 @@ def get_times_idx_before_after_obs(
     obs_times: NDArrayFloat, simu_times: NDArrayFloat
 ) -> Tuple[NDArrayInt, NDArrayInt]:
     """
-    Get the calcuated times before and after the observation times.
+    Get the calculated times before and after the observation times.
 
     Parameters
     ----------
@@ -498,7 +498,7 @@ def get_interp_simu_values_matching_obs_times(
     simu_values: NDArrayFloat,
 ) -> NDArrayFloat:
     """
-    Get an array of interpolated values that match the obervation times.
+    Get an array of interpolated values that match the observation times.
 
     TODO: add ref to paper + a scheme.
 
@@ -553,7 +553,7 @@ def get_simulated_values_matching_obs(
         The list of timesteps used to solve the forward model. The simulation times
         are derived from the list.
     max_obs_time : Optional[float], optional
-        Maximum time for which to consider an obervation value, by default None.
+        Maximum time for which to consider an observation value, by default None.
 
     Returns
     -------
@@ -656,7 +656,7 @@ def get_adjoint_sources_for_obs(
     obs : Observable
         _description_
     max_obs_time : Optional[float], optional
-        Maximum time for which to consider an obervation value, by default None.
+        Maximum time for which to consider an observation value, by default None.
     n_obs: float
         The number of observation point to consider.
 
@@ -747,7 +747,7 @@ def get_predictions_matching_observations(
     observables : Observables
         _description_
     max_obs_time : Optional[float], optional
-        Maximum time for which to consider an obervation value, by default None.
+        Maximum time for which to consider an observation value, by default None.
 
     Returns
     -------

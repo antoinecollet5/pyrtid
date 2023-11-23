@@ -803,7 +803,7 @@ class FlowModel(ABC):
         )
 
     def reinit(self) -> None:
-        """Set all arrays to zero execpt for the initial conditions(first time)."""
+        """Set all arrays to zero except for the initial conditions(first time)."""
         self.lhead = self.lhead[:1]
         self.lpressure = self.lpressure[:1]
         self.lu_darcy_x = []
@@ -1147,7 +1147,7 @@ class TransportModel:
         )
 
     def reinit(self) -> None:
-        """Set all arrays to zero execpt for the initial conditions(first time)."""
+        """Set all arrays to zero except for the initial conditions(first time)."""
         self.lconc = self.lconc[:1]
         self.lgrade = self.lgrade[:1]
         self.grade_prev = self.lgrade[0]
@@ -1288,7 +1288,7 @@ class ForwardModel:
         raise ValueError(f"{condition} is not a valid boundary condition !")
 
     def reinit(self) -> None:
-        """Set all arrays to zero execpt for the initial conditions(first time)."""
+        """Set all arrays to zero except for the initial conditions(first time)."""
         self.fl_model.reinit()
         self.tr_model.reinit()
         self.time_params.reset_to_init()

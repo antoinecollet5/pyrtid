@@ -251,16 +251,22 @@ def get_permeability_adjoint_gradient(
     NDArrayFloat
         Gradient of the objective function with respect to the permeability.
     """
-    grad = _get_perm_gradient_from_diffusivity_eq(
-        fwd_model, adj_model
-    ) + _get_perm_gradient_from_darcy_eq(fwd_model, adj_model)
+    if fwd_model.fl_model.is_gravity:
+        grad = _get_perm_gradient_from_diffusivity_eq_density(
+            fwd_model, adj_model
+        ) + _get_perm_gradient_from_darcy_eq_density(fwd_model, adj_model)
+    else:
+        grad = _get_perm_gradient_from_diffusivity_eq_saturated(
+            fwd_model, adj_model
+        ) + _get_perm_gradient_from_darcy_eq_saturated(fwd_model, adj_model)
+
     # Add the adjoint sources for initial time (t0)
     return grad + adj_model.a_fl_model.a_permeability_sources.getcol(
         0
     ).todense().reshape(grad.shape, order="F")
 
 
-def _get_perm_gradient_from_diffusivity_eq(
+def _get_perm_gradient_from_diffusivity_eq_saturated(
     fwd_model: ForwardModel, adj_model: AdjointModel
 ) -> NDArrayFloat:
     """
@@ -400,7 +406,147 @@ def _get_perm_gradient_from_diffusivity_eq(
     return -np.sum(grad, axis=-1)
 
 
-def _get_perm_gradient_from_darcy_eq(
+def _get_perm_gradient_from_diffusivity_eq_density(
+    fwd_model: ForwardModel, adj_model: AdjointModel
+) -> NDArrayFloat:
+    """
+    Compute the gradient with respect to the permeability using head observations.
+
+    Parameters
+    ----------
+    fwd_model : ForwardModel
+        The forward model which contains all forward variables and parameters.
+    adj_model : AdjointModel
+        The adjoint model which contains all adjoint variables and parameters.
+
+    Note
+    ----
+    Parameter span is not taken into account which means that the gradient is
+    computed on the full domain (grid).
+
+    Returns
+    -------
+    NDArrayFloat
+        Gradient with respect to the permeability using head observations.
+    """
+    shape = (fwd_model.geometry.nx, fwd_model.geometry.ny, fwd_model.time_params.nt)
+    permeability = fwd_model.fl_model.permeability
+
+    if adj_model.a_fl_model.crank_nicolson is None:
+        crank_flow: float = fwd_model.fl_model.crank_nicolson
+    else:
+        crank_flow = adj_model.a_fl_model.crank_nicolson
+
+    pressure = fwd_model.fl_model.pressure
+    apressure = adj_model.a_fl_model.a_pressure
+    ma_ahead = np.zeros(apressure.shape)
+    free_head_indices = fwd_model.fl_model.free_head_indices
+    ma_ahead[free_head_indices[0], free_head_indices[1], :] = apressure[
+        free_head_indices[0], free_head_indices[1], :
+    ]
+    grad = np.zeros(shape)
+
+    # Consider the x axis
+    if shape[0] > 1:
+        # Forward scheme
+        dhead_fx = np.zeros(shape)
+        dhead_fx[:-1, :, 1:] += (
+            crank_flow * (pressure[1:, :, 1:] - pressure[:-1, :, 1:])
+            + (1.0 - crank_flow) * (pressure[1:, :, :-1] - pressure[:-1, :, :-1])
+        ) * dxi_harmonic_mean(permeability[:-1, :], permeability[1:, :])[
+            :, :, np.newaxis
+        ]
+
+        dahead_fx = np.zeros(shape)
+        dahead_fx[:-1, :, :] += ma_ahead[1:, :, :] - ma_ahead[:-1, :, :]
+
+        # Handle the stationary case
+        # if fwd_model.fl_model.regime == FlowRegime.STATIONARY:
+        #     dhead_fx[:-1, :, :1] = (
+        #         head[1:, :, :1] - head[:-1, :, :1]
+        #     ) * dxi_harmonic_mean(permeability[:-1, :], permeability[1:, :])[
+        #         :, :, np.newaxis
+        #     ]
+
+        # Bheadkward scheme
+        dhead_bx = np.zeros(shape)
+        dhead_bx[1:, :, 1:] += (
+            crank_flow * (pressure[:-1, :, 1:] - pressure[1:, :, 1:])
+            + (1.0 - crank_flow) * (pressure[:-1, :, :-1] - pressure[1:, :, :-1])
+        ) * dxi_harmonic_mean(permeability[1:, :], permeability[:-1, :])[
+            :, :, np.newaxis
+        ]
+        dahead_bx = np.zeros(shape)
+
+        dahead_bx[1:, :, :] += ma_ahead[:-1, :, :] - ma_ahead[1:, :, :]
+
+        # Handle the stationary case
+        # if fwd_model.fl_model.regime == FlowRegime.STATIONARY:
+        #     dhead_bx[1:, :, :1] = (
+        #         head[:-1, :, :1] - head[1:, :, :1]
+        #     ) * dxi_harmonic_mean(permeability[1:, :], permeability[:-1, :])[
+        #         :, :, np.newaxis
+        #     ]
+
+        # Gather the two schemes
+        grad += (
+            (dhead_fx * dahead_fx + dhead_bx * dahead_bx)
+            * fwd_model.geometry.dy
+            / fwd_model.geometry.dx
+        )
+
+    # Consider the y axis for 2D cases
+    if shape[1] > 1:
+        # Forward scheme
+        dhead_fy = np.zeros(shape)
+        dhead_fy[:, :-1, 1:] += (
+            crank_flow * (pressure[:, 1:, 1:] - pressure[:, :-1, 1:])
+            + (1.0 - crank_flow) * (pressure[:, 1:, :-1] - pressure[:, :-1, :-1])
+        ) * dxi_harmonic_mean(permeability[:, :-1], permeability[:, 1:])[
+            :, :, np.newaxis
+        ]
+        dahead_fy = np.zeros(shape)
+        dahead_fy[:, :-1, :] += ma_ahead[:, 1:, :] - ma_ahead[:, :-1, :]
+
+        # Handle the stationary case
+        # if fwd_model.fl_model.regime == FlowRegime.STATIONARY:
+        #     dhead_fy[:, :-1, :1] += (
+        #         head[:, 1:, :1] - head[:, :-1, :1]
+        #     ) * dxi_harmonic_mean(permeability[:, :-1], permeability[:, 1:])[
+        #         :, :, np.newaxis
+        #     ]
+
+        # Bheadkward scheme
+        dhead_by = np.zeros(shape)
+        dhead_by[:, 1:, 1:] += (
+            crank_flow * (pressure[:, :-1, 1:] - pressure[:, 1:, 1:])
+            + (1.0 - crank_flow) * (pressure[:, :-1, :-1] - pressure[:, 1:, :-1])
+        ) * dxi_harmonic_mean(permeability[:, 1:], permeability[:, :-1])[
+            :, :, np.newaxis
+        ]
+        dahead_by = np.zeros(shape)
+        dahead_by[:, 1:, :] += ma_ahead[:, :-1, :] - ma_ahead[:, 1:, :]
+        # Handle the stationary case
+
+        # if fwd_model.fl_model.regime == FlowRegime.STATIONARY:
+        #     dhead_by[:, 1:, :1] += (
+        #         (head[:, :-1, :1] - head[:, 1:, :1])
+        #     ) * dxi_harmonic_mean(permeability[:, 1:], permeability[:, :-1])[
+        #         :, :, np.newaxis
+        #     ]
+
+        # Gather the two schemes
+        grad += (
+            (dhead_fy * dahead_fy + dhead_by * dahead_by)
+            * fwd_model.geometry.dx
+            / fwd_model.geometry.dy
+        )
+
+    # We sum along the temporal axis
+    return -np.sum(grad, axis=-1)
+
+
+def _get_perm_gradient_from_darcy_eq_saturated(
     fwd_model: ForwardModel, adj_model: AdjointModel
 ) -> NDArrayFloat:
     """
@@ -480,11 +626,98 @@ def _get_perm_gradient_from_darcy_eq(
     return -np.sum(grad, axis=-1)
 
 
+def _get_perm_gradient_from_darcy_eq_density(
+    fwd_model: ForwardModel, adj_model: AdjointModel
+) -> NDArrayFloat:
+    """
+    Compute the gradient with respect to the permeability using mob observations.
+
+    Mob are the mobile concentrations.
+
+    Parameters
+    ----------
+    fwd_model : ForwardModel
+        The forward model which contains all forward variables and parameters.
+    adj_model : AdjointModel
+        The adjoint model which contains all adjoint variables and parameters.
+
+    Note
+    ----
+    Parameter span is not taken into account which means that the gradient is
+    computed on the full domain (grid).
+
+    Returns
+    -------
+    NDArrayFloat
+        Gradient with respect to the permeability using mob observations.
+    """
+    shape = (fwd_model.geometry.nx, fwd_model.geometry.ny, fwd_model.time_params.nt)
+    permeability = fwd_model.fl_model.permeability
+
+    pressure = fwd_model.fl_model.pressure
+    a_u_darcy_x = adj_model.a_fl_model.a_u_darcy_x
+
+    # Consider the x axis
+    # Forward scheme
+    dpressure_fx = np.zeros(shape)
+    dpressure_fx[:-1, :, :] += (
+        ((pressure[:-1, :, :] - pressure[1:, :, :]))
+        * dxi_harmonic_mean(permeability[:-1, :], permeability[1:, :])[:, :, np.newaxis]
+        * a_u_darcy_x
+    )
+
+    # Bconckward scheme
+    dpressure_bx = np.zeros(shape)
+    dpressure_bx[1:, :, :] -= (
+        ((pressure[1:, :, :] - pressure[:-1, :, :]))
+        * dxi_harmonic_mean(permeability[1:, :], permeability[:-1, :])[:, :, np.newaxis]
+        * a_u_darcy_x
+    )
+
+    # Gather the two schemes
+    grad = (
+        (dpressure_fx + dpressure_bx) / fwd_model.geometry.dx / GRAVITY / WATER_DENSITY
+    )
+
+    # Consider the y axis for 2D cases
+    if shape[1] != 1:
+        a_u_darcy_y = adj_model.a_fl_model.a_u_darcy_y
+        # Forward scheme
+        dpressure_fy = np.zeros(shape)
+        dpressure_fy[:, :-1, :] += (
+            ((pressure[:, :-1, :] - pressure[:, 1:, :]))
+            * dxi_harmonic_mean(permeability[:, :-1], permeability[:, 1:])[
+                :, :, np.newaxis
+            ]
+            * a_u_darcy_y
+        )
+
+        # Bconckward scheme
+        dpressure_by = np.zeros(shape)
+        dpressure_by[:, 1:, :] -= (
+            ((pressure[:, 1:, :] - pressure[:, :-1, :]))
+            * dxi_harmonic_mean(permeability[:, 1:], permeability[:, :-1])[
+                :, :, np.newaxis
+            ]
+            * a_u_darcy_y
+        )
+        # Gather the two schemes
+        grad += (
+            (dpressure_fy + dpressure_by)
+            / fwd_model.geometry.dy
+            / GRAVITY
+            / WATER_DENSITY
+        )
+
+    # We sum along the temporal axis
+    return -np.sum(grad, axis=-1)
+
+
 def get_storage_coefficient_adjoint_gradient(
     fwd_model: ForwardModel, adj_model: AdjointModel
 ) -> NDArrayFloat:
     """
-    Compute the gradient with respect to the storge coefficient.
+    Compute the gradient with respect to the storage coefficient.
 
     Parameters
     ----------
@@ -537,7 +770,7 @@ def get_initial_grade_adjoint_gradient(
     .. math::
 
         \dfrac{\partial \mathcal{L}}{\partial \overline{c}_{i}^{0}} =
-        \dfrac{\mathcal{A}_{i} \omega_{i}}{\Delta t^{0}} \lambda_{c_{i}}^{1}
+        \dfrac{V_{i} \omega_{e, i}}{\Delta t^{0}} \lambda_{c_{i}}^{1}
         + \lambda_{\overline{c}_{i}}^{1} \left( 1 + \Delta t^{0} k_{v} A_{s}
         \left( 1 - \dfrac{c_{i}^{1}}{K_{s}}\right) \right)
         - \dfrac{\overline{c}_{i}^{0, \mathrm{obs}}
@@ -585,9 +818,12 @@ def get_initial_head_adjoint_gradient(
     a_head = adj_model.a_fl_model.a_head[:, :, :2].reshape((-1, 2), order="F")
     grad = np.zeros(a_head[:, 0].size, dtype=np.float64)
 
+    # TODO: Need to take the darcy velocity into account
+
     (q_next, q_prev) = make_initial_adj_flow_matrices(
         fwd_model.geometry,
         fwd_model.fl_model,
+        fwd_model.tr_model,
         adj_model.a_fl_model,
         fwd_model.time_params,
         is_q_prev_for_gradient=True,
@@ -623,6 +859,63 @@ def get_initial_head_adjoint_gradient(
     return grad.reshape(fwd_model.fl_model.lhead[0].shape, order="F")
 
 
+def get_initial_pressure_adjoint_gradient(
+    fwd_model: ForwardModel, adj_model: AdjointModel
+) -> NDArrayFloat:
+    r"""
+    Gradient with respect to mineral phase initial concentrations.
+
+    The gradient reads
+
+    # TODO
+
+    Note
+    ----
+    Parameter span is not taken into account which means that the gradient is
+    computed on the full domain (grid).
+    """
+    a_pressure = adj_model.a_fl_model.a_pressure[:, :, :2].reshape((-1, 2), order="F")
+    grad = np.zeros(a_pressure[:, 0].size, dtype=np.float64)
+
+    (q_next, q_prev) = make_initial_adj_flow_matrices(
+        fwd_model.geometry,
+        fwd_model.fl_model,
+        fwd_model.tr_model,
+        adj_model.a_fl_model,
+        fwd_model.time_params,
+        is_q_prev_for_gradient=True,
+    )
+
+    # Computation w.r.t. \lambda^{1} -> explicit part
+    grad = (
+        q_prev.dot(a_pressure[:, 1])
+        * fwd_model.geometry.mesh_volume
+        * fwd_model.fl_model.storage_coefficient.ravel("F")
+    )
+
+    # Computation w.r.t. \lambda^{0} -> implicit part
+    grad -= (
+        q_next.dot(a_pressure[:, 0])
+        * fwd_model.geometry.mesh_volume
+        * fwd_model.fl_model.storage_coefficient.ravel("F")
+    )
+
+    # Add adjoint sources for t=0
+    # 1) pressure sources
+    grad += (
+        adj_model.a_fl_model.a_pressure_sources.getcol(0).todense().ravel("F")
+    )  # type: ignore
+    # 2) head sources
+    grad += (
+        adj_model.a_fl_model.a_head_sources.getcol(0).todense().ravel("F")
+        / GRAVITY
+        / fwd_model.tr_model.ldensity[0].ravel("F")
+    )
+
+    # Add adjoint sources for time t=0
+    return grad.reshape(fwd_model.fl_model.lhead[0].shape, order="F")
+
+
 def get_initial_conc_adjoint_gradient(
     fwd_model: ForwardModel, adj_model: AdjointModel
 ) -> NDArrayFloat:
@@ -634,12 +927,12 @@ def get_initial_conc_adjoint_gradient(
     .. math::
 
         \dfrac{\partial \mathcal{L}}{\partial c_{i}^{0}} =
-        \dfrac{\mathcal{A}_{i}\omega_{i}}{\Delta t^{0}} \lambda_{c_{i}}^{1}
+        \dfrac{V_{i}\omega_{e, i}}{\Delta t^{0}} \lambda_{c_{i}}^{1}
         - \dfrac{c_{i}^{0, \mathrm{obs}}
         - c_{i}^{0, \mathrm{calc}}}{\left(\sigma_{c_{i}}^{0, \mathrm{obs}}\right)^{2}}
         + \sum_{neigh \;j} \left\lVert \Gamma_{ij} \right\rVert D_{e, ij}
         (1 - \alpha_{\mathrm{d}})\dfrac{\lambda_{c_{j}}^{1} - \lambda_{c_{i}}^{1}}{
-            \left\lVert \overrightarrow{P_{i}P_{j}} \right\rVert}
+            \left\lVert \overrightarrow{\mathrm{P}_{i}\mathrm{P}_{j}} \right\rVert}
 
     Note
     ----
@@ -746,6 +1039,7 @@ def compute_param_adjoint_ls_loss_function_gradient(
                 "Cannot optimize the initial pressure if not using a density flow"
                 " (gravity is off). Optimize the initial head instead!"
             )
+        return get_initial_pressure_adjoint_gradient(fwd_model, adj_model)
     raise (NotImplementedError("Please contact the developer to handle this issue."))
 
 
@@ -760,7 +1054,7 @@ def compute_adjoint_gradient(
 
     Note
     ----
-    Adjoint gradient computation step 3: The gradient has to be mutiplied
+    Adjoint gradient computation step 3: The gradient has to be multiplied
     by 1 / first preconditioner_1st_derivative(m]) with m the adjusted parameter
     because the preconditioner operates a variable
     change in the objective function: The new objective function J is J2(m2) = J[m],
@@ -867,14 +1161,14 @@ def compute_fd_gradient(
         differences. If different from one, the calculation relies on
         multi-processing to decrease the computation time. The default is 1.
     max_obs_time : Optional[float], optional
-        Maximum time for which to consider an obervation value, by default None.
+        Maximum time for which to consider an observation value, by default None.
 
     """
     _model = copy.deepcopy(model)
 
     grad = np.array([], dtype=np.float64)
     for param in object_or_object_sequence_to_list(parameters_to_adjust):
-        # FD approximation -> only on the adjusted values. This is convient to
+        # FD approximation -> only on the adjusted values. This is convenient to
         # test to gradient on a small portion of big models with to many meshes to
         # be entirely tested.
 

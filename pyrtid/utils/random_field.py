@@ -112,7 +112,7 @@ def get_normalized_mean_from_lognormal_params(mean: float, std: float) -> float:
     Returns
     -------
     float
-        The mean of the noramlized distribution.
+        The mean of the normalized distribution.
     """
     return np.log(mean**2 / np.sqrt(mean**2 + std**2))
 

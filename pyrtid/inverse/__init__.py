@@ -35,7 +35,7 @@ Sub module providing regularization tools.
 Adjoint
 ^^^^^^^
 
-Sub module providing an adjoint opertaor and the associated gradients.
+Sub module providing an adjoint operator and the associated gradients.
 
 .. autosummary::
    :toctree: _autosummary

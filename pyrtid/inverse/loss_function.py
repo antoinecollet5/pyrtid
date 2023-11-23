@@ -62,7 +62,7 @@ def get_model_ls_loss_function(
     observables : Observables
         Sequence of observable instances.
     max_obs_time : Optional[float], optional
-        Maximum time for which to consider an obervation value, by default None
+        Maximum time for which to consider an observation value, by default None
 
     Returns
     -------
@@ -113,7 +113,7 @@ def get_model_loss_function(
     parameters_to_adjust : AdjustableParameters
         Adjusted parameters.
     max_obs_time : Optional[float], optional
-        Maximum time for which to consider an obervation value, by default None
+        Maximum time for which to consider an observation value, by default None
     jreg_weight : float, optional
         Weight to apply to the regularization part, by default 1.0.
 

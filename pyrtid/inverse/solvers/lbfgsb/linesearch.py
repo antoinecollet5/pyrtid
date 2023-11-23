@@ -147,7 +147,7 @@ def line_search(
     max_steplength : float
         Maximum steplength allowed.
     fun_and_grad : Callable[[NDArrayFloat], Tuple[float, NDArrayFloat]]
-        Function returning both the obejctive function and its gradient with respect to
+        Function returning both the objective function and its gradient with respect to
         a given vector x.
     ftol_linesearch: float, optional
         Specify a nonnegative tolerance for the sufficient decrease condition in
