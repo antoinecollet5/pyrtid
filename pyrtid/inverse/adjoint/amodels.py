@@ -50,10 +50,10 @@ class AdjointFlowModel(ABC):
             (geometry.nx, geometry.ny, time_params.nt), dtype=np.float64
         )
         self.a_u_darcy_x = np.zeros(
-            (geometry.nx - 1, geometry.ny, time_params.nt), dtype=np.float64
+            (geometry.nx + 1, geometry.ny, time_params.nt), dtype=np.float64
         )
         self.a_u_darcy_y = np.zeros(
-            (geometry.nx, geometry.ny - 1, time_params.nt), dtype=np.float64
+            (geometry.nx, geometry.ny + 1, time_params.nt), dtype=np.float64
         )
         # Generally, not so many observations, so only a few adjoint variable,
         # so use a sparse matrix instead of a dense array
