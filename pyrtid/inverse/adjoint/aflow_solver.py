@@ -279,7 +279,10 @@ def make_transient_adj_flow_matrices(
         _tmp = geometry.dy / geometry.dx / geometry.mesh_volume
 
         kmean = get_kmean(geometry, fl_model, 0)
-        rhomean = get_rhomean_adj(geometry, tr_model, 0, time_index)
+        # at n - 1
+        rhomean_next = get_rhomean_adj(geometry, tr_model, 0, time_index - 1)
+        # at n
+        rhomean_prev = get_rhomean_adj(geometry, tr_model, 0, time_index)
 
         # 1.1) Forward scheme:
 
@@ -291,13 +294,15 @@ def make_transient_adj_flow_matrices(
             owner_indices_to_keep=fl_model.free_head_nn,
         )
         # Add the storage coefficient with respect to the owner mesh
-        tmp = _tmp / stocoeff[idc_owner] * kmean[idc_owner]
+        tmp_next = _tmp / stocoeff[idc_owner] * kmean[idc_owner]
+        tmp_prev = tmp_next.copy()
 
         if fl_model.is_gravity:
-            tmp *= rhomean[idc_owner] / WATER_DENSITY
+            tmp_next *= rhomean_next[idc_owner] / WATER_DENSITY
+            tmp_prev *= rhomean_prev[idc_owner] / WATER_DENSITY
 
-        q_next[idc_owner, idc_owner] += fl_crank * tmp  # type: ignore
-        q_prev[idc_owner, idc_owner] -= (1.0 - fl_crank) * tmp  # type: ignore
+        q_next[idc_owner, idc_owner] += fl_crank * tmp_next  # type: ignore
+        q_prev[idc_owner, idc_owner] -= (1.0 - fl_crank) * tmp_prev  # type: ignore
 
         # 1.1.2) For all nodes but with free head neighbors only
         idc_owner, idc_neigh = get_owner_neigh_indices(
@@ -307,14 +312,16 @@ def make_transient_adj_flow_matrices(
             neigh_indices_to_keep=fl_model.free_head_nn,
         )
         # Add the storage coefficient with respect to the owner mesh
-        tmp = _tmp / stocoeff[idc_owner] * kmean[idc_owner]
+        tmp_next = _tmp / stocoeff[idc_owner] * kmean[idc_owner]
+        tmp_prev = tmp_next.copy()
 
         if fl_model.is_gravity:
-            tmp *= rhomean[idc_owner] / WATER_DENSITY
+            tmp_next *= rhomean_next[idc_owner] / WATER_DENSITY
+            tmp_prev *= rhomean_prev[idc_owner] / WATER_DENSITY
 
-        q_next[idc_owner, idc_neigh] -= fl_crank * tmp  # type: ignore
+        q_next[idc_owner, idc_neigh] -= fl_crank * tmp_next  # type: ignore
 
-        q_prev[idc_owner, idc_neigh] += (1.0 - fl_crank) * tmp  # type: ignore
+        q_prev[idc_owner, idc_neigh] += (1.0 - fl_crank) * tmp_prev  # type: ignore
 
         # 1.2) Backward scheme
 
@@ -326,13 +333,15 @@ def make_transient_adj_flow_matrices(
             owner_indices_to_keep=fl_model.free_head_nn,
         )
         # Add the storage coefficient with respect to the owner mesh
-        tmp = _tmp / stocoeff[idc_owner] * kmean[idc_neigh]
+        tmp_next = _tmp / stocoeff[idc_owner] * kmean[idc_neigh]
+        tmp_prev = tmp_next.copy()
 
         if fl_model.is_gravity:
-            tmp *= rhomean[idc_neigh] / WATER_DENSITY
+            tmp_next *= rhomean_next[idc_neigh] / WATER_DENSITY
+            tmp_prev *= rhomean_prev[idc_neigh] / WATER_DENSITY
 
-        q_next[idc_owner, idc_owner] += fl_crank * tmp  # type: ignore
-        q_prev[idc_owner, idc_owner] -= (1.0 - fl_crank) * tmp  # type: ignore
+        q_next[idc_owner, idc_owner] += fl_crank * tmp_next  # type: ignore
+        q_prev[idc_owner, idc_owner] -= (1.0 - fl_crank) * tmp_prev  # type: ignore
 
         # 1.2.2) For all nodes but with free head neighbors only
         idc_owner, idc_neigh = get_owner_neigh_indices(
@@ -342,19 +351,25 @@ def make_transient_adj_flow_matrices(
             neigh_indices_to_keep=fl_model.free_head_nn,
         )
         # Add the storage coefficient with respect to the owner mesh
-        tmp = _tmp / stocoeff[idc_owner] * kmean[idc_neigh]
+        tmp_next = _tmp / stocoeff[idc_owner] * kmean[idc_neigh]
+        tmp_prev = tmp_next.copy()
 
         if fl_model.is_gravity:
-            tmp *= rhomean[idc_neigh] / WATER_DENSITY
+            tmp_next *= rhomean_next[idc_neigh] / WATER_DENSITY
+            tmp_prev *= rhomean_prev[idc_neigh] / WATER_DENSITY
 
-        q_next[idc_owner, idc_neigh] -= fl_crank * tmp  # type: ignore
+        q_next[idc_owner, idc_neigh] -= fl_crank * tmp_next  # type: ignore
 
-        q_prev[idc_owner, idc_neigh] += (1.0 - fl_crank) * tmp  # type: ignore
+        q_prev[idc_owner, idc_neigh] += (1.0 - fl_crank) * tmp_prev  # type: ignore
 
     # 2) Y contribution
     if geometry.ny >= 2:
         kmean = get_kmean(geometry, fl_model, 1)
-        rhomean = get_rhomean_adj(geometry, tr_model, 1, time_index)
+
+        # at n - 1
+        rhomean_next = get_rhomean_adj(geometry, tr_model, 1, time_index - 1)
+        # at n
+        rhomean_prev = get_rhomean_adj(geometry, tr_model, 1, time_index)
 
         # 2.1) Forward scheme:
         _tmp = geometry.dx / geometry.dy / geometry.mesh_volume
@@ -367,13 +382,15 @@ def make_transient_adj_flow_matrices(
             owner_indices_to_keep=fl_model.free_head_nn,
         )
         # Add the storage coefficient with respect to the owner mesh
-        tmp = _tmp / stocoeff[idc_owner] * kmean[idc_owner]
+        tmp_next = _tmp / stocoeff[idc_owner] * kmean[idc_owner]
+        tmp_prev = tmp_next.copy()
 
         if fl_model.is_gravity:
-            tmp *= rhomean[idc_owner] / WATER_DENSITY
+            tmp_next *= rhomean_next[idc_owner] / WATER_DENSITY
+            tmp_prev *= rhomean_prev[idc_owner] / WATER_DENSITY
 
-        q_next[idc_owner, idc_owner] += fl_crank * tmp  # type: ignore
-        q_prev[idc_owner, idc_owner] -= (1.0 - fl_crank) * tmp  # type: ignore
+        q_next[idc_owner, idc_owner] += fl_crank * tmp_next  # type: ignore
+        q_prev[idc_owner, idc_owner] -= (1.0 - fl_crank) * tmp_prev  # type: ignore
 
         # 2.1.2) For all nodes but with free head neighbors only
         idc_owner, idc_neigh = get_owner_neigh_indices(
@@ -383,14 +400,16 @@ def make_transient_adj_flow_matrices(
             neigh_indices_to_keep=fl_model.free_head_nn,
         )
         # Add the storage coefficient with respect to the owner mesh
-        tmp = _tmp / stocoeff[idc_owner] * kmean[idc_owner]
+        tmp_next = _tmp / stocoeff[idc_owner] * kmean[idc_owner]
+        tmp_prev = tmp_next.copy()
 
         if fl_model.is_gravity:
-            tmp *= rhomean[idc_owner] / WATER_DENSITY
+            tmp_next *= rhomean_next[idc_owner] / WATER_DENSITY
+            tmp_prev *= rhomean_prev[idc_owner] / WATER_DENSITY
 
-        q_next[idc_owner, idc_neigh] -= fl_crank * tmp  # type: ignore
+        q_next[idc_owner, idc_neigh] -= fl_crank * tmp_next  # type: ignore
 
-        q_prev[idc_owner, idc_neigh] += (1.0 - fl_crank) * tmp  # type: ignore
+        q_prev[idc_owner, idc_neigh] += (1.0 - fl_crank) * tmp_prev  # type: ignore
 
         # 2.2) Backward scheme
 
@@ -402,13 +421,15 @@ def make_transient_adj_flow_matrices(
             owner_indices_to_keep=fl_model.free_head_nn,
         )
         # Add the storage coefficient with respect to the owner mesh
-        tmp = _tmp / stocoeff[idc_owner] * kmean[idc_neigh]
+        tmp_next = _tmp / stocoeff[idc_owner] * kmean[idc_neigh]
+        tmp_prev = tmp_next.copy()
 
         if fl_model.is_gravity:
-            tmp *= rhomean[idc_neigh] / WATER_DENSITY
+            tmp_next *= rhomean_next[idc_neigh] / WATER_DENSITY
+            tmp_prev *= rhomean_prev[idc_neigh] / WATER_DENSITY
 
-        q_next[idc_owner, idc_owner] += fl_crank * tmp  # type: ignore
-        q_prev[idc_owner, idc_owner] -= (1.0 - fl_crank) * tmp  # type: ignore
+        q_next[idc_owner, idc_owner] += fl_crank * tmp_next  # type: ignore
+        q_prev[idc_owner, idc_owner] -= (1.0 - fl_crank) * tmp_prev  # type: ignore
 
         # 2.2.2) For all nodes but with free head neighbors only
         idc_owner, idc_neigh = get_owner_neigh_indices(
@@ -418,14 +439,15 @@ def make_transient_adj_flow_matrices(
             neigh_indices_to_keep=fl_model.free_head_nn,
         )
         # Add the storage coefficient with respect to the owner mesh
-        tmp = _tmp / stocoeff[idc_owner] * kmean[idc_neigh]
+        tmp_next = _tmp / stocoeff[idc_owner] * kmean[idc_neigh]
+        tmp_prev = tmp_next.copy()
 
         if fl_model.is_gravity:
-            tmp *= rhomean[idc_neigh] / WATER_DENSITY
+            tmp_next *= rhomean_next[idc_neigh] / WATER_DENSITY
+            tmp_prev *= rhomean_prev[idc_neigh] / WATER_DENSITY
 
-        q_next[idc_owner, idc_neigh] -= fl_crank * tmp  # type: ignore
-
-        q_prev[idc_owner, idc_neigh] += (1.0 - fl_crank) * tmp  # type: ignore
+        q_next[idc_owner, idc_neigh] -= fl_crank * tmp_next  # type: ignore
+        q_prev[idc_owner, idc_neigh] += (1.0 - fl_crank) * tmp_prev  # type: ignore
 
     return q_next, q_prev
 
@@ -446,12 +468,12 @@ def get_aflow_matrices(
     # Since the density vary over time, it is required to rebuild the adjoint
     # matrices at each timestep.
     if fl_model.is_gravity:
-        _q_prev, _q_next = make_transient_adj_flow_matrices(
+        _q_next, _q_prev = make_transient_adj_flow_matrices(
             geometry, fl_model, tr_model, a_fl_model, time_params, time_index
         )
-
-    _q_prev = a_fl_model.q_prev.copy()
-    _q_next = a_fl_model.q_next.copy()
+    else:
+        _q_prev = a_fl_model.q_prev.copy()
+        _q_next = a_fl_model.q_next.copy()
     shape = a_fl_model.a_head[:, :, -1].size
 
     # Add 1/dt for the left term contribution: only for free head
