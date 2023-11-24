@@ -749,7 +749,7 @@ def _get_perm_gradient_from_darcy_eq_density(
         # Consider the x axis
         # Forward scheme
         dpressure_fx = np.zeros(shape)
-        dpressure_fx[:-1, :, :] += (
+        dpressure_fx[:-1, :, :] -= (
             (
                 (pressure[1:, :, :] - pressure[:-1, :, :]) / fwd_model.geometry.dx
                 + rho_ij_g_x
@@ -762,7 +762,7 @@ def _get_perm_gradient_from_darcy_eq_density(
 
         # Bconckward scheme
         dpressure_bx = np.zeros(shape)
-        dpressure_bx[1:, :, :] -= (
+        dpressure_bx[1:, :, :] += (
             (
                 (pressure[:-1, :, :] - pressure[1:, :, :]) / fwd_model.geometry.dx
                 - rho_ij_g_x
@@ -795,7 +795,7 @@ def _get_perm_gradient_from_darcy_eq_density(
 
         # Forward scheme
         dpressure_fy = np.zeros(shape)
-        dpressure_fy[:, :-1, :] += (
+        dpressure_fy[:, :-1, :] -= (
             (
                 (pressure[:, 1:, :] - pressure[:, :-1, :]) / fwd_model.geometry.dy
                 + rho_ij_g_y
@@ -808,10 +808,10 @@ def _get_perm_gradient_from_darcy_eq_density(
 
         # Bconckward scheme
         dpressure_by = np.zeros(shape)
-        dpressure_by[:, 1:, :] -= (
+        dpressure_by[:, 1:, :] += (
             (
                 (pressure[:, :-1, :] - pressure[:, 1:, :]) / fwd_model.geometry.dy
-                + rho_ij_g_y
+                - rho_ij_g_y
             )
             * dxi_harmonic_mean(permeability[:, 1:], permeability[:, :-1])[
                 :, :, np.newaxis
