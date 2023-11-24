@@ -24,7 +24,11 @@ from pyrtid.utils.types import NDArrayFloat
 
 
 def get_rhomean_adj(
-    geometry: Geometry, tr_model: TransportModel, axis: int, time_index
+    geometry: Geometry,
+    tr_model: TransportModel,
+    axis: int,
+    time_index: int,
+    is_flatten: bool = True,
 ) -> NDArrayFloat:
     rhomean: NDArrayFloat = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
     if axis == 0:
@@ -35,7 +39,10 @@ def get_rhomean_adj(
         rhomean[:, :-1] = arithmetic_mean(
             tr_model.ldensity[time_index][:, :-1], tr_model.ldensity[time_index][:, 1:]
         )
-    return rhomean.flatten(order="F")
+
+    if is_flatten:
+        return rhomean.flatten(order="F")
+    return rhomean
 
 
 def make_initial_adj_flow_matrices(
@@ -499,8 +506,6 @@ def update_adjoint_u_darcy(
 
     if time_index == 0:
         a_conc = np.zeros_like(a_conc)
-
-    # TODO: need to take the boundary into account
 
     # X contribution
     if geometry.nx > 1:

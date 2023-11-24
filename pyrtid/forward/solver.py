@@ -114,7 +114,7 @@ class ForwardSolver:
 
         # Update the initial density
         self.model.tr_model.ldensity[0] = get_density(
-            self.model.tr_model.lconc[0], self.model.gch_params.Ms
+            self.model.tr_model.lconc[0], self.model.gch_params.Ms, 0
         )
 
         if self.model.fl_model.regime == FlowRegime.STATIONARY:
@@ -251,11 +251,13 @@ class ForwardSolver:
 
         # Update the density for the current timestep
         self.model.tr_model.ldensity.append(
-            get_density(self.model.tr_model.lconc[-1], self.model.gch_params.Ms)
+            get_density(
+                self.model.tr_model.lconc[-1], self.model.gch_params.Ms, time_index
+            )
         )
 
 
-def get_density(conc: NDArrayFloat, mw: float) -> NDArrayFloat:
+def get_density(conc: NDArrayFloat, mw: float, time_index: int) -> NDArrayFloat:
     """
 
     Parameters
@@ -281,4 +283,5 @@ def get_density(conc: NDArrayFloat, mw: float) -> NDArrayFloat:
 
     # 2) compute the density (this is implemented only for water solvent)
     # in kg/l
+    # tds[:, :] = 0.1 * np.random.default_rng(time_index).random(1)
     return WATER_DENSITY * (TDS_LINEAR_COEFFICIENT * tds + 1.0)

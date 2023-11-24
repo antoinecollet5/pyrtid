@@ -27,7 +27,9 @@ from .models import (
 )
 
 
-def get_kmean(geometry: Geometry, fl_model: FlowModel, axis: int) -> NDArrayFloat:
+def get_kmean(
+    geometry: Geometry, fl_model: FlowModel, axis: int, is_flatten=True
+) -> NDArrayFloat:
     kmean: NDArrayFloat = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
     if axis == 0:
         kmean[:-1, :] = harmonic_mean(
@@ -37,7 +39,10 @@ def get_kmean(geometry: Geometry, fl_model: FlowModel, axis: int) -> NDArrayFloa
         kmean[:, :-1] = harmonic_mean(
             fl_model.permeability[:, :-1], fl_model.permeability[:, 1:]
         )
-    return kmean.flatten(order="F")
+
+    if is_flatten:
+        return kmean.flatten(order="F")
+    return kmean
 
 
 def get_rhomean(
@@ -402,15 +407,15 @@ def find_ux_boundary_density(
         tr_model.ldensity[-1][:-1, :], tr_model.ldensity[-1][1:, :]
     )
     if fl_model.vertical_axis == VerticalAxis.DX:
-        coef = rhomean * GRAVITY
+        rho_ij_g = rhomean * GRAVITY
     else:
-        coef = 0.0
+        rho_ij_g = 0.0
 
     out[1:-1, :] = (
         -kmean
         / WATER_DENSITY
         / GRAVITY
-        * ((pressure[1:, :] - pressure[:-1, :]) / geometry.dx + coef)
+        * ((pressure[1:, :] - pressure[:-1, :]) / geometry.dx + rho_ij_g)
     )
     return out
 
@@ -440,15 +445,15 @@ def find_uy_boundary_density(
         tr_model.ldensity[-1][:, :-1], tr_model.ldensity[-1][:, 1:]
     )
     if fl_model.vertical_axis == VerticalAxis.DY:
-        coef = rhomean * GRAVITY
+        rho_ij_g = rhomean * GRAVITY
     else:
-        coef = 0.0
+        rho_ij_g = 0.0
 
     out[:, 1:-1] = (
         -kmean
         / WATER_DENSITY
         / GRAVITY
-        * ((pressure[:, 1:] - pressure[:, :-1]) / geometry.dy + coef)
+        * ((pressure[:, 1:] - pressure[:, :-1]) / geometry.dy + rho_ij_g)
     )
     return out
 

@@ -649,7 +649,7 @@ def _get_perm_gradient_from_darcy_eq_saturated(
         # Consider the x axis
         # Forward scheme
         dhead_fx = np.zeros(shape)
-        dhead_fx[:-1, :, :] += (
+        dhead_fx[:-1, :, :] -= (
             ((head[1:, :, :] - head[:-1, :, :]))
             * dxi_harmonic_mean(permeability[:-1, :], permeability[1:, :])[
                 :, :, np.newaxis
@@ -659,7 +659,7 @@ def _get_perm_gradient_from_darcy_eq_saturated(
 
         # Bconckward scheme
         dhead_bx = np.zeros(shape)
-        dhead_bx[1:, :, :] -= (
+        dhead_bx[1:, :, :] += (
             ((head[:-1, :, :] - head[1:, :, :]))
             * dxi_harmonic_mean(permeability[1:, :], permeability[:-1, :])[
                 :, :, np.newaxis
@@ -675,7 +675,7 @@ def _get_perm_gradient_from_darcy_eq_saturated(
         a_u_darcy_y = adj_model.a_fl_model.a_u_darcy_y[:, 1:-1, :]
         # Forward scheme
         dhead_fy = np.zeros(shape)
-        dhead_fy[:, :-1, :] += (
+        dhead_fy[:, :-1, :] -= (
             ((head[:, 1:, :] - head[:, :-1, :]))
             * dxi_harmonic_mean(permeability[:, :-1], permeability[:, 1:])[
                 :, :, np.newaxis
@@ -685,7 +685,7 @@ def _get_perm_gradient_from_darcy_eq_saturated(
 
         # Bconckward scheme
         dhead_by = np.zeros(shape)
-        dhead_by[:, 1:, :] -= (
+        dhead_by[:, 1:, :] += (
             ((head[:, :-1, :] - head[:, 1:, :]))
             * dxi_harmonic_mean(permeability[:, 1:], permeability[:, :-1])[
                 :, :, np.newaxis
@@ -696,7 +696,7 @@ def _get_perm_gradient_from_darcy_eq_saturated(
         grad += (dhead_fy + dhead_by) / fwd_model.geometry.dy
 
     # We sum along the temporal axis
-    return -np.sum(grad, axis=-1)
+    return np.sum(grad, axis=-1)
 
 
 def _get_perm_gradient_from_darcy_eq_density(
@@ -733,11 +733,27 @@ def _get_perm_gradient_from_darcy_eq_density(
     if fwd_model.geometry.nx > 1:
         a_u_darcy_x = adj_model.a_fl_model.a_u_darcy_x[1:-1, :, :]
 
+        if fwd_model.fl_model.vertical_axis == VerticalAxis.DX:
+            rho_ij_g_x = (
+                arithmetic_mean(
+                    fwd_model.tr_model.density[:-1, :, :],
+                    fwd_model.tr_model.density[1:, :, :],
+                )
+                * GRAVITY
+            )
+            # shift in time (except for t=0) rho_n for p_{n+1}
+            rho_ij_g_x[:, :, 1:] = rho_ij_g_x[:, :, :-1]
+        else:
+            rho_ij_g_x = 0.0
+
         # Consider the x axis
         # Forward scheme
         dpressure_fx = np.zeros(shape)
         dpressure_fx[:-1, :, :] += (
-            ((pressure[:-1, :, :] - pressure[1:, :, :]))
+            (
+                (pressure[1:, :, :] - pressure[:-1, :, :]) / fwd_model.geometry.dx
+                + rho_ij_g_x
+            )
             * dxi_harmonic_mean(permeability[:-1, :], permeability[1:, :])[
                 :, :, np.newaxis
             ]
@@ -747,7 +763,10 @@ def _get_perm_gradient_from_darcy_eq_density(
         # Bconckward scheme
         dpressure_bx = np.zeros(shape)
         dpressure_bx[1:, :, :] -= (
-            ((pressure[1:, :, :] - pressure[:-1, :, :]))
+            (
+                (pressure[:-1, :, :] - pressure[1:, :, :]) / fwd_model.geometry.dx
+                - rho_ij_g_x
+            )
             * dxi_harmonic_mean(permeability[1:, :], permeability[:-1, :])[
                 :, :, np.newaxis
             ]
@@ -755,20 +774,32 @@ def _get_perm_gradient_from_darcy_eq_density(
         )
 
         # Gather the two schemes
-        grad += (
-            (dpressure_fx + dpressure_bx)
-            / fwd_model.geometry.dx
-            / GRAVITY
-            / WATER_DENSITY
-        )
+        grad += (dpressure_fx + dpressure_bx) / GRAVITY / WATER_DENSITY
 
     # Consider the y axis for 2D cases
     if fwd_model.geometry.ny > 1:
         a_u_darcy_y = adj_model.a_fl_model.a_u_darcy_y[:, 1:-1, :]
+
+        if fwd_model.fl_model.vertical_axis == VerticalAxis.DY:
+            rho_ij_g_y = (
+                arithmetic_mean(
+                    fwd_model.tr_model.density[:, :-1, :],
+                    fwd_model.tr_model.density[:, 1:, :],
+                )
+                * GRAVITY
+            )
+            # shift in time (except for t=0) rho_n for p_{n+1}
+            rho_ij_g_y[:, :, 1:] = rho_ij_g_y[:, :, :-1]
+        else:
+            rho_ij_g_y = 0.0
+
         # Forward scheme
         dpressure_fy = np.zeros(shape)
         dpressure_fy[:, :-1, :] += (
-            ((pressure[:, :-1, :] - pressure[:, 1:, :]))
+            (
+                (pressure[:, 1:, :] - pressure[:, :-1, :]) / fwd_model.geometry.dy
+                + rho_ij_g_y
+            )
             * dxi_harmonic_mean(permeability[:, :-1], permeability[:, 1:])[
                 :, :, np.newaxis
             ]
@@ -778,22 +809,20 @@ def _get_perm_gradient_from_darcy_eq_density(
         # Bconckward scheme
         dpressure_by = np.zeros(shape)
         dpressure_by[:, 1:, :] -= (
-            ((pressure[:, 1:, :] - pressure[:, :-1, :]))
+            (
+                (pressure[:, :-1, :] - pressure[:, 1:, :]) / fwd_model.geometry.dy
+                + rho_ij_g_y
+            )
             * dxi_harmonic_mean(permeability[:, 1:], permeability[:, :-1])[
                 :, :, np.newaxis
             ]
             * a_u_darcy_y
         )
         # Gather the two schemes
-        grad += (
-            (dpressure_fy + dpressure_by)
-            / fwd_model.geometry.dy
-            / GRAVITY
-            / WATER_DENSITY
-        )
+        grad += (dpressure_fy + dpressure_by) / GRAVITY / WATER_DENSITY
 
     # We sum along the temporal axis
-    return -np.sum(grad, axis=-1)
+    return np.sum(grad, axis=-1)
 
 
 def get_sc_adjoint_gradient(

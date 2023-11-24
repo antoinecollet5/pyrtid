@@ -46,13 +46,14 @@ def solve_adj_density(
             )
 
             # 2) Contribution from the darcy equation
-            _add_darcy_contribution(fl_model, a_fl_model, a_tr_model, time_index)
+            _add_darcy_contribution(
+                fl_model, a_fl_model, a_tr_model, time_index, geometry
+            )
 
-            # 3) Diffusivity equation contribution
-            get_kmean(geometry, fl_model, 0)
-            get_rhomean_adj(geometry, tr_model, 0, time_index)
             # 3) Contribution from the diffusivity equation
-
+            _add_diffusivity_contribution(
+                fl_model, tr_model, a_fl_model, a_tr_model, time_index, geometry
+            )
         except IndexError:
             # Handle the Tmax (first timestep going backward)
             # or adjoint state initialization
@@ -91,21 +92,29 @@ def _add_darcy_contribution(
     a_fl_model: AdjointFlowModel,
     a_tr_model: AdjointTransportModel,
     time_index: int,
+    geometry: Geometry,
 ) -> None:
     # X contribution
     if fl_model.vertical_axis == VerticalAxis.DX:
-        a_u_darcy_x_old = a_fl_model.a_u_darcy_x[:, :, time_index + 1]
+        kij = get_kmean(geometry, fl_model, axis=0, is_flatten=False)[:-1, :]
+        a_u_darcy_x_old = (
+            a_fl_model.a_u_darcy_x[1:-1, :, time_index + 1] * kij / WATER_DENSITY
+        )
         # Left
-        a_tr_model.a_density[:, :, time_index] -= a_u_darcy_x_old[1:, :] * 1 / 2
+        a_tr_model.a_density[:-1, :, time_index] += a_u_darcy_x_old[:, :] * 1 / 2
         # Right
-        a_tr_model.a_density[:, :, time_index] += a_u_darcy_x_old[:-1, :] * 1 / 2
+        a_tr_model.a_density[1:, :, time_index] -= a_u_darcy_x_old[:, :] * 1 / 2
     # Y Contribution
     elif fl_model.vertical_axis == VerticalAxis.DY:
-        a_u_darcy_y_old = a_fl_model.a_u_darcy_y[:, :, time_index + 1]
+        kij = get_kmean(geometry, fl_model, axis=1, is_flatten=False)[:, :-1]
+        a_u_darcy_y_old = (
+            a_fl_model.a_u_darcy_y[:, 1:-1, time_index + 1] * kij / WATER_DENSITY
+        )
+        # TODO: replace 1/2 by the derivative of the square
         # Up
-        a_tr_model.a_density[:, :, time_index] -= a_u_darcy_y_old[:, 1:] * 1 / 2
+        a_tr_model.a_density[:, :-1, time_index] += a_u_darcy_y_old * 1 / 2
         # Down
-        a_tr_model.a_density[:, :, time_index] += a_u_darcy_y_old[:, :-1] * 1 / 2
+        a_tr_model.a_density[:, 1:, time_index] -= a_u_darcy_y_old * 1 / 2
 
 
 def _add_diffusivity_contribution(
@@ -126,18 +135,32 @@ def _add_diffusivity_contribution(
 
     # 1) X contribution
     if geometry.nx > 1:
-        kij = get_kmean(geometry, fl_model, axis=0)
+        kij = get_kmean(geometry, fl_model, axis=0, is_flatten=False)[:-1, :]
+
+        if fl_model.vertical_axis == VerticalAxis.DX:
+            drho2g = (
+                get_rhomean_adj(geometry, tr_model, 0, time_index, is_flatten=False)[
+                    :-1, :
+                ]
+                / GRAVITY
+            )
+        else:
+            drho2g = 0.0
 
         # Ici res vaut la même chose en forward et backward parce que les equations
         # ne dépendent que de paramètres IJ
-        tmp = geometry.ny * 0.5 * kij * WATER_DENSITY
+        tmp = geometry.ny * kij / WATER_DENSITY
+
         _res = (
             tmp
             * (
-                cr_fl * p_old[1:, :]
-                - p_old[:-1, :]
-                + (1 + cr_fl) * p_new[1:, :]
-                - p_new[:-1, :]
+                0.5
+                / geometry.nx
+                * (
+                    cr_fl * (p_old[1:, :] - p_old[:-1, :])
+                    + (1 + cr_fl) * (p_new[1:, :] - p_new[:-1, :])
+                )
+                + drho2g
             )
             * (ap_old[1:, :] - ap_old[:-1, :])
         )
@@ -145,23 +168,49 @@ def _add_diffusivity_contribution(
         out[:-1, :] += _res
 
         # 1.2) Backward
-        out[1:, :] += _res
+        out[1:, :] -= _res
 
     # 2) Y contribution
     if geometry.ny > 1:
-        pass
+        kij = get_kmean(geometry, fl_model, axis=1, is_flatten=False)[:, :-1]
 
+        if fl_model.vertical_axis == VerticalAxis.DY:
+            drho2g = (
+                get_rhomean_adj(geometry, tr_model, 1, time_index, is_flatten=False)[
+                    :, :-1
+                ]
+                / GRAVITY
+            )
+        else:
+            drho2g = 0.0
+
+        # Ici res vaut la même chose en forward et backward parce que les equations
+        # ne dépendent que de paramètres IJ
+        tmp = geometry.nx * kij / WATER_DENSITY
+        _res = (
+            tmp
+            * (
+                0.5
+                / geometry.ny
+                * (
+                    cr_fl * (p_old[:, 1:] - p_old[:, :-1])
+                    + (1 + cr_fl) * (p_new[:, 1:] - p_new[:, :-1])
+                )
+                + drho2g
+            )
+            * (ap_old[:, 1:] - ap_old[:, :-1])
+        )
         # 2.1) Forward
-        out += geometry.nx * 0.5
+        out[:, :-1] += _res
 
         # 2.2) Backward
-        out += geometry.nx * 0.5
+        out[:, 1:] -= _res
 
     # Update
     a_tr_model.a_density[:, :, time_index] += out
 
     # 3) Add unitflow: only for non constant conc nodes ?
-    a_tr_model.a_density[:, :, time_index] -= (
+    a_tr_model.a_density[:, :, time_index] += (
         a_fl_model.a_pressure[:, :, time_index + 1]
         * GRAVITY
         * (
