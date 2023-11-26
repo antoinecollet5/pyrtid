@@ -13,7 +13,7 @@ from pyrtid.utils.types import NDArrayFloat
 @nb.jit(nopython=True, cache=True)
 def arithmetic_mean(xi: NDArrayFloat, xj) -> NDArrayFloat:
     """Return the arithmetic mean of xi and xj."""
-    return (xi + xj) / 2
+    return (xi + xj) / 2.0
 
 
 @nb.jit(nopython=True, cache=True)
@@ -26,13 +26,13 @@ def dxi_arithmetic_mean(xi: NDArrayFloat, xj: NDArrayFloat) -> NDArrayFloat:
 @nb.jit(nopython=True, cache=True)
 def harmonic_mean(xi: NDArrayFloat, xj) -> NDArrayFloat:
     """Return the harmonic mean of xi and xj."""
-    return 2 / (1 / xi + 1 / xj)
+    return 2.0 / (1.0 / xi + 1.0 / xj)
 
 
 @nb.jit(nopython=True, cache=True)
 def dxi_harmonic_mean(xi: NDArrayFloat, xj) -> NDArrayFloat:
     """Return the first derivative of xi and xj arithmetic mean with respect to xi."""
-    return 2 * xj**2 / (xi + xj) ** 2
+    return 2.0 * xj**2.0 / (xi + xj) ** 2.0
 
 
 class MeanType(StrEnum):
