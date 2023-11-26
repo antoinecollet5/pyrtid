@@ -40,9 +40,13 @@ def get_rhomean_adj(
             tr_model.ldensity[time_index][:, :-1], tr_model.ldensity[time_index][:, 1:]
         )
 
+    # if is_flatten:
+    #     return rhomean.flatten(order="F")
+    # return rhomean
+
     if is_flatten:
-        return rhomean.flatten(order="F")
-    return rhomean
+        return np.ones_like(rhomean.flatten(order="F")) * WATER_DENSITY
+    return np.ones_like(rhomean) * WATER_DENSITY
 
 
 def make_initial_adj_flow_matrices(
@@ -723,9 +727,9 @@ def solve_adj_flow_density(
         .reshape(geometry.nx, geometry.ny, order="F")
     )
     # Handle the density (forward variable) for n = 0 (initial system state).
-    try:
+    if time_index != 0:
         density = tr_model.ldensity[time_index - 1]  # type: ignore
-    except IndexError:
+    else:
         density = tr_model.ldensity[time_index]  # type: ignore
 
     tmp += (
