@@ -8,7 +8,10 @@ from scipy.sparse import lil_array, lil_matrix
 from scipy.sparse.linalg import gmres
 
 from pyrtid.forward.models import (
+    TDS_LINEAR_COEFFICIENT,
+    WATER_DENSITY,
     FlowModel,
+    GeochemicalParameters,
     Geometry,
     TimeParameters,
     TransportModel,
@@ -454,6 +457,7 @@ def solve_adj_transport_transient_semi_implicit(
     a_tr_model: AdjointTransportModel,
     time_params: TimeParameters,
     time_index: int,
+    gch_params: GeochemicalParameters,
     nafpi: int,
 ) -> int:
     """Solving the adjoint transport equation."""
@@ -546,7 +550,13 @@ def solve_adj_transport_transient_semi_implicit(
     tmp -= a_tr_model.a_gch_src_term.ravel(order="F") / geometry.mesh_volume
 
     # Add the adjoint density source term
-    tmp -= a_tr_model.a_density_src_term.ravel(order="F") / geometry.mesh_volume
+    tmp += (
+        a_tr_model.a_density[:, :, time_index].ravel("F")
+        * WATER_DENSITY
+        * TDS_LINEAR_COEFFICIENT
+        * gch_params.Ms
+        / 1000
+    ) / geometry.mesh_volume
 
     # Build the LU preconditioning
     preconditioner = get_super_lu_preconditioner(q_next.tocsc())

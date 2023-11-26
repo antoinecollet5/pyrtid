@@ -131,6 +131,7 @@ class AdjointSolver:
             self.adj_model.a_fl_model,
             self.adj_model.a_tr_model,
             time_index,
+            self.fwd_model.time_params,
             self.fwd_model.geometry,
             self.fwd_model.gch_params.Ms,
         )
@@ -156,6 +157,7 @@ class AdjointSolver:
                 self.adj_model.a_tr_model,
                 self.fwd_model.time_params,
                 time_index,
+                self.fwd_model.gch_params,
                 nafpi=nafpi,
             )
 

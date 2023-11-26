@@ -171,7 +171,6 @@ class AdjointTransportModel:
         "q_prev",
         "q_next",
         "a_gch_src_term",
-        "a_density_src_term",
         "afpi_eps",
         "is_adj_numerical_acceleration",
     ]
@@ -232,9 +231,6 @@ class AdjointTransportModel:
 
         # Adjoint source term from the adjoint geochem to the adjoint transport
         self.a_gch_src_term = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
-
-        # Adjoint source term from the adjoint density to the adjoint transport
-        self.a_density_src_term = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
 
         self.q_prev_diffusion: lil_matrix = lil_array(geometry.nx * geometry.ny)
         self.q_next_diffusion: lil_matrix = lil_array(geometry.nx * geometry.ny)

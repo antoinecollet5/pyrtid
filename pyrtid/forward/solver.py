@@ -165,12 +165,8 @@ class ForwardSolver:
         self.model.time_params.save_dt()
 
         # Get the sources
-        # flw_sources_old = self.model.fl_model.lsources[time_index - 1]
-        # conc_sources_old = self.model.tr_model.lsources[time_index - 1]
-        flw_sources_old, conc_sources_old = self.model.get_sources(
-            self.model.time_params.time_elapsed - self.model.time_params.dt,
-            self.model.geometry,
-        )
+        flw_sources_old = self.model.fl_model.lunitflow[-1]
+        conc_sources_old = self.model.tr_model.lsources[-1]
         flw_sources, conc_sources = self.model.get_sources(
             self.model.time_params.time_elapsed, self.model.geometry
         )
@@ -283,5 +279,7 @@ def get_density(conc: NDArrayFloat, mw: float, time_index: int) -> NDArrayFloat:
 
     # 2) compute the density (this is implemented only for water solvent)
     # in kg/l
-    # tds[:, :] = 0.1 * np.random.default_rng(time_index).random(1)
+    # tds[:, :] = (
+    #     0.1 * time_index # * np.random.default_rng(time_index).random()
+    # )  # * np.random.default_rng(time_index).random(size=tds.shape)
     return WATER_DENSITY * (TDS_LINEAR_COEFFICIENT * tds + 1.0)
