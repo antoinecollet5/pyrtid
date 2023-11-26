@@ -157,14 +157,14 @@ def _add_diffusivity_contribution(
 
         # Ici res vaut la même chose en forward et backward parce que les equations
         # ne dépendent que de paramètres IJ
-        tmp = geometry.ny * kij / WATER_DENSITY
+        tmp = geometry.dy * kij / WATER_DENSITY
 
         # 1.1) Forward
         out[:-1, :] += (
             tmp
             * (
                 0.5
-                / geometry.nx
+                / geometry.dx
                 * (
                     cr_fl * (p_prev[1:, :] - p_prev[:-1, :])
                     + (1 + cr_fl) * (p_next[1:, :] - p_next[:-1, :])
@@ -179,7 +179,7 @@ def _add_diffusivity_contribution(
             tmp
             * (
                 0.5
-                / geometry.nx
+                / geometry.dx
                 * (
                     cr_fl * (p_prev[:-1, :] - p_prev[1:, :])
                     + (1 + cr_fl) * (p_next[:-1, :] - p_next[1:, :])
@@ -205,14 +205,14 @@ def _add_diffusivity_contribution(
 
         # Ici res vaut la même chose en forward et backward parce que les equations
         # ne dépendent que de paramètres IJ
-        tmp = geometry.nx * kij / WATER_DENSITY
+        tmp = geometry.dx * kij / WATER_DENSITY
 
         # 2.1) Forward
         out[:, :-1] += (
             tmp
             * (
                 0.5
-                / geometry.ny
+                / geometry.dy
                 * (
                     cr_fl * (p_prev[:, 1:] - p_prev[:, :-1])
                     + (1 + cr_fl) * (p_next[:, 1:] - p_next[:, :-1])
@@ -227,7 +227,7 @@ def _add_diffusivity_contribution(
             tmp
             * (
                 0.5
-                / geometry.ny
+                / geometry.dy
                 * (
                     cr_fl * (p_prev[:, :-1] - p_prev[:, 1:])
                     + (1 + cr_fl) * (p_next[:, :-1] - p_next[:, 1:])
