@@ -1121,7 +1121,7 @@ def get_initial_conc_adjoint_gradient(
         \dfrac{V_{i}\omega_{e, i}}{\Delta t^{0}} \lambda_{c_{i}}^{1}
         - \dfrac{c_{i}^{0, \mathrm{obs}}
         - c_{i}^{0, \mathrm{calc}}}{\left(\sigma_{c_{i}}^{0, \mathrm{obs}}\right)^{2}}
-        + \sum_{neigh \;j} \left\lVert \Gamma_{ij} \right\rVert D_{e, ij}
+        + \sum_{neigh \;j} \mathcal{A}_{\Gamma_{ij}} D_{e, ij}
         (1 - \alpha_{\mathrm{d}})\dfrac{\lambda_{c_{j}}^{1} - \lambda_{c_{i}}^{1}}{
             \left\lVert \overrightarrow{\mathrm{P}_{i}\mathrm{P}_{j}} \right\rVert}
 

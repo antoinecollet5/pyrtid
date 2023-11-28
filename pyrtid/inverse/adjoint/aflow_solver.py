@@ -40,10 +40,6 @@ def get_rhomean_adj(
             tr_model.ldensity[time_index][:, :-1], tr_model.ldensity[time_index][:, 1:]
         )
 
-    # if is_flatten:
-    #     return np.ones_like(rhomean.flatten(order="F")) * WATER_DENSITY
-    # return np.ones_like(rhomean) * WATER_DENSITY
-
     if is_flatten:
         return rhomean.flatten(order="F")
     return rhomean

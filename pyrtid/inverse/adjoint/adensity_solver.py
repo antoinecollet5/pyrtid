@@ -145,14 +145,14 @@ def _add_diffusivity_contribution(
         kij = get_kmean(geometry, fl_model, axis=0, is_flatten=False)[:-1, :]
 
         if fl_model.vertical_axis == VerticalAxis.DX:
-            (
+            drhomean2g = (
                 get_rhomean_adj(geometry, tr_model, 0, time_index, is_flatten=False)[
                     :-1, :
                 ]
                 * GRAVITY
             )
         else:
-            pass
+            drhomean2g = 0.0
 
         tmp = geometry.gamma_ij_x * kij / WATER_DENSITY
 
@@ -166,6 +166,7 @@ def _add_diffusivity_contribution(
                     + (1 + cr_fl) * (p_next[1:, :] - p_next[:-1, :])
                 )
                 / geometry.dx
+                + drhomean2g
             )
             * (ma_ap_prev[:-1, :] - ma_ap_prev[1:, :])
         )
@@ -180,6 +181,7 @@ def _add_diffusivity_contribution(
                     + (1 + cr_fl) * (p_next[:-1, :] - p_next[1:, :])
                 )
                 / geometry.dx
+                - drhomean2g
             )
             * (ma_ap_prev[1:, :] - ma_ap_prev[:-1, :])
         )
@@ -189,14 +191,14 @@ def _add_diffusivity_contribution(
         kij = get_kmean(geometry, fl_model, axis=1, is_flatten=False)[:, :-1]
 
         if fl_model.vertical_axis == VerticalAxis.DY:
-            (
+            drhomean2g = (
                 get_rhomean_adj(geometry, tr_model, 1, time_index, is_flatten=False)[
                     :, :-1
                 ]
                 * GRAVITY
             )
         else:
-            pass
+            drhomean2g = 0.0
 
         tmp = geometry.gamma_ij_y * kij / WATER_DENSITY
 
@@ -210,6 +212,7 @@ def _add_diffusivity_contribution(
                     + (1 + cr_fl) * (p_next[:, 1:] - p_next[:, :-1])
                 )
                 / geometry.dy
+                + drhomean2g
             )
             * (ma_ap_prev[:, :-1] - ma_ap_prev[:, 1:])
         )
@@ -224,6 +227,7 @@ def _add_diffusivity_contribution(
                     + (1 + cr_fl) * (p_next[:, :-1] - p_next[:, 1:])
                 )
                 / geometry.dy
+                - drhomean2g
             )
             * (ma_ap_prev[:, 1:] - ma_ap_prev[:, :-1])
         )
