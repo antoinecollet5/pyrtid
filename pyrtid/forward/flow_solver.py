@@ -57,6 +57,7 @@ def get_rhomean(
         rhomean[:, :-1] = arithmetic_mean(
             tr_model.ldensity[-1][:, :-1], tr_model.ldensity[-1][:, 1:]
         )
+    # return np.ones_like(rhomean.flatten(order="F")) * WATER_DENSITY
     return rhomean.flatten(order="F")
 
 
@@ -77,7 +78,7 @@ def make_stationary_flow_matrices(geometry: Geometry, fl_model: FlowModel) -> li
     if geometry.nx >= 2:
         kmean = get_kmean(geometry, fl_model, 0)
 
-        tmp = geometry.dy / geometry.dx / geometry.mesh_volume
+        tmp = geometry.gamma_ij_x / geometry.dx / geometry.mesh_volume
 
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
@@ -105,7 +106,7 @@ def make_stationary_flow_matrices(geometry: Geometry, fl_model: FlowModel) -> li
     if geometry.ny >= 2:
         kmean = get_kmean(geometry, fl_model, 1)
 
-        tmp = geometry.dx / geometry.dy / geometry.mesh_volume
+        tmp = geometry.gamma_ij_y / geometry.dy / geometry.mesh_volume
 
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
@@ -156,7 +157,7 @@ def make_transient_flow_matrices(
     stocoeff = fl_model.storage_coefficient.ravel("F")
 
     # X contribution
-    if geometry.nx >= 2:
+    if geometry.nx > 1:
         kmean = get_kmean(geometry, fl_model, 0)
         rhomean = get_rhomean(geometry, tr_model, 0)
 
@@ -169,7 +170,7 @@ def make_transient_flow_matrices(
         )
 
         tmp = (
-            geometry.dy
+            geometry.gamma_ij_x
             / geometry.dx
             / geometry.mesh_volume
             / stocoeff[idc_owner]
@@ -198,7 +199,7 @@ def make_transient_flow_matrices(
         )
 
         tmp = (
-            geometry.dy
+            geometry.gamma_ij_x
             / geometry.dx
             / geometry.mesh_volume
             / stocoeff[idc_owner]
@@ -219,7 +220,7 @@ def make_transient_flow_matrices(
         ) * tmp  # type: ignore
 
     # Y contribution
-    if geometry.ny >= 2:
+    if geometry.ny > 1:
         kmean = get_kmean(geometry, fl_model, 1)
         rhomean = get_rhomean(geometry, tr_model, 1)
 
@@ -232,7 +233,7 @@ def make_transient_flow_matrices(
         )
 
         tmp = (
-            geometry.dx
+            geometry.gamma_ij_y
             / geometry.dy
             / geometry.mesh_volume
             / stocoeff[idc_owner]
@@ -261,7 +262,7 @@ def make_transient_flow_matrices(
         )
 
         tmp = (
-            geometry.dx
+            geometry.gamma_ij_y
             / geometry.dy
             / geometry.mesh_volume
             / stocoeff[idc_owner]
@@ -502,11 +503,11 @@ def update_unitflow_cst_head_nodes(
     flow = np.zeros(geometry.shape)
     _flow = np.zeros(geometry.shape)
     if geometry.nx > 1:
-        flow[:, :] += fl_model.lu_darcy_x[time_index][:-1, :] * geometry.dy
-        flow[:, :] -= fl_model.lu_darcy_x[time_index][1:, :] * geometry.dy
+        flow[:, :] += fl_model.lu_darcy_x[time_index][:-1, :] * geometry.gamma_ij_x
+        flow[:, :] -= fl_model.lu_darcy_x[time_index][1:, :] * geometry.gamma_ij_x
     if geometry.ny > 1:
-        flow[:, :] += fl_model.lu_darcy_y[time_index][:, :-1] * geometry.dx
-        flow[:, :] -= fl_model.lu_darcy_y[time_index][:, 1:] * geometry.dx
+        flow[:, :] += fl_model.lu_darcy_y[time_index][:, :-1] * geometry.gamma_ij_y
+        flow[:, :] -= fl_model.lu_darcy_y[time_index][:, 1:] * geometry.gamma_ij_y
 
     # Trick: Set the flow to zero where the head is not constant
     # Q: est-ce que c'est juste pour les constant head ????
@@ -518,12 +519,12 @@ def update_unitflow_cst_head_nodes(
     _ltot = np.zeros(geometry.shape)
     if geometry.nx > 1:
         # evacuation along x
-        _ltot[0, fl_model.is_boundary_west] += geometry.dy
-        _ltot[-1, fl_model.is_boundary_east] += geometry.dy
+        _ltot[0, fl_model.is_boundary_west] += geometry.gamma_ij_x
+        _ltot[-1, fl_model.is_boundary_east] += geometry.gamma_ij_x
     if geometry.ny > 1:
         # evacuation along y
-        _ltot[fl_model.is_boundary_north, 0] += geometry.dx
-        _ltot[fl_model.is_boundary_south, -1] += geometry.dx
+        _ltot[fl_model.is_boundary_north, 0] += geometry.gamma_ij_y
+        _ltot[fl_model.is_boundary_south, -1] += geometry.gamma_ij_y
 
     # 2) Update unitflow for the constant-head nodes
     fl_model.lunitflow[time_index][
@@ -570,12 +571,12 @@ def compute_u_darcy_div(
     u_darcy_div = np.zeros(geometry.shape)
 
     # x contribution -> multiply by the frontier (dy and not dx)
-    u_darcy_div -= fl_model.lu_darcy_x[time_index][:-1, :] * geometry.dy
-    u_darcy_div += fl_model.lu_darcy_x[time_index][1:, :] * geometry.dy
+    u_darcy_div -= fl_model.lu_darcy_x[time_index][:-1, :] * geometry.gamma_ij_x
+    u_darcy_div += fl_model.lu_darcy_x[time_index][1:, :] * geometry.gamma_ij_x
 
     # y contribution  -> multiply by the frontier (dx and not dy)
-    u_darcy_div -= fl_model.lu_darcy_y[time_index][:, :-1] * geometry.dx
-    u_darcy_div += fl_model.lu_darcy_y[time_index][:, 1:] * geometry.dx
+    u_darcy_div -= fl_model.lu_darcy_y[time_index][:, :-1] * geometry.gamma_ij_y
+    u_darcy_div += fl_model.lu_darcy_y[time_index][:, 1:] * geometry.gamma_ij_y
 
     # Take the surface into account
     u_darcy_div /= geometry.mesh_volume
@@ -609,7 +610,7 @@ def get_gravity_gradient(
             1.0
             / geometry.mesh_volume
             / stocoeff[idc_owner]
-            * geometry.dy
+            * geometry.gamma_ij_x
             * rhomean[idc_owner] ** 2
             * GRAVITY
             / WATER_DENSITY
@@ -628,7 +629,7 @@ def get_gravity_gradient(
             1.0
             / geometry.mesh_volume
             / stocoeff[idc_owner]
-            * geometry.dy
+            * geometry.gamma_ij_x
             * rhomean[idc_neigh] ** 2
             * GRAVITY
             / WATER_DENSITY
@@ -651,7 +652,7 @@ def get_gravity_gradient(
             1.0
             / geometry.mesh_volume
             / stocoeff[idc_owner]
-            * geometry.dx
+            * geometry.gamma_ij_y
             * rhomean[idc_owner] ** 2
             * GRAVITY
             / WATER_DENSITY
@@ -670,7 +671,7 @@ def get_gravity_gradient(
             1.0
             / geometry.mesh_volume
             / stocoeff[idc_owner]
-            * geometry.dx
+            * geometry.gamma_ij_y
             * rhomean[idc_neigh] ** 2
             * GRAVITY
             / WATER_DENSITY

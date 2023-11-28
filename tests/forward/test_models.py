@@ -128,8 +128,7 @@ def test_wrong_time_params() -> None:
 def test_geometry(nx, ny, dx, dy, expected_exception) -> None:
     with expected_exception:
         geom = Geometry(nx, ny, dx, dy)
-        assert geom.mesh_area == dx * dy
-        assert geom.mesh_volume == geom.mesh_area
+        assert geom.mesh_volume == dx * dy
 
 
 def get_source_term() -> SourceTerm:

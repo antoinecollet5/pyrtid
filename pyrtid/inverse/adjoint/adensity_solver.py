@@ -137,7 +137,6 @@ def _add_diffusivity_contribution(
         free_head_indices[0], free_head_indices[1]
     ]
 
-    out = np.zeros_like(a_tr_model.a_density[:, :, time_index])
     p_prev = fl_model.lpressure[time_index + 1]
     p_next = fl_model.lpressure[time_index]
 
@@ -146,45 +145,41 @@ def _add_diffusivity_contribution(
         kij = get_kmean(geometry, fl_model, axis=0, is_flatten=False)[:-1, :]
 
         if fl_model.vertical_axis == VerticalAxis.DX:
-            drho2g = (
+            (
                 get_rhomean_adj(geometry, tr_model, 0, time_index, is_flatten=False)[
                     :-1, :
                 ]
                 * GRAVITY
             )
         else:
-            drho2g = 0.0
+            pass
 
-        # Ici res vaut la même chose en forward et backward parce que les equations
-        # ne dépendent que de paramètres IJ
-        tmp = geometry.dy * kij / WATER_DENSITY
+        tmp = geometry.gamma_ij_x * kij / WATER_DENSITY
 
         # 1.1) Forward
-        out[:-1, :] += (
+        a_tr_model.a_density[:-1, :, time_index] += (
             tmp
             * (
                 0.5
-                / geometry.dx
                 * (
                     cr_fl * (p_prev[1:, :] - p_prev[:-1, :])
                     + (1 + cr_fl) * (p_next[1:, :] - p_next[:-1, :])
                 )
-                + drho2g
+                / geometry.dx
             )
             * (ma_ap_prev[:-1, :] - ma_ap_prev[1:, :])
         )
 
         # 1.2) Backward
-        out[1:, :] += (
+        a_tr_model.a_density[1:, :, time_index] += (
             tmp
             * (
                 0.5
-                / geometry.dx
                 * (
                     cr_fl * (p_prev[:-1, :] - p_prev[1:, :])
                     + (1 + cr_fl) * (p_next[:-1, :] - p_next[1:, :])
                 )
-                - drho2g
+                / geometry.dx
             )
             * (ma_ap_prev[1:, :] - ma_ap_prev[:-1, :])
         )
@@ -194,51 +189,44 @@ def _add_diffusivity_contribution(
         kij = get_kmean(geometry, fl_model, axis=1, is_flatten=False)[:, :-1]
 
         if fl_model.vertical_axis == VerticalAxis.DY:
-            drho2g = (
+            (
                 get_rhomean_adj(geometry, tr_model, 1, time_index, is_flatten=False)[
                     :, :-1
                 ]
                 * GRAVITY
             )
         else:
-            drho2g = 0.0
+            pass
 
-        # Ici res vaut la même chose en forward et backward parce que les equations
-        # ne dépendent que de paramètres IJ
-        tmp = geometry.dx * kij / WATER_DENSITY
+        tmp = geometry.gamma_ij_y * kij / WATER_DENSITY
 
         # 2.1) Forward
-        out[:, :-1] += (
+        a_tr_model.a_density[:, :-1, time_index] += (
             tmp
             * (
                 0.5
-                / geometry.dy
                 * (
                     cr_fl * (p_prev[:, 1:] - p_prev[:, :-1])
                     + (1 + cr_fl) * (p_next[:, 1:] - p_next[:, :-1])
                 )
-                + drho2g
+                / geometry.dy
             )
             * (ma_ap_prev[:, :-1] - ma_ap_prev[:, 1:])
         )
 
         # 2.2) Backward
-        out[:, 1:] += (
+        a_tr_model.a_density[:, 1:, time_index] += (
             tmp
             * (
                 0.5
-                / geometry.dy
                 * (
                     cr_fl * (p_prev[:, :-1] - p_prev[:, 1:])
                     + (1 + cr_fl) * (p_next[:, :-1] - p_next[:, 1:])
                 )
-                - drho2g
+                / geometry.dy
             )
             * (ma_ap_prev[:, 1:] - ma_ap_prev[:, :-1])
         )
-
-    # Update
-    a_tr_model.a_density[:, :, time_index] += out
 
     # 3) Add unitflow: only for free head nodes
     a_tr_model.a_density[:, :, time_index] += (

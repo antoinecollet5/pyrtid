@@ -41,12 +41,12 @@ def get_rhomean_adj(
         )
 
     # if is_flatten:
-    #     return rhomean.flatten(order="F")
-    # return rhomean
+    #     return np.ones_like(rhomean.flatten(order="F")) * WATER_DENSITY
+    # return np.ones_like(rhomean) * WATER_DENSITY
 
     if is_flatten:
-        return np.ones_like(rhomean.flatten(order="F")) * WATER_DENSITY
-    return np.ones_like(rhomean) * WATER_DENSITY
+        return rhomean.flatten(order="F")
+    return rhomean
 
 
 def make_initial_adj_flow_matrices(
@@ -90,7 +90,7 @@ def make_initial_adj_flow_matrices(
         kmean = get_kmean(geometry, fl_model, 0)
         rhomean = get_rhomean_adj(geometry, tr_model, 0, 0)
 
-        _tmp = geometry.dy / geometry.dx / geometry.mesh_volume
+        _tmp = geometry.gamma_ij_x / geometry.dx / geometry.mesh_volume
 
         # 1.1) Forward scheme:
         # 1.1.1) For free head nodes only
@@ -166,7 +166,7 @@ def make_initial_adj_flow_matrices(
         rhomean = get_rhomean_adj(geometry, tr_model, 0, 0)
 
         # 2.1) Forward scheme:
-        _tmp = geometry.dx / geometry.dy / geometry.mesh_volume
+        _tmp = geometry.gamma_ij_y / geometry.dy / geometry.mesh_volume
 
         # 2.1.1) For free head nodes only
         idc_owner, idc_neigh = get_owner_neigh_indices(
@@ -280,7 +280,7 @@ def make_transient_adj_flow_matrices(
 
     # 1) X contribution
     if geometry.nx >= 2:
-        _tmp = geometry.dy / geometry.dx / geometry.mesh_volume
+        _tmp = geometry.gamma_ij_x / geometry.dx / geometry.mesh_volume
 
         kmean = get_kmean(geometry, fl_model, 0)
         # at n - 1
@@ -376,7 +376,7 @@ def make_transient_adj_flow_matrices(
         rhomean_prev = get_rhomean_adj(geometry, tr_model, 1, time_index)
 
         # 2.1) Forward scheme:
-        _tmp = geometry.dx / geometry.dy / geometry.mesh_volume
+        _tmp = geometry.gamma_ij_y / geometry.dy / geometry.mesh_volume
 
         # 2.1.1) For free head nodes only
         idc_owner, idc_neigh = get_owner_neigh_indices(
@@ -543,7 +543,7 @@ def update_adjoint_u_darcy(
         conc_ij_x[un_x == 0] = 0
 
         # 1) advective term
-        a_fl_model.a_u_darcy_x[1:-1, :, time_index] += geometry.dy * (
+        a_fl_model.a_u_darcy_x[1:-1, :, time_index] += geometry.gamma_ij_x * (
             (
                 crank_adv * (a_conc[1:, :] - a_conc[:-1, :])
                 + (1.0 - crank_adv) * (a_conc_old[1:, :] - a_conc_old[:-1, :])
@@ -551,7 +551,7 @@ def update_adjoint_u_darcy(
             * conc_ij_x
         )
         # 2) U divergence term
-        a_fl_model.a_u_darcy_x[1:-1, :, time_index] += geometry.dy * (
+        a_fl_model.a_u_darcy_x[1:-1, :, time_index] += geometry.gamma_ij_x * (
             (
                 crank_adv
                 * (a_conc[:-1, :] * conc[:-1, :] - a_conc[1:, :] * conc[1:, :])
@@ -569,7 +569,7 @@ def update_adjoint_u_darcy(
         conc_ij_y[un_y == 0] = 0
 
         # 1) advective term
-        a_fl_model.a_u_darcy_y[:, 1:-1, time_index] += geometry.dx * (
+        a_fl_model.a_u_darcy_y[:, 1:-1, time_index] += geometry.gamma_ij_y * (
             (
                 crank_adv * (a_conc[:, 1:] - a_conc[:, :-1])
                 + (1.0 - crank_adv) * (a_conc_old[:, 1:] - a_conc_old[:, :-1])
@@ -577,7 +577,7 @@ def update_adjoint_u_darcy(
             * conc_ij_y
         )
         # 2) U divergence term
-        a_fl_model.a_u_darcy_y[:, 1:-1, time_index] += geometry.dx * (
+        a_fl_model.a_u_darcy_y[:, 1:-1, time_index] += geometry.gamma_ij_y * (
             (
                 crank_adv
                 * (a_conc[:, :-1] * conc[:, :-1] - a_conc[:, 1:] * conc[:, 1:])

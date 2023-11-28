@@ -437,14 +437,19 @@ class Geometry:
         return (self.nx, self.ny)
 
     @property
-    def mesh_area(self) -> float:
-        """Return the area of a voxel in m2."""
-        return self.dx * self.dy
-
-    @property
     def mesh_volume(self) -> float:
         """Return the volume of a voxel in m3."""
-        return self.mesh_area * self.dz
+        return self.dx * self.dy * self.dz
+
+    @property
+    def gamma_ij_x(self) -> float:
+        """Return the surface of the frontiers along the x axis in m2"""
+        return self.dy * self.dz
+
+    @property
+    def gamma_ij_y(self) -> float:
+        """Return the surface of the frontiers along the y axis in m2"""
+        return self.dx * self.dz
 
 
 class SourceTerm:

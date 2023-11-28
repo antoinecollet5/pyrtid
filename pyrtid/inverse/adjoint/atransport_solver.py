@@ -141,7 +141,7 @@ def make_transient_adj_transport_matrices(
             owner_indices_to_keep=tr_model.free_conc_nn,
         )
 
-        tmp = geometry.dy / geometry.dx / geometry.mesh_volume
+        tmp = geometry.gamma_ij_x / geometry.dx / geometry.mesh_volume
 
         q_next[idc_owner, idc_neigh] -= (
             tr_model.crank_nicolson_diffusion * dmean[idc_owner] * tmp
@@ -193,7 +193,7 @@ def make_transient_adj_transport_matrices(
             owner_indices_to_keep=tr_model.free_conc_nn,
         )
 
-        tmp = geometry.dx / geometry.dy / geometry.mesh_volume
+        tmp = geometry.gamma_ij_y / geometry.dy / geometry.mesh_volume
 
         q_next[idc_owner, idc_neigh] -= (
             tr_model.crank_nicolson_diffusion * dmean[idc_owner] * tmp
@@ -257,7 +257,7 @@ def _add_advection_to_adj_transport_matrices(
             (slice(1, geometry.nx), slice(None)),
             owner_indices_to_keep=tr_model.free_conc_nn,
         )
-        tmp = geometry.dy / geometry.mesh_volume
+        tmp = geometry.gamma_ij_x / geometry.mesh_volume
 
         tmp_un_pos = np.where(normal * un_x > 0.0, normal * un_x, 0.0)[idc_owner]
 
@@ -304,7 +304,7 @@ def _add_advection_to_adj_transport_matrices(
             (slice(None), slice(1, geometry.ny)),
             owner_indices_to_keep=tr_model.free_conc_nn,
         )
-        tmp = geometry.dx / geometry.mesh_volume
+        tmp = geometry.gamma_ij_y / geometry.mesh_volume
 
         tmp_un_pos = np.where(normal * un_y > 0.0, normal * un_y, 0.0)[idc_owner]
 
@@ -398,7 +398,7 @@ def _add_adj_transport_boundary_conditions(
             (slice(geometry.nx - 1, geometry.nx), slice(None)),
             np.array([]),
         )
-        tmp = geometry.dy / geometry.mesh_volume
+        tmp = geometry.gamma_ij_x / geometry.mesh_volume
 
         _un = fl_model.u_darcy_x[:-1, :, time_index].ravel("F")[idc_left]
         # _un_old = fl_model.u_darcy_x[:-1, :, time_index + 1].ravel("F")[idc_left]
@@ -429,7 +429,7 @@ def _add_adj_transport_boundary_conditions(
             (slice(None), slice(geometry.ny - 1, geometry.ny)),
             np.array([]),
         )
-        tmp = geometry.dy / geometry.mesh_volume
+        tmp = geometry.gamma_ij_y / geometry.mesh_volume
 
         _un = fl_model.u_darcy_y[:, :-1, time_index].ravel("F")[idc_left]
         normal = -1.0

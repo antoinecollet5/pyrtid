@@ -112,7 +112,7 @@ def get_diffusion_term_adjoint_gradient(
         # Gather the two schemes
         grad = (
             (dconc_fx * daconc_fx + dconc_bx * daconc_bx)
-            * fwd_model.geometry.dy
+            * fwd_model.geometry.gamma_ij_x
             / fwd_model.geometry.dx
         )
 
@@ -149,7 +149,7 @@ def get_diffusion_term_adjoint_gradient(
         # Gather the two schemes
         grad += (
             (dconc_fy * daconc_fy + dconc_by * daconc_by)
-            * fwd_model.geometry.dx
+            * fwd_model.geometry.gamma_ij_y
             / fwd_model.geometry.dy
         )
 
@@ -354,7 +354,7 @@ def _get_perm_gradient_from_diffusivity_eq_saturated(
         # Gather the two schemes
         grad += (
             (dhead_fx * dahead_fx + dhead_bx * dahead_bx)
-            * fwd_model.geometry.dy
+            * fwd_model.geometry.gamma_ij_x
             / fwd_model.geometry.dx
         )
 
@@ -401,7 +401,7 @@ def _get_perm_gradient_from_diffusivity_eq_saturated(
         # Gather the two schemes
         grad += (
             (dhead_fy * dahead_fy + dhead_by * dahead_by)
-            * fwd_model.geometry.dx
+            * fwd_model.geometry.gamma_ij_y
             / fwd_model.geometry.dy
         )
 
@@ -527,7 +527,7 @@ def _get_perm_gradient_from_diffusivity_eq_density(
         # Gather the two schemes
         grad += (
             dpressure_fx * dapressure_fx + dpressure_bx * dapressure_bx
-        ) * fwd_model.geometry.dy
+        ) * fwd_model.geometry.gamma_ij_x
 
     # Consider the y axis for 2D cases
     if fwd_model.geometry.ny > 1:
@@ -605,7 +605,7 @@ def _get_perm_gradient_from_diffusivity_eq_density(
         # Gather the two schemes
         grad += (
             dpressure_fy * dapressure_fy + dpressure_by * dapressure_by
-        ) * fwd_model.geometry.dx
+        ) * fwd_model.geometry.gamma_ij_y
 
     # We sum along the temporal axis
     return -np.sum(grad, axis=-1)
@@ -1148,7 +1148,7 @@ def get_initial_conc_adjoint_gradient(
         dmean = harmonic_mean(
             tr_model.effective_diffusion[:-1, :], tr_model.effective_diffusion[1:, :]
         )
-        tmp = fwd_model.geometry.dy / fwd_model.geometry.dx
+        tmp = fwd_model.geometry.gamma_ij_x / fwd_model.geometry.dx
         # Forward scheme
         grad[:-1, :] += (
             +(1.0 - crank_diff) * (a_conc[1:, :] - a_conc[:-1, :]) * dmean
@@ -1163,7 +1163,7 @@ def get_initial_conc_adjoint_gradient(
         dmean = harmonic_mean(
             tr_model.effective_diffusion[:, :-1], tr_model.effective_diffusion[:, 1:]
         )
-        tmp = fwd_model.geometry.dx / fwd_model.geometry.dy
+        tmp = fwd_model.geometry.gamma_ij_y / fwd_model.geometry.dy
         # Forward scheme
         grad[:, :-1] += (
             +(1.0 - crank_diff) * (a_conc[:, 1:] - a_conc[:, :-1]) * dmean
