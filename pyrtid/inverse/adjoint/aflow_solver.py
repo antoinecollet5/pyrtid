@@ -8,7 +8,7 @@ from scipy.sparse import csc_matrix, lil_array
 from scipy.sparse.linalg import gmres
 
 from pyrtid.forward.flow_solver import get_kmean
-from pyrtid.forward.models import (  # ConstantHead,; ZeroConcGradient,
+from pyrtid.forward.models import (  # ConstantHead,; ZeromobGradient,
     GRAVITY,
     WATER_DENSITY,
     FlowModel,
@@ -516,71 +516,72 @@ def update_adjoint_u_darcy(
     time_index: int,
 ) -> None:
     crank_adv = tr_model.crank_nicolson_advection
-    conc = tr_model.conc[:, :, time_index]
-    a_conc = a_tr_model.a_conc[:, :, time_index]
-    try:
-        a_conc_old = a_tr_model.a_conc[:, :, time_index + 1]
-        # prev_vector = a_fl_model.a_head[:, :, time_index + 1].ravel("F")
-    except IndexError:
-        # prev_vector = np.zeros(a_fl_model.a_head[:, :, 0].size)
-        a_conc_old = np.zeros_like(a_conc)
-        # a_tr_model.a_conc[:, :, time_index + 1]
 
-    if time_index == 0:
-        a_conc = np.zeros_like(a_conc)
+    # loop over the species
+    for sp in range(tr_model.n_sp):
+        mob = tr_model.mob[sp, :, :, time_index]
+        a_mob = a_tr_model.a_mob[sp, :, :, time_index]
 
-    # X contribution
-    if geometry.nx > 1:
-        un_x = fl_model.u_darcy_x[1:-1, :, time_index]
+        try:
+            a_mob_old = a_tr_model.a_mob[sp, :, :, time_index + 1]
+        except IndexError:
+            a_mob_old = np.zeros_like(a_mob)
 
-        conc_ij_x = np.where(
-            un_x > 0.0, conc[:-1, :], conc[1:, :]
-        )  # take the conc depending on the forward flow direction
-        conc_ij_x[un_x == 0] = 0
+        if time_index == 0:
+            a_mob = np.zeros_like(a_mob)
 
-        # 1) advective term
-        a_fl_model.a_u_darcy_x[1:-1, :, time_index] += geometry.gamma_ij_x * (
-            (
-                crank_adv * (a_conc[1:, :] - a_conc[:-1, :])
-                + (1.0 - crank_adv) * (a_conc_old[1:, :] - a_conc_old[:-1, :])
+        # X contribution
+        if geometry.nx > 1:
+            un_x = fl_model.u_darcy_x[1:-1, :, time_index]
+
+            mob_ij_x = np.where(
+                un_x > 0.0, mob[:-1, :], mob[1:, :]
+            )  # take the mob depending on the forward flow direction
+            mob_ij_x[un_x == 0] = 0
+
+            # 1) advective term
+            a_fl_model.a_u_darcy_x[1:-1, :, time_index] += geometry.gamma_ij_x * (
+                (
+                    crank_adv * (a_mob[1:, :] - a_mob[:-1, :])
+                    + (1.0 - crank_adv) * (a_mob_old[1:, :] - a_mob_old[:-1, :])
+                )
+                * mob_ij_x
             )
-            * conc_ij_x
-        )
-        # 2) U divergence term
-        a_fl_model.a_u_darcy_x[1:-1, :, time_index] += geometry.gamma_ij_x * (
-            (
-                crank_adv
-                * (a_conc[:-1, :] * conc[:-1, :] - a_conc[1:, :] * conc[1:, :])
-                + (1.0 - crank_adv)
-                * (a_conc_old[:-1, :] * conc[:-1, :] - a_conc_old[1:, :] * conc[1:, :])
+            # 2) U divergence term
+            a_fl_model.a_u_darcy_x[1:-1, :, time_index] += geometry.gamma_ij_x * (
+                (
+                    crank_adv
+                    * (a_mob[:-1, :] * mob[:-1, :] - a_mob[1:, :] * mob[1:, :])
+                    + (1.0 - crank_adv)
+                    * (a_mob_old[:-1, :] * mob[:-1, :] - a_mob_old[1:, :] * mob[1:, :])
+                )
             )
-        )
 
-    # Y contribution
-    if geometry.ny > 1:
-        un_y = fl_model.u_darcy_y[:, 1:-1, time_index]
-        conc_ij_y = np.where(
-            un_y > 0.0, conc[:, :-1], conc[:, 1:]
-        )  # take the conc depending on the forward flow direction
-        conc_ij_y[un_y == 0] = 0
+        # Y contribution
+        if geometry.ny > 1:
+            un_y = fl_model.u_darcy_y[:, 1:-1, time_index]
+            mob_ij_y = np.where(
+                un_y > 0.0, mob[:, :-1], mob[:, 1:]
+            )  # take the mob depending on the forward flow direction
+            mob_ij_y[un_y == 0] = 0
 
-        # 1) advective term
-        a_fl_model.a_u_darcy_y[:, 1:-1, time_index] += geometry.gamma_ij_y * (
-            (
-                crank_adv * (a_conc[:, 1:] - a_conc[:, :-1])
-                + (1.0 - crank_adv) * (a_conc_old[:, 1:] - a_conc_old[:, :-1])
+            # 1) advective term
+            a_fl_model.a_u_darcy_y[:, 1:-1, time_index] += geometry.gamma_ij_y * (
+                (
+                    crank_adv * (a_mob[:, 1:] - a_mob[:, :-1])
+                    + (1.0 - crank_adv) * (a_mob_old[:, 1:] - a_mob_old[:, :-1])
+                )
+                * mob_ij_y
             )
-            * conc_ij_y
-        )
-        # 2) U divergence term
-        a_fl_model.a_u_darcy_y[:, 1:-1, time_index] += geometry.gamma_ij_y * (
-            (
-                crank_adv
-                * (a_conc[:, :-1] * conc[:, :-1] - a_conc[:, 1:] * conc[:, 1:])
-                + (1.0 - crank_adv)
-                * (a_conc_old[:, :-1] * conc[:, :-1] - a_conc_old[:, 1:] * conc[:, 1:])
+            # 2) U divergence term
+            a_fl_model.a_u_darcy_y[:, 1:-1, time_index] += geometry.gamma_ij_y * (
+                (
+                    crank_adv
+                    * (a_mob[:, :-1] * mob[:, :-1] - a_mob[:, 1:] * mob[:, 1:])
+                    + (1.0 - crank_adv)
+                    * (a_mob_old[:, :-1] * mob[:, :-1] - a_mob_old[:, 1:] * mob[:, 1:])
+                )
             )
-        )
 
 
 def solve_adj_flow(

@@ -511,29 +511,35 @@ def solve_transport_semi_implicit(
         q_prev = tr_model.q_prev
 
     # Multiply prev matrix by prev vector
-    tmp = tr_model.q_prev.dot(tr_model.lconc[time_index - 1].flatten(order="F"))
+    # tmp = tr_model.q_prev.dot(tr_model.lmob[time_index - 1].flatten(order="F"))
+    tmp = tr_model.q_prev.dot(
+        tr_model.lmob[time_index - 1].reshape(tr_model.n_sp, -1, order="F").T
+    ).T
 
     # Chemical source term
     if tr_model.is_numerical_acceleration and nfpi == 1 and time_index != 1:
-        dmdt = tr_model.lgrade[time_index - 1] - tr_model.lgrade[time_index - 2]
+        dmdt = tr_model.limmob[time_index - 1] - tr_model.limmob[time_index - 2]
     else:
-        dmdt = tr_model.lgrade[time_index] - tr_model.lgrade[time_index - 1]
+        dmdt = tr_model.limmob[time_index] - tr_model.limmob[time_index - 1]
 
     # The volume is included in the diffusion term
-    tmp -= (dmdt * tr_model.porosity / time_params.dt).ravel(order="F")
+    tmp[0, :] -= (dmdt * tr_model.porosity / time_params.dt).ravel(order="F")
 
     # Add the source terms -> depends on the advection (positive flowrates = injection)
     # Crank-nicolson does not apply to source terms
-    tmp += conc_sources.ravel("F")
+    tmp[0, :] += conc_sources.ravel("F")
 
     # Build the LU preconditioning
     preconditioner = get_super_lu_preconditioner(q_next.tocsc())
 
     # Solve Ax = b with A sparse using LU preconditioner
-    res, exit_code = gmres(
-        q_next.tocsc(), tmp, M=preconditioner, atol=tr_model.tolerance
-    )
+    for sp in range(tmp.shape[0]):
+        tmp[sp], exit_code = gmres(
+            q_next.tocsc(), tmp[sp], M=preconditioner, atol=tr_model.tolerance
+        )
 
-    tr_model.lconc[time_index] = res.reshape(geometry.nx, geometry.ny, order="F")
+    tr_model.lmob[time_index] = tmp.reshape(
+        tr_model.n_sp, geometry.nx, geometry.ny, order="F"
+    )
 
     return exit_code

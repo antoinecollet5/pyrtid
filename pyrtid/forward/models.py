@@ -334,6 +334,8 @@ class GeochemicalParameters:
     ----------
     conc: float, optional
         Initial tracer concentration in the grid in molal. The default is 0.0.
+    conc2: float, optional
+        Initial reagent concentration in the grid in molal. The default is 0.0.
     grade: float, optional
         Default mineral grade in the grid in mol/kg (kg of water).
         The default is 0.0.
@@ -350,19 +352,23 @@ class GeochemicalParameters:
     def __init__(
         self,
         conc: float = 0.0,
+        conc2: float = 0.0,
         grade: float = 0.0,
         kv: float = -6.9e-9,
         As: float = 13.5,
         Ks: float = 6.3e-4,
         Ms: float = 270,
+        Ms2: float = 270,
     ) -> None:
         """Initialize the instance."""
         self.conc: float = conc
+        self.conc2: float = conc2
         self.grade: float = grade
         self.kv: float = kv
         self.As: float = As
         self.Ks: float = Ks
         self.Ms: float = Ms
+        self.Ms2: float = Ms2
 
 
 class Geometry:
@@ -424,11 +430,6 @@ class Geometry:
     def ny(self, value: int) -> None:
         if value < 1:
             raise (ValueError("ny should be > 1!)"))
-        # if value > 1 and self.nx == 1:
-        #     raise (
-        #         ValueError("For a 1D case, set nx different "
-        # "from 1 and ny equal to 1!")
-        #     )
         self._ny = value
 
     @property
@@ -469,10 +470,19 @@ class SourceTerm:
     flowrates: NDArrayFloat
         Sequence of flowrates of the well. Positive = injection, negative = pumping.
     concentrations: NDArrayFloat
-        Concentration, used only if flowrates is positive.
+        Concentrations of the first species, used only if flowrates is positive.
+    concentrations2: NDArrayFloat
+        Concentrations of the second species, used only if flowrates is positive.
     """
 
-    __slots__ = ["name", "node_ids", "times", "flowrates", "concentrations"]
+    __slots__ = [
+        "name",
+        "node_ids",
+        "times",
+        "flowrates",
+        "concentrations",
+        "concentrations2",
+    ]
 
     def __init__(
         self,
@@ -481,6 +491,7 @@ class SourceTerm:
         times: NDArrayFloat,
         flowrates: NDArrayFloat,
         concentrations: NDArrayFloat,
+        concentrations2: Optional[NDArrayFloat] = None,
     ) -> None:
         """
         Initialize the instance.
@@ -505,10 +516,15 @@ class SourceTerm:
         self.times = np.array(times).reshape(-1)
         self.flowrates = np.array(flowrates).reshape(-1)
         self.concentrations = np.array(concentrations).reshape(-1)
+        if concentrations2 is not None:
+            self.concentrations2 = np.array(concentrations2).reshape(-1)
+        else:
+            self.concentrations2 = np.zeros_like(concentrations)
 
         if (
             self.concentrations.size != self.times.size
             or self.flowrates.size != self.times.size
+            or self.concentrations.size != self.concentrations2.size
         ):
             raise ValueError(
                 "Times, flowrates and concentrations must have the same dimension !"
@@ -976,8 +992,8 @@ class TransportModel:
         "crank_nicolson_advection",
         "diffusion",
         "porosity",
-        "lconc",
-        "lgrade",
+        "lmob",
+        "limmob",
         "lsources",  # this is needed for the adjoint state
         "ldensity",
         "grade_prev",
@@ -1009,11 +1025,13 @@ class TransportModel:
         self.porosity = (
             np.ones((geometry.nx, geometry.ny), dtype=np.float64) * tr_params.porosity
         )
-        self.lconc: List[NDArrayFloat] = [
-            np.ones((geometry.nx, geometry.ny), dtype=np.float64) * gch_params.conc
+        self.lmob: List[NDArrayFloat] = [
+            np.ones((self.n_sp, geometry.nx, geometry.ny), dtype=np.float64)
         ]
+        self.lmob[0][0, :, :] = gch_params.conc
+        self.lmob[0][1, :, :] = gch_params.conc2
 
-        self.lgrade: List[NDArrayFloat] = [
+        self.limmob: List[NDArrayFloat] = [
             np.ones((geometry.nx, geometry.ny), dtype=np.float64) * gch_params.grade
         ]
 
@@ -1029,28 +1047,55 @@ class TransportModel:
         self.q_prev: lil_matrix = lil_array(geometry.nx * geometry.ny)
         self.q_next: lil_matrix = lil_array(geometry.nx * geometry.ny)
         self.cst_conc_nn: NDArrayInt = np.array([], dtype=np.int32)
-        self.tolerance = tr_params.tolerance
-        self.is_numerical_acceleration = tr_params.is_numerical_acceleration
-        self.fpi_eps = tr_params.fpi_eps
-        self.molar_mass = gch_params.Ms
+        self.tolerance: float = tr_params.tolerance
+        self.is_numerical_acceleration: bool = tr_params.is_numerical_acceleration
+        self.fpi_eps: float = tr_params.fpi_eps
+        self.molar_mass: float = gch_params.Ms
+
+    @property
+    def mob(self) -> NDArrayFloat:
+        """
+        Return mobile concentrations as array with dimension (2, nx, ny, nz, nt + 1).
+
+        This is read-only.
+        """
+        return np.transpose(np.array(self.lmob), axes=(1, 2, 3, 0))
+
+    @property
+    def immob(self) -> NDArrayFloat:
+        """
+        Return immobile concentrations as array with dimension (nx, ny, nz, nt + 1).
+
+        This is read-only.
+        """
+        return np.transpose(np.array(self.limmob), axes=(1, 2, 0))
 
     @property
     def conc(self) -> NDArrayFloat:
         """
-        Return mobile concentrations as array with dimension (nx, ny, nz, nt + 1).
+        Return mobile concentrations as array with dimension (2, nx, ny, nz, nt + 1).
 
-        This is read-only.
+        This is read-only. Alias for mob.
         """
-        return np.transpose(np.array(self.lconc), axes=(1, 2, 0))
+        return self.mob[0]
+
+    @property
+    def conc2(self) -> NDArrayFloat:
+        """
+        Return mobile concentrations as array with dimension (2, nx, ny, nz, nt + 1).
+
+        This is read-only. Alias for mob.
+        """
+        return self.mob[1]
 
     @property
     def grade(self) -> NDArrayFloat:
         """
         Return immobile concentrations as array with dimension (nx, ny, nz, nt + 1).
 
-        This is read-only.
+        This is read-only. Alias for immob.
         """
-        return np.transpose(np.array(self.lgrade), axes=(1, 2, 0))
+        return self.immob
 
     @property
     def density(self) -> NDArrayFloat:
@@ -1075,6 +1120,15 @@ class TransportModel:
         """Return the effective diffusion (diffusion * porosity)."""
         return self.diffusion * self.porosity
 
+    @property
+    def n_sp(self) -> int:
+        """
+        Return the number of mobile species in the system.
+
+        This is hard-coded for now.
+        """
+        return 2
+
     def set_initial_grade(
         self,
         values: Union[float, int, NDArrayInt, NDArrayFloat],
@@ -1084,18 +1138,19 @@ class TransportModel:
         ),
     ) -> None:
         """Set the initial grades."""
-        self.lgrade[0][span] = values
+        self.limmob[0][span] = values
 
     def set_initial_conc(
         self,
         values: Union[float, int, NDArrayInt, NDArrayFloat],
+        sp: int = 0,
         span: Union[NDArrayInt, Tuple[slice, slice], NDArrayBool] = (
             slice(None),
             slice(None),
         ),
     ) -> None:
         """Set the initial concentrations."""
-        self.lconc[0][span] = values
+        self.lmob[0][sp][span] = values
 
     def add_boundary_conditions(self, condition: BoundaryCondition) -> None:
         """Add a boundary condition to the transport model."""
@@ -1117,7 +1172,7 @@ class TransportModel:
                     [
                         node_numbers,
                         span_to_node_numbers_2d(
-                            condition.span, self.conc.shape[0], self.conc.shape[1]
+                            condition.span, self.mob.shape[0], self.mob.shape[1]
                         ),
                     ]
                 )
@@ -1129,7 +1184,7 @@ class TransportModel:
         # [:2] to ignore the z axis
         return np.array(
             node_number_to_indices(
-                self.cst_conc_nn, nx=self.conc.shape[0], ny=self.conc.shape[1]
+                self.cst_conc_nn, nx=self.mob.shape[0], ny=self.mob.shape[1]
             )[:2]
         )
 
@@ -1137,7 +1192,7 @@ class TransportModel:
     def free_conc_nn(self) -> NDArrayInt:
         """Return the free conc node numbers."""
         return get_a_not_in_b_1d(
-            np.arange(np.prod(self.lconc[0].shape), dtype=np.int32),  # type: ignore
+            np.arange(np.prod(self.lmob[0].shape), dtype=np.int32),  # type: ignore
             self.cst_conc_nn,
         )
 
@@ -1147,15 +1202,15 @@ class TransportModel:
         # [:2] to ignore the z axis
         return np.array(
             node_number_to_indices(
-                self.free_conc_nn, nx=self.conc.shape[0], ny=self.conc.shape[1]
+                self.free_conc_nn, nx=self.mob.shape[0], ny=self.mob.shape[1]
             )[:2]
         )
 
     def reinit(self) -> None:
         """Set all arrays to zero except for the initial conditions(first time)."""
-        self.lconc = self.lconc[:1]
-        self.lgrade = self.lgrade[:1]
-        self.grade_prev = self.lgrade[0]
+        self.lmob = self.lmob[:1]
+        self.limmob = self.limmob[:1]
+        self.grade_prev = self.limmob[0]
         self.ldensity = self.ldensity[:1]
         self.lsources = []
         self.set_constant_conc_indices()

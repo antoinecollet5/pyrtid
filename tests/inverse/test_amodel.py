@@ -58,16 +58,16 @@ def test_init_adjoint_sources(max_obs_time, mean_type) -> None:
     model.tr_model.ldensity.append(
         np.random.default_rng(2023).random((geometry.nx, geometry.ny)) + 3.0
     )
-    model.tr_model.lconc.append(
+    model.tr_model.lmob.append(
+        np.random.default_rng(2023).random((2, geometry.nx, geometry.ny)) + 2.0
+    )
+    model.tr_model.lmob.append(
+        np.random.default_rng(2023).random((2, geometry.nx, geometry.ny)) + 3.0
+    )
+    model.tr_model.limmob.append(
         np.random.default_rng(2023).random((geometry.nx, geometry.ny)) + 2.0
     )
-    model.tr_model.lconc.append(
-        np.random.default_rng(2023).random((geometry.nx, geometry.ny)) + 3.0
-    )
-    model.tr_model.lgrade.append(
-        np.random.default_rng(2023).random((geometry.nx, geometry.ny)) + 2.0
-    )
-    model.tr_model.lgrade.append(
+    model.tr_model.limmob.append(
         np.random.default_rng(2023).random((geometry.nx, geometry.ny)) + 3.0
     )
     model.fl_model.lhead.append(
@@ -131,14 +131,14 @@ def test_init_adjoint_sources(max_obs_time, mean_type) -> None:
     adj_model.init_adjoint_sources(model, observables, hm_end_time=max_obs_time)
 
     def wrapper_conc(arr: NDArrayFloat) -> float:
-        model.tr_model.lconc = [arr[:, :, i] for i in range(arr.shape[-1])]
+        model.tr_model.lmob = [arr[:, :, i] for i in range(arr.shape[-1])]
         return dminv.get_model_ls_loss_function(model, observables, max_obs_time)
 
     np.testing.assert_allclose(
-        adj_model.a_tr_model.a_conc_sources.toarray().reshape(
-            geometry.nx, geometry.ny, time_params.nt, order="F"
-        ),
-        finite_gradient(model.tr_model.conc, wrapper_conc),
+        adj_model.a_tr_model.a_conc_sources[0]
+        .toarray()
+        .reshape(geometry.nx, geometry.ny, time_params.nt, order="F"),
+        finite_gradient(model.tr_model.mob, wrapper_conc),
     )
 
     def wrapper_perm(arr: NDArrayFloat) -> float:

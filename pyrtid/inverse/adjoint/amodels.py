@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from abc import ABC
-from typing import Optional
+from typing import List, Optional
 
 import numpy as np
 from scipy.sparse import csc_array, lil_array, lil_matrix
@@ -142,10 +142,11 @@ class AdjointTransportModel:
 
     Attributes
     ----------
-    a_conc: NDArrayFloat
-    a_conc_prev: NDArrayFloat
+    a_mob: NDArrayFloat
+    a_mob_prev: NDArrayFloat
     a_grade: NDArrayFloat
     a_conc_sources: NDArrayFloat
+    a_conc_2_sources: NDArrayFloat
     a_grade_sources: NDArrayFloat
     q_prev_diffusion: lil_array
     q_next_diffusion: lil_array
@@ -157,8 +158,8 @@ class AdjointTransportModel:
     """
 
     __slots__ = [
-        "a_conc",
-        "a_conc_prev",
+        "a_mob",
+        "a_mob_prev",
         "a_grade",
         "a_density",
         "a_conc_sources",
@@ -196,12 +197,13 @@ class AdjointTransportModel:
         is_numerical_acceleration: bool
 
         """
-        self.a_conc: NDArrayFloat = np.zeros(
-            (geometry.nx, geometry.ny, time_params.nt), dtype=np.float64
+        self.a_mob: NDArrayFloat = np.zeros(
+            (2, geometry.nx, geometry.ny, time_params.nt), dtype=np.float64
         )
-        self.a_conc_prev: NDArrayFloat = np.zeros(
-            (geometry.nx, geometry.ny), dtype=np.float64
+        self.a_mob_prev: NDArrayFloat = np.zeros(
+            (2, geometry.nx, geometry.ny), dtype=np.float64
         )
+
         self.a_grade: NDArrayFloat = np.zeros(
             (geometry.nx, geometry.ny, time_params.nt), dtype=np.float64
         )
@@ -213,9 +215,10 @@ class AdjointTransportModel:
         # so use a sparse matrix instead of a dense array
         # NOTE: rows are meshes, and columns are time indices
         # We use csc format for fast column (time) slicing
-        self.a_conc_sources = csc_array(
-            (geometry.nx * geometry.ny, time_params.nt), dtype=np.float64
-        )
+        self.a_conc_sources: List[csc_array] = [
+            csc_array((geometry.nx * geometry.ny, time_params.nt), dtype=np.float64),
+            csc_array((geometry.nx * geometry.ny, time_params.nt), dtype=np.float64),
+        ]
         self.a_grade_sources = csc_array(
             (geometry.nx * geometry.ny, time_params.nt), dtype=np.float64
         )
@@ -241,11 +244,24 @@ class AdjointTransportModel:
 
     def clear_adjoint_sources(self) -> None:
         """Reset all adjoint sources to zero."""
-        self.a_conc_sources = csc_array(self.a_conc_sources.shape)
+        self.a_conc_sources = [
+            csc_array(self.a_grade_sources.shape),
+            csc_array(self.a_grade_sources.shape),
+        ]
         self.a_grade_sources = csc_array(self.a_grade_sources.shape)
         self.a_porosity_sources = csc_array(self.a_porosity_sources.shape)
         self.a_diffusion_sources = csc_array(self.a_diffusion_sources.shape)
         self.a_density_sources = csc_array(self.a_density_sources.shape)
+
+    @property
+    def a_conc(self) -> NDArrayFloat:
+        """Alias for a_mob."""
+        return self.a_mob
+
+    # @property
+    # def a_grade(self) -> NDArrayFloat:
+    #     """Alias for a_immob."""
+    #     return self.a_immob
 
 
 class AdjointModel:
@@ -333,7 +349,8 @@ class AdjointModel:
             # adjoint sources for this observable to a sparse matrix
 
             array = {
-                StateVariable.CONCENTRATION: self.a_tr_model.a_conc_sources,
+                StateVariable.CONCENTRATION: self.a_tr_model.a_conc_sources[0],
+                StateVariable.CONCENTRATION_2: self.a_tr_model.a_conc_sources[1],
                 StateVariable.DENSITY: self.a_tr_model.a_density_sources,
                 StateVariable.DIFFUSION: self.a_tr_model.a_diffusion_sources,
                 StateVariable.HEAD: self.a_fl_model.a_head_sources,
@@ -354,7 +371,9 @@ class AdjointModel:
             )
 
             if obs.state_variable == StateVariable.CONCENTRATION:
-                self.a_tr_model.a_conc_sources += res
+                self.a_tr_model.a_conc_sources[0] += res
+            elif obs.state_variable == StateVariable.CONCENTRATION_2:
+                self.a_tr_model.a_conc_sources[1] += res
             elif obs.state_variable == StateVariable.DENSITY:
                 self.a_tr_model.a_density_sources += res
             elif obs.state_variable == StateVariable.DIFFUSION:

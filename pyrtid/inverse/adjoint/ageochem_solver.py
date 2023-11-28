@@ -21,12 +21,11 @@ def solve_adj_geochem(
     time_index: int,
     nafpi: int,
 ) -> None:
-    shape = tr_model.lconc[0].shape
     # Adjoint variable
     try:
         am_old = a_tr_model.a_grade[:, :, time_index + 1]
-        ac_old = a_tr_model.a_conc[:, :, time_index + 1]
-        c_old = tr_model.lconc[time_index + 1]
+        ac_old = a_tr_model.a_mob[0, :, :, time_index + 1]
+        c_old = tr_model.lmob[time_index + 1][0]
         dt_cur = time_params.ldt[time_index]
     except IndexError:
         # Handle the Tmax (first timestep going backward)
@@ -42,12 +41,12 @@ def solve_adj_geochem(
         and nafpi == 1
         and time_index != time_params.nts
     ):
-        ac_cur = a_tr_model.a_conc[:, :, time_index + 1]
+        ac_cur = a_tr_model.a_mob[:, :, :, time_index + 1]
     else:
-        ac_cur = a_tr_model.a_conc[:, :, time_index]
+        ac_cur = a_tr_model.a_mob[:, :, :, time_index]
 
     # Save the grade for the fix point iterations
-    a_tr_model.a_conc_prev = copy(ac_cur)
+    a_tr_model.a_mob_prev = copy(ac_cur)
 
     # Forward variables
 
@@ -58,10 +57,12 @@ def solve_adj_geochem(
     a_tr_model.a_grade[:, :, time_index] = (
         am_old
         * (1 + dt_cur * gch_params.kv * gch_params.As * (1.0 - c_old / gch_params.Ks))
-        - (ac_cur / dt_next - ac_old / dt_cur)
+        - (ac_cur[0] / dt_next - ac_old / dt_cur)
         * tr_model.porosity
         * geometry.mesh_volume
-    ) + a_tr_model.a_grade_sources.getcol(time_index).reshape(shape, order="F")
+    ) + a_tr_model.a_grade_sources.getcol(time_index).reshape(
+        a_tr_model.a_grade[:, :, time_index].shape, order="F"
+    )
 
     # Compute the adjoint geochem source term: it is computed here to mimic the
     # splitting operator approach in which the chemical parameters might not be
@@ -71,5 +72,5 @@ def solve_adj_geochem(
         * dt_next
         * gch_params.kv
         * gch_params.As
-        * (tr_model.lgrade[time_index - 1] / gch_params.Ks)
+        * (tr_model.limmob[time_index - 1] / gch_params.Ks)
     )

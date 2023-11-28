@@ -41,6 +41,7 @@ class ParameterName(StrEnum):
     """Type of parameter invertible."""
 
     INITIAL_CONCENTRATION = "concentration"
+    INITIAL_CONCENTRATION_2 = "concentration_2"
     DIFFUSION = "diffusion"
     INITIAL_HEAD = "head"
     INITIAL_GRADE = "grade"
@@ -52,6 +53,7 @@ class ParameterName(StrEnum):
 
 PARAM_TO_STATE_VAR = {
     ParameterName.INITIAL_CONCENTRATION: StateVariable.CONCENTRATION,
+    ParameterName.INITIAL_CONCENTRATION_2: StateVariable.CONCENTRATION_2,
     ParameterName.DIFFUSION: StateVariable.DIFFUSION,
     ParameterName.INITIAL_HEAD: StateVariable.HEAD,
     ParameterName.INITIAL_GRADE: StateVariable.GRADE,
@@ -669,7 +671,9 @@ def update_model_with_param_values(
 ) -> None:
     """Update the input field with the Adjustable parameter current values."""
     if param.name == ParameterName.INITIAL_CONCENTRATION:
-        model.tr_model.set_initial_conc(param.values[param.span], param.span)
+        model.tr_model.set_initial_conc(param.values[param.span], 0, param.span)
+    elif param.name == ParameterName.INITIAL_CONCENTRATION2:
+        model.tr_model.set_initial_conc(param.values[param.span], 1, param.span)
     elif param.name == ParameterName.INITIAL_HEAD:
         model.fl_model.set_initial_head(param.values[param.span], param.span)
     elif param.name == ParameterName.INITIAL_PRESSURE:

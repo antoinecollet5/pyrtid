@@ -59,7 +59,7 @@ def get_max_coupling_error_forward(tr_model: TransportModel, time_index: int) ->
 
     This error is evaluated from the immobile concentrations (mineral grades).
     """
-    return get_max_coupling_error(tr_model.lgrade[time_index], tr_model.grade_prev)
+    return get_max_coupling_error(tr_model.limmob[time_index], tr_model.grade_prev)
 
 
 class ForwardSolver:
@@ -114,7 +114,9 @@ class ForwardSolver:
 
         # Update the initial density
         self.model.tr_model.ldensity[0] = get_density(
-            self.model.tr_model.lconc[0], self.model.gch_params.Ms, 0
+            self.model.tr_model.lmob[0],
+            self.model.gch_params.Ms,
+            self.model.gch_params.Ms2,
         )
 
         if self.model.fl_model.regime == FlowRegime.STATIONARY:
@@ -195,13 +197,13 @@ class ForwardSolver:
         has_converged = False
 
         # Copy the grades (To place in another function afterwards)
-        self.model.tr_model.lgrade.append(self.model.tr_model.lgrade[time_index - 1])
-        self.model.tr_model.lconc.append(self.model.tr_model.lconc[time_index - 1])
+        self.model.tr_model.limmob.append(self.model.tr_model.limmob[time_index - 1])
+        self.model.tr_model.lmob.append(self.model.tr_model.lmob[time_index - 1])
 
         # Iterate the chemistry transport system while the convergence is no meet
         while not has_converged:
             # Save the grade for the fix point iterations
-            self.model.tr_model.grade_prev = self.model.tr_model.lgrade[
+            self.model.tr_model.grade_prev = self.model.tr_model.limmob[
                 time_index
             ].copy()
 
@@ -248,20 +250,24 @@ class ForwardSolver:
         # Update the density for the current timestep
         self.model.tr_model.ldensity.append(
             get_density(
-                self.model.tr_model.lconc[-1], self.model.gch_params.Ms, time_index
+                self.model.tr_model.lmob[-1],
+                self.model.gch_params.Ms,
+                self.model.gch_params.Ms2,
             )
         )
 
 
-def get_density(conc: NDArrayFloat, mw: float, time_index: int) -> NDArrayFloat:
+def get_density(conc: NDArrayFloat, mw1: float, mw2: float) -> NDArrayFloat:
     """
 
     Parameters
     ----------
     conc : NDArrayFloat
-        Array of concentration (2D) with shape (Nx, Ny) in mol/kg.
-    mv: float
-        Molar weight of the species (g/mol).
+        Array of concentration (3D) with shape (2, Nx, Ny) in mol/kg.
+    mv1: float
+        Molar weight of the first species (g/mol).
+    mv2: float
+        Molar weight of the second species (g/mol).
 
     Returns
     -------
@@ -274,8 +280,11 @@ def get_density(conc: NDArrayFloat, mw: float, time_index: int) -> NDArrayFloat:
     # At pH=7, there are always equal numbers of H + and OH -, so we take
     # the molar weight of water (sum of the two previous).
     # tds += H_PLUS_CONC * WATER_MW;
-    tds = np.ones(conc.shape) * H_PLUS_CONC * WATER_MW
-    tds += conc * mw / 1000  # we divide per 1000 because we need kg/mol
+    tds = np.ones(conc[0].shape) * H_PLUS_CONC * WATER_MW
+    # Add species 1
+    tds += conc[0] * mw1 / 1000  # we divide per 1000 because we need kg/mol
+    # Add species 2
+    tds += conc[1] * mw2 / 1000  # we divide per 1000 because we need kg/mol
 
     # 2) compute the density (this is implemented only for water solvent)
     # in kg/l

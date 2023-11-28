@@ -26,6 +26,7 @@ class StateVariable(StrEnum):
     """Type of observable existing."""
 
     CONCENTRATION = "concentration"
+    CONCENTRATION_2 = "concentration_2"
     DENSITY = "density"
     DIFFUSION = "diffusion"
     HEAD = "head"
@@ -315,13 +316,15 @@ def get_array_from_state_variable(
     model: ForwardModel, state_variable: StateVariable
 ) -> NDArrayFloat:
     if state_variable == StateVariable.CONCENTRATION:
-        return model.tr_model.conc
+        return model.tr_model.mob[0]
+    if state_variable == StateVariable.CONCENTRATION_2:
+        return model.tr_model.mob[1]
     if state_variable == StateVariable.HEAD:
         return model.fl_model.head
     if state_variable == StateVariable.PRESSURE:
         return model.fl_model.pressure
     if state_variable == StateVariable.GRADE:
-        return model.tr_model.grade
+        return model.tr_model.immob
     if state_variable == StateVariable.PERMEABILITY:
         return model.fl_model.permeability
     if state_variable == StateVariable.POROSITY:

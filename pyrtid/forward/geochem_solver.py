@@ -25,14 +25,14 @@ def solve_geochem(
         \overline{c}_{i}^{n} \left( 1 - \dfrac{c_{i}^{n+1}}{K_{s}}\right)
     """
 
-    m0 = tr_model.lgrade[time_index - 1]
+    m0 = tr_model.limmob[time_index - 1]
 
     # The mobile concentration is from the transport
     dMdt = (
         gch_params.kv
         * gch_params.As
         * m0
-        * (1.0 - tr_model.lconc[time_index] / gch_params.Ks)
+        * (1.0 - tr_model.lmob[time_index][0] / gch_params.Ks)
     )
 
     for condition in tr_model.boundary_conditions:
@@ -41,4 +41,4 @@ def solve_geochem(
         # elif isinstance(condition, ZeroConcGradient):
 
     # overwrite the grade
-    tr_model.lgrade[time_index] = m0 + dMdt * time_params.dt
+    tr_model.limmob[time_index] = m0 + dMdt * time_params.dt

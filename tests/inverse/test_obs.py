@@ -446,8 +446,8 @@ def test_get_predictions_matching_observations(max_obs_time, expected_output) ->
     )
 
     # generate synthetic data
-    model.tr_model.lconc.append(np.ones((20, 20)) * 2.0)
-    model.tr_model.lconc.append(np.ones((20, 20)) * 3.0)
+    model.tr_model.lmob.append(np.ones((20, 20)) * 2.0)
+    model.tr_model.lmob.append(np.ones((20, 20)) * 3.0)
     model.time_params.save_dt()
     model.time_params.save_dt()
 
@@ -518,11 +518,11 @@ def test_get_adjoint_sources_for_obs(max_obs_time, mean_type) -> None:
     )
 
     # generate synthetic data
-    model.tr_model.lconc.append(
-        np.random.default_rng(2023).random((geometry.nx, geometry.ny)) + 2.0
+    model.tr_model.lmob.append(
+        np.random.default_rng(2023).random((2, geometry.nx, geometry.ny)) + 2.0
     )
-    model.tr_model.lconc.append(
-        np.random.default_rng(2023).random((geometry.nx, geometry.ny)) + 3.0
+    model.tr_model.lmob.append(
+        np.random.default_rng(2023).random((2, geometry.nx, geometry.ny)) + 3.0
     )
     model.time_params.save_dt()
     model.time_params.save_dt()
@@ -557,12 +557,12 @@ def test_get_adjoint_sources_for_obs(max_obs_time, mean_type) -> None:
     n_obs = get_observables_values_as_1d_vector([obs1], _max_obs_time).size
 
     def wrapper_conc(arr: NDArrayFloat) -> float:
-        model.tr_model.lconc = [arr[:, :, i] for i in range(arr.shape[-1])]
+        model.tr_model.lmob = [arr[:, :, i] for i in range(arr.shape[-1])]
         return get_model_ls_loss_function(model, [obs1], max_obs_time)
 
     np.testing.assert_allclose(
         get_adjoint_sources_for_obs(model, obs1, n_obs, max_obs_time),
-        finite_gradient(model.tr_model.conc, wrapper_conc),
+        finite_gradient(model.tr_model.mob, wrapper_conc),
     )
 
     n_obs = get_observables_values_as_1d_vector([obs2], _max_obs_time).size

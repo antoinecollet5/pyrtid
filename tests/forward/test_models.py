@@ -355,16 +355,21 @@ def test_model_set_values(model: ForwardModel) -> None:
     arr = np.random.random(size=(20, 20, 1))
 
     model.tr_model.set_initial_conc(arr[:, :, 0])
-    np.testing.assert_array_equal(model.tr_model.conc, arr)
+    np.testing.assert_array_equal(model.tr_model.mob[0], arr)
+    np.testing.assert_array_equal(model.tr_model.mob[1], np.zeros_like(arr))
+
+    model.tr_model.set_initial_conc(arr[:, :, 0], sp=1)
+    np.testing.assert_array_equal(model.tr_model.mob[0], arr)
+    np.testing.assert_array_equal(model.tr_model.mob[1], arr)
 
     model.tr_model.set_initial_conc(4.0)
-    np.testing.assert_array_equal(model.tr_model.conc, np.ones((20, 20, 1)) * 4.0)
+    np.testing.assert_array_equal(model.tr_model.mob[0], np.ones((20, 20, 1)) * 4.0)
 
     model.tr_model.set_initial_grade(arr[:, :, 0] * 2.0)
-    np.testing.assert_array_equal(model.tr_model.grade, arr * 2.0)
+    np.testing.assert_array_equal(model.tr_model.immob, arr * 2.0)
 
     model.tr_model.set_initial_grade(2.0)
-    np.testing.assert_array_equal(model.tr_model.grade, np.ones((20, 20, 1)) * 2.0)
+    np.testing.assert_array_equal(model.tr_model.immob, np.ones((20, 20, 1)) * 2.0)
 
     model.fl_model.set_initial_head(arr[:, :, 0] * 3.0)
     np.testing.assert_array_equal(model.fl_model.head, arr * 3.0)
@@ -374,20 +379,22 @@ def test_model_set_values(model: ForwardModel) -> None:
 
 
 def test_model_reinit(model: ForwardModel) -> None:
-    model.tr_model.lconc.append(model.tr_model.lconc[-1])
-    assert len(model.tr_model.lconc) == 2
+    model.tr_model.lmob.append(model.tr_model.lmob[-1])
+    assert len(model.tr_model.lmob) == 2
 
     model.fl_model.lhead.append(model.fl_model.lhead[-1])
     assert len(model.fl_model.lhead) == 2
 
     model.reinit()
 
-    assert len(model.tr_model.lconc) == 1
-    assert len(model.tr_model.lgrade) == 1
+    assert len(model.tr_model.lmob) == 1
+    assert len(model.tr_model.limmob) == 1
 
-    np.testing.assert_array_equal(model.tr_model.lconc[0], model.tr_model.conc[:, :, 0])
     np.testing.assert_array_equal(
-        model.tr_model.lgrade[0], model.tr_model.grade[:, :, 0]
+        model.tr_model.lmob[0], model.tr_model.mob[:, :, :, 0]
+    )
+    np.testing.assert_array_equal(
+        model.tr_model.limmob[0], model.tr_model.immob[:, :, 0]
     )
 
     assert len(model.fl_model.lhead) == 1

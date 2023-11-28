@@ -62,8 +62,8 @@ def test_get_model_loss_function(
     )
 
     # generate synthetic data
-    model.tr_model.lconc.append(np.ones((20, 20)) * 2.0)
-    model.tr_model.lconc.append(np.ones((20, 20)) * 3.0)
+    model.tr_model.lmob.append(np.ones((2, 20, 20)) * 2.0)
+    model.tr_model.lmob.append(np.ones((2, 20, 20)) * 3.0)
     model.time_params.save_dt()
     model.time_params.save_dt()
 

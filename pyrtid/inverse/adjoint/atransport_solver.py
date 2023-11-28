@@ -41,72 +41,8 @@ def get_adjoint_max_coupling_error(
     This error is evaluated from the mobile adjoint concentrations.
     """
     return get_max_coupling_error(
-        atr_model.a_conc[:, :, time_index], atr_model.a_conc_prev
+        atr_model.a_mob[:, :, :, time_index], atr_model.a_mob_prev
     )
-
-
-def solve_adj_initial_transport(
-    geometry: Geometry,
-    fl_model: FlowModel,
-    tr_model: TransportModel,
-    a_tr_model: AdjointTransportModel,
-    time_params: TimeParameters,
-    time_index: int,
-    nafpi: int,
-) -> int:
-    """
-    Solving the adjoint diffusivity equation:
-
-    dc/dt = div D grad c + ...
-    """
-
-    tr_model.crank_nicolson_advection
-
-    if nafpi == 1:
-        q_next = a_tr_model.q_next_diffusion.copy().tolil()
-        q_prev = a_tr_model.q_prev_diffusion.copy().tolil()
-
-        # Update q_next and q_prev with the advection term (must be copied)
-        # Note that this is required at the first fixed point iteration only,
-        # afterwards, only the chemical source term varies.
-        _add_advection_to_adj_transport_matrices(
-            geometry, fl_model, tr_model, a_tr_model, q_next, q_prev, time_index
-        )
-
-        # Add 1/dt * \omgea for the left term contribution
-        # Note; if the porosity and the timesteps are added here, it is to get the
-        # highest values as possible on the diagonal of the matrices
-        # -> better conditionning and easier LU preconditioning.
-        q_next.setdiag(
-            q_next.diagonal() + tr_model.porosity.flatten("F") / time_params.ldt[-1]
-        )
-
-        a_tr_model.q_next = q_next
-    else:
-        q_next = a_tr_model.q_next
-
-    # Multiply prev matrix by prev vector
-    tmp = np.zeros(geometry.nx * geometry.ny)
-
-    # Add the adjoint source terms
-    # Add the source terms
-    tmp += (
-        a_tr_model.a_conc_sources.getcol(time_index).todense().ravel()
-        / geometry.mesh_volume
-    )
-
-    # Add the adjoint geochem source term
-    tmp -= (a_tr_model.a_gch_src_term / geometry.mesh_volume).ravel("F")
-
-    # Build the LU preconditioning
-    preconditioner = get_super_lu_preconditioner(q_next.tocsc())
-
-    # Solve Ax = b with A sparse using LU preconditioner
-    res, exit_code = gmres(q_next.tocsc(), tmp, M=preconditioner, atol=1e-15)
-    # Note: we go backward in time, so time_index -1...
-    a_tr_model.a_conc[:, :, time_index] = res.reshape(geometry.ny, geometry.nx).T
-
-    return exit_code
 
 
 def make_transient_adj_transport_matrices(
@@ -476,8 +412,6 @@ def solve_adj_transport_transient_semi_implicit(
             geometry, fl_model, tr_model, a_tr_model, q_next, q_prev, time_index
         )
 
-        a_tr_model.a_conc[:, :, -1].size
-
         # # Add 1/dt for the left term contribution: only for free head
         # diag = np.zeros(shape)
         # diag[fl_model.free_head_nn] += float(1.0 / time_params.ldt[time_index - 1])
@@ -533,24 +467,28 @@ def solve_adj_transport_transient_semi_implicit(
 
     # Get the previous vector
     try:
-        prev_vector = a_tr_model.a_conc[:, :, time_index + 1].ravel("F")
+        prev_vector = (
+            a_tr_model.a_mob[:, :, :, time_index + 1].reshape(2, -1, order="F").T
+        )
     except IndexError:
-        prev_vector = np.zeros(q_prev.shape[0])
+        prev_vector = np.zeros((q_prev.shape[0], 2))
 
     # Multiply prev matrix by prev vector
-    tmp: NDArrayFloat = q_prev.dot(prev_vector)
+    tmp: NDArrayFloat = q_prev.dot(prev_vector).T
 
-    # Add the source terms
-    tmp += (
-        a_tr_model.a_conc_sources.getcol(time_index).todense().ravel()
-        / geometry.mesh_volume
-    )
+    for sp in range(tmp.shape[0]):
+        # Add the source terms
+        tmp[sp, :] += (
+            a_tr_model.a_conc_sources[sp].getcol(time_index).todense().ravel()
+            / geometry.mesh_volume
+        )
 
     # Add the adjoint geochem source term
-    tmp -= a_tr_model.a_gch_src_term.ravel(order="F") / geometry.mesh_volume
+    # TODO: add species 2 as well
+    tmp[0, :] -= a_tr_model.a_gch_src_term.ravel(order="F") / geometry.mesh_volume
 
-    # Add the adjoint density source term
-    tmp += (
+    # Add the adjoint density source term for species 1
+    tmp[0, :] += (
         a_tr_model.a_density[:, :, time_index].ravel("F")
         * WATER_DENSITY
         * TDS_LINEAR_COEFFICIENT
@@ -558,12 +496,27 @@ def solve_adj_transport_transient_semi_implicit(
         / 1000
     ) / geometry.mesh_volume
 
+    # Add the adjoint density source term for species 2
+    tmp[1, :] += (
+        a_tr_model.a_density[:, :, time_index].ravel("F")
+        * WATER_DENSITY
+        * TDS_LINEAR_COEFFICIENT
+        * gch_params.Ms2
+        / 1000
+    ) / geometry.mesh_volume
+
     # Build the LU preconditioning
     preconditioner = get_super_lu_preconditioner(q_next.tocsc())
 
     # Solve Ax = b with A sparse using LU preconditioner
-    res, exit_code = gmres(q_next.tocsc(), tmp, M=preconditioner, atol=1e-15)
+    for sp in range(tmp.shape[0]):
+        tmp[sp], exit_code = gmres(
+            q_next.tocsc(), tmp[sp], M=preconditioner, atol=tr_model.tolerance
+        )
+
     # Note: we go backward in time, so time_index -1...
-    a_tr_model.a_conc[:, :, time_index] = res.reshape(geometry.ny, geometry.nx).T
+    a_tr_model.a_mob[:, :, :, time_index] = tmp.reshape(
+        tr_model.n_sp, geometry.nx, geometry.ny, order="F"
+    )
 
     return exit_code

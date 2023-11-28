@@ -61,6 +61,8 @@ def get_diffusion_term_adjoint_gradient(
     eff_diffusion = fwd_model.tr_model.effective_diffusion
     porosity = fwd_model.tr_model.porosity
 
+    grad = np.zeros(shape)
+
     if deriv_var == DerivationVariable.POROSITY:
         # Note: this is the diffusion, not the effective diffusion !
         term_in_effdiff_deriv = fwd_model.tr_model.diffusion
@@ -69,89 +71,87 @@ def get_diffusion_term_adjoint_gradient(
 
     crank_diff = fwd_model.tr_model.crank_nicolson_diffusion
 
-    conc = fwd_model.tr_model.conc
-    conc_post_tr = fwd_model.tr_model.conc
-    # conc = fwd_model.tr_model.conc_post_tr
-    aconc = adj_model.a_tr_model.a_conc
+    for sp in range(fwd_model.tr_model.n_sp):
+        mob = fwd_model.tr_model.mob[sp]
+        # mob = fwd_model.tr_model.mob_post_tr
+        amob = adj_model.a_tr_model.a_mob[sp]
 
-    grad = np.zeros(shape)
+        # X axis contribution
+        if shape[0] > 1:
+            # Consider the x axis
+            # Forward scheme
+            dconc_fx = np.zeros(shape)
+            dconc_fx[:-1, :, 1:] += (
+                crank_diff * (mob[1:, :, 1:] - mob[:-1, :, 1:])
+                + (1.0 - crank_diff) * (mob[1:, :, :-1] - mob[:-1, :, :-1])
+            ) * (
+                dxi_harmonic_mean(eff_diffusion[:-1, :], eff_diffusion[1:, :])
+                * term_in_effdiff_deriv[:-1, :]
+            )[
+                :, :, np.newaxis
+            ]
 
-    # X axis contribution
-    if shape[0] > 1:
-        # Consider the x axis
-        # Forward scheme
-        dconc_fx = np.zeros(shape)
-        dconc_fx[:-1, :, 1:] += (
-            crank_diff * (conc_post_tr[1:, :, 1:] - conc_post_tr[:-1, :, 1:])
-            + (1.0 - crank_diff) * (conc[1:, :, :-1] - conc[:-1, :, :-1])
-        ) * (
-            dxi_harmonic_mean(eff_diffusion[:-1, :], eff_diffusion[1:, :])
-            * term_in_effdiff_deriv[:-1, :]
-        )[
-            :, :, np.newaxis
-        ]
+            damob_fx = np.zeros(shape)
+            damob_fx[:-1, :, :] += amob[1:, :, :] - amob[:-1, :, :]
 
-        daconc_fx = np.zeros(shape)
-        daconc_fx[:-1, :, :] += aconc[1:, :, :] - aconc[:-1, :, :]
+            # Backward scheme
+            dconc_bx = np.zeros(shape)
+            dconc_bx[1:, :, 1:] += (
+                crank_diff * (mob[:-1, :, 1:] - mob[1:, :, 1:])
+                + (1.0 - crank_diff) * (mob[:-1, :, :-1] - mob[1:, :, :-1])
+            ) * (
+                dxi_harmonic_mean(eff_diffusion[1:, :], eff_diffusion[:-1, :])
+                * term_in_effdiff_deriv[1:, :]
+            )[
+                :, :, np.newaxis
+            ]
 
-        # Backward scheme
-        dconc_bx = np.zeros(shape)
-        dconc_bx[1:, :, 1:] += (
-            crank_diff * (conc_post_tr[:-1, :, 1:] - conc_post_tr[1:, :, 1:])
-            + (1.0 - crank_diff) * (conc[:-1, :, :-1] - conc[1:, :, :-1])
-        ) * (
-            dxi_harmonic_mean(eff_diffusion[1:, :], eff_diffusion[:-1, :])
-            * term_in_effdiff_deriv[1:, :]
-        )[
-            :, :, np.newaxis
-        ]
+            damob_bx = np.zeros(shape)
+            damob_bx[1:, :, :] += amob[:-1, :, :] - amob[1:, :, :]
 
-        daconc_bx = np.zeros(shape)
-        daconc_bx[1:, :, :] += aconc[:-1, :, :] - aconc[1:, :, :]
+            # Gather the two schemes
+            grad += (
+                (dconc_fx * damob_fx + dconc_bx * damob_bx)
+                * fwd_model.geometry.gamma_ij_x
+                / fwd_model.geometry.dx
+            )
 
-        # Gather the two schemes
-        grad = (
-            (dconc_fx * daconc_fx + dconc_bx * daconc_bx)
-            * fwd_model.geometry.gamma_ij_x
-            / fwd_model.geometry.dx
-        )
+        # Y axis contribution
+        if shape[1] > 1:
+            # Forward scheme
+            dconc_fy = np.zeros(shape)
+            dconc_fy[:, :-1, 1:] += (
+                crank_diff * (mob[:, 1:, 1:] - mob[:, :-1, 1:])
+                + (1.0 - crank_diff) * (mob[:, 1:, :-1] - mob[:, :-1, :-1])
+            ) * (
+                dxi_harmonic_mean(eff_diffusion[:, :-1], eff_diffusion[:, 1:])
+                * term_in_effdiff_deriv[:, :-1]
+            )[
+                :, :, np.newaxis
+            ]
+            damob_fy = np.zeros(shape)
+            damob_fy[:, :-1, :] += amob[:, 1:, :] - amob[:, :-1, :]
 
-    # Y axis contribution
-    if shape[1] > 1:
-        # Forward scheme
-        dconc_fy = np.zeros(shape)
-        dconc_fy[:, :-1, 1:] += (
-            crank_diff * (conc_post_tr[:, 1:, 1:] - conc_post_tr[:, :-1, 1:])
-            + (1.0 - crank_diff) * (conc[:, 1:, :-1] - conc[:, :-1, :-1])
-        ) * (
-            dxi_harmonic_mean(eff_diffusion[:, :-1], eff_diffusion[:, 1:])
-            * term_in_effdiff_deriv[:, :-1]
-        )[
-            :, :, np.newaxis
-        ]
-        daconc_fy = np.zeros(shape)
-        daconc_fy[:, :-1, :] += aconc[:, 1:, :] - aconc[:, :-1, :]
+            # Bconckward scheme
+            dconc_by = np.zeros(shape)
+            dconc_by[:, 1:, 1:] += (
+                crank_diff * (mob[:, :-1, 1:] - mob[:, 1:, 1:])
+                + (1.0 - crank_diff) * (mob[:, :-1, :-1] - mob[:, 1:, :-1])
+            ) * (
+                dxi_harmonic_mean(eff_diffusion[:, 1:], eff_diffusion[:, :-1])
+                * term_in_effdiff_deriv[:, 1:]
+            )[
+                :, :, np.newaxis
+            ]
+            damob_by = np.zeros(shape)
+            damob_by[:, 1:, :] += amob[:, :-1, :] - amob[:, 1:, :]
 
-        # Bconckward scheme
-        dconc_by = np.zeros(shape)
-        dconc_by[:, 1:, 1:] += (
-            crank_diff * (conc_post_tr[:, :-1, 1:] - conc_post_tr[:, 1:, 1:])
-            + (1.0 - crank_diff) * (conc[:, :-1, :-1] - conc[:, 1:, :-1])
-        ) * (
-            dxi_harmonic_mean(eff_diffusion[:, 1:], eff_diffusion[:, :-1])
-            * term_in_effdiff_deriv[:, 1:]
-        )[
-            :, :, np.newaxis
-        ]
-        daconc_by = np.zeros(shape)
-        daconc_by[:, 1:, :] += aconc[:, :-1, :] - aconc[:, 1:, :]
-
-        # Gather the two schemes
-        grad += (
-            (dconc_fy * daconc_fy + dconc_by * daconc_by)
-            * fwd_model.geometry.gamma_ij_y
-            / fwd_model.geometry.dy
-        )
+            # Gather the two schemes
+            grad += (
+                (dconc_fy * damob_fy + dconc_by * damob_by)
+                * fwd_model.geometry.gamma_ij_y
+                / fwd_model.geometry.dy
+            )
 
     # We sum along the temporal axis
     return -np.sum(grad, axis=-1)
@@ -211,15 +211,17 @@ def get_porosity_adjoint_gradient(
     NDArrayFloat
         Gradient of the objective function with respect to the porosity.
     """
-    conc = fwd_model.tr_model.conc
-    conc_post_tr = fwd_model.tr_model.conc
-    aconc = adj_model.a_tr_model.a_conc
+    grad = np.zeros(
+        (fwd_model.geometry.nx, fwd_model.geometry.ny, fwd_model.time_params.nt)
+    )
 
-    grad = (
-        (conc_post_tr[:, :, 1:] - conc[:, :, :-1])
-        / fwd_model.time_params.dt
-        * aconc[:, :, 1:]
-    ) * fwd_model.geometry.mesh_volume
+    for sp in range(fwd_model.tr_model.n_sp):
+        mob = fwd_model.tr_model.mob[sp]
+        amob = adj_model.a_tr_model.a_mob[sp]
+
+        grad += (
+            (mob[:, :, 1:] - mob[:, :, :-1]) / fwd_model.time_params.dt * amob[:, :, 1:]
+        ) * fwd_model.geometry.mesh_volume
 
     # We sum along the temporal axis + get the diffusion gradient
     grad = -np.sum(grad, axis=-1) + get_diffusion_term_adjoint_gradient(
@@ -969,7 +971,7 @@ def get_initial_grade_adjoint_gradient(
     computed on the full domain (grid).
     """
     grad = (
-        adj_model.a_tr_model.a_conc[:, :, 1]
+        adj_model.a_tr_model.a_mob[0, :, :, 1]
         / fwd_model.time_params.ldt[0]
         * fwd_model.tr_model.porosity
         * fwd_model.geometry.mesh_volume
@@ -978,7 +980,7 @@ def get_initial_grade_adjoint_gradient(
         + fwd_model.time_params.ldt[0]
         * fwd_model.gch_params.kv
         * fwd_model.gch_params.As
-        * (1.0 - fwd_model.tr_model.lconc[1] / fwd_model.gch_params.Ks)
+        * (1.0 - fwd_model.tr_model.lmob[1] / fwd_model.gch_params.Ks)
     )
     # Add adjoint sources for time t=0
     return grad + adj_model.a_tr_model.a_grade_sources.getcol(0).todense().reshape(
@@ -1108,7 +1110,7 @@ def get_initial_pressure_adjoint_gradient(
 
 
 def get_initial_conc_adjoint_gradient(
-    fwd_model: ForwardModel, adj_model: AdjointModel
+    fwd_model: ForwardModel, adj_model: AdjointModel, sp: int
 ) -> NDArrayFloat:
     r"""
     Gradient with respect to aqueous phase initial concentrations.
@@ -1130,50 +1132,49 @@ def get_initial_conc_adjoint_gradient(
     Parameter span is not taken into account which means that the gradient is
     computed on the full domain (grid).
     """
-    a_tr_model = adj_model.a_tr_model
     tr_model = fwd_model.tr_model
 
     grad = (
-        adj_model.a_tr_model.a_conc[:, :, 1]
+        adj_model.a_tr_model.a_mob[sp, :, :, 1]
         * fwd_model.geometry.mesh_volume
         * fwd_model.tr_model.porosity
         / fwd_model.time_params.ldt[0]
     )
 
     crank_diff = fwd_model.tr_model.crank_nicolson_diffusion
-    a_conc = adj_model.a_tr_model.a_conc[:, :, 1]
+    a_mob = adj_model.a_tr_model.a_mob[sp, :, :, 1]
 
     # X axis contribution
-    if a_tr_model.a_conc.shape[0] > 1:
+    if fwd_model.geometry.nx > 1:
         dmean = harmonic_mean(
             tr_model.effective_diffusion[:-1, :], tr_model.effective_diffusion[1:, :]
         )
         tmp = fwd_model.geometry.gamma_ij_x / fwd_model.geometry.dx
         # Forward scheme
         grad[:-1, :] += (
-            +(1.0 - crank_diff) * (a_conc[1:, :] - a_conc[:-1, :]) * dmean
+            +(1.0 - crank_diff) * (a_mob[1:, :] - a_mob[:-1, :]) * dmean
         ) * tmp
         # Backward scheme
         grad[1:, :] += (
-            +(1.0 - crank_diff) * (a_conc[:-1, :] - a_conc[1:, :]) * dmean
+            +(1.0 - crank_diff) * (a_mob[:-1, :] - a_mob[1:, :]) * dmean
         ) * tmp
 
     # Y axis contribution
-    if a_tr_model.a_conc.shape[1] > 1:
+    if fwd_model.geometry.ny > 1:
         dmean = harmonic_mean(
             tr_model.effective_diffusion[:, :-1], tr_model.effective_diffusion[:, 1:]
         )
         tmp = fwd_model.geometry.gamma_ij_y / fwd_model.geometry.dy
         # Forward scheme
         grad[:, :-1] += (
-            +(1.0 - crank_diff) * (a_conc[:, 1:] - a_conc[:, :-1]) * dmean
+            +(1.0 - crank_diff) * (a_mob[:, 1:] - a_mob[:, :-1]) * dmean
         ) * tmp
         # Backward scheme
         grad[:, 1:] += (
-            +(1.0 - crank_diff) * (a_conc[:, :-1] - a_conc[:, 1:]) * dmean
+            +(1.0 - crank_diff) * (a_mob[:, :-1] - a_mob[:, 1:]) * dmean
         ) * tmp
 
-    return grad + adj_model.a_tr_model.a_conc_sources.getcol(0).todense().reshape(
+    return grad + adj_model.a_tr_model.a_conc_sources[sp].getcol(0).todense().reshape(
         grad.shape, order="F"
     )
 
@@ -1212,7 +1213,9 @@ def compute_param_adjoint_ls_loss_function_gradient(
     if param.name == ParameterName.PERMEABILITY:
         return get_permeability_adjoint_gradient(fwd_model, adj_model)
     if param.name == ParameterName.INITIAL_CONCENTRATION:
-        return get_initial_conc_adjoint_gradient(fwd_model, adj_model)
+        return get_initial_conc_adjoint_gradient(fwd_model, adj_model, 0)
+    if param.name == ParameterName.INITIAL_CONCENTRATION2:
+        return get_initial_conc_adjoint_gradient(fwd_model, adj_model, 1)
     if param.name == ParameterName.INITIAL_GRADE:
         return get_initial_grade_adjoint_gradient(fwd_model, adj_model)
     if param.name == ParameterName.INITIAL_HEAD:
