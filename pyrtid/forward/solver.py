@@ -59,7 +59,7 @@ def get_max_coupling_error_forward(tr_model: TransportModel, time_index: int) ->
 
     This error is evaluated from the immobile concentrations (mineral grades).
     """
-    return get_max_coupling_error(tr_model.limmob[time_index], tr_model.grade_prev)
+    return get_max_coupling_error(tr_model.limmob[time_index], tr_model.immob_prev)
 
 
 class ForwardSolver:
@@ -197,13 +197,15 @@ class ForwardSolver:
         has_converged = False
 
         # Copy the grades (To place in another function afterwards)
-        self.model.tr_model.limmob.append(self.model.tr_model.limmob[time_index - 1])
-        self.model.tr_model.lmob.append(self.model.tr_model.lmob[time_index - 1])
+        self.model.tr_model.limmob.append(
+            self.model.tr_model.limmob[time_index - 1].copy()
+        )
+        self.model.tr_model.lmob.append(self.model.tr_model.lmob[time_index - 1].copy())
 
         # Iterate the chemistry transport system while the convergence is no meet
         while not has_converged:
             # Save the grade for the fix point iterations
-            self.model.tr_model.grade_prev = self.model.tr_model.limmob[
+            self.model.tr_model.immob_prev = self.model.tr_model.limmob[
                 time_index
             ].copy()
 

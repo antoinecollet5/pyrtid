@@ -1,6 +1,7 @@
 """Provide the models for the adjoint states."""
 from __future__ import annotations
 
+import copy
 from abc import ABC
 from typing import List, Optional
 
@@ -16,7 +17,6 @@ from pyrtid.inverse.obs import (
     Observables,
     StateVariable,
     get_adjoint_sources_for_obs,
-    get_observables_values_as_1d_vector,
 )
 from pyrtid.utils import object_or_object_sequence_to_list
 from pyrtid.utils.types import NDArrayFloat
@@ -155,6 +155,7 @@ class AdjointTransportModel:
     a_gch_src_term: NDArrayFloat
     afpi_eps: float
     is_adj_numerical_acceleration: bool
+    n_sp: int
     """
 
     __slots__ = [
@@ -174,12 +175,14 @@ class AdjointTransportModel:
         "a_gch_src_term",
         "afpi_eps",
         "is_adj_numerical_acceleration",
+        "n_sp",
     ]
 
     def __init__(
         self,
         geometry: Geometry,
         time_params: TimeParameters,
+        n_sp: int,
         afpi_eps: float = 1e-5,
         is_adj_numerical_acceleration: bool = False,
     ) -> None:
@@ -192,16 +195,20 @@ class AdjointTransportModel:
             Simulation geometry definition.
         time_params: TimeParameters
             Simulation time parameters (duration, timesteps, etc.)
+        n_sp: int
+            Number of species in the system.
         afpi_eps: float
-
+            Adjoint fixed point iteration criterion.
         is_numerical_acceleration: bool
+            Whether to use numerical acceleration in the ajdoint.
 
         """
+        self.n_sp = n_sp
         self.a_mob: NDArrayFloat = np.zeros(
-            (2, geometry.nx, geometry.ny, time_params.nt), dtype=np.float64
+            (self.n_sp, geometry.nx, geometry.ny, time_params.nt), dtype=np.float64
         )
         self.a_mob_prev: NDArrayFloat = np.zeros(
-            (2, geometry.nx, geometry.ny), dtype=np.float64
+            (self.n_sp, geometry.nx, geometry.ny), dtype=np.float64
         )
 
         self.a_grade: NDArrayFloat = np.zeros(
@@ -216,12 +223,10 @@ class AdjointTransportModel:
         # NOTE: rows are meshes, and columns are time indices
         # We use csc format for fast column (time) slicing
         self.a_conc_sources: List[csc_array] = [
-            csc_array((geometry.nx * geometry.ny, time_params.nt), dtype=np.float64),
-            csc_array((geometry.nx * geometry.ny, time_params.nt), dtype=np.float64),
+            csc_array((geometry.nx * geometry.ny, time_params.nt), dtype=np.float64)
+            for sp in range(self.n_sp)  # type: ignore
         ]
-        self.a_grade_sources = csc_array(
-            (geometry.nx * geometry.ny, time_params.nt), dtype=np.float64
-        )
+        self.a_grade_sources: List[csc_array] = copy.copy(self.a_conc_sources)
         self.a_porosity_sources = csc_array(
             (geometry.nx * geometry.ny, 1), dtype=np.float64
         )
@@ -245,10 +250,9 @@ class AdjointTransportModel:
     def clear_adjoint_sources(self) -> None:
         """Reset all adjoint sources to zero."""
         self.a_conc_sources = [
-            csc_array(self.a_grade_sources.shape),
-            csc_array(self.a_grade_sources.shape),
+            csc_array(self.a_grade_sources.shape) for sp in range(self.n_sp)
         ]
-        self.a_grade_sources = csc_array(self.a_grade_sources.shape)
+        self.a_grade_sources = copy.copy(self.a_conc_sources)
         self.a_porosity_sources = csc_array(self.a_porosity_sources.shape)
         self.a_diffusion_sources = csc_array(self.a_diffusion_sources.shape)
         self.a_density_sources = csc_array(self.a_density_sources.shape)
@@ -274,6 +278,7 @@ class AdjointModel:
         geometry: Geometry,
         time_params: TimeParameters,
         is_gravity: bool,
+        n_sp: int,
         afpi_eps: float = 1e-5,
         is_adj_numerical_acceleration: bool = False,
     ) -> None:
@@ -288,6 +293,8 @@ class AdjointModel:
             Simulation time parameters (duration, timesteps, etc.)
         is_gravity: bool
             Whether to consider gravity for a density driven flow.
+        n_sp: int
+            The number of species in the system.
         afpi_eps: float
         is_numerical_acceleration: bool
         """
@@ -302,7 +309,7 @@ class AdjointModel:
                 geometry, time_params
             )
         self.a_tr_model: AdjointTransportModel = AdjointTransportModel(
-            geometry, time_params, afpi_eps, is_adj_numerical_acceleration
+            geometry, time_params, n_sp, afpi_eps, is_adj_numerical_acceleration
         )
 
     def clear_adjoint_sources(self) -> None:
@@ -339,22 +346,16 @@ class AdjointModel:
         else:
             max_obs_time = fwd_model.time_params.time_elapsed
 
-        # get the number of observations used to scale the objective function
-        n_obs = get_observables_values_as_1d_vector(
-            observables, max_obs_time=max_obs_time
-        ).size
-
         # get the adjoint variable for each observable
         for obs in object_or_object_sequence_to_list(observables):
             # adjoint sources for this observable to a sparse matrix
 
             array = {
-                StateVariable.CONCENTRATION: self.a_tr_model.a_conc_sources[0],
-                StateVariable.CONCENTRATION_2: self.a_tr_model.a_conc_sources[1],
+                StateVariable.CONCENTRATION: self.a_tr_model.a_conc_sources[obs.sp],
                 StateVariable.DENSITY: self.a_tr_model.a_density_sources,
                 StateVariable.DIFFUSION: self.a_tr_model.a_diffusion_sources,
                 StateVariable.HEAD: self.a_fl_model.a_head_sources,
-                StateVariable.GRADE: self.a_tr_model.a_grade_sources,
+                StateVariable.GRADE: self.a_tr_model.a_grade_sources[obs.sp],
                 StateVariable.PERMEABILITY: self.a_fl_model.a_permeability_sources,
                 StateVariable.POROSITY: self.a_tr_model.a_porosity_sources,
                 StateVariable.PRESSURE: self.a_fl_model.a_pressure_sources,
@@ -365,15 +366,13 @@ class AdjointModel:
 
             # Add the sparse array to the correct attribute
             res = csc_array(
-                get_adjoint_sources_for_obs(
-                    fwd_model, obs, n_obs, max_obs_time
-                ).reshape(array.shape, order="F")
+                get_adjoint_sources_for_obs(fwd_model, obs, max_obs_time).reshape(
+                    array.shape, order="F"
+                )
             )
 
             if obs.state_variable == StateVariable.CONCENTRATION:
-                self.a_tr_model.a_conc_sources[0] += res
-            elif obs.state_variable == StateVariable.CONCENTRATION_2:
-                self.a_tr_model.a_conc_sources[1] += res
+                self.a_tr_model.a_conc_sources[obs.sp] += res
             elif obs.state_variable == StateVariable.DENSITY:
                 self.a_tr_model.a_density_sources += res
             elif obs.state_variable == StateVariable.DIFFUSION:
@@ -381,7 +380,7 @@ class AdjointModel:
             elif obs.state_variable == StateVariable.HEAD:
                 self.a_fl_model.a_head_sources += res
             elif obs.state_variable == StateVariable.GRADE:
-                self.a_tr_model.a_grade_sources += res
+                self.a_tr_model.a_grade_sources[obs.sp] += res
             elif obs.state_variable == StateVariable.PERMEABILITY:
                 self.a_fl_model.a_permeability_sources += res
             elif obs.state_variable == StateVariable.POROSITY:

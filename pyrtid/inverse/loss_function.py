@@ -22,7 +22,7 @@ def ls_loss_function(
     Return the objective function with regard to `x`.
 
     .. math::
-        \mathcal{J} = \dfrac{1}{2\lvert \bm{d}_{\mathrm{obs}} \rvert} \sum_{n=0}^{N}
+        \mathcal{J} = \dfrac{1}{2} \sum_{n=0}^{N}
         \left(\dfrac{d_{\mathrm{obs}}^{n}
         - d_{\mathrm{calc}}^{n}}{\sigma_{\mathrm{obs}}^{n}} \right)^{2}
 
@@ -44,7 +44,7 @@ def ls_loss_function(
         the value of the objective function
 
     """
-    return 0.5 / np.size(x_obs) * np.sum(np.square((x_obs - x_calc) / x_sigma))
+    return 0.5 * np.sum(np.square((x_obs - x_calc) / x_sigma))
 
 
 def get_model_ls_loss_function(

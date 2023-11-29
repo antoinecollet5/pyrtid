@@ -33,6 +33,7 @@ WATER_DENSITY = 997
 WATER_MW = 0.01801528  # kg/mol
 TDS_LINEAR_COEFFICIENT = 1.0  # -> for the densities calculation
 H_PLUS_CONC = 1.00603e-07  # mol/l -> for the densities calculation
+SMALL_NUMBER = 1e-15
 VERY_SMALL_NUMBER = 1e-30
 
 
@@ -351,9 +352,10 @@ class GeochemicalParameters:
 
     def __init__(
         self,
-        conc: float = 0.0,
-        conc2: float = 0.0,
-        grade: float = 0.0,
+        conc: float = SMALL_NUMBER,
+        conc2: float = SMALL_NUMBER,
+        grade: float = SMALL_NUMBER,
+        grade2: float = SMALL_NUMBER,
         kv: float = -6.9e-9,
         As: float = 13.5,
         Ks: float = 6.3e-4,
@@ -364,6 +366,7 @@ class GeochemicalParameters:
         self.conc: float = conc
         self.conc2: float = conc2
         self.grade: float = grade
+        self.grade2: float = grade2
         self.kv: float = kv
         self.As: float = As
         self.Ks: float = Ks
@@ -471,8 +474,6 @@ class SourceTerm:
         Sequence of flowrates of the well. Positive = injection, negative = pumping.
     concentrations: NDArrayFloat
         Concentrations of the first species, used only if flowrates is positive.
-    concentrations2: NDArrayFloat
-        Concentrations of the second species, used only if flowrates is positive.
     """
 
     __slots__ = [
@@ -481,7 +482,6 @@ class SourceTerm:
         "times",
         "flowrates",
         "concentrations",
-        "concentrations2",
     ]
 
     def __init__(
@@ -491,7 +491,6 @@ class SourceTerm:
         times: NDArrayFloat,
         flowrates: NDArrayFloat,
         concentrations: NDArrayFloat,
-        concentrations2: Optional[NDArrayFloat] = None,
     ) -> None:
         """
         Initialize the instance.
@@ -509,22 +508,19 @@ class SourceTerm:
             Positive = injection, negative = pumping.
         concentrations: NDArrayFloat
             Concentration, used only if flowrates is positive (mol/l).
+            With dimension (nt, n_sp).
 
         """
         self.name = name
         self.node_ids = np.array(node_ids).reshape(-1)
         self.times = np.array(times).reshape(-1)
         self.flowrates = np.array(flowrates).reshape(-1)
-        self.concentrations = np.array(concentrations).reshape(-1)
-        if concentrations2 is not None:
-            self.concentrations2 = np.array(concentrations2).reshape(-1)
-        else:
-            self.concentrations2 = np.zeros_like(concentrations)
+        _conc = np.array(concentrations)
+        self.concentrations = _conc.reshape(_conc.shape[0], -1)
 
         if (
-            self.concentrations.size != self.times.size
+            self.concentrations.shape[0] != self.times.size
             or self.flowrates.size != self.times.size
-            or self.concentrations.size != self.concentrations2.size
         ):
             raise ValueError(
                 "Times, flowrates and concentrations must have the same dimension !"
@@ -996,7 +992,7 @@ class TransportModel:
         "limmob",
         "lsources",  # this is needed for the adjoint state
         "ldensity",
-        "grade_prev",
+        "immob_prev",
         "boundary_conditions",
         "cst_conc_nn",
         "q_prev_diffusion",
@@ -1026,20 +1022,25 @@ class TransportModel:
             np.ones((geometry.nx, geometry.ny), dtype=np.float64) * tr_params.porosity
         )
         self.lmob: List[NDArrayFloat] = [
-            np.ones((self.n_sp, geometry.nx, geometry.ny), dtype=np.float64)
+            np.zeros((self.n_sp, geometry.nx, geometry.ny), dtype=np.float64)
         ]
         self.lmob[0][0, :, :] = gch_params.conc
         self.lmob[0][1, :, :] = gch_params.conc2
 
         self.limmob: List[NDArrayFloat] = [
-            np.ones((geometry.nx, geometry.ny), dtype=np.float64) * gch_params.grade
+            np.zeros((self.n_sp, geometry.nx, geometry.ny), dtype=np.float64)
         ]
+        # For now, only on mineral
+        self.limmob[0][0, :, :] = gch_params.grade
+        self.limmob[0][1, :, :] = gch_params.grade2
 
         self.ldensity: List[NDArrayFloat] = [
             np.ones((geometry.nx, geometry.ny), dtype=np.float64) * WATER_DENSITY
         ]
         self.lsources: List[NDArrayFloat] = []
-        self.grade_prev = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
+        self.immob_prev = np.zeros(
+            (self.n_sp, geometry.nx, geometry.ny), dtype=np.float64
+        )
         self.boundary_conditions: List[BoundaryCondition] = []
         # q_prev is composed of q_prev_diffusion + advection term
         self.q_prev_diffusion: lil_matrix = lil_array(geometry.nx * geometry.ny)
@@ -1055,7 +1056,7 @@ class TransportModel:
     @property
     def mob(self) -> NDArrayFloat:
         """
-        Return mobile concentrations as array with dimension (2, nx, ny, nz, nt + 1).
+        Return mobile concentrations as array with dimension (nsp, nx, ny, nz, nt+1).
 
         This is read-only.
         """
@@ -1064,11 +1065,11 @@ class TransportModel:
     @property
     def immob(self) -> NDArrayFloat:
         """
-        Return immobile concentrations as array with dimension (nx, ny, nz, nt + 1).
+        Return immobile concentrations as array with dimension (nsp, nx, ny, nz, nt+1).
 
         This is read-only.
         """
-        return np.transpose(np.array(self.limmob), axes=(1, 2, 0))
+        return np.transpose(np.array(self.limmob), axes=(1, 2, 3, 0))
 
     @property
     def conc(self) -> NDArrayFloat:
@@ -1093,9 +1094,18 @@ class TransportModel:
         """
         Return immobile concentrations as array with dimension (nx, ny, nz, nt + 1).
 
-        This is read-only. Alias for immob.
+        This is read-only. Alias for immob[0].
         """
-        return self.immob
+        return self.immob[0]
+
+    @property
+    def grade2(self) -> NDArrayFloat:
+        """
+        Return immobile concentrations as array with dimension (nx, ny, nz, nt + 1).
+
+        This is read-only. Alias for immob[1].
+        """
+        return self.immob[1]
 
     @property
     def density(self) -> NDArrayFloat:
@@ -1132,13 +1142,14 @@ class TransportModel:
     def set_initial_grade(
         self,
         values: Union[float, int, NDArrayInt, NDArrayFloat],
+        sp: Optional[int] = 0,
         span: Union[NDArrayInt, Tuple[slice, slice], NDArrayBool] = (
             slice(None),
             slice(None),
         ),
     ) -> None:
         """Set the initial grades."""
-        self.limmob[0][span] = values
+        self.limmob[0][sp][span] = values
 
     def set_initial_conc(
         self,
@@ -1210,7 +1221,7 @@ class TransportModel:
         """Set all arrays to zero except for the initial conditions(first time)."""
         self.lmob = self.lmob[:1]
         self.limmob = self.limmob[:1]
-        self.grade_prev = self.limmob[0]
+        self.immob_prev = self.limmob[0]
         self.ldensity = self.ldensity[:1]
         self.lsources = []
         self.set_constant_conc_indices()
@@ -1299,7 +1310,7 @@ class ForwardModel:
         """Get the flow sources and sink terms."""
 
         _fl_src = np.zeros((geometry.nx, geometry.ny))
-        _conc_src = np.zeros((geometry.nx, geometry.ny))
+        _conc_src = np.zeros((self.tr_model.n_sp, geometry.nx, geometry.ny))
 
         # iterate the source terms
         for source in self.source_terms:
@@ -1312,7 +1323,8 @@ class ForwardModel:
 
             # Keep only non negative flowrates (remove sink terms)
             if _fl > 0:
-                _conc_src[nids[0], nids[1]] += _fl * _conc / source.n_nodes
+                for sp in range(self.tr_model.n_sp):
+                    _conc_src[sp, nids[0], nids[1]] += _fl * _conc[sp] / source.n_nodes
 
         for condition in self.fl_model.boundary_conditions:
             if isinstance(condition, ConstantHead):
@@ -1322,7 +1334,8 @@ class ForwardModel:
         for condition in self.tr_model.boundary_conditions:
             if isinstance(condition, ConstantConcentration):
                 # Set zero where there constant concentration
-                _conc_src[condition.span] = 0.0
+                for sp in range(self.tr_model.n_sp):
+                    _conc_src[sp][condition.span] = 0.0
 
         return (
             _fl_src / self.geometry.mesh_volume,

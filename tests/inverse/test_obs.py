@@ -1,4 +1,5 @@
 from contextlib import nullcontext as does_not_raise
+from typing import Optional
 
 import numpy as np
 import pyrtid.forward as dmfwd
@@ -27,7 +28,7 @@ from pyrtid.utils.types import NDArrayFloat, NDArrayInt
 
 @pytest.mark.parametrize(
     "state_variable, node_indices, times, "
-    "values, uncertainties, mean_type, expected_exception",
+    "values, uncertainties, mean_type, sp, expected_exception",
     (
         (
             StateVariable.CONCENTRATION,
@@ -36,6 +37,7 @@ from pyrtid.utils.types import NDArrayFloat, NDArrayInt
             np.array([1.0, 2.0]),
             np.array([1.0, 2.0]),
             None,
+            0,
             does_not_raise(),
         ),
         (
@@ -43,6 +45,7 @@ from pyrtid.utils.types import NDArrayFloat, NDArrayInt
             [1, 2],
             np.array([1.0, 2.0]),
             np.array([1.0, 2.0]),
+            None,
             None,
             None,
             does_not_raise(),
@@ -54,6 +57,7 @@ from pyrtid.utils.types import NDArrayFloat, NDArrayInt
             np.array([1.0, 2.0]),
             5.0,
             MeanType.ARITHMETIC,
+            0,
             does_not_raise(),
         ),
         (
@@ -63,6 +67,7 @@ from pyrtid.utils.types import NDArrayFloat, NDArrayInt
             np.array([1.0, 2.0, 5.0]),
             np.array([5.0, 5.0]),
             MeanType.GEOMETRIC,
+            0,
             pytest.raises(
                 ValueError,
                 match="``uncertainties`` parameter should be a float value or a numpy "
@@ -76,6 +81,7 @@ from pyrtid.utils.types import NDArrayFloat, NDArrayInt
             np.array([1.0, 2.0]),
             np.array([5.0, 5.0]),
             None,
+            0,
             pytest.raises(
                 ValueError,
                 match="``times`` parameter should be a float value or a numpy "
@@ -91,6 +97,7 @@ def test_observable_init(
     values,
     uncertainties,
     mean_type,
+    sp,
     expected_exception,
 ) -> None:
     with expected_exception:
@@ -102,6 +109,7 @@ def test_observable_init(
                 values,
                 uncertainties,
                 mean_type,
+                sp=sp,
             )
         )
 
@@ -187,18 +195,19 @@ def model() -> dmfwd.ForwardModel:
 
 
 @pytest.mark.parametrize(
-    "state_variable, expected_exception",
+    "state_variable, sp, expected_exception",
     (
-        (StateVariable.CONCENTRATION, does_not_raise()),
-        (StateVariable.DENSITY, does_not_raise()),
-        (StateVariable.DIFFUSION, does_not_raise()),
-        (StateVariable.HEAD, does_not_raise()),
-        (StateVariable.GRADE, does_not_raise()),
-        (StateVariable.PERMEABILITY, does_not_raise()),
-        (StateVariable.POROSITY, does_not_raise()),
-        (StateVariable.PRESSURE, does_not_raise()),
+        (StateVariable.CONCENTRATION, 0, does_not_raise()),
+        (StateVariable.DENSITY, None, does_not_raise()),
+        (StateVariable.DIFFUSION, None, does_not_raise()),
+        (StateVariable.HEAD, None, does_not_raise()),
+        (StateVariable.GRADE, 0, does_not_raise()),
+        (StateVariable.PERMEABILITY, None, does_not_raise()),
+        (StateVariable.POROSITY, None, does_not_raise()),
+        (StateVariable.PRESSURE, None, does_not_raise()),
         (
             "a random variable",
+            None,
             pytest.raises(
                 ValueError,
                 match=(
@@ -210,10 +219,15 @@ def model() -> dmfwd.ForwardModel:
     ),
 )
 def test_get_array_from_state_variable(
-    state_variable: StateVariable, expected_exception, model: dmfwd.ForwardModel
+    state_variable: StateVariable,
+    sp: Optional[int],
+    expected_exception,
+    model: dmfwd.ForwardModel,
 ) -> None:
     with expected_exception:
-        assert get_array_from_state_variable(model, state_variable).shape[:2] == (
+        assert get_array_from_state_variable(model, state_variable, sp=sp).shape[
+            :2
+        ] == (
             20,
             20,
         )
@@ -263,7 +277,9 @@ def test_get_obs_attribute_sorted_by_ascending_times(
 ) -> None:
     pass
 
-    obs = Observable(StateVariable.CONCENTRATION, [1], times, values, uncertainties)
+    obs = Observable(
+        StateVariable.CONCENTRATION, [1], times, values, uncertainties, sp=0
+    )
 
     np.testing.assert_allclose(
         get_sorted_observable_times(obs, max_obs_time), expected_times
@@ -345,6 +361,7 @@ def test_get_observables_values_as_1d_vector(
         np.array([2.0, 5.23, 1.25, 6.9, 0.2]),
         np.array([2.2, 5.23, 1.25, 6.1, 0.3]),
         np.array([2.4, 5.23, 1.25, 6.1, 0.3]),  # first value different
+        sp=0,
     )
 
     if is_use_list_of_obs:
@@ -446,8 +463,8 @@ def test_get_predictions_matching_observations(max_obs_time, expected_output) ->
     )
 
     # generate synthetic data
-    model.tr_model.lmob.append(np.ones((20, 20)) * 2.0)
-    model.tr_model.lmob.append(np.ones((20, 20)) * 3.0)
+    model.tr_model.lmob.append(np.ones((2, 20, 20)) * 2.0)
+    model.tr_model.lmob.append(np.ones((2, 20, 20)) * 3.0)
     model.time_params.save_dt()
     model.time_params.save_dt()
 
@@ -459,6 +476,7 @@ def test_get_predictions_matching_observations(max_obs_time, expected_output) ->
         times=np.array([0.0, 0.5, 1.0, 1.56, 2.6]),
         values=np.array([1, 1, 1, 1, 1]),
         uncertainties=1.0,
+        sp=0,
     )
 
     obs2 = Observable(
@@ -467,6 +485,7 @@ def test_get_predictions_matching_observations(max_obs_time, expected_output) ->
         times=np.array([0.0, 0.2, 0.3, 4.3, 5.6]),
         values=np.array([1, 1, 1, 1, 1]),
         uncertainties=1.0,
+        sp=0,
     )
 
     obs3 = Observable(
@@ -538,6 +557,7 @@ def test_get_adjoint_sources_for_obs(max_obs_time, mean_type) -> None:
         values=np.array([1, 1, 1, 1, 1]),
         uncertainties=np.array([0.289, 0.25, 0.27, 0.256, 0.25]),
         mean_type=mean_type,
+        sp=0,
     )
 
     obs2 = Observable(
@@ -554,24 +574,25 @@ def test_get_adjoint_sources_for_obs(max_obs_time, mean_type) -> None:
     else:
         _max_obs_time = model.time_params.time_elapsed
 
-    n_obs = get_observables_values_as_1d_vector([obs1], _max_obs_time).size
+    get_observables_values_as_1d_vector([obs1], _max_obs_time).size
 
     def wrapper_conc(arr: NDArrayFloat) -> float:
-        model.tr_model.lmob = [arr[:, :, i] for i in range(arr.shape[-1])]
+        for i in range(arr.shape[-1]):
+            model.tr_model.lmob[i][0] = arr[:, :, i]
         return get_model_ls_loss_function(model, [obs1], max_obs_time)
 
     np.testing.assert_allclose(
-        get_adjoint_sources_for_obs(model, obs1, n_obs, max_obs_time),
-        finite_gradient(model.tr_model.mob, wrapper_conc),
+        get_adjoint_sources_for_obs(model, obs1, max_obs_time),
+        finite_gradient(model.tr_model.mob[0], wrapper_conc),
     )
 
-    n_obs = get_observables_values_as_1d_vector([obs2], _max_obs_time).size
+    get_observables_values_as_1d_vector([obs2], _max_obs_time).size
 
     def wrapper_perm(arr: NDArrayFloat) -> float:
         model.fl_model.permeability = arr
         return get_model_ls_loss_function(model, [obs2], max_obs_time)
 
     np.testing.assert_allclose(
-        get_adjoint_sources_for_obs(model, obs2, n_obs, max_obs_time),
+        get_adjoint_sources_for_obs(model, obs2, max_obs_time),
         finite_gradient(model.fl_model.permeability, wrapper_perm),
     )

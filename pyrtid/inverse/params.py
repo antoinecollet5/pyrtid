@@ -41,7 +41,6 @@ class ParameterName(StrEnum):
     """Type of parameter invertible."""
 
     INITIAL_CONCENTRATION = "concentration"
-    INITIAL_CONCENTRATION_2 = "concentration_2"
     DIFFUSION = "diffusion"
     INITIAL_HEAD = "head"
     INITIAL_GRADE = "grade"
@@ -53,7 +52,6 @@ class ParameterName(StrEnum):
 
 PARAM_TO_STATE_VAR = {
     ParameterName.INITIAL_CONCENTRATION: StateVariable.CONCENTRATION,
-    ParameterName.INITIAL_CONCENTRATION_2: StateVariable.CONCENTRATION_2,
     ParameterName.DIFFUSION: StateVariable.DIFFUSION,
     ParameterName.INITIAL_HEAD: StateVariable.HEAD,
     ParameterName.INITIAL_GRADE: StateVariable.GRADE,
@@ -104,6 +102,8 @@ class AdjustableParameter:
     eps: float
         The epsilon for the computation of the approximated preconditioner first
         derivative by finite difference.
+    sp: Optional[int]
+        Index of the species.
     """
 
     __slots__ = [
@@ -122,6 +122,7 @@ class AdjustableParameter:
         "archived_fd_gradients",
         "reg_weight",
         "eps",
+        "sp",
     ]
 
     def __init__(
@@ -140,6 +141,7 @@ class AdjustableParameter:
         ),
         filters: Optional[List[Filter]] = None,
         eps: Optional[float] = None,
+        sp: Optional[int] = None,
     ) -> None:
         """
         Initialize the instance.
@@ -175,6 +177,9 @@ class AdjustableParameter:
             The epsilon for the computation of the approximated preconditioner first
             derivative by finite difference. If None, it is automatically inferred.
             The default is None.
+        sp: Optional[int]
+            Index of the species to optimize. Mandtory if a concentration or a grade is
+            being inverted. The default is None.
 
         Raises
         ------
@@ -207,6 +212,17 @@ class AdjustableParameter:
         for regularizator in self.regularizators:
             if not isinstance(regularizator, Regularizator):
                 raise ValueError("Expect a regularizator instance !")
+
+        if (
+            self.name
+            in [ParameterName.INITIAL_CONCENTRATION, ParameterName.INITIAL_GRADE]
+            and sp is None
+        ):
+            raise ValueError(
+                "sp must be provided when optimizing an initial "
+                "grade or an initial concentration!"
+            )
+        self.sp: Optional[int] = sp
 
     @property
     def lbound(self) -> float:
@@ -483,7 +499,7 @@ def get_parameter_values_from_model(
             f"{param.name} is not an adjustable parameter !\n"
             f"Supported parameters are {ParameterName.to_list()}"
         )
-    arr = get_array_from_state_variable(model, PARAM_TO_STATE_VAR[param.name])
+    arr = get_array_from_state_variable(model, PARAM_TO_STATE_VAR[param.name], param.sp)
     if len(arr.shape) == 2:  # porosity, diffusion, perm, etc.
         return arr
     return arr[:, :, 0]  # initial head, pressure, concentrations and grade
@@ -574,7 +590,7 @@ def update_model_with_parameters_values(
             parameters_values[first_index:last_index], is_preconditioned
         )
         # Update the model from param
-        update_model_with_param_values(model, param)
+        update_model_with_param_values(model, param, param.sp)
         first_index = last_index
         # Store the values
         if is_to_save:
@@ -667,19 +683,21 @@ def get_param_values(
 
 
 def update_model_with_param_values(
-    model: ForwardModel, param: AdjustableParameter
+    model: ForwardModel, param: AdjustableParameter, sp: Optional[int] = None
 ) -> None:
     """Update the input field with the Adjustable parameter current values."""
     if param.name == ParameterName.INITIAL_CONCENTRATION:
-        model.tr_model.set_initial_conc(param.values[param.span], 0, param.span)
-    elif param.name == ParameterName.INITIAL_CONCENTRATION2:
-        model.tr_model.set_initial_conc(param.values[param.span], 1, param.span)
+        if sp is None:
+            raise ValueError("sp cannot be None for concentrations!")
+        model.tr_model.set_initial_conc(param.values[param.span], sp, param.span)
     elif param.name == ParameterName.INITIAL_HEAD:
         model.fl_model.set_initial_head(param.values[param.span], param.span)
     elif param.name == ParameterName.INITIAL_PRESSURE:
         model.fl_model.set_initial_pressure(param.values[param.span], param.span)
     elif param.name == ParameterName.INITIAL_GRADE:
-        model.tr_model.set_initial_grade(param.values[param.span], param.span)
+        if sp is None:
+            raise ValueError("sp cannot be None for grades!")
+        model.tr_model.set_initial_grade(param.values[param.span], sp, param.span)
     elif param.name == ParameterName.PERMEABILITY:
         model.fl_model.permeability[param.span] = param.values[param.span]
     elif param.name == ParameterName.POROSITY:

@@ -26,7 +26,6 @@ class StateVariable(StrEnum):
     """Type of observable existing."""
 
     CONCENTRATION = "concentration"
-    CONCENTRATION_2 = "concentration_2"
     DENSITY = "density"
     DIFFUSION = "diffusion"
     HEAD = "head"
@@ -64,6 +63,9 @@ class Observable:
         Perturbations to add to the values when performing the inversion. This
         is only useful for the ensemble method when the observed values
         are perturbed with samples from N(0, R).
+    sp: Optional[int]
+        Index of the concentration being observed. Must be provided if a
+        concentration or a grade is observed.
     """
 
     __slots__ = [
@@ -74,6 +76,7 @@ class Observable:
         "uncertainties",
         "_mean_type",
         "perturbations",
+        "sp",
     ]
 
     def __init__(
@@ -84,6 +87,7 @@ class Observable:
         values: NDArrayFloat,
         uncertainties: Optional[Union[float, NDArrayFloat]] = None,
         mean_type: Optional[MeanType] = None,
+        sp: Optional[int] = None,
     ) -> None:
         """
         Initiate the instance.
@@ -144,6 +148,20 @@ class Observable:
             )
 
         self.mean_type = mean_type
+
+        if (
+            self.state_variable in [StateVariable.CONCENTRATION, StateVariable.GRADE]
+            and sp is None
+        ):
+            raise ValueError(
+                "sp must be provided when observing " "grades or concentrations!"
+            )
+
+        # To avoid having None values for typing
+        if sp is not None:
+            self.sp: int = sp
+        else:
+            self.sp = 0
 
     @property
     def values(self) -> NDArrayFloat:
@@ -313,18 +331,20 @@ def get_sorted_observable_uncertainties(
 
 
 def get_array_from_state_variable(
-    model: ForwardModel, state_variable: StateVariable
+    model: ForwardModel, state_variable: StateVariable, sp: Optional[int] = None
 ) -> NDArrayFloat:
     if state_variable == StateVariable.CONCENTRATION:
-        return model.tr_model.mob[0]
-    if state_variable == StateVariable.CONCENTRATION_2:
-        return model.tr_model.mob[1]
+        if sp is None:
+            raise ValueError("sp cannot be None for concentrations")
+        return model.tr_model.mob[sp]
     if state_variable == StateVariable.HEAD:
         return model.fl_model.head
     if state_variable == StateVariable.PRESSURE:
         return model.fl_model.pressure
     if state_variable == StateVariable.GRADE:
-        return model.tr_model.immob
+        if sp is None:
+            raise ValueError("sp cannot be None for grades")
+        return model.tr_model.immob[sp]
     if state_variable == StateVariable.PERMEABILITY:
         return model.fl_model.permeability
     if state_variable == StateVariable.POROSITY:
@@ -569,18 +589,20 @@ def get_simulated_values_matching_obs(
     else:
         max_obs_time = np.max(simu_times)
 
-    field = get_array_from_state_variable(model, obs.state_variable)
+    field = get_array_from_state_variable(model, obs.state_variable, obs.sp)
     obs_times = get_sorted_observable_times(obs, max_obs_time)
 
     if len(field.shape) == 2:
-        field = field.reshape((*field.shape, 1))
+        _field = field.reshape((*field.shape, 1))
+    else:
+        _field = field
     _simu_values = get_mean_values_for_last_axis(
-        get_values_matching_node_indices(obs.node_indices, field),
+        get_values_matching_node_indices(obs.node_indices, _field),
         mean_type=obs.mean_type,
         weights=None,
     )
     # control parameter -> not varying in time
-    if len(get_array_from_state_variable(model, obs.state_variable).shape) == 2:
+    if len(field.shape) == 2:
         # The interpolated value is the same for all time
         return np.repeat(_simu_values, obs_times.size)
     # state variable varying in time
@@ -592,7 +614,6 @@ def get_simulated_values_matching_obs(
 def get_adjoint_sources_for_obs(
     model: ForwardModel,
     obs: Observable,
-    n_obs: int,
     max_obs_time: Optional[float] = None,
 ) -> NDArrayFloat:
     r"""
@@ -682,7 +703,7 @@ def get_adjoint_sources_for_obs(
 
     # 1) Taking into account the derivative linked with the values averaging over the
     # the grid (observations defined on more than one mesh)
-    field = get_array_from_state_variable(model, obs.state_variable)
+    field = get_array_from_state_variable(model, obs.state_variable, obs.sp)
     _averaging_derivative = get_mean_values_gradient_for_last_axis(
         get_values_matching_node_indices(obs.node_indices, field),
         mean_type=obs.mean_type,
@@ -706,7 +727,6 @@ def get_adjoint_sources_for_obs(
                 _averaging_derivative  # in this case
                 * (obs_values - simu_values)[n]
                 / (obs_std[n] ** 2)
-                / n_obs
             )
     else:
         # Otherwise, we derive the weights of the linear interpolation
@@ -718,14 +738,12 @@ def get_adjoint_sources_for_obs(
             # Note: ici, on a simu_values = w1 * av(c(n+1)) + w2 * av(c(n))
             adj_src[X, Y, idx_before[n]] -= (
                 _averaging_derivative[:, idx_before[n]].ravel("F")
-                / n_obs
                 * weights_before[n]
                 * ((obs_values - simu_values))[n]
                 / (obs_std[n] ** 2)
             )
             adj_src[X, Y, idx_after[n]] -= (
                 _averaging_derivative[:, idx_after[n]].ravel("F")
-                / n_obs
                 * weights_after[n]
                 * ((obs_values - simu_values))[n]
                 / (obs_std[n] ** 2)

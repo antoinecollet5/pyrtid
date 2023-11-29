@@ -127,7 +127,7 @@ def test_init_adjoint_sources(max_obs_time, mean_type) -> None:
             )
         )
 
-    adj_model = dminv.AdjointModel(geometry, time_params, False)
+    adj_model = dminv.AdjointModel(geometry, time_params, False, 2)
     adj_model.init_adjoint_sources(model, observables, hm_end_time=max_obs_time)
 
     def wrapper_conc(arr: NDArrayFloat) -> float:

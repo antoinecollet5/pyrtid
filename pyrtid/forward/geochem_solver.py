@@ -1,6 +1,8 @@
 """Provide a reactive transport solver."""
 from __future__ import annotations
 
+import numpy as np
+
 from .models import (
     ConstantConcentration,
     GeochemicalParameters,
@@ -25,14 +27,30 @@ def solve_geochem(
         \overline{c}_{i}^{n} \left( 1 - \dfrac{c_{i}^{n+1}}{K_{s}}\right)
     """
 
-    m0 = tr_model.limmob[time_index - 1]
+    mob1 = tr_model.lmob[time_index][0]
+    mob2 = tr_model.lmob[time_index][1]
+
+    immob1 = tr_model.limmob[time_index - 1][0]
+    immob2 = tr_model.limmob[time_index - 1][1]
 
     # The mobile concentration is from the transport
-    dMdt = (
-        gch_params.kv
-        * gch_params.As
-        * m0
-        * (1.0 - tr_model.lmob[time_index][0] / gch_params.Ks)
+    dMdt = -np.min(
+        np.abs(
+            np.array(
+                [
+                    (
+                        gch_params.kv
+                        * gch_params.As
+                        * immob1
+                        * (1 - mob1 / gch_params.Ks)
+                    )
+                    * mob2
+                    * time_params.dt,
+                    mob2,
+                ]
+            )
+        ),
+        axis=0,
     )
 
     for condition in tr_model.boundary_conditions:
@@ -40,5 +58,8 @@ def solve_geochem(
             dMdt[condition.span] = 0.0
         # elif isinstance(condition, ZeroConcGradient):
 
-    # overwrite the grade
-    tr_model.limmob[time_index] = m0 + dMdt * time_params.dt
+    # overwrite the grade for species 1
+    tr_model.limmob[time_index][0, :, :] = immob1 + dMdt
+
+    # And for species 2 -> species being consumed
+    tr_model.limmob[time_index][1, :, :] = immob2 - dMdt

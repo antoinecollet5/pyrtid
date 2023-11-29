@@ -330,6 +330,7 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
             self.fwd_model.geometry,
             self.fwd_model.time_params,
             self.fwd_model.fl_model.is_gravity,
+            self.fwd_model.tr_model.n_sp,
             afpi_eps,
             is_numerical_acceleration,
         )
@@ -502,13 +503,16 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         self, m: NDArrayFloat, is_save_state: bool = True
     ) -> float:
         """Compute the model scaled_loss function."""
+
+        x_obs = get_observables_values_as_1d_vector(self.inv_model.observables)
+
         ls_loss = ls_loss_function(
-            get_observables_values_as_1d_vector(self.inv_model.observables),
+            x_obs,
             self._run_forward_model(
                 m, self.inv_model.nb_f_calls + 1, is_save_state=is_save_state
             ),
             get_observables_uncertainties_as_1d_vector(self.inv_model.observables),
-        )
+        ) / np.size(x_obs)
 
         # Compute the regularization term:
         reg_factor = self.solver_config.__dict__.get("reg_factor", 0.0)
@@ -793,6 +797,8 @@ class AdjointInversionExecutor(BaseInversionExecutor, Generic[_AdjointSolverConf
             solver = AdjointSolver(self.fwd_model, self.adj_model)
             solver.solve(self.inv_model.observables, self.solver_config.hm_end_time)
             # Compute the gradient with the adjoint state method
+            x_obs = get_observables_values_as_1d_vector(self.inv_model.observables)
+
             adj_grad = (
                 compute_adjoint_gradient(
                     self.fwd_model,
@@ -801,7 +807,7 @@ class AdjointInversionExecutor(BaseInversionExecutor, Generic[_AdjointSolverConf
                     self.inv_model.jreg_weight,
                 )
                 * self.inv_model.scaling_factor
-            )
+            ) / x_obs.size
 
         if (
             not self.solver_config.is_use_adjoint

@@ -365,11 +365,15 @@ def test_model_set_values(model: ForwardModel) -> None:
     model.tr_model.set_initial_conc(4.0)
     np.testing.assert_array_equal(model.tr_model.mob[0], np.ones((20, 20, 1)) * 4.0)
 
-    model.tr_model.set_initial_grade(arr[:, :, 0] * 2.0)
-    np.testing.assert_array_equal(model.tr_model.immob, arr * 2.0)
+    model.tr_model.set_initial_grade(arr[:, :, 0] * 2.0, sp=0)
+    np.testing.assert_array_equal(model.tr_model.immob[0], arr * 2.0)
+    np.testing.assert_array_almost_equal(
+        model.tr_model.immob[1], np.zeros_like(arr), decimal=10
+    )
 
-    model.tr_model.set_initial_grade(2.0)
-    np.testing.assert_array_equal(model.tr_model.immob, np.ones((20, 20, 1)) * 2.0)
+    model.tr_model.set_initial_grade(2.0, sp=1)
+    np.testing.assert_array_equal(model.tr_model.immob[0], arr * 2.0)
+    np.testing.assert_array_equal(model.tr_model.immob[1], np.ones((20, 20, 1)) * 2.0)
 
     model.fl_model.set_initial_head(arr[:, :, 0] * 3.0)
     np.testing.assert_array_equal(model.fl_model.head, arr * 3.0)
@@ -394,7 +398,7 @@ def test_model_reinit(model: ForwardModel) -> None:
         model.tr_model.lmob[0], model.tr_model.mob[:, :, :, 0]
     )
     np.testing.assert_array_equal(
-        model.tr_model.limmob[0], model.tr_model.immob[:, :, 0]
+        model.tr_model.limmob[0], model.tr_model.immob[:, :, :, 0]
     )
 
     assert len(model.fl_model.lhead) == 1
@@ -424,22 +428,42 @@ def test_model_reinit(model: ForwardModel) -> None:
         (
             0.0,
             np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, -0.75, 1.0]]),
-            np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 1.0]]),
+            np.array(
+                [
+                    [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 1.0]],
+                    [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 1.0]],
+                ]
+            ),
         ),
         (
             0.5,
             np.array([[0.0, 0.25, 0.0], [0.25, 0.0, 0.0], [0.0, -0.75, 1.0]]),
-            np.array([[0.0, 0.0, 0.0], [0.25, 0.0, 0.0], [0.0, 0.0, 1.0]]),
+            np.array(
+                [
+                    [[0.0, 0.0, 0.0], [0.25, 0.0, 0.0], [0.0, 0.0, 1.0]],
+                    [[0.0, 0.0, 0.0], [0.25, 0.0, 0.0], [0.0, 0.0, 1.0]],
+                ]
+            ),
         ),
         (
             50.0,
             np.array([[0.0, 0.125, 0.0], [0.125, 0.0, 0.0], [0.0, 0.125, 0.25]]),
-            np.array([[0.0, 0.0, 0.25], [0.25, 0.0, 0.0], [0.0, 0.25, 0.5]]),
+            np.array(
+                [
+                    [[0.0, 0.0, 0.25], [0.25, 0.0, 0.0], [0.0, 0.25, 0.5]],
+                    [[0.0, 0.0, 0.25], [0.25, 0.0, 0.0], [0.0, 0.25, 0.5]],
+                ]
+            ),
         ),
         (
             500.0,
             np.array([[0.0, 0.25, 0.0], [0.25, 0.0, 0.0], [0.0, 0.25, 0.5]]),
-            np.array([[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 2.0]]),
+            np.array(
+                [
+                    [[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 2.0]],
+                    [[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 2.0]],
+                ]
+            ),
         ),
     ],
 )
@@ -464,7 +488,7 @@ def test_get_sources(
             np.array([1, 3]),
             np.array([0.5, 22.0, 56.0, 99.0]),
             np.array([4.0, 2.0, 2.0, 4.0]),
-            np.array([1.0, 2.0, 0.0, 4.0]),
+            np.array([[1.0, 2.0, 0.0, 4.0], [1.0, 2.0, 0.0, 4.0]]).T,
         )
     )
     model.add_src_term(
@@ -473,7 +497,7 @@ def test_get_sources(
             np.array([8]),
             np.array([0.0, 22.0, 123.0, 99.0]),
             np.array([8.0, 2.0, 2.0, 4.0]),
-            np.array([1.0, 2.0, 0.0, 4.0]),
+            np.array([[1.0, 2.0, 0.0, 4.0], [1.0, 2.0, 0.0, 4.0]]).T,
         )
     )
 
@@ -483,7 +507,7 @@ def test_get_sources(
             np.array([6, 5]),
             np.array([0.0, 20.0, 77.0, 120.0]),
             np.array([-12.0, 2.0, -2.0, 4.0]),
-            np.array([1.0, 2.0, 0.0, 4.0]),
+            np.array([[1.0, 2.0, 0.0, 4.0], [1.0, 2.0, 0.0, 4.0]]).T,
         )
     )
 

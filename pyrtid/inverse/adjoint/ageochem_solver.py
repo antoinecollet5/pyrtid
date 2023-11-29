@@ -60,6 +60,7 @@ def solve_adj_geochem(
         - (ac_cur[0] / dt_next - ac_old / dt_cur)
         * tr_model.porosity
         * geometry.mesh_volume
+        # TODO: fix this ma geule !!!!
     ) + a_tr_model.a_grade_sources.getcol(time_index).reshape(
         a_tr_model.a_grade[:, :, time_index].shape, order="F"
     )

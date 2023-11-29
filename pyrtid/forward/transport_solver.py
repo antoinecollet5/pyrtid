@@ -523,19 +523,23 @@ def solve_transport_semi_implicit(
         dmdt = tr_model.limmob[time_index] - tr_model.limmob[time_index - 1]
 
     # The volume is included in the diffusion term
-    tmp[0, :] -= (dmdt * tr_model.porosity / time_params.dt).ravel(order="F")
+    tmp -= (
+        dmdt.reshape(tr_model.n_sp, -1, order="F")
+        * tr_model.porosity.ravel("F")
+        / time_params.dt
+    )
 
     # Add the source terms -> depends on the advection (positive flowrates = injection)
     # Crank-nicolson does not apply to source terms
-    tmp[0, :] += conc_sources.ravel("F")
+    tmp[:, :] += conc_sources.reshape(2, -1, order="F")
 
     # Build the LU preconditioning
     preconditioner = get_super_lu_preconditioner(q_next.tocsc())
 
     # Solve Ax = b with A sparse using LU preconditioner
     for sp in range(tmp.shape[0]):
-        tmp[sp], exit_code = gmres(
-            q_next.tocsc(), tmp[sp], M=preconditioner, atol=tr_model.tolerance
+        tmp[sp, :], exit_code = gmres(
+            q_next.tocsc(), tmp[sp, :], M=preconditioner, atol=tr_model.tolerance
         )
 
     tr_model.lmob[time_index] = tmp.reshape(
