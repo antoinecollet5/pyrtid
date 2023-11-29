@@ -1123,7 +1123,7 @@ class TransportModel:
 
         This is read-only.
         """
-        return np.transpose(np.array(self.lsources), axes=(1, 2, 0))
+        return np.transpose(np.array(self.lsources), axes=(1, 2, 3, 0))
 
     @property
     def effective_diffusion(self) -> NDArrayFloat:

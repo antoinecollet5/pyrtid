@@ -47,6 +47,7 @@ def solve_geochem(
                     * mob2
                     * time_params.dt,
                     mob2,
+                    immob1,
                 ]
             )
         ),

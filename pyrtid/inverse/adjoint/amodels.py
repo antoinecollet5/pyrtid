@@ -250,7 +250,7 @@ class AdjointTransportModel:
     def clear_adjoint_sources(self) -> None:
         """Reset all adjoint sources to zero."""
         self.a_conc_sources = [
-            csc_array(self.a_grade_sources.shape) for sp in range(self.n_sp)
+            csc_array(self.a_grade_sources[0].shape) for sp in range(self.n_sp)
         ]
         self.a_grade_sources = copy.copy(self.a_conc_sources)
         self.a_porosity_sources = csc_array(self.a_porosity_sources.shape)

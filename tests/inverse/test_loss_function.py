@@ -16,10 +16,10 @@ from pyrtid.inverse.regularization import TikhonovRegularizatorIsotropic
     "x_pred, x_obs, std, expected_loss",
     [
         (np.zeros(100), np.zeros(100), np.ones(100), 0),
-        (np.zeros(100), np.ones(100), np.ones(100), 0.5),
-        (np.zeros(1000), np.ones(1000), np.ones(1000), 0.5),
-        (np.zeros(100), np.ones(100) * 2.0, np.ones(100), 2.0),
-        (np.zeros(100), np.ones(100) * 2.0, np.ones(100) * 2.0, 0.5),
+        (np.zeros(100), np.ones(100), np.ones(100), 50.0),
+        (np.zeros(1000), np.ones(1000), np.ones(1000), 500.0),
+        (np.zeros(100), np.ones(100) * 2.0, np.ones(100), 200.0),
+        (np.zeros(100), np.ones(100) * 2.0, np.ones(100) * 2.0, 50.0),
     ],
 )
 def test_ls_loss_function(x_pred, x_obs, std, expected_loss) -> None:
@@ -30,13 +30,13 @@ def test_ls_loss_function(x_pred, x_obs, std, expected_loss) -> None:
     "max_obs_time, expected_ls_loss_function, expected_reg_loss_function,"
     " jreg_weight, expected_total_loss_function",
     [
-        (None, 14.3234, 3.01311, 2.0, 20.3496),
+        (None, 100.2638, 3.01311, 2.0, 106.29003674815917),
         (
             0.5,
-            12.2510,
+            61.255,
             3.01311,
             0.0,
-            12.2510,
+            61.255,
         ),
     ],
 )
@@ -75,6 +75,7 @@ def test_get_model_loss_function(
         times=np.array([0.0, 0.5, 1.0, 1.56, 2.6]),
         values=np.array([2.9, 5.9, 10.8, 1.8, 8.0]),
         uncertainties=1.0,
+        sp=0,
     )
 
     obs2 = Observable(
@@ -83,6 +84,7 @@ def test_get_model_loss_function(
         times=np.array([0.0, 0.2, 0.3, 4.3, 5.6]),
         values=np.array([3.9, 8.0, 8.0, 9.56, 0.0]),
         uncertainties=1.0,
+        sp=0,
     )
 
     assert np.isclose(

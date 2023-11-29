@@ -1,3 +1,5 @@
+import copy
+
 import numpy as np
 import pyrtid.forward as dmfwd
 import pyrtid.inverse as dminv
@@ -19,7 +21,7 @@ from pyrtid.utils import MeanType, NDArrayFloat, finite_gradient
 def test_adjoint_model_init(args, kwargs) -> None:
     time_params = dmfwd.TimeParameters(duration=1.0, dt_init=1.0)
     geometry = dmfwd.Geometry(nx=5, ny=5, dx=4.5, dy=7.5)
-    dminv.AdjointModel(geometry, time_params, False, *args, **kwargs)
+    dminv.AdjointModel(geometry, time_params, False, 2, *args, **kwargs)
 
 
 @pytest.mark.parametrize(
@@ -59,16 +61,28 @@ def test_init_adjoint_sources(max_obs_time, mean_type) -> None:
         np.random.default_rng(2023).random((geometry.nx, geometry.ny)) + 3.0
     )
     model.tr_model.lmob.append(
-        np.random.default_rng(2023).random((2, geometry.nx, geometry.ny)) + 2.0
+        np.random.default_rng(2023).random(
+            (model.tr_model.n_sp, geometry.nx, geometry.ny)
+        )
+        + 2.0
     )
     model.tr_model.lmob.append(
-        np.random.default_rng(2023).random((2, geometry.nx, geometry.ny)) + 3.0
+        np.random.default_rng(2023).random(
+            (model.tr_model.n_sp, geometry.nx, geometry.ny)
+        )
+        + 3.0
     )
     model.tr_model.limmob.append(
-        np.random.default_rng(2023).random((geometry.nx, geometry.ny)) + 2.0
+        np.random.default_rng(2023).random(
+            (model.tr_model.n_sp, geometry.nx, geometry.ny)
+        )
+        + 2.0
     )
     model.tr_model.limmob.append(
-        np.random.default_rng(2023).random((geometry.nx, geometry.ny)) + 3.0
+        np.random.default_rng(2023).random(
+            (model.tr_model.n_sp, geometry.nx, geometry.ny)
+        )
+        + 3.0
     )
     model.fl_model.lhead.append(
         np.random.default_rng(2023).random((geometry.nx, geometry.ny)) + 2.0
@@ -92,6 +106,7 @@ def test_init_adjoint_sources(max_obs_time, mean_type) -> None:
             values=np.array([1, 1, 1, 1, 1]),
             uncertainties=np.array([0.289, 0.25, 0.27, 0.256, 0.25]),
             mean_type=mean_type,
+            sp=0,
         ),
         dminv.Observable(
             dminv.StateVariable.CONCENTRATION,
@@ -100,6 +115,7 @@ def test_init_adjoint_sources(max_obs_time, mean_type) -> None:
             values=np.array([0.289, 0.25, 0.27, 0.256, 0.25]),
             uncertainties=np.array([0.289, 0.25, 0.27, 0.256, 0.25]),
             mean_type=mean_type,
+            sp=0,
         ),
         dminv.Observable(
             dminv.StateVariable.PERMEABILITY,
@@ -124,26 +140,32 @@ def test_init_adjoint_sources(max_obs_time, mean_type) -> None:
                 values=np.array([0.289, 0.25, 0.27, 0.256, 0.25]),
                 uncertainties=np.array([0.289, 0.25, 0.27, 0.256, 0.25]),
                 mean_type=mean_type,
+                sp=0,
             )
         )
 
-    adj_model = dminv.AdjointModel(geometry, time_params, False, 2)
-    adj_model.init_adjoint_sources(model, observables, hm_end_time=max_obs_time)
+    adj_model = dminv.AdjointModel(geometry, time_params, False, model.tr_model.n_sp)
+    adj_model.init_adjoint_sources(
+        copy.copy(model), observables, hm_end_time=max_obs_time
+    )
 
     def wrapper_conc(arr: NDArrayFloat) -> float:
-        model.tr_model.lmob = [arr[:, :, i] for i in range(arr.shape[-1])]
-        return dminv.get_model_ls_loss_function(model, observables, max_obs_time)
+        model1 = copy.copy(model)
+        for i in range(arr.shape[-1]):
+            model1.tr_model.lmob[i][0] = arr[:, :, i]
+        return dminv.get_model_ls_loss_function(model1, observables, max_obs_time)
 
     np.testing.assert_allclose(
         adj_model.a_tr_model.a_conc_sources[0]
         .toarray()
         .reshape(geometry.nx, geometry.ny, time_params.nt, order="F"),
-        finite_gradient(model.tr_model.mob, wrapper_conc),
+        finite_gradient(model.tr_model.mob[0], wrapper_conc),
     )
 
     def wrapper_perm(arr: NDArrayFloat) -> float:
-        model.fl_model.permeability = arr
-        return dminv.get_model_ls_loss_function(model, observables, max_obs_time)
+        model2 = copy.copy(model)
+        model2.fl_model.permeability = arr
+        return dminv.get_model_ls_loss_function(model2, observables, max_obs_time)
 
     np.testing.assert_allclose(
         adj_model.a_fl_model.a_permeability_sources.toarray().reshape(
