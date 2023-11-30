@@ -222,7 +222,11 @@ class AdjustableParameter:
                 "sp must be provided when optimizing an initial "
                 "grade or an initial concentration!"
             )
-        self.sp: Optional[int] = sp
+
+        if sp is None:
+            self.sp: int = 0
+        else:
+            self.sp: int = sp
 
     @property
     def lbound(self) -> float:

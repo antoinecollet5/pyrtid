@@ -948,7 +948,7 @@ def get_sc_adjoint_gradient_density(
 
 
 def get_initial_grade_adjoint_gradient(
-    fwd_model: ForwardModel, adj_model: AdjointModel
+    fwd_model: ForwardModel, adj_model: AdjointModel, sp: int
 ) -> NDArrayFloat:
     r"""
     Gradient with respect to mineral phase initial concentrations.
@@ -971,19 +971,13 @@ def get_initial_grade_adjoint_gradient(
     computed on the full domain (grid).
     """
     grad = (
-        adj_model.a_tr_model.a_mob[0, :, :, 1]
+        adj_model.a_tr_model.a_mob[sp, :, :, 1]
         / fwd_model.time_params.ldt[0]
         * fwd_model.tr_model.porosity
         * fwd_model.geometry.mesh_volume
-    ) + adj_model.a_tr_model.a_grade[:, :, 1] * (
-        1
-        + fwd_model.time_params.ldt[0]
-        * fwd_model.gch_params.kv
-        * fwd_model.gch_params.As
-        * (1.0 - fwd_model.tr_model.lmob[1] / fwd_model.gch_params.Ks)
-    )
+    ) + adj_model.a_tr_model.a_immob[sp, :, :, 1]
     # Add adjoint sources for time t=0
-    return grad + adj_model.a_tr_model.a_grade_sources.getcol(0).todense().reshape(
+    return grad + adj_model.a_tr_model.a_grade_sources[sp].getcol(0).todense().reshape(
         grad.shape, order="F"
     )
 
@@ -1213,11 +1207,9 @@ def compute_param_adjoint_ls_loss_function_gradient(
     if param.name == ParameterName.PERMEABILITY:
         return get_permeability_adjoint_gradient(fwd_model, adj_model)
     if param.name == ParameterName.INITIAL_CONCENTRATION:
-        return get_initial_conc_adjoint_gradient(fwd_model, adj_model, 0)
-    if param.name == ParameterName.INITIAL_CONCENTRATION2:
-        return get_initial_conc_adjoint_gradient(fwd_model, adj_model, 1)
+        return get_initial_conc_adjoint_gradient(fwd_model, adj_model, param.sp)
     if param.name == ParameterName.INITIAL_GRADE:
-        return get_initial_grade_adjoint_gradient(fwd_model, adj_model)
+        return get_initial_grade_adjoint_gradient(fwd_model, adj_model, param.sp)
     if param.name == ParameterName.INITIAL_HEAD:
         if fwd_model.fl_model.is_gravity:
             raise RuntimeError(

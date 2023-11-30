@@ -485,7 +485,9 @@ def solve_adj_transport_transient_semi_implicit(
 
     # Add the adjoint geochem source term
     # TODO: add species 2 as well
-    tmp[0, :] -= a_tr_model.a_gch_src_term.ravel(order="F") / geometry.mesh_volume
+    tmp[:, :] -= (
+        a_tr_model.a_gch_src_term.reshape(2, -1, order="F") / geometry.mesh_volume
+    )
 
     # Add the adjoint density source term for species 1
     tmp[0, :] += (

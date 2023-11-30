@@ -144,7 +144,7 @@ class AdjointTransportModel:
     ----------
     a_mob: NDArrayFloat
     a_mob_prev: NDArrayFloat
-    a_grade: NDArrayFloat
+    a_immob: NDArrayFloat
     a_conc_sources: NDArrayFloat
     a_conc_2_sources: NDArrayFloat
     a_grade_sources: NDArrayFloat
@@ -161,7 +161,7 @@ class AdjointTransportModel:
     __slots__ = [
         "a_mob",
         "a_mob_prev",
-        "a_grade",
+        "a_immob",
         "a_density",
         "a_conc_sources",
         "a_grade_sources",
@@ -211,8 +211,8 @@ class AdjointTransportModel:
             (self.n_sp, geometry.nx, geometry.ny), dtype=np.float64
         )
 
-        self.a_grade: NDArrayFloat = np.zeros(
-            (geometry.nx, geometry.ny, time_params.nt), dtype=np.float64
+        self.a_immob: NDArrayFloat = np.zeros(
+            (self.n_sp, geometry.nx, geometry.ny, time_params.nt), dtype=np.float64
         )
         self.a_density: NDArrayFloat = np.zeros(
             (geometry.nx, geometry.ny, time_params.nt), dtype=np.float64
@@ -238,7 +238,9 @@ class AdjointTransportModel:
         )
 
         # Adjoint source term from the adjoint geochem to the adjoint transport
-        self.a_gch_src_term = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
+        self.a_gch_src_term = np.zeros(
+            (n_sp, geometry.nx, geometry.ny), dtype=np.float64
+        )
 
         self.q_prev_diffusion: lil_matrix = lil_array(geometry.nx * geometry.ny)
         self.q_next_diffusion: lil_matrix = lil_array(geometry.nx * geometry.ny)
@@ -262,10 +264,10 @@ class AdjointTransportModel:
         """Alias for a_mob."""
         return self.a_mob
 
-    # @property
-    # def a_grade(self) -> NDArrayFloat:
-    #     """Alias for a_immob."""
-    #     return self.a_immob
+    @property
+    def a_grade(self) -> NDArrayFloat:
+        """Alias for a_immob."""
+        return self.a_immob
 
 
 class AdjointModel:

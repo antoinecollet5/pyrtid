@@ -35,9 +35,9 @@ def solve_geochem(
 
     # The mobile concentration is from the transport
     dMdt = -np.min(
-        np.abs(
-            np.array(
-                [
+        np.array(
+            [
+                np.abs(
                     (
                         gch_params.kv
                         * gch_params.As
@@ -45,11 +45,11 @@ def solve_geochem(
                         * (1 - mob1 / gch_params.Ks)
                     )
                     * mob2
-                    * time_params.dt,
-                    mob2,
-                    immob1,
-                ]
-            )
+                    * time_params.dt
+                ),
+                mob2,
+                immob1,
+            ]
         ),
         axis=0,
     )
