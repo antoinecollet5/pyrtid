@@ -13,6 +13,7 @@ from pyrtid.inverse.adjoint.aflow_solver import (
     get_adjoint_transport_src_terms,
     make_initial_adj_flow_matrices,
 )
+from pyrtid.inverse.adjoint.ageochem_solver import ddMdimmobprev
 from pyrtid.inverse.loss_function import get_model_loss_function
 from pyrtid.inverse.obs import Observable, Observables
 from pyrtid.inverse.params import (
@@ -970,6 +971,7 @@ def get_initial_grade_adjoint_gradient(
     Parameter span is not taken into account which means that the gradient is
     computed on the full domain (grid).
     """
+    # Prat common for all species
     grad = (
         adj_model.a_tr_model.a_mob[sp, :, :, 1]
         / fwd_model.time_params.ldt[0]
@@ -977,9 +979,27 @@ def get_initial_grade_adjoint_gradient(
         * fwd_model.geometry.mesh_volume
     ) + adj_model.a_tr_model.a_immob[sp, :, :, 1]
     # Add adjoint sources for time t=0
-    return grad + adj_model.a_tr_model.a_grade_sources[sp].getcol(0).todense().reshape(
-        grad.shape, order="F"
+    grad += (
+        adj_model.a_tr_model.a_grade_sources[sp]
+        .getcol(0)
+        .todense()
+        .reshape(grad.shape, order="F")
     )
+
+    if sp == 0:
+        grad += (
+            adj_model.a_tr_model.a_immob[0, :, :, 1]
+            - fwd_model.gch_params.stocoef * adj_model.a_tr_model.a_immob[1, :, :, 1]
+        ) * (
+            ddMdimmobprev(
+                fwd_model.tr_model,
+                fwd_model.gch_params,
+                0,
+                fwd_model.time_params.ldt[0],
+            )
+        )
+
+    return grad
 
 
 def get_initial_head_adjoint_gradient(
