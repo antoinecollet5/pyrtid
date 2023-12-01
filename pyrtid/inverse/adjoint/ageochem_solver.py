@@ -5,6 +5,7 @@ from copy import copy
 
 import numpy as np
 
+from pyrtid.forward.geochem_solver import get_dM
 from pyrtid.forward.models import (  # ConstantHead,; ZeroConcGradient,
     GeochemicalParameters,
     Geometry,
@@ -12,6 +13,7 @@ from pyrtid.forward.models import (  # ConstantHead,; ZeroConcGradient,
     TransportModel,
 )
 from pyrtid.inverse.adjoint.amodels import AdjointTransportModel
+from pyrtid.utils import NDArrayFloat
 
 
 def solve_adj_geochem(
@@ -35,7 +37,7 @@ def solve_adj_geochem(
         a_immob_prev = a_tr_model.a_immob[:, :, :, time_index + 1]
         a_mob_prev = a_tr_model.a_mob[:, :, :, time_index + 1]
         tr_model.limmob[time_index + 1]
-        mob_prev = tr_model.lmob[time_index + 1]
+        tr_model.lmob[time_index + 1]
         dt_prev = time_params.ldt[time_index]
     else:
         # Handle the Tmax (first timestep going backward)
@@ -43,13 +45,13 @@ def solve_adj_geochem(
         a_immob_prev = np.zeros((1))
         a_mob_prev = np.zeros((1))
         np.zeros(tr_model.n_sp)
-        mob_prev = np.ones(tr_model.n_sp)
+        np.ones(tr_model.n_sp)
         dt_prev = 1.0  # should be zero but we avoid a zero division here
 
     # B) Variables at time step n
     a_tr_model.a_immob[:, :, :, time_index]
     a_mob_next = a_tr_model.a_mob[:, :, :, time_index]
-    immob_next = tr_model.limmob[time_index]
+    a_immob_next = tr_model.limmob[time_index]
     tr_model.lmob[time_index]
     dt_next = time_params.ldt[time_index - 1]
 
@@ -98,60 +100,113 @@ def solve_adj_geochem(
     # 2.4) Update the derivative of d[M](n, i) -> Only for species 1.
     # First we need to compute the d[M](n, i)
     # and its derivative w.r.t. \overbar{c}_1
-    if time_index == time_params.nts:
-        a_tr_model.a_gch_src_term[:, :, :] = 0.0
-    else:
-        case1 = (
-            (
-                gch_params.kv
-                * gch_params.As
-                * immob_next[0]
-                * (1 - mob_prev[0] / gch_params.Ks)
-            )
-            * mob_prev[1]
-            * time_params.dt
-        )
-        dMdt = np.min(
-            np.array(
-                [
-                    np.abs(case1),
-                    immob_next[0],
-                    mob_prev[1],
-                ]
-            ),
-            axis=0,
-        )
-
-        # Initialize the derivative as null
-        dMdtdimmob1 = np.zeros((geometry.nx, geometry.ny))
-        dMdtdmob1 = np.zeros((geometry.nx, geometry.ny))
-        dMdtdmob2 = np.zeros((geometry.nx, geometry.ny))
-
-        # Case 1
-        mask = dMdt == case1
-        dMdtdimmob1[mask] = (np.sign(dMdt) * case1 / immob_next[0])[mask]
-        dMdtdmob1[mask] = (-np.sign(dMdt) * case1 / (1 - mob_prev[0] / gch_params.Ks))[
-            mask
-        ]
-        dMdtdmob2[mask] = (np.sign(dMdt) * case1 / mob_prev[1])[mask]
-
-        # Case 2
-        dMdtdimmob1[dMdt == immob_next[0]] = 1.0
-
-        # Case 3 -> remains zero
-        # Do nothing
-        dMdtdmob2[dMdt == mob_prev[1]] = 1.0
-
+    if time_index != time_params.nts:
         # Update mineral value
-        a_tr_model.a_immob[0, :, :, time_index] -= a_immob_prev[0] * dMdtdimmob1
+        a_tr_model.a_immob[0, :, :, time_index] += (
+            a_immob_prev[0] - a_immob_prev[1]
+        ) * ddMdimmobprev(tr_model, gch_params, time_index, dt_prev)
 
-        # Last step !!!
-        # 2.5) Compute the adjoint geochem source term: it is computed here to mimic the
-        # splitting operator approach in which the chemical parameters might not be
-        # available in the transport operator - and consequently its adjoint.
+    # a_tr_model.a_gch_src_term[:, :, :] = 0.0
+    # else:
+
+    # Last step !!!
+    # 2.5) Compute the adjoint geochem source term: it is computed here to mimic the
+    # splitting operator approach in which the chemical parameters might not be
+    # available in the transport operator - and consequently its adjoint.
+    if time_index != 0:
         a_tr_model.a_gch_src_term[0] = (
-            a_tr_model.a_immob[0, :, :, time_index] * dMdtdmob1
-        )
+            a_immob_next[0] - a_immob_next[1]
+        ) * ddMdmobnext(tr_model, gch_params, time_index, dt_next, 0)
         a_tr_model.a_gch_src_term[1] = (
-            a_tr_model.a_immob[0, :, :, time_index] * dMdtdmob2
-        )
+            a_immob_next[0] - a_immob_next[1]
+        ) * ddMdmobnext(tr_model, gch_params, time_index, dt_next, 1)
+
+
+def ddMdimmobprev(
+    tr_model: TransportModel,
+    gch_params: GeochemicalParameters,
+    time_index: int,
+    dt_prev: float,
+) -> NDArrayFloat:
+    """Return the derivative of dM(n+1) w.r.t. immob (n)."""
+    dM = get_dM(tr_model, gch_params, time_index + 1, dt_prev)
+    deriv = np.zeros_like(dM)
+
+    mob1 = tr_model.lmob[time_index + 1][0]
+    mob2 = tr_model.lmob[time_index + 1][1]
+    immob1 = tr_model.limmob[time_index][0]
+
+    case1 = (
+        gch_params.kv
+        * gch_params.As
+        * immob1
+        * (1 - mob1 / gch_params.Ks)
+        * mob2
+        * dt_prev
+    )
+
+    mask = dM == case1
+    deriv[mask] = (
+        gch_params.kv * gch_params.As * (1 - mob1 / gch_params.Ks) * mob2 * dt_prev
+    )[mask]
+
+    mask = dM == immob1
+    deriv[mask] = -1.0
+
+    # Mask for null values
+    deriv[dM == 0] = 0
+
+    return deriv
+
+
+def ddMdmobnext(
+    tr_model: TransportModel,
+    gch_params: GeochemicalParameters,
+    time_index: int,
+    dt_next: float,
+    sp: int,
+) -> NDArrayFloat:
+    """Return the derivative of dM w.r.t. mob. (n+1)"""
+    print(time_index)
+    dM = get_dM(tr_model, gch_params, time_index, dt_next)
+    deriv = np.zeros_like(dM)
+
+    mob1 = tr_model.lmob[time_index][0]
+    mob2 = tr_model.lmob[time_index][1]
+    immob1 = tr_model.limmob[time_index - 1][0]
+
+    case1 = (
+        gch_params.kv
+        * gch_params.As
+        * immob1
+        * (1 - mob1 / gch_params.Ks)
+        * mob2
+        * dt_next
+    )
+
+    deriv = np.zeros_like(dM)
+
+    mask = dM == case1
+    if sp == 0:
+        deriv[mask] = (
+            -gch_params.kv * gch_params.As * immob1 / gch_params.Ks * mob2 * dt_next
+        )[mask]
+    elif sp == 1:
+        deriv[mask] = (
+            gch_params.kv
+            * gch_params.As
+            * immob1
+            * (1 - mob1 / gch_params.Ks)
+            * dt_next
+        )[mask]
+    else:
+        raise ValueError("sp should be 0 or 1")
+
+    if sp == 1:
+        mask = dM == gch_params.stocoef * mob2
+        deriv[mask] = -gch_params.stocoef
+
+    # Mask for null values
+    deriv[dM == 0] = 0
+
+    return deriv

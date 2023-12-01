@@ -33,7 +33,7 @@ WATER_DENSITY = 997
 WATER_MW = 0.01801528  # kg/mol
 TDS_LINEAR_COEFFICIENT = 1.0  # -> for the densities calculation
 H_PLUS_CONC = 1.00603e-07  # mol/l -> for the densities calculation
-SMALL_NUMBER = 1e-15
+SMALL_NUMBER = 1e-10
 VERY_SMALL_NUMBER = 1e-30
 
 
@@ -348,6 +348,8 @@ class GeochemicalParameters:
         Solubility constant (no unit). The default is 6.3e-4.
     Ms: float, optional
         Molar mass in g/mol.
+    stocoef: float
+        Number of mole of species 2 consumed when dissolving the mineral.
     """
 
     def __init__(
@@ -361,6 +363,7 @@ class GeochemicalParameters:
         Ks: float = 6.3e-4,
         Ms: float = 270,
         Ms2: float = 270,
+        stocoef: float = 1.0,
     ) -> None:
         """Initialize the instance."""
         self.conc: float = conc
@@ -372,6 +375,7 @@ class GeochemicalParameters:
         self.Ks: float = Ks
         self.Ms: float = Ms
         self.Ms2: float = Ms2
+        self.stocoef: float = stocoef
 
 
 class Geometry:

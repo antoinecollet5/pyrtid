@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from pyrtid.utils import NDArrayFloat
+
 from .models import (
     ConstantConcentration,
     GeochemicalParameters,
@@ -27,40 +29,61 @@ def solve_geochem(
         \overline{c}_{i}^{n} \left( 1 - \dfrac{c_{i}^{n+1}}{K_{s}}\right)
     """
 
-    mob1 = tr_model.lmob[time_index][0]
-    mob2 = tr_model.lmob[time_index][1]
-
     immob1 = tr_model.limmob[time_index - 1][0]
     immob2 = tr_model.limmob[time_index - 1][1]
 
     # The mobile concentration is from the transport
-    dMdt = -np.min(
+    dM = get_dM(tr_model, gch_params, time_index, time_params.dt)
+
+    for condition in tr_model.boundary_conditions:
+        if isinstance(condition, ConstantConcentration):
+            dM[condition.span] = 0.0
+        # elif isinstance(condition, ZeroConcGradient):
+
+    assert np.count_nonzero(immob1 + dM < 0) == 0
+
+    # overwrite the grade for species 1
+    tr_model.limmob[time_index][0, :, :] = immob1 + dM
+
+    # And for species 2 -> species being consumed
+    tr_model.limmob[time_index][1, :, :] = immob2 - gch_params.stocoef * dM
+
+
+def get_dM(
+    tr_model: TransportModel,
+    gch_params: GeochemicalParameters,
+    time_index: int,
+    dt: float,
+) -> NDArrayFloat:
+    mob1 = tr_model.lmob[time_index][0]
+    mob2 = tr_model.lmob[time_index][1]
+    immob1 = tr_model.limmob[time_index - 1][0]
+
+    dM = -np.min(
         np.array(
             [
-                np.abs(
-                    (
-                        gch_params.kv
-                        * gch_params.As
-                        * immob1
-                        * (1 - mob1 / gch_params.Ks)
-                    )
+                (
+                    -gch_params.kv
+                    * gch_params.As
+                    * immob1
+                    * (1 - mob1 / gch_params.Ks)
                     * mob2
-                    * time_params.dt
+                    * dt
                 ),
-                mob2,
+                gch_params.stocoef * mob2,
                 immob1,
             ]
         ),
         axis=0,
     )
 
-    for condition in tr_model.boundary_conditions:
-        if isinstance(condition, ConstantConcentration):
-            dMdt[condition.span] = 0.0
-        # elif isinstance(condition, ZeroConcGradient):
+    # Handle special cases: because there might be some negative values in the
+    # transport because of the semi-implicit time scheme for advection
+    mask = (1 - mob1 / gch_params.Ks) <= 0.0  # (1 - mob1 / Ks) positive: precipitation
+    dM[mask] = 0.0
+    mask = (1 - mob1 / gch_params.Ks) > 1.0  # (1 - mob1 / Ks) positive: precipitation
+    dM[mask] = 0.0
+    mask = mob2 <= 0.0
+    dM[mask] = 0.0
 
-    # overwrite the grade for species 1
-    tr_model.limmob[time_index][0, :, :] = immob1 + dMdt
-
-    # And for species 2 -> species being consumed
-    tr_model.limmob[time_index][1, :, :] = immob2 - dMdt
+    return dM

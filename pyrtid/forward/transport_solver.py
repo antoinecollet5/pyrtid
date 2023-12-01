@@ -396,6 +396,7 @@ def _add_transport_boundary_conditions(
         )
         tmp = geometry.gamma_ij_x / geometry.mesh_volume
 
+        # left border
         _un = fl_model.u_darcy_x[:-1, :, time_index].ravel("F")[idc_left_border]
         _un_old = fl_model.u_darcy_x[:-1, :, time_index - 1].ravel("F")[idc_left_border]
         normal = -1.0
@@ -511,7 +512,6 @@ def solve_transport_semi_implicit(
         q_prev = tr_model.q_prev
 
     # Multiply prev matrix by prev vector
-    # tmp = tr_model.q_prev.dot(tr_model.lmob[time_index - 1].flatten(order="F"))
     tmp = tr_model.q_prev.dot(
         tr_model.lmob[time_index - 1].reshape(tr_model.n_sp, -1, order="F").T
     ).T
@@ -519,6 +519,9 @@ def solve_transport_semi_implicit(
     # Chemical source term
     if tr_model.is_numerical_acceleration and nfpi == 1 and time_index != 1:
         dmdt = tr_model.limmob[time_index - 1] - tr_model.limmob[time_index - 2]
+        # avoid negative values
+        if np.any(tr_model.lmob[time_index - 1] - dmdt < 0):
+            dmdt = tr_model.limmob[time_index] - tr_model.limmob[time_index - 1]
     else:
         dmdt = tr_model.limmob[time_index] - tr_model.limmob[time_index - 1]
 
