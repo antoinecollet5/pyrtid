@@ -5,7 +5,7 @@ from copy import copy
 
 import numpy as np
 
-from pyrtid.forward.geochem_solver import get_dM
+from pyrtid.forward.geochem_solver import get_dM, get_dM_pos
 from pyrtid.forward.models import (  # ConstantHead,; ZeroConcGradient,
     GeochemicalParameters,
     Geometry,
@@ -36,6 +36,7 @@ def solve_adj_geochem(
     if time_index != time_params.nts:
         a_immob_prev = a_tr_model.a_immob[:, :, :, time_index + 1]
         a_mob_prev = a_tr_model.a_mob[:, :, :, time_index + 1]
+        tr_model.lmob[time_index + 1]
         tr_model.limmob[time_index + 1]
         tr_model.lmob[time_index + 1]
         dt_prev = time_params.ldt[time_index]
@@ -44,6 +45,7 @@ def solve_adj_geochem(
         # or adjoint state initialization
         a_immob_prev = np.zeros((1))
         a_mob_prev = np.zeros((1))
+        np.zeros((1))
         np.zeros((1))
         dt_prev = 1.0  # should be zero but we avoid a zero division here
 
@@ -105,9 +107,6 @@ def solve_adj_geochem(
             a_immob_prev[0] - gch_params.stocoef * a_immob_prev[1]
         ) * (ddMdimmobprev(tr_model, gch_params, time_index, dt_prev))
 
-    # a_tr_model.a_gch_src_term[:, :, :] = 0.0
-    # else:
-
     # Last step
     # 2.5) Compute the adjoint geochem source term: it is computed here to mimic the
     # splitting operator approach in which the chemical parameters might not be
@@ -132,27 +131,22 @@ def ddMdimmobprev(
 ) -> NDArrayFloat:
     """Return the derivative of dM(n+1) w.r.t. immob (n)."""
     dM = get_dM(tr_model, gch_params, time_index + 1, dt_prev)
+    # Initiate the derivative to zero
     deriv = np.zeros_like(dM)
+
+    # Need this to handle the derivative of the min function... this is not optimal
+    # but we do not really have the choice.
+    dm_pos = get_dM_pos(tr_model, gch_params, time_index + 1, dt_prev)
 
     mob1 = tr_model.lmob[time_index + 1][0]
     mob2 = tr_model.lmob[time_index + 1][1]
-    immob1 = tr_model.limmob[time_index][0]
 
-    case1 = (
-        dt_prev
-        * gch_params.kv
-        * gch_params.As
-        * immob1
-        * (1 - mob1 / gch_params.Ks)
-        * mob2
-    )
-
-    mask = dM == case1
+    mask = dm_pos == 0
     deriv[mask] = (
         dt_prev * gch_params.kv * gch_params.As * (1 - mob1 / gch_params.Ks) * mob2
     )[mask]
 
-    mask = dM == immob1
+    mask = dm_pos == 1
     deriv[mask] = -1.0
 
     # Mask for null values
@@ -170,24 +164,17 @@ def ddMdmobnext(
 ) -> NDArrayFloat:
     """Return the derivative of dM w.r.t. mob. (n+1)"""
     dM = get_dM(tr_model, gch_params, time_index, dt_next)
+    # Initiate the derivative to zero
     deriv = np.zeros_like(dM)
+    # Need this to handle the derivative of the min function... this is not optimal
+    # but we do not really have the choice.
+    dm_pos = get_dM_pos(tr_model, gch_params, time_index, dt_next)
 
     mob1 = tr_model.lmob[time_index][0]
     mob2 = tr_model.lmob[time_index][1]
     immob1 = tr_model.limmob[time_index - 1][0]
 
-    case1 = (
-        dt_next
-        * gch_params.kv
-        * gch_params.As
-        * immob1
-        * (1 - mob1 / gch_params.Ks)
-        * mob2
-    )
-
-    deriv = np.zeros_like(dM)
-
-    mask = dM == case1
+    mask = dm_pos == 0
     if sp == 0:
         deriv[mask] = (
             -dt_next * gch_params.kv * gch_params.As * immob1 / gch_params.Ks * mob2
@@ -204,7 +191,7 @@ def ddMdmobnext(
         raise ValueError("sp should be 0 or 1")
 
     if sp == 1:
-        mask = dM == -gch_params.stocoef * mob2
+        mask = dm_pos == 2
         deriv[mask] = -gch_params.stocoef
 
     # Mask for null values

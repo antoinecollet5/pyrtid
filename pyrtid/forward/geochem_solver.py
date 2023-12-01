@@ -63,15 +63,15 @@ def get_dM(
         np.array(
             [
                 (
-                    -gch_params.kv
+                    -dt
+                    * gch_params.kv
                     * gch_params.As
                     * immob1
                     * (1 - mob1 / gch_params.Ks)
                     * mob2
-                    * dt
                 ),
-                gch_params.stocoef * mob2,
                 immob1,
+                gch_params.stocoef * mob2,
             ]
         ),
         axis=0,
@@ -87,3 +87,34 @@ def get_dM(
     dM[mask] = 0.0
 
     return dM
+
+
+def get_dM_pos(
+    tr_model: TransportModel,
+    gch_params: GeochemicalParameters,
+    time_index: int,
+    dt: float,
+) -> NDArrayFloat:
+    mob1 = tr_model.lmob[time_index][0]
+    mob2 = tr_model.lmob[time_index][1]
+    immob1 = tr_model.limmob[time_index - 1][0]
+
+    dM_pos = np.argmin(
+        np.array(
+            [
+                (
+                    -dt
+                    * gch_params.kv
+                    * gch_params.As
+                    * immob1
+                    * (1 - mob1 / gch_params.Ks)
+                    * mob2
+                ),
+                immob1,
+                gch_params.stocoef * mob2,
+            ]
+        ),
+        axis=0,
+    )
+
+    return dM_pos
