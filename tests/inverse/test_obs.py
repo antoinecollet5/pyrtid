@@ -574,7 +574,7 @@ def test_get_adjoint_sources_for_obs(max_obs_time, mean_type) -> None:
     else:
         _max_obs_time = model.time_params.time_elapsed
 
-    get_observables_values_as_1d_vector([obs1], _max_obs_time).size
+    n_obs = get_observables_values_as_1d_vector([obs1], _max_obs_time).size
 
     def wrapper_conc(arr: NDArrayFloat) -> float:
         for i in range(arr.shape[-1]):
@@ -582,17 +582,17 @@ def test_get_adjoint_sources_for_obs(max_obs_time, mean_type) -> None:
         return get_model_ls_loss_function(model, [obs1], max_obs_time)
 
     np.testing.assert_allclose(
-        get_adjoint_sources_for_obs(model, obs1, max_obs_time),
+        get_adjoint_sources_for_obs(model, obs1, n_obs, max_obs_time),
         finite_gradient(model.tr_model.mob[0], wrapper_conc),
     )
 
-    get_observables_values_as_1d_vector([obs2], _max_obs_time).size
+    n_obs = get_observables_values_as_1d_vector([obs2], _max_obs_time).size
 
     def wrapper_perm(arr: NDArrayFloat) -> float:
         model.fl_model.permeability = arr
         return get_model_ls_loss_function(model, [obs2], max_obs_time)
 
     np.testing.assert_allclose(
-        get_adjoint_sources_for_obs(model, obs2, max_obs_time),
+        get_adjoint_sources_for_obs(model, obs2, n_obs, max_obs_time),
         finite_gradient(model.fl_model.permeability, wrapper_perm),
     )

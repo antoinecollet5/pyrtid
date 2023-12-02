@@ -17,6 +17,7 @@ from pyrtid.inverse.obs import (
     Observables,
     StateVariable,
     get_adjoint_sources_for_obs,
+    get_observables_values_as_1d_vector,
 )
 from pyrtid.utils import object_or_object_sequence_to_list
 from pyrtid.utils.types import NDArrayFloat
@@ -348,6 +349,13 @@ class AdjointModel:
         else:
             max_obs_time = fwd_model.time_params.time_elapsed
 
+        # get the number of observations used to scale the LS objective function
+        # by the number of observables and obtain smaller gradients with smaller
+        # objective functions
+        n_obs = get_observables_values_as_1d_vector(
+            observables, max_obs_time=max_obs_time
+        ).size
+
         # get the adjoint variable for each observable
         for obs in object_or_object_sequence_to_list(observables):
             # adjoint sources for this observable to a sparse matrix
@@ -368,9 +376,9 @@ class AdjointModel:
 
             # Add the sparse array to the correct attribute
             res = csc_array(
-                get_adjoint_sources_for_obs(fwd_model, obs, max_obs_time).reshape(
-                    array.shape, order="F"
-                )
+                get_adjoint_sources_for_obs(
+                    fwd_model, obs, n_obs, max_obs_time
+                ).reshape(array.shape, order="F")
             )
 
             if obs.state_variable == StateVariable.CONCENTRATION:

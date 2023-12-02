@@ -16,10 +16,10 @@ from pyrtid.inverse.regularization import TikhonovRegularizatorIsotropic
     "x_pred, x_obs, std, expected_loss",
     [
         (np.zeros(100), np.zeros(100), np.ones(100), 0),
-        (np.zeros(100), np.ones(100), np.ones(100), 50.0),
-        (np.zeros(1000), np.ones(1000), np.ones(1000), 500.0),
-        (np.zeros(100), np.ones(100) * 2.0, np.ones(100), 200.0),
-        (np.zeros(100), np.ones(100) * 2.0, np.ones(100) * 2.0, 50.0),
+        (np.zeros(100), np.ones(100), np.ones(100), 0.5),
+        (np.zeros(1000), np.ones(1000), np.ones(1000), 0.5),
+        (np.zeros(100), np.ones(100) * 2.0, np.ones(100), 2.0),
+        (np.zeros(100), np.ones(100) * 2.0, np.ones(100) * 2.0, 0.5),
     ],
 )
 def test_ls_loss_function(x_pred, x_obs, std, expected_loss) -> None:
@@ -30,13 +30,13 @@ def test_ls_loss_function(x_pred, x_obs, std, expected_loss) -> None:
     "max_obs_time, expected_ls_loss_function, expected_reg_loss_function,"
     " jreg_weight, expected_total_loss_function",
     [
-        (None, 100.2638, 3.01311, 2.0, 106.29003674815917),
+        (None, 14.3234, 3.01311, 2.0, 20.3496),
         (
             0.5,
-            61.255,
+            12.2510,
             3.01311,
             0.0,
-            61.255,
+            12.2510,
         ),
     ],
 )

@@ -614,6 +614,7 @@ def get_simulated_values_matching_obs(
 def get_adjoint_sources_for_obs(
     model: ForwardModel,
     obs: Observable,
+    n_obs: int,
     max_obs_time: Optional[float] = None,
 ) -> NDArrayFloat:
     r"""
@@ -727,6 +728,7 @@ def get_adjoint_sources_for_obs(
                 _averaging_derivative  # in this case
                 * (obs_values - simu_values)[n]
                 / (obs_std[n] ** 2)
+                / n_obs
             )
     else:
         # Otherwise, we derive the weights of the linear interpolation
@@ -741,12 +743,14 @@ def get_adjoint_sources_for_obs(
                 * weights_before[n]
                 * ((obs_values - simu_values))[n]
                 / (obs_std[n] ** 2)
+                / n_obs
             )
             adj_src[X, Y, idx_after[n]] -= (
                 _averaging_derivative[:, idx_after[n]].ravel("F")
                 * weights_after[n]
                 * ((obs_values - simu_values))[n]
                 / (obs_std[n] ** 2)
+                / n_obs
             )
 
     # Return the adjoint sources

@@ -44,7 +44,7 @@ def ls_loss_function(
         the value of the objective function
 
     """
-    return 0.5 * np.sum(np.square((x_obs - x_calc) / x_sigma))
+    return 0.5 / np.size(x_obs) * np.sum(np.square((x_obs - x_calc) / x_sigma))
 
 
 def get_model_ls_loss_function(
