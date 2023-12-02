@@ -36,7 +36,6 @@ def solve_adj_geochem(
     if time_index != time_params.nts:
         a_immob_prev = a_tr_model.a_immob[:, :, :, time_index + 1]
         a_mob_prev = a_tr_model.a_mob[:, :, :, time_index + 1]
-        tr_model.lmob[time_index + 1]
         tr_model.limmob[time_index + 1]
         tr_model.lmob[time_index + 1]
         dt_prev = time_params.ldt[time_index]
@@ -118,7 +117,7 @@ def solve_adj_geochem(
             - gch_params.stocoef * a_tr_model.a_grade[1, :, :, time_index]
         ) * ddMdmobnext(tr_model, gch_params, time_index, dt_next, 0)
         a_tr_model.a_gch_src_term[1] = (
-            a_tr_model.a_grade[1, :, :, time_index]
+            a_tr_model.a_grade[0, :, :, time_index]
             - gch_params.stocoef * a_tr_model.a_grade[1, :, :, time_index]
         ) * ddMdmobnext(tr_model, gch_params, time_index, dt_next, 1)
 

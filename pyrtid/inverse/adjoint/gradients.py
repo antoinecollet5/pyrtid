@@ -987,7 +987,10 @@ def get_initial_grade_adjoint_gradient(
     )
 
     if sp == 0:
-        grad += (adj_model.a_tr_model.a_immob[0, :, :, 1]) * (
+        grad += (
+            adj_model.a_tr_model.a_immob[0, :, :, 1]
+            - fwd_model.gch_params.stocoef * adj_model.a_tr_model.a_immob[1, :, :, 1]
+        ) * (
             ddMdimmobprev(
                 fwd_model.tr_model,
                 fwd_model.gch_params,

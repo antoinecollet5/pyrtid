@@ -2,6 +2,10 @@
 Newton solver for the geochemical model.
 
 https://hplgit.github.io/prog4comp/doc/pub/._p4c-bootstrap-Python031.html
+
+For sparse system, this is actually much better:
+
+https://docs.scipy.org/doc/scipy/reference/generated/scipy.sparse.linalg.lsqr.html#scipy.sparse.linalg.lsqr
 """
 
 import numpy as np
