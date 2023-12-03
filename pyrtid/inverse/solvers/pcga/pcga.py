@@ -1273,13 +1273,20 @@ class PCGA:
         self.istate.i_best = i_best  # keep track of best LM solution
         return s_hat, beta, simul_obs_new
 
-    def linear_iteration(self, s_cur, simul_obs):
+    def linear_iteration(
+        self, s_cur: NDArrayFloat, simul_obs: NDArrayFloat, n_iter: int
+    ):
         # Solve geostatistical system -> two ways, direct of iterative solve
         if self.is_direct_solve:
             s_hat, beta, simul_obs_new = self.direct_solve(s_cur, simul_obs)
         else:
             s_hat, beta, simul_obs_new = self.iterative_solve(s_cur, simul_obs)
         obj: float = self.objective_function(s_hat, beta, simul_obs_new)
+
+        # Call the optional callback at the end of each linear iteration so some
+        # intermediate solver states could be saved
+        if self.callback is not None:
+            self.callback(self, s_hat=s_hat, simul_obs=simul_obs, n_iter=n_iter)
 
         return s_hat, beta, simul_obs_new, obj
 
@@ -1346,19 +1353,23 @@ class PCGA:
         s_cur = np.copy(s_init)
         s_past = np.copy(s_init)
 
-        for i in range(self.maxiter):  # type: ignore
+        # Save the initial state
+        if self.callback is not None:
+            self.callback(self, s_hat=s_cur, simul_obs=simul_obs, n_iter=0)
+
+        for n_iter in range(self.maxiter):  # type: ignore
             start = time()
 
             # TODO: make a loop for that
 
-            print(f"***** Iteration {i + 1} ******")
+            print(f"***** Iteration {n_iter + 1} ******")
             s_cur, beta_cur, simul_obs_cur, obj = self.linear_iteration(
-                s_past, simul_obs
+                s_past, simul_obs, n_iter
             )
 
             print(
                 "- Geostat. inversion at iteration %d is %g sec"
-                % ((i + 1), round(time() - start))
+                % ((n_iter + 1), round(time() - start))
             )
 
             if obj < self.istate.obj_best:
@@ -1366,7 +1377,7 @@ class PCGA:
                 self.istate.s_best = s_cur
                 self.istate.beta_best = beta_cur
                 self.istate.simul_obs_best = simul_obs_cur
-                self.istate.iter_best = i + 1
+                self.istate.iter_best = n_iter + 1
                 self.istate.Q2_best = self.istate.Q2_cur
                 self.istate.cR_best = self.istate.cR_cur
             else:
@@ -1377,11 +1388,11 @@ class PCGA:
                         self.istate.obj_best = obj
                         self.istate.s_best = s_cur
                         self.istate.simul_obs_best = simul_obs_cur
-                        self.istate.iter_best = i + 1
+                        self.istate.iter_best = n_iter + 1
                     else:
-                        if i > 1:
+                        if n_iter > 1:
                             print("no progress in obj value")
-                            i + 1
+                            n_iter += 1
                             break
                         else:
                             print(
@@ -1392,7 +1403,7 @@ class PCGA:
                             pass  # allow for
                 else:
                     print("no progress in obj value")
-                    i + 1
+                    n_iter += 1
                     break
 
             res = np.linalg.norm(s_past - s_cur) / np.linalg.norm(s_past)
@@ -1403,10 +1414,10 @@ class PCGA:
                 self.d_dim
             )
 
-            print("== iteration %d summary ==" % (i + 1))
+            print("== iteration %d summary ==" % (n_iter + 1))
             print(
                 "= objective function is %e, relative L2-norm diff btw "
-                "sol %d and sol %d is %g" % (obj, i, i + 1, res)
+                "sol %d and sol %d is %g" % (obj, n_iter, n_iter + 1, res)
             )
             print(
                 "= obs. RMSE is %g, obs. normalized RMSE is %g" % (RMSE_cur, nRMSE_cur)
@@ -1415,7 +1426,7 @@ class PCGA:
             self.istate.objvals.append(float(obj))
 
             if res < self.restol:
-                i + 1
+                n_iter += 1
                 break
 
             s_past = np.copy(s_cur)
