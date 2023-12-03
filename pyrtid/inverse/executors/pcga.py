@@ -161,9 +161,7 @@ class PCGAInversionExecutor(BaseInversionExecutor[PCGASolverConfig]):
         super().run()
         return self.solver.run()
 
-    def _map_forward_model_wrapper(
-        self, s_ensemble: NDArrayFloat, is_parallel: bool = False, ncores: int = 1
-    ) -> NDArrayFloat:
+    def _map_forward_model_wrapper(self, s_ensemble: NDArrayFloat) -> NDArrayFloat:
         """
         Call the forward model for all ensemble members, return predicted data.
 
@@ -178,4 +176,4 @@ class PCGAInversionExecutor(BaseInversionExecutor[PCGASolverConfig]):
         """
         # pylint: disable=W0613  # Unused argument 'ncores'
         # The transposition is due to the implementation of pypcga
-        return super()._map_forward_model(s_ensemble, is_parallel)
+        return super()._map_forward_model(s_ensemble, self.solver_config.is_parallel)
