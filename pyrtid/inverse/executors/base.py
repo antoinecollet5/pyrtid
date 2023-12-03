@@ -265,6 +265,14 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         # Update parameters (only if the values haven't been defined for the parameters)
         update_parameters_from_model(fwd_model, self.inv_model.parameters_to_adjust)
 
+        # Adjust the hm_end_time to match the end of the simulation
+        if self.solver_config.hm_end_time is not None:
+            self.solver_config.hm_end_time = min(
+                self.solver_config.hm_end_time, fwd_model.time_params.duration
+            )
+        else:
+            self.solver_config.hm_end_time = fwd_model.time_params.duration
+
         # Get the initial values from the model
         _s_init_model = get_parameters_values_from_model(
             fwd_model, inv_model.parameters_to_adjust, is_preconditioned=True
@@ -504,14 +512,18 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
     ) -> float:
         """Compute the model scaled_loss function."""
 
-        x_obs = get_observables_values_as_1d_vector(self.inv_model.observables)
+        x_obs = get_observables_values_as_1d_vector(
+            self.inv_model.observables, max_obs_time=self.solver_config.hm_end_time
+        )
 
         ls_loss = ls_loss_function(
             x_obs,
             self._run_forward_model(
                 m, self.inv_model.nb_f_calls + 1, is_save_state=is_save_state
             ),
-            get_observables_uncertainties_as_1d_vector(self.inv_model.observables),
+            get_observables_uncertainties_as_1d_vector(
+                self.inv_model.observables, max_obs_time=self.solver_config.hm_end_time
+            ),
         )
 
         # Compute the regularization term:
@@ -725,6 +737,7 @@ class AdjointInversionExecutor(BaseInversionExecutor, Generic[_AdjointSolverConf
         eps: Optional[float] = None,
         max_workers: int = 1,
         is_verbose: bool = False,
+        max_nafpi: int = 30,
     ) -> bool:
         """
         Return whether the adjoint gradient is correct or not.
@@ -747,6 +760,9 @@ class AdjointInversionExecutor(BaseInversionExecutor, Generic[_AdjointSolverConf
             multi-processing to decrease the computation time. The default is 1.
         is_verbose : bool, optional
             Whether to display computation infrmation, by default False
+        max_nafpi: int
+            Maximum number of iteration per adjoint chemistry-transport loop allowed
+            (fixed point iterations.)
         """
         return is_adjoint_gradient_correct(
             self.fwd_model,
@@ -757,6 +773,7 @@ class AdjointInversionExecutor(BaseInversionExecutor, Generic[_AdjointSolverConf
             max_workers=max_workers,
             hm_end_time=self.solver_config.hm_end_time,
             is_verbose=is_verbose,
+            max_nafpi=max_nafpi,
         )
 
     def scaled_loss_function_gradient(self, m: NDArrayFloat) -> NDArrayFloat:
