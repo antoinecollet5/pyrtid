@@ -117,7 +117,7 @@ class PCGAInversionExecutor(BaseInversionExecutor[PCGASolverConfig]):
                 self.data_model.s_init.ravel(),  # Must be a vector
                 self.data_model.obs,
                 self.data_model.cov_obs,
-                self._map_forward_model_wrapper,
+                self._map_forward_model,
                 self.solver_config.eig_cov,
                 drift=self.solver_config.drift,
                 prior_s_var=self.solver_config.prior_s_var,
@@ -160,20 +160,3 @@ class PCGAInversionExecutor(BaseInversionExecutor[PCGASolverConfig]):
         """
         super().run()
         return self.solver.run()
-
-    def _map_forward_model_wrapper(self, s_ensemble: NDArrayFloat) -> NDArrayFloat:
-        """
-        Call the forward model for all ensemble members, return predicted data.
-
-        Function calling the non-linear observation model (forward_model)
-        for all ensemble members and returning the predicted data for
-        each ensemble member. this function is responsible for the creation of
-        simulation folder etc.
-
-        Returns
-        -------
-        None.
-        """
-        # pylint: disable=W0613  # Unused argument 'ncores'
-        # The transposition is due to the implementation of pypcga
-        return super()._map_forward_model(s_ensemble, self.solver_config.is_parallel)

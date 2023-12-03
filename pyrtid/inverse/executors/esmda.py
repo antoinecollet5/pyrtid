@@ -132,7 +132,6 @@ class ESMDAInversionExecutor(BaseInversionExecutor[ESMDASolverConfig]):
             s_init,
             self.data_model.cov_obs,
             self._map_forward_model,
-            forward_model_kwargs={"is_parallel": self.solver_config.is_parallel},
             m_bounds=get_parameters_bounds(
                 self.inv_model.parameters_to_adjust, is_preconditioned=True
             ),
@@ -217,7 +216,6 @@ class ESMDARSInversionExecutor(BaseInversionExecutor[ESMDARSSolverConfig]):
             s_init,  # To change back
             self.data_model.cov_obs,
             self._map_forward_model,
-            forward_model_kwargs={"is_parallel": self.solver_config.is_parallel},
             std_m_prior=self.solver_config.std_s_prior,
             m_bounds=get_parameters_bounds(
                 self.inv_model.parameters_to_adjust, is_preconditioned=True

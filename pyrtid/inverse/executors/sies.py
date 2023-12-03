@@ -177,17 +177,12 @@ class SIESInversionExecutor(BaseInversionExecutor[SIESSolverConfig]):
             self.solver.s_history.append(_m)
         for iteration in range(1, self.solver_config.n_iterations + 1):  # type: ignore
             logging.info(f"Iteration # {iteration}")
-            d_pred = self._map_forward_model(
-                _m,
-                is_parallel=self.solver_config.is_parallel,
-            )
+            d_pred = self._map_forward_model(_m)
             self.solver.d_history.append(d_pred)
-
             _m = self.solver.sies_iteration(
                 d_pred,
                 step_length=self.solver_config.steplength_strategy(iteration),
             )
-
             if self.solver_config.save_ensembles_history:
                 self.solver.s_history.append(_m)
         return _m

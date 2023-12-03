@@ -452,9 +452,7 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
 
         return d_pred
 
-    def _map_forward_model(
-        self, s_ensemble: NDArrayFloat, is_parallel: bool = False
-    ) -> NDArrayFloat:
+    def _map_forward_model(self, s_ensemble: NDArrayFloat) -> NDArrayFloat:
         """
         Call the forward model for all ensemble members, return predicted data.
 
@@ -470,7 +468,7 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         run_n: int = self.inv_model.nb_f_calls
         n_ensemble: int = s_ensemble.shape[1]  # type: ignore
         d_pred: NDArrayFloat = np.zeros([self.data_model.d_dim, n_ensemble])
-        if is_parallel:
+        if self.solver_config.is_parallel:
             with ProcessPoolExecutor(
                 max_workers=self.solver_config.max_workers
             ) as executor:
