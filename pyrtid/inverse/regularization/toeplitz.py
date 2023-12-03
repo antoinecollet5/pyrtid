@@ -102,7 +102,7 @@ def toeplitz_product(
         mask[dim - i - 1] = slice(1, -1)
         # flip the axis and remove first and last element
         circ = np.concatenate(
-            (circ, np.flip(circ, axis=dim - i - 1)[*mask]), axis=dim - i - 1
+            (circ, np.flip(circ, axis=dim - i - 1)[tuple(mask)]), axis=dim - i - 1
         )
         # restore the mask to its initial state
         mask[dim - i - 1] = slice(None)
@@ -115,4 +115,4 @@ def toeplitz_product(
     # Get the result and return
     mask = [slice(0, _shape[i]) for i in range(dim)]
 
-    return np.reshape(np.real(result[*mask]), -1, order="F")
+    return np.reshape(np.real(result[tuple(mask)]), -1, order="F")
