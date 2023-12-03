@@ -86,6 +86,7 @@ class AdjointSolver:
         observables: Observables,
         hm_end_time: Optional[float] = None,
         is_verbose: bool = False,
+        max_nafpi: int = 30,
     ) -> None:
         """
         Solve the adjoint system of equations.
@@ -113,10 +114,10 @@ class AdjointSolver:
         for time_index in range(
             self.fwd_model.time_params.nts, -1, -1  # type: ignore
         ):  # Reverse order in time, and reverse order in operator sequence
-            self._solve_system_for_timestep(time_index, is_verbose)
+            self._solve_system_for_timestep(time_index, is_verbose, max_nafpi)
 
     def _solve_system_for_timestep(
-        self, time_index: int, is_verbose: bool = False
+        self, time_index: int, is_verbose: bool = False, max_nafpi: int = 30
     ) -> None:
         # Some references.
         a_tr_model = self.adj_model.a_tr_model
@@ -176,6 +177,14 @@ class AdjointSolver:
 
             # Update the number of FPI
             nafpi += 1
+
+            if nafpi > max_nafpi:
+                raise RuntimeError(
+                    f"The adjoint fixed point loop at time iteration {time_index}"
+                    f" (t={self.fwd_model.time_params.ldt[time_index]}), exceeded the"
+                    f" maximum number of fpi iterations allowed ({max_nafpi}!)\n"
+                    f"The convergence criteria might be too low. Try to diminish it."
+                )
 
         # 3) Need to compute the adjoint darcy velocities
         update_adjoint_u_darcy(

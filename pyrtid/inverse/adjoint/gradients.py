@@ -1427,6 +1427,7 @@ def is_adjoint_gradient_correct(
     max_workers: int = 1,
     hm_end_time: Optional[float] = None,
     is_verbose: bool = False,
+    max_nafpi: int = 30,
 ) -> bool:
     """
     Check if the gradient computed with the adjoint state is equal with FD.
@@ -1468,7 +1469,9 @@ def is_adjoint_gradient_correct(
     # Solve the adjoint problem
 
     asolver: AdjointSolver = AdjointSolver(fwd_model, adj_model)
-    asolver.solve(observables, hm_end_time=hm_end_time, is_verbose=is_verbose)
+    asolver.solve(
+        observables, hm_end_time=hm_end_time, is_verbose=is_verbose, max_nafpi=max_nafpi
+    )
 
     adj_grad = compute_adjoint_gradient(
         fwd_model, asolver.adj_model, parameters_to_adjust
