@@ -54,7 +54,6 @@ class IntervalState:
     beta_best = None
     simul_obs_best = np.inf
     iter_best = 0
-    obj_best = 1.0e20
     simul_obs_init = None
     objvals: List[float] = field(default_factory=lambda: [])
     Q2_cur = 0.0
@@ -62,6 +61,12 @@ class IntervalState:
     Q2_best = 0.0
     cR_best = 0.0
     i_best = 0
+
+    def obj_best(self) -> float:
+        """Return the best objective function obtained in the optimization."""
+        if len(self.objvals) == 0:
+            return np.inf
+        return np.min(self.objvals)
 
 
 class PCGA:
@@ -1379,7 +1384,6 @@ class PCGA:
             )
 
             if obj < self.istate.obj_best:
-                self.istate.obj_best = obj
                 self.istate.s_best = s_cur
                 self.istate.beta_best = beta_cur
                 self.istate.simul_obs_best = simul_obs_cur
@@ -1391,7 +1395,6 @@ class PCGA:
                     print("perform simple linesearch due to no progress in obj value")
                     s_cur, simul_obs_cur, obj = self.line_search(s_cur, s_past)
                     if obj < self.istate.iter_best:
-                        self.istate.obj_best = obj
                         self.istate.s_best = s_cur
                         self.istate.simul_obs_best = simul_obs_cur
                         self.istate.iter_best = n_iter + 1
