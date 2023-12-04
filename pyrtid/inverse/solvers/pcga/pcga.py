@@ -483,6 +483,12 @@ class PCGA:
             np.dot(invZs.T, invZs) - np.dot(XTinvQs.T, tmp)
         )
 
+    def rmse(self, residuals: NDArrayFloat, is_normalized: bool) -> float:
+        """Return the root mean square error."""
+        if is_normalized:
+            return np.sqrt(residuals.dot(self.cov_obs_solve(residuals)) / self.d_dim)
+        return np.linalg.norm(residuals) / np.sqrt(self.d_dim)
+
     def jac_mat(self, s_cur, simul_obs, Z):
         m: int = self.s_dim
         p: int = self.drift.beta_dim
@@ -1342,8 +1348,8 @@ class PCGA:
 
         self.simul_obs_init = simul_obs_init
         residuals = (simul_obs_init - self.obs).ravel()
-        RMSE_init = np.linalg.norm(residuals) / np.sqrt(self.d_dim)
-        nRMSE_init = residuals.dot(self.cov_obs_solve(residuals)) / np.sqrt(self.d_dim)
+        RMSE_init: float = self.rmse(residuals, False)
+        nRMSE_init: float = self.rmse(residuals, True)
         print(
             f"- obs. RMSE (norm(obs. diff.)/sqrt(nobs)): {RMSE_init}\n"
             f"- normalized obs. RMSE (norm(obs. diff./sqrtR)/sqrt(nobs)): {nRMSE_init}"
@@ -1409,10 +1415,8 @@ class PCGA:
             res = np.linalg.norm(s_past - s_cur) / np.linalg.norm(s_past)
             residuals = (simul_obs_cur - self.obs).ravel()
 
-            RMSE_cur = np.linalg.norm(residuals) / np.sqrt(self.d_dim)
-            nRMSE_cur = residuals.dot(self.cov_obs_solve(residuals)) / np.sqrt(
-                self.d_dim
-            )
+            RMSE_cur = self.rmse(residuals, False)
+            nRMSE_cur = self.rmse(residuals, True)
 
             print("== iteration %d summary ==" % (n_iter + 1))
             print(
@@ -1458,10 +1462,8 @@ class PCGA:
         print("------------ Inversion Summary ---------------------------")
         print(f"** Found solution at iteration {self.istate.iter_best}")
         residuals = (self.istate.simul_obs_best - self.obs).ravel()
-        RMSE_best: float = np.linalg.norm(residuals) / np.sqrt(self.d_dim)
-        nRMSE_best: float = residuals.dot(self.cov_obs_solve(residuals)) / np.sqrt(
-            self.d_dim
-        )
+        RMSE_best: float = self.rmse(residuals, False)
+        nRMSE_best: float = self.rmse(residuals, True)
 
         print(
             "** Solution obs. RMSE %g , initial obs. RMSE %g, "
