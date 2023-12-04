@@ -62,6 +62,7 @@ class IntervalState:
     cR_best = 0.0
     i_best = 0
 
+    @property
     def obj_best(self) -> float:
         """Return the best objective function obtained in the optimization."""
         if len(self.objvals) == 0:
@@ -530,7 +531,12 @@ class PCGA:
             raise NotImplementedError
         return HX, HZ, Hs, U_data
 
-    def direct_solve(self, s_cur: NDArrayFloat, simul_obs: NDArrayFloat):
+    def direct_solve(
+        self,
+        s_cur: NDArrayFloat,
+        simul_obs: NDArrayFloat,
+        is_use_cholesky: bool = False,
+    ):
         """
         Solve the geostatistical system using a direct solver.
         Not to be used unless the number of measurements are small O(100)
@@ -611,36 +617,33 @@ class PCGA:
         LM_eval = np.zeros(nopts, dtype=bool)
         # if LM_smax, LM_smin defined and solution violates them, LM_eval[i] "
         # "becomes True
-
         for i in range(nopts):  # sequential evaluation for now
             # Construct Psi directly
             # Psi = self.get_psi(HZ, i, R)
-            Psi = np.dot(HZ, HZ.T) + np.multiply(
-                np.multiply(alpha[i], R), np.eye(n, dtype="d")
-            )
+            Psi: NDArrayFloat = np.dot(HZ, HZ.T)  # HQH^{t}
+            # Add the R matrix
+            Ri = alpha[i] * R
+            if Ri.ndim == 1:
+                # Ri is diagonal
+                np.fill_diagonal(Psi, Psi.diagonal() + Ri)
+            else:
+                # If Ri is 2D
+                Psi += Ri
 
             b = np.zeros((n + p, 1), dtype="d")
             # Ax = b, b = obs - h(s) + Hs
             b[:n] = self.obs[:] - simul_obs + Hs[:]
-            LA = self.build_cholesky(Psi, HX)
-            x = self.solve_cholesky(LA, b, self.Q.n_pc)
 
-            # A = self.build_dense_A(Psi, HX)
-            # # Create matrix system and solve it
-            # # cokriging matrix
-            # x = sp.linalg.solve(A, b)
-            # self.x = x
-            # self.x2 = x2
-            # A2 = self.build_dense_A_from_cholesky(LA, self.Q.n_pc)
-            # self.A = A
-            # self.A2 = A2
-            # self.LA = LA
-            # # x2 = np.linalg.solve(A2, b)
-            # np.testing.assert_allclose(A, A2, atol=1e-6)
-            # # TODO: this does not work... why ???
-            # np.testing.assert_allclose(x2, x)
+            if is_use_cholesky:
+                LA = self.build_cholesky(Psi, HX)
+                x = self.solve_cholesky(LA, b, self.Q.n_pc)
+            else:
+                A = self.build_dense_A(Psi, HX)
+                # Create matrix system and solve it
+                # cokriging matrix
+                x = sp.linalg.solve(A, b)
 
-            ##Extract components and return final solution
+            # Extract components and return final solution
             # x dimension (n+p,1)
             xi = x[0:n, :]
             beta_all[:, i : i + 1] = x[n : n + p, :]
@@ -1503,7 +1506,24 @@ class PCGA:
         self, HZ: NDArrayFloat, i_best: int, cov_obs: NDArrayFloat
     ) -> NDArrayFloat:
         """Get the matrix HQH^{T} + R."""
-        alpha = 10 ** (np.linspace(0.0, np.log10(self.alphamax_lm), self.nopts_lm))
+
+        if self.is_lm:
+            # print(
+            #     "Solve geostatistical inversion problem (co-kriging, "
+            #     "saddle point systems) with Levenberg-Marquardt"
+            # )
+            nopts = self.nopts_lm
+            alpha = 10 ** (np.linspace(0.0, np.log10(self.alphamax_lm), nopts))
+
+        else:
+            # print(
+            #     "Solve geostatistical inversion problem (co-kriging, "
+            #     "saddle point systems)"
+            # )
+            nopts = 1
+            alpha = np.array([1.0])
+
+        # alpha = 10 ** (np.linspace(0.0, np.log10(self.alphamax_lm), self.nopts_lm))
         Ri = np.multiply(alpha[i_best], cov_obs)
 
         # Construct Psi directly
