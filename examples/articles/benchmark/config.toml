@@ -1,0 +1,16 @@
+is_run_all = false
+is_run_asm = true
+is_run_pcga = false
+is_run_esmda = false
+is_run_sies = false
+is_parallel = false
+max_workers = 1
+language = "english"
+n_pc = 2
+n_fields_es = 100
+pcga_n_iterations = 1
+esmda_n_iterations = 1
+sies_n_iterations = 1
+is_esmda_restricted_step = false
+duration_in_days = 150
+duration_in_days_inv = 90 # used for inversion

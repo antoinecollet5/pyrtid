@@ -1,0 +1,47 @@
+pip
+wheel
+
+twine==1.14.0
+pytest
+pytest-runner
+pytest-cov
+pytest-cookies
+coverage
+
+pre-commit
+black>=23.1.0
+jupyter-black
+isort==5.10.1
+codespell==2.1.0
+flake8
+flake8-html
+ruff
+
+sphinx>=2 # jupyter_sphinx requires sphinx>=2
+nbsphinx==0.8.10
+nbsphinx-link
+sphinxcontrib-blockdiag
+jupyter_sphinx>=0.3.2
+sphinx-jsonschema>=1.15
+pygments==2.11.1
+sphinx-panels
+pydata-sphinx-theme
+sphinxcontrib-bibtex
+jinja2==3.0.3
+
+numpy>=1.2
+scipy>=1.6.2
+scikit-sparse
+numdifftools
+gstools
+numba
+typing_extensions
+pyesmda>=0.4.3
+stochopy
+pyPCGA @ git+https://github.com/jonghyunharrylee/pyPCGA
+iterative_ensemble_smoother @ git+https://github.com/equinor/iterative_ensemble_smoother
+typing_extensions
+matplotlib >= 3.5.6
+joblib
+gstools
+nested_grid_plotter

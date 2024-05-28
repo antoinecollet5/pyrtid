@@ -1,0 +1,229 @@
+
+@article{aanonsenEnsembleKalmanFilter2009,
+  title = {The {{Ensemble Kalman Filter}} in {{Reservoir Engineering--a Review}}},
+  author = {Aanonsen, Sigurd and N{\ae}vdal, Geir and Oliver, Dean and Reynolds, Albert and Vall{\`e}s, Brice},
+  year = {2009},
+  month = sep,
+  journal = {SPE Journal - SPE J},
+  volume = {14},
+  pages = {393--412},
+  doi = {10.2118/117274-PA},
+  abstract = {There has been great progress in data assimilation within atmospheric and oceanographic sciences during the last couple of decades. In data assimilation, one aims at merging the information from observations into a numerical model, typically of a geophysical system. A typical example where data assimilation is needed is in weather forecasting. Here, the atmospheric models must take into account the most recent observations of variables such as temperature and atmospheric pressure for better forecasting of the weather in the next time period. A major challenge for these models is that they contain very large numbers of variables.The progress in data assimilation is because of both increased computational power and the introduction of techniques that are capable of handling large amounts of data and more severe nonlinearities. The aim of this paper is to focus on one of these techniques, the ensemble Kalman filter (EnKF). The EnKF has been introduced to petroleum science recently (Lorentzen et al. 2001a) and, in particular, has attracted attention as a promising method for solving the history matching problem. The literature available on the EnKF is now rather overwhelming. We hope that this review will help researchers (and students) working on adapting the EnKF to petroleum applications to find valuable references and ideas, although the number of papers discussing the EnKF is too large to give a complete review. For practitioners, we have cited critical EnKF papers from weather and oceanography. We have also tried to review most of the papers dealing with the EnKF and updating of reservoir models available to the authors by the beginning of 2008.The EnKF is based on the simpler Kalman filter (Kalman 1960). We will start by introducing the Kalman filter. The Kalman filter is an efficient recursive filter that estimates the state of a linear dynamical system from a series of noisy measurements. The Kalman filter is based on a model equation, where the current state of the system is associated with an uncertainty (expressed by a covariance matrix) and an observation equation that relates a linear combination of the states to measurements. The measurements are also associated with uncertainty. The model equations are used to compute a forward step (Eqs. 1 and 2) where the state variables are computed forward in time with the current estimate of the state as initial condition. The observation equations are used in the analysis step (Eqs. 3 through 5) where the estimated value of the state and its uncertainty are corrected to take into account the most recent measurements See, e.g., Cohn (1997), Maybeck (1979), or Stengel (1994) for an introduction to the Kalman filter.},
+  file = {/home/acollet/Documents/BIBLIOGRAPHY/storage/JNISZ6SJ/Aanonsen et al. - 2009 - The Ensemble Kalman Filter in Reservoir Engineerin.pdf}
+}
+% == BibTeX quality report for aanonsenEnsembleKalmanFilter2009:
+% ? Title looks like it was stored in title-case in Zotero
+
+@article{andersonExploringNeedLocalization2007,
+  title = {Exploring the Need for Localization in Ensemble Data Assimilation Using a Hierarchical Ensemble Filter},
+  author = {Anderson, Jeffrey L.},
+  year = {2007},
+  month = jun,
+  journal = {Physica D: Nonlinear Phenomena},
+  series = {Data {{Assimilation}}},
+  volume = {230},
+  number = {1},
+  pages = {99--111},
+  issn = {0167-2789},
+  doi = {10.1016/j.physd.2006.02.011},
+  abstract = {Good performance with small ensemble filters applied to models with many state variables may require `localizing' the impact of an observation to state variables that are `close' to the observation. As a step in developing nearly generic ensemble filter assimilation systems, a method to estimate `localization' functions is presented. Localization is viewed as a means to ameliorate sampling error when small ensembles are used to sample the statistical relation between an observation and a state variable. The impact of spurious sample correlations between an observation and model state variables is estimated using a `hierarchical ensemble filter', where an ensemble of ensemble filters is used to detect sampling error. Hierarchical filters can adapt to a wide array of ensemble sizes and observational error characteristics with only limited heuristic tuning. Hierarchical filters can allow observations to efficiently impact state variables, even when the notion of `distance' between the observation and the state variables cannot be easily defined. For instance, defining the distance between an observation of radar reflectivity from a particular radar and beam angle taken at 1133~GMT and a model temperature variable at 700~hPa 60~km north of the radar beam at 1200~GMT is challenging. The hierarchical filter estimates sampling error from a `group' of ensembles and computes a factor between 0 and 1 to minimize sampling error. An a priori notion of distance is not required. Results are shown in both a low-order model and a simple atmospheric GCM. For low-order models, the hierarchical filter produces `localization' functions that are very similar to those already described in the literature. When observations are more complex or taken at different times from the state specification (in ensemble smoothers for instance), the localization functions become increasingly distinct from those used previously. In the GCM, this complexity reaches a level that suggests that it would be difficult to define efficient localization functions a priori. There is a cost trade-off between running hierarchical filters or running a traditional filter with larger ensemble size. Hierarchical filters can be run for short training periods to develop localization statistics that can be used in a traditional ensemble filter to produce high quality assimilations at reasonable cost, even when the relation between observations and state variables is not well-known a priori. Additional research is needed to determine if it is ever cost-efficient to run hierarchical filters for large data assimilation problems instead of traditional filters with the corresponding total number of ensemble members.},
+  langid = {english},
+  keywords = {Data assimilation,Ensemble filters,Localization,Sampling error},
+  file = {/home/acollet/Documents/BIBLIOGRAPHY/storage/EJAEK3G8/Anderson - 2007 - Exploring the need for localization in ensemble da.pdf}
+}
+% == BibTeX quality report for andersonExploringNeedLocalization2007:
+% ? unused Library catalog ("ScienceDirect")
+% ? unused Url ("https://www.sciencedirect.com/science/article/pii/S0167278906002168")
+
+@misc{colletPyRTID2023,
+  title = {{{PyRTID}}},
+  author = {Collet, Antoine},
+  year = {2023},
+  month = jul,
+  doi = {10.5281/zenodo.8192031},
+  abstract = {A Reactive Transport Inversion Demonstrator written in Python.},
+  howpublished = {Zenodo},
+  file = {/home/acollet/Documents/BIBLIOGRAPHY/storage/36523EYF/8192031.html}
+}
+% == BibTeX quality report for colletPyRTID2023:
+% ? unused Url ("https://zenodo.org/record/8192031")
+% ? unused Version number ("0.1.0")
+
+@article{evensen2021formulating,
+  title = {Formulating the History Matching Problem with Consistent Error Statistics},
+  author = {Evensen, Geir},
+  year = {2021},
+  month = jun,
+  journal = {Computational Geosciences},
+  volume = {25},
+  number = {3},
+  pages = {945--970},
+  issn = {1573-1499},
+  doi = {10.1007/s10596-021-10032-7},
+  abstract = {It is common to formulate the history-matching problem using Bayes' theorem. From Bayes', the conditional probability density function (pdf) of the uncertain model parameters is proportional to the prior pdf of the model parameters, multiplied by the likelihood of the measurements. The static model parameters are random variables characterizing the reservoir model while the observations include, e.g., historical rates of oil, gas, and water produced from the wells. The reservoir prediction model is assumed perfect, and there are no errors besides those in the static parameters. However, this formulation is flawed. The historical rate data only approximately represent the real production of the reservoir and contain errors. History-matching methods usually take these errors into account in the conditioning but neglect them when forcing the simulation model by the observed rates during the historical integration. Thus, the model prediction depends on some of the same data used in the conditioning. The paper presents a formulation of Bayes' theorem that considers the data dependency of the simulation model. In the new formulation, one must update both the poorly known model parameters and the rate-data errors. The result is an improved posterior ensemble of prediction models that better cover the observations with more substantial and realistic uncertainty. The implementation accounts correctly for correlated measurement errors and demonstrates the critical role of these correlations in reducing the update's magnitude. The paper also shows the consistency of the subspace inversion scheme by Evensen (Ocean Dyn. 54, 539\textendash 560 2004) in the case with correlated measurement errors and demonstrates its accuracy when using a ``larger'' ensemble of perturbations to represent the measurement error covariance matrix.},
+  langid = {english},
+  keywords = {Correlated measurement errors,Iterative ensemble smoother,Reservoir history matching,Subspace EnRML},
+  file = {/home/acollet/Documents/BIBLIOGRAPHY/storage/XJ8WFZLG/Evensen - 2021 - Formulating the history matching problem with cons.pdf}
+}
+% == BibTeX quality report for evensen2021formulating:
+% ? unused Journal abbreviation ("Comput Geosci")
+% ? unused Library catalog ("Springer Link")
+% ? unused Url ("https://doi.org/10.1007/s10596-021-10032-7")
+
+@book{evensenDataAssimilationEnsemble2007,
+  title = {Data {{Assimilation}} - {{The Ensemble Kalman Filter}}},
+  author = {Evensen, Geir},
+  year = {2007},
+  publisher = {{Springer Berlin Heidelberg}},
+  doi = {10.1007/978-3-642-03711-5},
+  abstract = {Data Assimilation comprehensively covers data assimilation and inverse methods, including both traditional state estimation and parameter estimation. This text and reference focuses on various popular data assimilation methods, such as weak and strong constraint variational methods and ensemble filters and smoothers. It is demonstrated how the different methods can be derived from a common theoretical basis, as well as how they differ and/or are related to each other, and which properties characterize them, using several examples. It presents the mathematical framework and derivations in a way which is common for any discipline where dynamics is merged with measurements. The mathematics level is modest, although it requires knowledge of basic spatial statistics, Bayesian statistics, and calculus of variations. Readers will also appreciate the introduction to the mathematical methods used and detailed derivations, which should be easy to follow, are given throughout the book. The codes used in several of the data assimilation experiments are available on a web page. The focus on ensemble methods, such as the ensemble Kalman filter and smoother, also makes it a solid reference to the derivation, implementation and application of such techniques. Much new material, in particular related to the formulation and solution of combined parameter and state estimation problems and the general properties of the ensemble algorithms, is available here for the first time. The 2nd edition includes a partial rewrite of Chapters 13 an 14, and the Appendix. In addition, there is a completely new Chapter on "Spurious correlations, localization and inflation", and an updated and improved sampling discussion in Chap 11.},
+  isbn = {978-3-642-03710-8},
+  langid = {english},
+  file = {/home/acollet/Documents/BIBLIOGRAPHY/storage/WD97BI9N/bwmeta1.element.html}
+}
+% == BibTeX quality report for evensenDataAssimilationEnsemble2007:
+% ? Title looks like it was stored in title-case in Zotero
+% ? unused Library catalog ("https://link.springer.comwww.infona.pl")
+% ? unused Url ("https://link.springer.com/book/10.1007/978-3-642-03711-5")
+
+@book{golubMatrixComputations1996,
+  title = {Matrix Computations},
+  author = {Golub, Gene H. and Van Loan, Charles F.},
+  year = {1996},
+  series = {Johns {{Hopkins}} Studies in the Mathematical Sciences},
+  edition = {3rd ed},
+  publisher = {{Johns Hopkins University Press}},
+  address = {{Baltimore}},
+  isbn = {978-0-8018-5413-2 978-0-8018-5414-9},
+  lccn = {QA188 .G65 1996},
+  keywords = {Data processing,Matrices},
+  file = {/home/acollet/Documents/BIBLIOGRAPHY/storage/LFJJXXRP/Golub_VanLoan.Matr_comp_3ed.pdf}
+}
+% == BibTeX quality report for golubMatrixComputations1996:
+% ? unused Library catalog ("Library of Congress ISBN")
+% ? unused Number of pages ("694")
+
+@article{gomesPitfallsDiscreteAdjoint2022,
+  title = {Pitfalls of {{Discrete Adjoint Fixed-Points Based}} on {{Algorithmic Differentiation}}},
+  author = {Gomes, Pedro and Palacios, Rafael},
+  year = {2022},
+  month = feb,
+  journal = {AIAA Journal},
+  volume = {60},
+  number = {2},
+  pages = {1251--1256},
+  publisher = {{American Institute of Aeronautics and Astronautics}},
+  issn = {0001-1452, 1533-385X},
+  doi = {10.2514/1.J060735},
+  langid = {english},
+  file = {/home/acollet/Documents/BIBLIOGRAPHY/storage/DNMWWXUX/Gomes and Palacios - 2022 - Pitfalls of Discrete Adjoint Fixed-Points Based on.pdf}
+}
+% == BibTeX quality report for gomesPitfallsDiscreteAdjoint2022:
+% ? Title looks like it was stored in title-case in Zotero
+% ? unused Library catalog ("arc.aiaa.org (Atypon)")
+% ? unused Url ("https://arc.aiaa.org/doi/10.2514/1.J060735")
+
+@article{lagneau:hal-00505360,
+  title = {{{HYTEC}} Results of the {{MoMas}} Reactive Transport Benchmark},
+  author = {Lagneau, Vincent and {van der Lee}, Jan},
+  year = {2010},
+  journal = {Computational Geosciences},
+  volume = {14},
+  pages = {435--449},
+  publisher = {{Springer Verlag}},
+  doi = {10.1007/s10596-009-9159-5},
+  hal_id = {hal-00505360},
+  hal_version = {v1},
+  pdf = {https://hal-mines-paristech.archives-ouvertes.fr/hal-00505360/file/art\textsubscript{m}omas\textsubscript{l}agneau\textsubscript{r}ev0609.pdf},
+  keywords = {reactive transport × HYTEC × benchmark × numerical methods × MoMas},
+  file = {/home/acollet/Documents/BIBLIOGRAPHY/storage/QAS3QD3V/Lagneau and Van Der Lee - 2010 - HYTEC results of the MoMas reactive transport benc.pdf}
+}
+% == BibTeX quality report for lagneau:hal-00505360:
+% ? unused Url ("https://hal-mines-paristech.archives-ouvertes.fr/hal-00505360")
+
+@article{lagneauOperatorsplittingbasedReactiveTransport2010,
+  title = {Operator-Splitting-Based Reactive Transport Models in Strong Feedback of Porosity Change: {{The}} Contribution of Analytical Solutions for Accuracy Validation and Estimator Improvement},
+  shorttitle = {Operator-Splitting-Based Reactive Transport Models in Strong Feedback of Porosity Change},
+  author = {Lagneau, Vincent and {van der Lee}, Jan},
+  year = {2010},
+  month = mar,
+  journal = {Journal of Contaminant Hydrology},
+  series = {Frontiers in {{Reactive Transport}}: {{Microbial Dynamics}} Nad {{Redox Zonation}} in the {{Subsurface}}},
+  volume = {112},
+  number = {1},
+  pages = {118--129},
+  issn = {0169-7722},
+  doi = {10.1016/j.jconhyd.2009.11.005},
+  abstract = {Reactive transport is a highly non-linear problem requiring the most efficient algorithms to rapidly reach an accurate solution. The non-linearities are increased and the resolution is even more demanding and CPU-intensive when considering feedback of dissolution or precipitation reactions on hydrodynamic flow and transport, commonly referred to as the variable porosity case. This is particularly true near clogging, which leads to very stiff systems and therefore small time-steps. The operator-splitting approach often cited is a widely use method to solve these problems: it consists in solving sequentially the transport then the chemistry part of the problem. Operator-splitting appears to be an accurate approach, provided that the solution is iteratively improved at each time-step. The paper details analytical solutions and test-cases for this class of problems. They demonstrate that iterative improvement is then compulsory. They also helped develop an improved estimator/corrector method which allows to reach convergence faster and to reduce stiffness. The efficiency improvement is significant as illustrated by an example of carbonation of a cement paste, a well-known problem that leads to complete clogging of the interface layer.},
+  keywords = {Analytical solutions,Chemistry,Clogging,Feedback,Reactive transport,Variable porosity},
+  file = {/home/acollet/Documents/BIBLIOGRAPHY/storage/EPHY2MNB/Lagneau and van der Lee - 2010 - Operator-splitting-based reactive transport models.pdf}
+}
+% == BibTeX quality report for lagneauOperatorsplittingbasedReactiveTransport2010:
+% ? unused Library catalog ("ScienceDirect")
+% ? unused Url ("https://www.sciencedirect.com/science/article/pii/S0169772209001612")
+
+@article{meijerinkGuidelinesUsageIncomplete1981,
+  title = {Guidelines for the Usage of Incomplete Decompositions in Solving Sets of Linear Equations as They Occur in Practical Problems},
+  author = {Meijerink, J. A and {van der Vorst}, H. A},
+  year = {1981},
+  month = nov,
+  journal = {Journal of Computational Physics},
+  volume = {44},
+  number = {1},
+  pages = {134--155},
+  issn = {0021-9991},
+  doi = {10.1016/0021-9991(81)90041-3},
+  abstract = {This paper presents incomplete decompositions for various types of matrices as they occur in the implicit discretisation of practical problems. A review is given of methods for the usual five-point discretisation of a self-adjoint elliptic second-order partial differential equation in two dimensions on a square. The matrices which occur in this type of problem are symmetric M-matrices of very regular structure. The convergence behaviour of the different decompositions for this case is demonstrated by numerical experiments. The paper also gives decompositions for the following type of matrices: (i) Symmetric M-matrices of a different structure. (ii) Symmetric positive definite matrices. (iii) Non-symmetric matrices.},
+  file = {/home/acollet/Documents/BIBLIOGRAPHY/storage/GR26JYYI/0021999181900413.html}
+}
+% == BibTeX quality report for meijerinkGuidelinesUsageIncomplete1981:
+% ? unused Library catalog ("ScienceDirect")
+% ? unused Url ("https://www.sciencedirect.com/science/article/pii/0021999181900413")
+
+@book{nocedalNumericalOptimization1999,
+  title = {Numerical {{Optimization}}},
+  editor = {Nocedal, Jorge and Wright, Stephen J.},
+  year = {1999},
+  series = {Springer {{Series}} in {{Operations Research}} and {{Financial Engineering}}},
+  publisher = {{Springer-Verlag}},
+  address = {{New York}},
+  doi = {10.1007/b98874},
+  isbn = {978-0-387-98793-4},
+  langid = {english},
+  keywords = {algorithms,linear optimization,nonlinear optimization,optimization,quadratic programming,Quasi-Newton method},
+  file = {/home/acollet/Documents/BIBLIOGRAPHY/storage/9ZY7E29E/Nocedal and Wright - 1999 - Numerical Optimization.pdf}
+}
+% == BibTeX quality report for nocedalNumericalOptimization1999:
+% ? Title looks like it was stored in title-case in Zotero
+% ? unused Library catalog ("DOI.org (Crossref)")
+% ? unused Url ("http://link.springer.com/10.1007/b98874")
+
+@article{saadGMRESGeneralizedMinimal1986,
+  title = {{{GMRES}}: {{A Generalized Minimal Residual Algorithm}} for {{Solving Nonsymmetric Linear Systems}}},
+  shorttitle = {{{GMRES}}},
+  author = {Saad, Youcef and Schultz, Martin H.},
+  year = {1986},
+  month = jul,
+  journal = {SIAM Journal on Scientific and Statistical Computing},
+  volume = {7},
+  number = {3},
+  pages = {856--869},
+  publisher = {{Society for Industrial and Applied Mathematics}},
+  issn = {0196-5204},
+  doi = {10.1137/0907058},
+  abstract = {The generalized minimum residual method (GMRES) is well known for solving large nonsymmetric systems of linear equations. It generally uses restarting, which slows the convergence. However, some information can be retained at the time of the restart and used in the next cycle. We present algorithms that use implicit restarting in order to retain this information. Approximate eigenvectors determined from the previous subspace are included in the new subspace. This deflates the smallest eigenvalues and thus improves the convergence. The subspace that contains the approximate eigenvectors is itself a Krylov subspace, but not with the usual starting vector. The implicitly restarted FOM algorithm includes standard Ritz vectors in the subspace. The eigenvalue portion of its calculations is equivalent to Sorensen's IRA algorithm. The implicitly restarted GMRES algorithm uses harmonic Ritz vectors. This algorithm also gives a new approach to computing interior eigenvalues.},
+  file = {/home/acollet/Documents/BIBLIOGRAPHY/storage/E8SEVWXH/Saad and Schultz - 1986 - GMRES A Generalized Minimal Residual Algorithm fo.pdf}
+}
+% == BibTeX quality report for saadGMRESGeneralizedMinimal1986:
+% ? Title looks like it was stored in title-case in Zotero
+% ? unused Journal abbreviation ("SIAM J. Sci. and Stat. Comput.")
+% ? unused Library catalog ("epubs.siam.org (Atypon)")
+% ? unused Url ("https://epubs.siam.org/doi/10.1137/0907058")
+
+@misc{wieschollek2016cppoptimizationlibrary,
+  title = {{{CppOptimizationLibrary}}},
+  author = {Wieschollek, Patrick},
+  year = {2016}
+}
+% == BibTeX quality report for wieschollek2016cppoptimizationlibrary:
+% ? unused Url ("https://github.com/PatWie/CppNumericalSolvers")

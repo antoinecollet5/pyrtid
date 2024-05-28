@@ -1,0 +1,10 @@
+is_run_all = true
+is_run_asm = true
+is_run_pcga = true
+is_run_esmda = true
+is_run_sies = true
+is_parallel = false
+max_workers = 2
+language = "english"
+n_pc = 2
+n_fields_es = 2

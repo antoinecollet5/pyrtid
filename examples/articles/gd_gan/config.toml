@@ -1,0 +1,4 @@
+language = "english"
+duration_in_days = 60
+duration_in_days_inv = 60 # used for inversion
+is_use_conditioner = false
