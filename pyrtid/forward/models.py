@@ -1115,6 +1115,8 @@ class TransportModel:
 
         This is read-only.
         """
+        if len(self.ldensity) == 0:
+            return np.array([])
         return np.transpose(np.array(self.ldensity), axes=(1, 2, 0))
 
     @property

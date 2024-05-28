@@ -1,9 +1,10 @@
 from contextlib import nullcontext as does_not_raise
-from typing import Optional
+from typing import Optional, Sequence
 
 import numpy as np
-import pyrtid.forward as dmfwd
 import pytest
+
+import pyrtid.forward as dmfwd
 from pyrtid.inverse.loss_function import eval_model_loss_ls
 from pyrtid.inverse.obs import (
     Observable,
@@ -195,19 +196,86 @@ def model() -> dmfwd.ForwardModel:
 
 
 @pytest.mark.parametrize(
-    "state_variable, sp, expected_exception",
+    "state_variable, sp, expected_shape, expected_exception",
     (
-        (StateVariable.CONCENTRATION, 0, does_not_raise()),
-        (StateVariable.DENSITY, None, does_not_raise()),
-        (StateVariable.DIFFUSION, None, does_not_raise()),
-        (StateVariable.HEAD, None, does_not_raise()),
-        (StateVariable.GRADE, 0, does_not_raise()),
-        (StateVariable.PERMEABILITY, None, does_not_raise()),
-        (StateVariable.POROSITY, None, does_not_raise()),
-        (StateVariable.PRESSURE, None, does_not_raise()),
+        (
+            StateVariable.CONCENTRATION,
+            0,
+            (
+                20,
+                20,
+            ),
+            does_not_raise(),
+        ),
+        (
+            StateVariable.DENSITY,
+            None,
+            (
+                0,
+            ),
+            does_not_raise(),
+        ),
+        (
+            StateVariable.DIFFUSION,
+            None,
+            (
+                20,
+                20,
+            ),
+            does_not_raise(),
+        ),
+        (
+            StateVariable.HEAD,
+            None,
+            (
+                20,
+                20,
+            ),
+            does_not_raise(),
+        ),
+        (
+            StateVariable.GRADE,
+            0,
+            (
+                20,
+                20,
+            ),
+            does_not_raise(),
+        ),
+        (
+            StateVariable.PERMEABILITY,
+            None,
+            (
+                20,
+                20,
+            ),
+            does_not_raise(),
+        ),
+        (
+            StateVariable.POROSITY,
+            None,
+            (
+                20,
+                20,
+            ),
+            does_not_raise(),
+        ),
+        (
+            StateVariable.PRESSURE,
+            None,
+            (
+                20,
+                20,
+            ),
+            does_not_raise(),
+        ),
         (
             "a random variable",
             None,
+            (
+                20,
+                20,
+            ),
             pytest.raises(
                 ValueError,
                 match=(
@@ -221,15 +289,14 @@ def model() -> dmfwd.ForwardModel:
 def test_get_array_from_state_variable(
     state_variable: StateVariable,
     sp: Optional[int],
+    expected_shape: Sequence[int],
     expected_exception,
     model: dmfwd.ForwardModel,
 ) -> None:
     with expected_exception:
-        assert get_array_from_state_variable(model, state_variable, sp=sp).shape[
-            :2
-        ] == (
-            20,
-            20,
+        assert (
+            get_array_from_state_variable(model, state_variable, sp=sp).shape[:2]
+            == expected_shape
         )
 
 
