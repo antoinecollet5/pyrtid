@@ -51,7 +51,7 @@ def test_init_adjoint_sources(max_obs_time, mean_type) -> None:
 
     # generate synthetic data
     # I don't understand why is does not work if we leave it to 997... ???
-    model.tr_model.ldensity[0] = (
+    model.tr_model.ldensity.append(
         np.random.default_rng(2023).random((geometry.nx, geometry.ny)) + 2.0
     )
     model.tr_model.ldensity.append(
