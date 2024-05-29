@@ -3,12 +3,12 @@
 import logging
 
 import gstools
+import lbfgsb
 import matplotlib
 import nested_grid_plotter
 import numdifftools
 import numpy as np
 import pyesmda
-import pyPCGA
 import scipy
 import sksparse
 import stochopy
@@ -28,7 +28,8 @@ def show_versions() -> None:
     logging.info(f"numdiftools                 = {numdifftools.__version__}")
     logging.info(f"numpy                       = {np.__version__}")
     logging.info(f"pyesmda                     = {pyesmda.__version__}")
-    logging.info(f"pypcga                      = {pyPCGA.__version__}")
+    # logging.info(f"pypcga                      = {pyPCGA.__version__}")
+    logging.info(f"lbfgsb                      = {lbfgsb.__version__}")
     logging.info(f"scipy                       = {scipy.__version__}")
     logging.info(f"sksparse                    = {sksparse.__version__}")
     logging.info(f"stochopy                    = {stochopy.__version__}")
