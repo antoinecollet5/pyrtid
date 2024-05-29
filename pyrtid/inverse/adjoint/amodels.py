@@ -255,7 +255,7 @@ class AdjointTransportModel:
         )
 
         self.q_prev_diffusion: lil_matrix = lil_array((geometry.nx * geometry.ny, 1))
-        self.q_next_diffusion: lil_matrix = lil_array((geometry.nx * geometry.ny,1))
+        self.q_next_diffusion: lil_matrix = lil_array((geometry.nx * geometry.ny, 1))
         self.q_prev: lil_matrix = lil_array((geometry.nx * geometry.ny, 1))
         self.q_next: lil_matrix = lil_array((geometry.nx * geometry.ny, 1))
         self.afpi_eps = afpi_eps

@@ -2,9 +2,8 @@ from contextlib import nullcontext as does_not_raise
 from typing import Optional, Sequence
 
 import numpy as np
-import pytest
-
 import pyrtid.forward as dmfwd
+import pytest
 from pyrtid.inverse.loss_function import eval_model_loss_ls
 from pyrtid.inverse.obs import (
     Observable,
@@ -210,9 +209,7 @@ def model() -> dmfwd.ForwardModel:
         (
             StateVariable.DENSITY,
             None,
-            (
-                0,
-            ),
+            (0,),
             does_not_raise(),
         ),
         (

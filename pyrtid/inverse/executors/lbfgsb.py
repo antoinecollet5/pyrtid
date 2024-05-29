@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from typing import Deque, List, Optional, Tuple
 
 import numpy as np
+from lbfgsb import minimize_lbfgsb
 from scipy.optimize import OptimizeResult as ScipyOptimizeResult
 
 from pyrtid.inverse.executors.base import (
@@ -32,7 +33,6 @@ from pyrtid.inverse.params import (
     get_parameters_bounds,
 )
 from pyrtid.inverse.regularization import ConstantRegWeight, EnsembleRegularizator
-from lbfgsb import minimize_lbfgsb
 from pyrtid.utils.types import NDArrayFloat
 
 lbfgsb_solver_config_params_ds = r"""
