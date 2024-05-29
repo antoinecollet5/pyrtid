@@ -76,10 +76,10 @@ class AdjointFlowModel(ABC):
             (geometry.nx * geometry.ny, 1), dtype=np.float64
         )
 
-        self.q_prev: lil_matrix = lil_array(geometry.nx * geometry.ny)
-        self.q_next: lil_matrix = lil_array(geometry.nx * geometry.ny)
-        self.q_prev_init: lil_matrix = lil_array(geometry.nx * geometry.ny)
-        self.q_next_init: lil_matrix = lil_array(geometry.nx * geometry.ny)
+        self.q_prev: lil_matrix = lil_array((geometry.nx * geometry.ny, 1))
+        self.q_next: lil_matrix = lil_array((geometry.nx * geometry.ny, 1))
+        self.q_prev_init: lil_matrix = lil_array((geometry.nx * geometry.ny, 1))
+        self.q_next_init: lil_matrix = lil_array((geometry.nx * geometry.ny, 1))
 
         # crank nicolson: if None, then the crank-nicolson from the forward model
         # is used. This attribute only purpose is to test the impact of an
@@ -254,10 +254,10 @@ class AdjointTransportModel:
             (n_sp, geometry.nx, geometry.ny), dtype=np.float64
         )
 
-        self.q_prev_diffusion: lil_matrix = lil_array(geometry.nx * geometry.ny)
-        self.q_next_diffusion: lil_matrix = lil_array(geometry.nx * geometry.ny)
-        self.q_prev: lil_matrix = lil_array(geometry.nx * geometry.ny)
-        self.q_next: lil_matrix = lil_array(geometry.nx * geometry.ny)
+        self.q_prev_diffusion: lil_matrix = lil_array((geometry.nx * geometry.ny, 1))
+        self.q_next_diffusion: lil_matrix = lil_array((geometry.nx * geometry.ny,1))
+        self.q_prev: lil_matrix = lil_array((geometry.nx * geometry.ny, 1))
+        self.q_next: lil_matrix = lil_array((geometry.nx * geometry.ny, 1))
         self.afpi_eps = afpi_eps
         self.is_adj_numerical_acceleration = is_adj_numerical_acceleration
 

@@ -665,8 +665,8 @@ class FlowModel(ABC):
         self.lunitflow: List[NDArrayFloat] = []
 
         self.boundary_conditions: List[BoundaryCondition] = []
-        self.q_prev = lil_array(geometry.nx * geometry.ny)
-        self.q_next = lil_array(geometry.nx * geometry.ny)
+        self.q_prev = lil_array((geometry.nx * geometry.ny, 1))
+        self.q_next = lil_array((geometry.nx * geometry.ny, 1))
         self.cst_head_nn: NDArrayInt = np.array([], dtype=np.int32)
         self.tolerance = fl_params.tolerance
         self.vertical_axis = fl_params.vertical_axis
@@ -1043,10 +1043,10 @@ class TransportModel:
         )
         self.boundary_conditions: List[BoundaryCondition] = []
         # q_prev is composed of q_prev_diffusion + advection term
-        self.q_prev_diffusion: lil_matrix = lil_array(geometry.nx * geometry.ny)
-        self.q_next_diffusion: lil_matrix = lil_array(geometry.nx * geometry.ny)
-        self.q_prev: lil_matrix = lil_array(geometry.nx * geometry.ny)
-        self.q_next: lil_matrix = lil_array(geometry.nx * geometry.ny)
+        self.q_prev_diffusion: lil_matrix = lil_array((geometry.nx * geometry.ny, 1))
+        self.q_next_diffusion: lil_matrix = lil_array((geometry.nx * geometry.ny, 1))
+        self.q_prev: lil_matrix = lil_array((geometry.nx * geometry.ny, 1))
+        self.q_next: lil_matrix = lil_array((geometry.nx * geometry.ny, 1))
         self.cst_conc_nn: NDArrayInt = np.array([], dtype=np.int32)
         self.tolerance: float = tr_params.tolerance
         self.is_numerical_acceleration: bool = tr_params.is_numerical_acceleration
