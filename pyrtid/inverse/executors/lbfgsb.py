@@ -32,7 +32,7 @@ from pyrtid.inverse.params import (
     get_parameters_bounds,
 )
 from pyrtid.inverse.regularization import ConstantRegWeight, EnsembleRegularizator
-from pyrtid.inverse.solvers.lbfgsb import minimize_lbfgsb
+from lbfgsb import minimize_lbfgsb
 from pyrtid.utils.types import NDArrayFloat
 
 lbfgsb_solver_config_params_ds = r"""

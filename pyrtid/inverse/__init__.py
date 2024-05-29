@@ -76,20 +76,6 @@ Sub module providing preconditioners and parametrization tools.
 
 .. currentmodule:: pyrtid.inverse
 
-L-BFGS-B implementation
-^^^^^^^^^^^^^^^^^^^^^^^
-
-A pure python implementation of the L-BFGS-B solver using the same keywords as
-`scipy.optimize.minimize` which possesses the ability to perform on the fly update
-of the stored objective function gradient with the goal to change the regularization
-weight while minimizing without losing inverse hessian approximationc consistency.
-# TODO: add ref to PhD.
-
-.. autosummary::
-   :toctree: _autosummary
-
-    minimize_lbfgsb
-
 """
 
 from pyesmda import ESMDAInversionType
@@ -168,7 +154,6 @@ from pyrtid.inverse.preconditioner import (
     SubSelector,
     Uniform2Gaussian,
 )
-from pyrtid.inverse.solvers.lbfgsb import minimize_lbfgsb
 
 __all__ = [
     "regularization",
@@ -217,7 +202,6 @@ __all__ = [
     "get_gridded_archived_gradients",
     "eval_model_loss_ls",
     "eval_model_loss_function",
-    "minimize_lbfgsb",
     "GDPCS",
     "GDPNCS",
     "LinearTransform",

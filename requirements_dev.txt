@@ -27,7 +27,7 @@ pygments==2.11.1
 sphinx-panels
 pydata-sphinx-theme
 sphinxcontrib-bibtex
-jinja2==3.0.3
+jinja2>=3.0.3
 
 numpy>=1.2
 scipy>=1.6.2
@@ -38,10 +38,10 @@ numba
 typing_extensions
 pyesmda>=0.4.3
 stochopy
-pyPCGA @ git+https://github.com/jonghyunharrylee/pyPCGA
-iterative_ensemble_smoother @ git+https://github.com/equinor/iterative_ensemble_smoother
+iterative_ensemble_smoother~=0.2.6
 typing_extensions
 matplotlib >= 3.5.6
 joblib
 gstools
 nested_grid_plotter
+lbfgsb>=0.1.1
