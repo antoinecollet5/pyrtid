@@ -430,9 +430,11 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
             x0=self.data_model.s_init,
             fun=self.eval_scaled_loss,
             jac=self.eval_scaled_loss_gradient,  # type: ignore
-            update_fun_def=self._update_fun_def
-            if self.inv_model.is_adaptive_regularization()
-            else None,
+            update_fun_def=(
+                self._update_fun_def
+                if self.inv_model.is_adaptive_regularization()
+                else None
+            ),
             bounds=get_parameters_bounds(
                 self.inv_model.parameters_to_adjust, is_preconditioned=True
             ),
