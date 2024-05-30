@@ -635,8 +635,7 @@ def test_boundsclipper() -> None:
     np.testing.assert_allclose(
         pcd.dbacktransform_vec(test_data, gradient),
         # Finite difference differentiation
-        nd.Jacobian(pcd.backtransform, step=None)(test_data).T
-        @ gradient,  # type: ignore
+        nd.Jacobian(pcd.backtransform, step=None)(test_data).T @ gradient,  # type: ignore
         rtol=1e-5,
     )
 

@@ -14,22 +14,6 @@ repos:
     -   id: autoflake
 - repo: local
   hooks:
-  - id: black
-    name: black
-    description: "Black: The uncompromising Python code formatter"
-    entry: black
-    language: python
-    require_serial: true
-    types_or: [python, pyi]
-  - id: black-jupyter
-    name: black-jupyter
-    description:
-      "Black: The uncompromising Python code formatter (with Jupyter Notebook support)"
-    entry: black
-    language: python
-    require_serial: true
-    types_or: [python, pyi, jupyter]
-    additional_dependencies: [".[jupyter]"]
   - id: codespell
     name: codespell
     entry: codespell
@@ -43,9 +27,14 @@ repos:
             (?x)^(
                 bibliography.bib
             )$
-  - id: ruff
-    name: ruff
-    entry: ruff
+  - id: ruff check
+    name: ruff check
+    entry: ruff check
     language: python
-    types: [python]
+    types_or: [ python, pyi]
     args: [--fix, --exit-non-zero-on-fix]
+  - id: ruff-format
+    name: ruff format
+    entry: ruff format
+    language: python
+    types_or: [ python, pyi, jupyter ]
