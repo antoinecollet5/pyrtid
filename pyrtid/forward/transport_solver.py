@@ -533,8 +533,11 @@ def solve_transport_semi_implicit(
     )
 
     # Add the source terms -> depends on the advection (positive flowrates = injection)
-    # Crank-nicolson does not apply to source terms
-    tmp[:, :] += conc_sources.reshape(2, -1, order="F")
+    tmp[:, :] += tr_model.crank_nicolson_advection * conc_sources.reshape(
+        2, -1, order="F"
+    ) + (1.0 - tr_model.crank_nicolson_advection) * conc_sources_old.reshape(
+        2, -1, order="F"
+    )
 
     # Build the LU preconditioning
     preconditioner = get_super_ilu_preconditioner(
