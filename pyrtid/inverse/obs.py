@@ -741,13 +741,13 @@ def get_adjoint_sources_for_obs(
             adj_src[X, Y, idx_before[n]] += (
                 _averaging_derivative[:, idx_before[n]].ravel("F")
                 * weights_before[n]
-                * ((simu_values - obs_values))[n]
+                * (simu_values - obs_values)[n]
                 / (obs_std[n] ** 2)
             )
             adj_src[X, Y, idx_after[n]] += (
                 _averaging_derivative[:, idx_after[n]].ravel("F")
                 * weights_after[n]
-                * ((simu_values - obs_values))[n]
+                * (simu_values - obs_values)[n]
                 / (obs_std[n] ** 2)
             )
 

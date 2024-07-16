@@ -93,9 +93,9 @@ class InverseModel:
         self.observables: List[Observable] = object_or_object_sequence_to_list(
             observables
         )
-        self.parameters_to_adjust: List[
-            AdjustableParameter
-        ] = object_or_object_sequence_to_list(parameters_to_adjust)
+        self.parameters_to_adjust: List[AdjustableParameter] = (
+            object_or_object_sequence_to_list(parameters_to_adjust)
+        )
 
         if len(self.parameters_to_adjust) == 0:
             raise ValueError(

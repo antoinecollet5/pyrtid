@@ -134,8 +134,7 @@ class Regularizator(ABC):
         return self._eval_loss(self.preconditioner(param))
 
     @abstractmethod
-    def _eval_loss(self, param: NDArrayFloat) -> float:
-        ...  # pragma: no cover
+    def _eval_loss(self, param: NDArrayFloat) -> float: ...  # pragma: no cover
 
     @abstractmethod
     def eval_loss_gradient_analytical(self, param: NDArrayFloat) -> NDArrayFloat:

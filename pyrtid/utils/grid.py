@@ -212,7 +212,7 @@ def get_pts_coords_regular_grid(
                     np.linspace(xmin[i], xmax[i], _shape[i])
                     for i in range(_shape.size)  # type: ignore
                 ],
-                indexing="ij"
+                indexing="ij",
             )
         )
         .reshape(_shape.size, -1, order="F")
@@ -512,7 +512,7 @@ class RectilinearGrid:
 
 
 def get_vertices_centroid(
-    vertices: Union[NDArrayFloat, List[Tuple[float, float]]]
+    vertices: Union[NDArrayFloat, List[Tuple[float, float]]],
 ) -> Tuple[float, float]:
     """Get the vertices centroid."""
     _x_list = [vertex[0] for vertex in vertices]

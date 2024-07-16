@@ -174,8 +174,7 @@ class Preconditioner(ABC):
     @abstractmethod
     def _dtransform_vec(
         self, s_raw: NDArrayFloat, gradient: NDArrayFloat
-    ) -> NDArrayFloat:
-        ...  # pragma: no cover
+    ) -> NDArrayFloat: ...  # pragma: no cover
 
     def dbacktransform_vec(
         self, s_cond: NDArrayFloat, gradient: NDArrayFloat
@@ -254,14 +253,12 @@ class Preconditioner(ABC):
     @abstractmethod
     def _dbacktransform_vec(
         self, s_cond: NDArrayFloat, gradient: NDArrayFloat
-    ) -> NDArrayFloat:
-        ...  # pragma: no cover
+    ) -> NDArrayFloat: ...  # pragma: no cover
 
     @abstractmethod
     def _dbacktransform_inv_vec(
         self, s_cond: NDArrayFloat, gradient: NDArrayFloat
-    ) -> NDArrayFloat:
-        ...  # pragma: no cover
+    ) -> NDArrayFloat: ...  # pragma: no cover
 
     def __call__(self, s_raw: NDArrayFloat) -> NDArrayFloat:
         """Call the preconditioner."""
@@ -391,10 +388,9 @@ class Preconditioner(ABC):
         np.testing.assert_allclose(
             self.dtransform_vec(test_data, gradient),
             # Finite difference differentiation
-            nd.Jacobian(self.transform, step=eps)(test_data).T
-            @ gradient,  # type: ignore
+            nd.Jacobian(self.transform, step=eps)(test_data).T @ gradient,
             rtol=rtol,
-        )
+        )  # type: ignore
 
         # 3) check by finite difference if the back-conditioner derivative is correct
         gradient = test_data
@@ -2653,7 +2649,6 @@ class BoundsClipper(Preconditioner):
         np.testing.assert_allclose(
             self.dbacktransform_vec(test_data, gradient),
             # Finite difference differentiation
-            nd.Jacobian(self.backtransform, step=eps)(test_data).T
-            @ gradient,  # type: ignore
+            nd.Jacobian(self.backtransform, step=eps)(test_data).T @ gradient,  # type: ignore
             rtol=rtol,
         )

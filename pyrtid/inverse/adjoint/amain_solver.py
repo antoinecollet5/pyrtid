@@ -116,7 +116,9 @@ class AdjointSolver:
         self.initialize_ajd_transport_matrices()
 
         for time_index in range(
-            self.fwd_model.time_params.nts, -1, -1  # type: ignore
+            self.fwd_model.time_params.nts,
+            -1,
+            -1,  # type: ignore
         ):  # Reverse order in time, and reverse order in operator sequence
             self._solve_system_for_timestep(time_index, is_verbose, max_nafpi)
 

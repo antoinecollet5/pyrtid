@@ -109,9 +109,9 @@ class BaseSolverConfig:
     hm_end_time: Optional[float] = None
     is_parallel: bool = False
     max_workers: int = 2
-    random_state: Optional[
-        Union[int, np.random.Generator, np.random.RandomState]
-    ] = np.random.default_rng(198873)
+    random_state: Optional[Union[int, np.random.Generator, np.random.RandomState]] = (
+        np.random.default_rng(198873)
+    )
 
 
 _BaseSolverConfig = TypeVar("_BaseSolverConfig", bound=BaseSolverConfig)

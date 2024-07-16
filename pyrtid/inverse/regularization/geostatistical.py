@@ -163,9 +163,7 @@ class EnsembleRegularizator(GeostatisticalRegularizator):
 
         # And this is strictly equivalent (element wise multiplication)
         return (
-            0.5
-            * float(np.sum(residuals * self.cov_m.solve(residuals)))
-            / ens.shape[1]  # type: ignore
+            0.5 * float(np.sum(residuals * self.cov_m.solve(residuals))) / ens.shape[1]  # type: ignore
         )
 
     def eval_loss_gradient_analytical(self, ens: NDArrayFloat) -> NDArrayFloat:
@@ -202,13 +200,11 @@ class EnsembleRegularizator(GeostatisticalRegularizator):
         # The mean operator comes from the fact that a member j is involved
         # in all derivations of the mean operator.
         return (
-            (
-                _right_part
-                - np.mean(
-                    self.prior.get_gradient_dot_product(_right_part),
-                    axis=1,
-                    keepdims=True,
-                )
+            _right_part
+            - np.mean(
+                self.prior.get_gradient_dot_product(_right_part),
+                axis=1,
+                keepdims=True,
             )
         ) / ens.shape[1]
 

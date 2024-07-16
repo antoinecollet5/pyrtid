@@ -250,12 +250,8 @@ def make_transient_flow_matrices(
 
         q_next[idc_owner, idc_neigh] -= fl_model.crank_nicolson * tmp  # type: ignore
         q_next[idc_owner, idc_owner] += fl_model.crank_nicolson * tmp  # type: ignore
-        q_prev[idc_owner, idc_neigh] += (
-            1.0 - fl_model.crank_nicolson
-        ) * tmp  # type: ignore
-        q_prev[idc_owner, idc_owner] -= (
-            1.0 - fl_model.crank_nicolson
-        ) * tmp  # type: ignore
+        q_prev[idc_owner, idc_neigh] += (1.0 - fl_model.crank_nicolson) * tmp  # type: ignore
+        q_prev[idc_owner, idc_owner] -= (1.0 - fl_model.crank_nicolson) * tmp  # type: ignore
 
         # Backward scheme
         idc_owner, idc_neigh = get_owner_neigh_indices(
@@ -279,12 +275,8 @@ def make_transient_flow_matrices(
 
         q_next[idc_owner, idc_neigh] -= fl_model.crank_nicolson * tmp  # type: ignore
         q_next[idc_owner, idc_owner] += fl_model.crank_nicolson * tmp  # type: ignore
-        q_prev[idc_owner, idc_neigh] += (
-            1.0 - fl_model.crank_nicolson
-        ) * tmp  # type: ignore
-        q_prev[idc_owner, idc_owner] -= (
-            1.0 - fl_model.crank_nicolson
-        ) * tmp  # type: ignore
+        q_prev[idc_owner, idc_neigh] += (1.0 - fl_model.crank_nicolson) * tmp  # type: ignore
+        q_prev[idc_owner, idc_owner] -= (1.0 - fl_model.crank_nicolson) * tmp  # type: ignore
 
     # Y contribution
     if geometry.ny > 1:
@@ -313,12 +305,8 @@ def make_transient_flow_matrices(
 
         q_next[idc_owner, idc_neigh] -= fl_model.crank_nicolson * tmp  # type: ignore
         q_next[idc_owner, idc_owner] += fl_model.crank_nicolson * tmp  # type: ignore
-        q_prev[idc_owner, idc_neigh] += (
-            1.0 - fl_model.crank_nicolson
-        ) * tmp  # type: ignore
-        q_prev[idc_owner, idc_owner] -= (
-            1.0 - fl_model.crank_nicolson
-        ) * tmp  # type: ignore
+        q_prev[idc_owner, idc_neigh] += (1.0 - fl_model.crank_nicolson) * tmp  # type: ignore
+        q_prev[idc_owner, idc_owner] -= (1.0 - fl_model.crank_nicolson) * tmp  # type: ignore
 
         # Backward scheme
         idc_owner, idc_neigh = get_owner_neigh_indices(
@@ -342,12 +330,8 @@ def make_transient_flow_matrices(
 
         q_next[idc_owner, idc_neigh] -= fl_model.crank_nicolson * tmp  # type: ignore
         q_next[idc_owner, idc_owner] += fl_model.crank_nicolson * tmp  # type: ignore
-        q_prev[idc_owner, idc_neigh] += (
-            1.0 - fl_model.crank_nicolson
-        ) * tmp  # type: ignore
-        q_prev[idc_owner, idc_owner] -= (
-            1.0 - fl_model.crank_nicolson
-        ) * tmp  # type: ignore
+        q_prev[idc_owner, idc_neigh] += (1.0 - fl_model.crank_nicolson) * tmp  # type: ignore
+        q_prev[idc_owner, idc_owner] -= (1.0 - fl_model.crank_nicolson) * tmp  # type: ignore
 
     return q_next, q_prev
 

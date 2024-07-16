@@ -85,9 +85,7 @@ def get_diffusion_term_adjoint_gradient(
             ) * (
                 dxi_harmonic_mean(eff_diffusion[:-1, :], eff_diffusion[1:, :])
                 * term_in_effdiff_deriv[:-1, :]
-            )[
-                :, :, np.newaxis
-            ]
+            )[:, :, np.newaxis]
 
             damob_fx = np.zeros(shape)
             damob_fx[:-1, :, :] += amob[1:, :, :] - amob[:-1, :, :]
@@ -100,9 +98,7 @@ def get_diffusion_term_adjoint_gradient(
             ) * (
                 dxi_harmonic_mean(eff_diffusion[1:, :], eff_diffusion[:-1, :])
                 * term_in_effdiff_deriv[1:, :]
-            )[
-                :, :, np.newaxis
-            ]
+            )[:, :, np.newaxis]
 
             damob_bx = np.zeros(shape)
             damob_bx[1:, :, :] += amob[:-1, :, :] - amob[1:, :, :]
@@ -124,9 +120,7 @@ def get_diffusion_term_adjoint_gradient(
             ) * (
                 dxi_harmonic_mean(eff_diffusion[:, :-1], eff_diffusion[:, 1:])
                 * term_in_effdiff_deriv[:, :-1]
-            )[
-                :, :, np.newaxis
-            ]
+            )[:, :, np.newaxis]
             damob_fy = np.zeros(shape)
             damob_fy[:, :-1, :] += amob[:, 1:, :] - amob[:, :-1, :]
 
@@ -138,9 +132,7 @@ def get_diffusion_term_adjoint_gradient(
             ) * (
                 dxi_harmonic_mean(eff_diffusion[:, 1:], eff_diffusion[:, :-1])
                 * term_in_effdiff_deriv[:, 1:]
-            )[
-                :, :, np.newaxis
-            ]
+            )[:, :, np.newaxis]
             damob_by = np.zeros(shape)
             damob_by[:, 1:, :] += amob[:, :-1, :] - amob[:, 1:, :]
 
@@ -374,7 +366,7 @@ def _get_perm_gradient_from_diffusivity_eq_saturated(
 
         if fwd_model.fl_model.regime == FlowRegime.STATIONARY:
             dhead_by[:, 1:, :1] += (
-                (head[:, :-1, :1] - head[:, 1:, :1])
+                head[:, :-1, :1] - head[:, 1:, :1]
             ) * dxi_harmonic_mean(permeability[:, 1:], permeability[:, :-1])[
                 :, :, np.newaxis
             ]
@@ -592,7 +584,7 @@ def _get_perm_gradient_from_diffusivity_eq_density(
 
         if fwd_model.fl_model.regime == FlowRegime.STATIONARY:
             dpressure_by[:, 1:, :1] += (
-                ((head[:, :-1, :1] - head[:, 1:, :1]))
+                (head[:, :-1, :1] - head[:, 1:, :1])
                 * dxi_harmonic_mean(permeability[:, 1:], permeability[:, :-1])[
                     :, :, np.newaxis
                 ]
@@ -642,7 +634,7 @@ def _get_perm_gradient_from_darcy_eq_saturated(
         # Forward scheme
         dhead_fx = np.zeros(shape)
         dhead_fx[:-1, :, :] += (
-            ((head[1:, :, :] - head[:-1, :, :]))
+            (head[1:, :, :] - head[:-1, :, :])
             * dxi_harmonic_mean(permeability[:-1, :], permeability[1:, :])[
                 :, :, np.newaxis
             ]
@@ -652,7 +644,7 @@ def _get_perm_gradient_from_darcy_eq_saturated(
         # Bconckward scheme
         dhead_bx = np.zeros(shape)
         dhead_bx[1:, :, :] -= (
-            ((head[:-1, :, :] - head[1:, :, :]))
+            (head[:-1, :, :] - head[1:, :, :])
             * dxi_harmonic_mean(permeability[1:, :], permeability[:-1, :])[
                 :, :, np.newaxis
             ]
@@ -668,7 +660,7 @@ def _get_perm_gradient_from_darcy_eq_saturated(
         # Forward scheme
         dhead_fy = np.zeros(shape)
         dhead_fy[:, :-1, :] += (
-            ((head[:, 1:, :] - head[:, :-1, :]))
+            (head[:, 1:, :] - head[:, :-1, :])
             * dxi_harmonic_mean(permeability[:, :-1], permeability[:, 1:])[
                 :, :, np.newaxis
             ]
@@ -678,7 +670,7 @@ def _get_perm_gradient_from_darcy_eq_saturated(
         # Bconckward scheme
         dhead_by = np.zeros(shape)
         dhead_by[:, 1:, :] -= (
-            ((head[:, :-1, :] - head[:, 1:, :]))
+            (head[:, :-1, :] - head[:, 1:, :])
             * dxi_harmonic_mean(permeability[:, 1:], permeability[:, :-1])[
                 :, :, np.newaxis
             ]
@@ -1018,9 +1010,7 @@ def get_initial_head_adjoint_gradient(
 
     # Add adjoint sources for t=0
     # 1) head sources
-    grad += (
-        adj_model.a_fl_model.a_head_sources.getcol(0).todense().ravel("F")
-    )  # type: ignore
+    grad += adj_model.a_fl_model.a_head_sources.getcol(0).todense().ravel("F")  # type: ignore
     # 2) pressure sources
     grad += (
         adj_model.a_fl_model.a_pressure_sources.getcol(0).todense().ravel("F")
@@ -1071,9 +1061,7 @@ def get_initial_pressure_adjoint_gradient(
 
     # Add adjoint sources for t=0
     # 1) pressure sources
-    grad += (
-        adj_model.a_fl_model.a_pressure_sources.getcol(0).todense().ravel("F")
-    )  # type: ignore
+    grad += adj_model.a_fl_model.a_pressure_sources.getcol(0).todense().ravel("F")  # type: ignore
     # 2) head sources
     grad += (
         adj_model.a_fl_model.a_head_sources.getcol(0).todense().ravel("F")

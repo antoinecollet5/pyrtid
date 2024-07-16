@@ -200,12 +200,8 @@ def _add_advection_to_adj_transport_matrices(
 
         q_next[idc_owner, idc_owner] += crank_adv * tmp_un_pos * tmp  # type: ignore
         q_next[idc_owner, idc_neigh] -= crank_adv * tmp_un_pos * tmp  # type: ignore
-        q_prev[idc_owner, idc_owner] -= (
-            (1 - crank_adv) * tmp_un_pos * tmp
-        )  # type: ignore
-        q_prev[idc_owner, idc_neigh] += (
-            (1 - crank_adv) * tmp_un_pos * tmp
-        )  # type: ignore
+        q_prev[idc_owner, idc_owner] -= (1 - crank_adv) * tmp_un_pos * tmp  # type: ignore
+        q_prev[idc_owner, idc_neigh] += (1 - crank_adv) * tmp_un_pos * tmp  # type: ignore
 
         # Backward scheme
         normal = -1.0
@@ -220,12 +216,8 @@ def _add_advection_to_adj_transport_matrices(
 
         q_next[idc_owner, idc_owner] += crank_adv * tmp_un_pos * tmp  # type: ignore
         q_next[idc_owner, idc_neigh] -= crank_adv * tmp_un_pos * tmp  # type: ignore
-        q_prev[idc_owner, idc_owner] -= (
-            (1 - crank_adv) * tmp_un_pos * tmp
-        )  # type: ignore
-        q_prev[idc_owner, idc_neigh] += (
-            (1 - crank_adv) * tmp_un_pos * tmp
-        )  # type: ignore
+        q_prev[idc_owner, idc_owner] -= (1 - crank_adv) * tmp_un_pos * tmp  # type: ignore
+        q_prev[idc_owner, idc_neigh] += (1 - crank_adv) * tmp_un_pos * tmp  # type: ignore
 
     # Y contribution
     if geometry.ny >= 2:
@@ -247,12 +239,8 @@ def _add_advection_to_adj_transport_matrices(
 
         q_next[idc_owner, idc_owner] += crank_adv * tmp_un_pos * tmp  # type: ignore
         q_next[idc_owner, idc_neigh] -= crank_adv * tmp_un_pos * tmp  # type: ignore
-        q_prev[idc_owner, idc_owner] -= (
-            (1 - crank_adv) * tmp_un_pos * tmp
-        )  # type: ignore
-        q_prev[idc_owner, idc_neigh] += (
-            (1 - crank_adv) * tmp_un_pos * tmp
-        )  # type: ignore
+        q_prev[idc_owner, idc_owner] -= (1 - crank_adv) * tmp_un_pos * tmp  # type: ignore
+        q_prev[idc_owner, idc_neigh] += (1 - crank_adv) * tmp_un_pos * tmp  # type: ignore
 
         # Backward scheme
         normal = -1.0
@@ -267,12 +255,8 @@ def _add_advection_to_adj_transport_matrices(
 
         q_next[idc_owner, idc_owner] += crank_adv * tmp_un_pos * tmp  # type: ignore
         q_next[idc_owner, idc_neigh] -= crank_adv * tmp_un_pos * tmp  # type: ignore
-        q_prev[idc_owner, idc_owner] -= (
-            (1 - crank_adv) * tmp_un_pos * tmp
-        )  # type: ignore
-        q_prev[idc_owner, idc_neigh] += (
-            (1 - crank_adv) * tmp_un_pos * tmp
-        )  # type: ignore
+        q_prev[idc_owner, idc_owner] -= (1 - crank_adv) * tmp_un_pos * tmp  # type: ignore
+        q_prev[idc_owner, idc_neigh] += (1 - crank_adv) * tmp_un_pos * tmp  # type: ignore
 
     _apply_adj_transport_sink_term(fl_model, tr_model, q_next, q_prev, time_index)
 

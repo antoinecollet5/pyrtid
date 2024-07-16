@@ -103,7 +103,7 @@ Adjoint chemistry
 
     solve_adj_geochem
 
-    """
+"""
 
 from pyrtid.inverse.adjoint.aflow_solver import (
     make_transient_adj_flow_matrices,

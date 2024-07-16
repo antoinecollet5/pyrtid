@@ -147,7 +147,7 @@ def approximate_mesh_gradient(mesh_id: int, fd_params: FDParams) -> float:
         val += fd_params.coeff[fd_params.accuracy][s] * fd_params.fm(
             fd_params.x0.reshape(fd_params.shape),
             *fd_params.fm_args,
-            **fd_params.fm_kwargs
+            **fd_params.fm_kwargs,
         )
         fd_params.x0[mesh_id] -= fd_params.coeff2[fd_params.accuracy][s] * fd_params.eps
     return val / fd_params.dd_val

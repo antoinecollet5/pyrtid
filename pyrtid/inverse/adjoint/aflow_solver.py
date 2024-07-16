@@ -525,12 +525,9 @@ def update_adjoint_u_darcy(
             )
             # 2) U divergence term
             a_fl_model.a_u_darcy_x[1:-1, :, time_index] += geometry.gamma_ij_x * (
-                (
-                    crank_adv
-                    * (a_mob[:-1, :] * mob[:-1, :] - a_mob[1:, :] * mob[1:, :])
-                    + (1.0 - crank_adv)
-                    * (a_mob_old[:-1, :] * mob[:-1, :] - a_mob_old[1:, :] * mob[1:, :])
-                )
+                crank_adv * (a_mob[:-1, :] * mob[:-1, :] - a_mob[1:, :] * mob[1:, :])
+                + (1.0 - crank_adv)
+                * (a_mob_old[:-1, :] * mob[:-1, :] - a_mob_old[1:, :] * mob[1:, :])
             )
 
         # Y contribution
@@ -551,12 +548,9 @@ def update_adjoint_u_darcy(
             )
             # 2) U divergence term
             a_fl_model.a_u_darcy_y[:, 1:-1, time_index] += geometry.gamma_ij_y * (
-                (
-                    crank_adv
-                    * (a_mob[:, :-1] * mob[:, :-1] - a_mob[:, 1:] * mob[:, 1:])
-                    + (1.0 - crank_adv)
-                    * (a_mob_old[:, :-1] * mob[:, :-1] - a_mob_old[:, 1:] * mob[:, 1:])
-                )
+                crank_adv * (a_mob[:, :-1] * mob[:, :-1] - a_mob[:, 1:] * mob[:, 1:])
+                + (1.0 - crank_adv)
+                * (a_mob_old[:, :-1] * mob[:, :-1] - a_mob_old[:, 1:] * mob[:, 1:])
             )
 
 
