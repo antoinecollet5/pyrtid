@@ -12,7 +12,7 @@ import numpy as np
 
 from pyrtid.inverse.preconditioner import NoTransform, Preconditioner
 from pyrtid.inverse.regularization.base import Regularizator
-from pyrtid.utils.operators import gradient_ffd, hessian_cfd
+from pyrtid.utils.operators import gradient_ffd
 from pyrtid.utils.types import NDArrayFloat
 
 
@@ -42,6 +42,16 @@ class TVRegularizator(Regularizator):
     eps: float = 1e-20
     preconditioner: Preconditioner = NoTransform()
 
+    def _get_grid_cell_l1(self, param: NDArrayFloat) -> NDArrayFloat:
+        # sum of squared spatial gradient
+        sg2 = np.zeros_like(param)
+        if param.shape[0] > 2:
+            sg2 += np.square(gradient_ffd(param, self.dx, axis=0))
+        if param.shape[1] > 2:
+            sg2 += np.square(gradient_ffd(param, self.dy, axis=1))
+        # Add epsilon to prevent undetermination when deriving
+        return np.sqrt(sg2 + self.eps)
+
     def _eval_loss(self, param: NDArrayFloat) -> float:
         r"""
         Compute the gradient of the regularization loss function analytically.
@@ -58,14 +68,9 @@ class TVRegularizator(Regularizator):
 
         Returns
         -------
-        NDArrayFloat
+        float
         """
-        f = 0.0
-        if param.shape[0] > 2:
-            f += np.sum(np.square(gradient_ffd(param, self.dx, axis=0)))
-        if param.shape[1] > 2:
-            f += np.sum(np.square(gradient_ffd(param, self.dy, axis=1)))
-        return np.sqrt(f + self.eps)
+        return float(np.sum(self._get_grid_cell_l1(param)))
 
     def eval_loss_gradient_analytical(self, param: NDArrayFloat) -> NDArrayFloat:
         """
@@ -82,10 +87,17 @@ class TVRegularizator(Regularizator):
             The regularization gradient.
         """
         grad = np.zeros_like(param)
-        if param.shape[0] > 2:
-            grad += -hessian_cfd(param, self.dx, 0)
-        if param.shape[1] > 2:
-            grad += -hessian_cfd(param, self.dy, 1)
+        den = self._get_grid_cell_l1(param)
 
-        # denominator = 1 / L1 because of the square root
-        return grad / self._eval_loss(param)
+        if param.shape[0] > 2:
+            grad -= gradient_ffd(param, self.dx, axis=0) / self.dx / den
+            grad[1:, :] += (
+                gradient_ffd(param, self.dx, axis=0)[:-1, :] / self.dx / den[:-1, :]
+            )
+
+        if param.shape[1] > 2:
+            grad -= gradient_ffd(param, self.dy, axis=1) / self.dy / den
+            grad[:, 1:] += (
+                gradient_ffd(param, self.dy, axis=1)[:, :-1] / self.dy / den[:, :-1]
+            )
+        return grad
