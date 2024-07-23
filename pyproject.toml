@@ -1,8 +1,24 @@
 [build-system]
-requires = [
-    "setuptools>=61.1.1",
-    "wheel",
-    "numpy>=1.2",
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyrtid"
+dynamic = ["version"]
+authors = [{ name = "Antoine Collet", email = "antoinecollet5@gmail.com" }]
+readme = "README.rst"
+description = "Reactive Transport Inversion demonstrator written in Python."
+keywords = [
+    "Inversion",
+    "Gradient descent",
+    "Reactive transport",
+    "Parameters estimation",
+    "Adjoint State",
+    "Demonstrator",
+]
+license = { text = "MIT license" }
+dependencies = [
+    "numpy>=1.2,<2.0",
     "scipy>=1.6.2",
     "scikit-sparse",
     "numdifftools",
@@ -17,9 +33,36 @@ requires = [
     "joblib",
     "gstools",
     "nested_grid_plotter",
-    "lbfgsb>=0.1.1"
+    "lbfgsb>=0.1.1",
 ]
-build-backend = "setuptools.build_meta"
+requires-python = ">=3.7"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Natural Language :: English",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+[project.urls]
+Homepage = "https://pypi.org/project/pyrtid/"
+Documentation = "https://pyrtid.readthedocs.io/en/latest/"
+Repository = "https://github.com/antoinecollet5/pyrtid"
+Issues = "https://github.com/antoinecollet5/pyrtid/issues"
+Changelog = "https://github.com/antoinecollet5/pyrtid/blob/master/CHANGELOG.rst"
+
+[tool.setuptools]
+py-modules = []
+packages = ["pyrtid"]
+
+[tool.setuptools.dynamic]
+version = { attr = "pyrtid.__about__.__version__" }
 
 [tool.ruff]
 lint.select = [
@@ -29,7 +72,7 @@ lint.select = [
     "E",
     "W",
     # isort
-    "I"
+    "I",
 ]
 src = ["src", "tests", "docs"]
 
@@ -67,9 +110,10 @@ line-length = 88
 # Allow unused variables when underscore-prefixed.
 lint.dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 
-# Assume Python 3.10.
-target-version = "py310"
+# Assume Python 3.12.
+target-version = "py312"
 
-# [tool.ruff.mccabe]
-# Unlike Flake8, default to a complexity level of 10.
-# max-complexity = 10
+[tool.pylint.LOGGING]
+# Format style used to check logging format string. `old` means using %
+# formatting, `new` is for `{}` formatting,and `fstr` is for f-strings.
+logging-format-style = "fstr"

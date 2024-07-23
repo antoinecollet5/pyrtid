@@ -1,22 +1,21 @@
+# install
 pip
 wheel
 
-twine==1.14.0
+# test
+twine>=1.14.0
 pytest
 pytest-runner
 pytest-cov
 pytest-cookies
 coverage
 
+# lint and format
 pre-commit
-black>=23.1.0
-jupyter-black
-isort==5.10.1
-codespell==2.1.0
-flake8
-flake8-html
+codespell>=2.1.0
 ruff
 
+# docs
 sphinx>=2 # jupyter_sphinx requires sphinx>=2
 nbsphinx==0.8.10
 nbsphinx-link
@@ -28,20 +27,3 @@ sphinx-panels
 pydata-sphinx-theme
 sphinxcontrib-bibtex
 jinja2>=3.0.3
-
-numpy>=1.2
-scipy>=1.6.2
-scikit-sparse
-numdifftools
-gstools
-numba
-typing_extensions
-pyesmda>=0.4.3
-stochopy
-iterative_ensemble_smoother~=0.2.6
-typing_extensions
-matplotlib >= 3.5.6
-joblib
-gstools
-nested_grid_plotter
-lbfgsb>=0.1.1
