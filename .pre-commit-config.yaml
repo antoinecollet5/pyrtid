@@ -12,11 +12,12 @@ repos:
   hooks:
   - id: codespell
     name: codespell
+    description: Checks for common misspellings in text files.
     entry: codespell
-    language: system
+    language: python
     types: [python]
     args: [
-      "pyrtid docs tests",
+      "lbfgsb docs tests",
       "*.py *.rst *.md",
     ]
     exclude: >
