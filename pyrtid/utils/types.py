@@ -6,8 +6,8 @@ from typing import List, Sequence, TypeVar, Union
 import numpy as np
 import numpy.typing as npt
 
-NDArrayFloat = npt.NDArray[np.float_]
-NDArrayInt = npt.NDArray[np.int_]
+NDArrayFloat = npt.NDArray[np.float64]
+NDArrayInt = npt.NDArray[np.int64]
 NDArrayBool = npt.NDArray[np.bool_]
 Int = Union[int, NDArrayInt, Sequence[int]]
 

@@ -85,7 +85,7 @@ def toeplitz_product(
     ValueError
         If the given shape does not match 1D, 2D or 3D.
     """
-    _shape = np.array([shape], dtype=np.int_).ravel()
+    _shape = np.array([shape], dtype=np.int64).ravel()
     dim: int = _shape.size
 
     if dim > 3 or dim == 0:

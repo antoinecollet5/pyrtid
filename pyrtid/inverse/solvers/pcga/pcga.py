@@ -54,20 +54,24 @@ class InternalState:
     # keep track of some values (best, init)
     s_best: NDArrayFloat
     beta_best: NDArrayFloat = field(
-        default_factory=lambda: np.array([], dtype=np.float_)
+        default_factory=lambda: np.array([], dtype=np.float64)
     )
     simul_obs_best: NDArrayFloat = field(
-        default_factory=lambda: np.array([], dtype=np.float_)
+        default_factory=lambda: np.array([], dtype=np.float64)
     )
     iter_best: int = 0
     simul_obs_init: NDArrayFloat = field(
-        default_factory=lambda: np.array([], dtype=np.float_)
+        default_factory=lambda: np.array([], dtype=np.float64)
     )
     objvals: List[float] = field(default_factory=lambda: [])
     Q2_cur: float = 0.0
     cR_cur: float = 0.0
-    Q2_best: NDArrayFloat = field(default_factory=lambda: np.array([], dtype=np.float_))
-    cR_best: NDArrayFloat = field(default_factory=lambda: np.array([], dtype=np.float_))
+    Q2_best: NDArrayFloat = field(
+        default_factory=lambda: np.array([], dtype=np.float64)
+    )
+    cR_best: NDArrayFloat = field(
+        default_factory=lambda: np.array([], dtype=np.float64)
+    )
     i_best: int = 0
     status: str = "ILDE."
     is_success: bool = False

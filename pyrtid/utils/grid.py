@@ -200,7 +200,7 @@ def get_pts_coords_regular_grid(
     """
     # convert to numpy array
     _mesh_dim = np.array([mesh_dim]).ravel()
-    _shape = np.array(shape, dtype=np.int_).ravel()
+    _shape = np.array(shape, dtype=np.int64).ravel()
     # xmin = center of the first mesh
     xmin: NDArrayFloat = np.array(_mesh_dim) / 2.0
     # xmax  = center of the last mesh

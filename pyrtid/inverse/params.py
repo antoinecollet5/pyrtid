@@ -225,7 +225,7 @@ class AdjustableParameter:
     @lbounds.setter
     def lbounds(self, _values: Union[int, float, NDArrayInt, NDArrayFloat]) -> None:
         """Set the lower bound values."""
-        self._lbounds = np.array(_values, dtype=np.float_)
+        self._lbounds = np.array(_values, dtype=np.float64)
 
     @property
     def ubounds(self) -> NDArrayFloat:
@@ -235,7 +235,7 @@ class AdjustableParameter:
     @ubounds.setter
     def ubounds(self, _values: Union[int, float, NDArrayInt, NDArrayFloat]) -> None:
         """Set the upper bound value."""
-        self._ubounds = np.array(_values, dtype=np.float_)
+        self._ubounds = np.array(_values, dtype=np.float64)
 
     @property
     def size(self) -> int:
@@ -779,7 +779,7 @@ def eval_weighted_loss_reg_gradient(
     -------
     The preconditoned gradient of regularization.
     """
-    full_grad: NDArrayFloat = np.array([], dtype=np.float_)
+    full_grad: NDArrayFloat = np.array([], dtype=np.float64)
     idx = 0
     for param in object_or_object_sequence_to_list(params):
         values: NDArrayFloat = get_parameter_values_from_model(model, param)

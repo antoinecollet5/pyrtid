@@ -605,7 +605,7 @@ def solve_adj_flow_saturated(
         prev_vector = a_fl_model.a_head[:, :, time_index + 1].ravel("F")
     except IndexError:
         # This is the case for n = N_{ts}
-        prev_vector = np.zeros(_q_next.shape[0], dtype=np.float_)
+        prev_vector = np.zeros(_q_next.shape[0], dtype=np.float64)
     tmp = _q_prev.dot(prev_vector)
 
     # 4) Add the source terms: observation on the head field
@@ -679,7 +679,7 @@ def solve_adj_flow_density(
         prev_vector = a_fl_model.a_pressure[:, :, time_index + 1].ravel("F")
     except IndexError:
         # This is the case for n = N_{ts}
-        prev_vector = np.zeros(_q_next.shape[0], dtype=np.float_)
+        prev_vector = np.zeros(_q_next.shape[0], dtype=np.float64)
     # Multiply prev matrix by prev vector (p^{n+1}
     tmp = _q_prev.dot(prev_vector)
 
