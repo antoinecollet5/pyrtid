@@ -8,10 +8,6 @@ repos:
     - id: check-yaml
     - id: end-of-file-fixer
     - id: trailing-whitespace
-- repo: https://github.com/PyCQA/autoflake
-  rev: v2.2.0
-  hooks:
-    -   id: autoflake
 - repo: local
   hooks:
   - id: codespell
@@ -20,7 +16,7 @@ repos:
     language: system
     types: [python]
     args: [
-      "docs tests",
+      "pyrtid docs tests",
       "*.py *.rst *.md",
     ]
     exclude: >
