@@ -617,7 +617,7 @@ class SparseInvCovarianceMatrix(CovarianceMatrix):
         inv_mat : csc_array
             Sparse precision matrix (inverse of the covariance matrix).
         inv_mat_cho_factor: Optional[Factor]
-            inv_mat CHOLMOD Factor. If not porvided, the factorization is performed
+            inv_mat CHOLMOD Factor. If not provided, the factorization is performed
             at the instance initialization. The default is None.
         """
         self.inv_mat: csc_array = csc_array(inv_mat)

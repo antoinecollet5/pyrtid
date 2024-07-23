@@ -8,10 +8,9 @@ from pyrtid.inverse.regularization import (
     eigen_factorize_cov_mat,
 )
 from pyrtid.inverse.solvers import PCGA, PostCovEstimation
-from pyrtid.utils import spde
+from pyrtid.utils import sparse_cholesky, spde
 from pyrtid.utils.types import NDArrayFloat
 from scipy.ndimage import gaussian_filter
-from sksparse.cholmod import cholesky
 
 
 def forward_model(x) -> NDArrayFloat:
@@ -55,7 +54,7 @@ def test_large_medium_scale(
     Q_ref = spde.get_precision_matrix(
         nx, ny, nz, dx, dy, dz, kappa, alpha, spatial_dim=2, sigma=std
     )
-    cholQ_ref = cholesky(Q_ref)
+    cholQ_ref = sparse_cholesky(Q_ref)
     # Non conditional simulation -> change the random state to obtain a different field
     simu_ = spde.simu_nc(cholQ_ref, random_state=2026).reshape(ny, nx).T
     s_ref = np.abs(simu_ + mean)

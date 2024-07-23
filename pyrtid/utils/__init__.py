@@ -166,6 +166,7 @@ Other functions
 
 """
 
+from pyrtid.utils.cholesky import sparse_cholesky
 from pyrtid.utils.dataclass import default_field
 from pyrtid.utils.enum import StrEnum
 from pyrtid.utils.finite_differences import (
@@ -264,4 +265,5 @@ __all__ = [
     "create_selections_array_2d",
     "RectilinearGrid",
     "get_polygon_selection_with_dilation_2d",
+    "sparse_cholesky",
 ]

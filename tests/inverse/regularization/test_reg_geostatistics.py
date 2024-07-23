@@ -17,8 +17,8 @@ from pyrtid.inverse.regularization import (  # DriftMatrix,; LinearDriftMatrix,
     eigen_factorize_cov_mat,
     generate_dense_matrix,
 )
+from pyrtid.utils import sparse_cholesky
 from pyrtid.utils.types import NDArrayFloat
-from sksparse.cholmod import cholesky
 
 # For now we use the exact parameters, we will complexify a bit later
 prior_std = 1.0
@@ -197,7 +197,7 @@ def test_ensemble_regularizator() -> None:
     Q_ref = spde.get_precision_matrix(
         nx, ny, nz, dx, dy, dz, kappa, alpha, spatial_dim=2, sigma=std
     )
-    cholQ_ref = cholesky(Q_ref)
+    cholQ_ref = sparse_cholesky(Q_ref)
 
     n_fields = 50
     # 200 non conditional simulations

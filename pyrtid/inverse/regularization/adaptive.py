@@ -188,7 +188,7 @@ def make_convex_around_min_uc(
     """
     Make the sequence of reg_params-uc convex around the minimum uc value.
 
-    First, the minimum uc value is found. Then two values are kept on eather side of the
+    First, the minimum uc value is found. Then two values are kept on either side of the
     minimum with the condition that these values are greater than all other values
     from the minimum uc (the value at index -2 must be greater than the one at index -1
     and the value at index 2 must be greater than the value at index 1).

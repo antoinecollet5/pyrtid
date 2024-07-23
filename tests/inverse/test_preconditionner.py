@@ -19,9 +19,13 @@ from pyrtid.inverse.preconditioner import (
     to_new_range,
     to_new_range_derivative,
 )
-from pyrtid.utils import NDArrayFloat, NDArrayInt, indices_to_node_number
+from pyrtid.utils import (
+    NDArrayFloat,
+    NDArrayInt,
+    indices_to_node_number,
+    sparse_cholesky,
+)
 from scipy._lib._util import check_random_state  # To handle random_state
-from sksparse.cholmod import cholesky
 
 
 @pytest.mark.parametrize(
@@ -388,7 +392,7 @@ def test_GDP_SPDE(is_update_mean: bool) -> None:
     Q_ref = spde.get_precision_matrix(
         nx, ny, nz, dx, dy, dz, kappa, alpha, spatial_dim=2, sigma=std
     )
-    cholQ_ref = cholesky(Q_ref)
+    cholQ_ref = sparse_cholesky(Q_ref)
     # Non conditional simulation -> change the random state to obtain a different field
     simu_ = spde.simu_nc(cholQ_ref, random_state=2026).reshape(ny, nx).T
     reference_grade_ppm = np.abs(simu_ + mean)
@@ -422,8 +426,8 @@ def test_GDP_SPDE(is_update_mean: bool) -> None:
     Q_c = spde.condition_precision_matrix(Q_nc, dat_nn, dat_var)
 
     # Decompose with cholesky
-    cholQ_nc = cholesky(Q_nc)
-    cholQ_c = cholesky(Q_c)
+    cholQ_nc = sparse_cholesky(Q_nc)
+    cholQ_c = sparse_cholesky(Q_c)
 
     # Krigeage = average of conditional simulations
     (

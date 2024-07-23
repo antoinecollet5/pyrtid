@@ -86,10 +86,10 @@ import numpy as np
 import scipy as sp
 from scipy._lib._util import check_random_state  # To handle random_state
 from scipy.sparse import csc_array, lil_array
-from sksparse.cholmod import Factor, cholesky
+from sksparse.cholmod import Factor
 
 import pyrtid.utils.spde as spde
-from pyrtid.utils import object_or_object_sequence_to_list
+from pyrtid.utils import object_or_object_sequence_to_list, sparse_cholesky
 from pyrtid.utils.types import NDArrayBool, NDArrayFloat, NDArrayInt
 
 
@@ -292,7 +292,7 @@ class Preconditioner(ABC):
 
     def test_bounds_tr(self, s_raw: NDArrayFloat) -> None:
         """
-        Test the bounds for tansformation.
+        Test the bounds for transformation.
 
         Parameters
         ----------
@@ -1979,7 +1979,7 @@ class GDPNCS(Preconditioner):
         # perform the cholesky factorization of the sparse non conditional precision
         # matrix for fast inversion
         if cholQ_nc is None:
-            self._cholQ_nc = cholesky(Q_nc)
+            self._cholQ_nc = sparse_cholesky(Q_nc)
         else:
             self._cholQ_nc = cholQ_nc
 
@@ -2175,7 +2175,7 @@ class GDPCS(GDPNCS):
         # perform the cholesky factorization of the sparse non conditional precision
         # matrix for fast inversion
         if cholQ_c is None:
-            self._cholQ_c = cholesky(Q_c)
+            self._cholQ_c = sparse_cholesky(Q_c)
         else:
             self._cholQ_c = cholQ_c
         self._Q_c = Q_c
@@ -2453,7 +2453,7 @@ class Uniform2Gaussian(Preconditioner):
             Non-Conditioned (transformed) parameter values.
         """
         # Gaussian to uniform in several step:
-        # 1) Noramlize the Gaussian
+        # 1) Normalize the Gaussian
         # 2) Apply the gaussian cfd to get a uniform distribution U[0, 1].
         # 3) Shift the uniform to the bounds
         return (

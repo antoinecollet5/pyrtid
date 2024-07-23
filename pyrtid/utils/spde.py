@@ -7,8 +7,9 @@ import numpy as np
 import scipy as sp
 from scipy._lib._util import check_random_state  # To handle random_state
 from scipy.sparse import csc_array, lil_array
-from sksparse.cholmod import Factor, cholesky
+from sksparse.cholmod import Factor
 
+from pyrtid.utils import sparse_cholesky
 from pyrtid.utils.grid import indices_to_node_number, span_to_node_numbers_3d
 from pyrtid.utils.types import NDArrayFloat, NDArrayInt
 
@@ -453,7 +454,7 @@ def kriging(
         Krigging.
     """
     if cholQ is None:
-        _cholQ = cholesky(Q.tocsc())
+        _cholQ = sparse_cholesky((Q.tocsc()))
     else:
         _cholQ = cholQ
 
@@ -614,7 +615,7 @@ def get_variance(Q: csc_array, cholQ: Optional[Factor]) -> NDArrayFloat:
     """
     # perform the cholesky factorization -> solving is then much faster
     if cholQ is None:
-        _cholQ = cholesky(Q.tocsc())
+        _cholQ = sparse_cholesky(Q.tocsc())
     else:
         _cholQ = cholQ
     n_params = Q.shape[0]

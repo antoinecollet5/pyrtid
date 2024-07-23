@@ -4,6 +4,7 @@ from contextlib import nullcontext as does_not_raise
 
 import numpy as np
 import pytest
+from pyrtid.utils import sparse_cholesky
 from pyrtid.utils.spde import (
     condition_precision_matrix,
     get_laplacian_matrix,
@@ -14,7 +15,7 @@ from pyrtid.utils.spde import (
     simu_nc,
 )
 from scipy.sparse import csc_array
-from sksparse.cholmod import Factor, cholesky
+from sksparse.cholmod import Factor
 
 
 def _get_precision_matrix(alpha) -> csc_array:
@@ -34,7 +35,7 @@ def _get_precision_matrix(alpha) -> csc_array:
 
 def _get_cholQ(alpha) -> Factor:
     """Return a cholesky factorization of the precision matrix."""
-    return cholesky(_get_precision_matrix(alpha))
+    return sparse_cholesky(_get_precision_matrix(alpha).tocsc())
 
 
 @pytest.mark.parametrize("kappa", [(5.0), (np.ones((9, 5, 3)))])
@@ -102,7 +103,11 @@ def test_simu_nc(alpha, random_state) -> None:
 @pytest.mark.parametrize(
     "Q,cholQ,dat_var",
     [
-        (_get_precision_matrix(1.0), cholesky(_get_precision_matrix(1.0)), None),
+        (
+            _get_precision_matrix(1.0),
+            sparse_cholesky(_get_precision_matrix(1.0)),
+            None,
+        ),
         (_get_precision_matrix(2.0), None, None),
         (_get_precision_matrix(3.0), None, np.array([0.1, 0.2, 0.7])),
     ],
@@ -115,12 +120,12 @@ def test_kriging(Q, cholQ, dat_var) -> None:
 
 def test_simu_c() -> None:
     Q = _get_precision_matrix(1.0)
-    cholQ = cholesky(Q)
+    cholQ = sparse_cholesky(Q)
     dat = np.array([5.5, 0.6, 7.9])
     dat_indices = np.array([5, 6, 10])
     dat_var = np.array([5.5, 0.6, 7.9])
     Q_cond = condition_precision_matrix(Q, dat_indices, dat_var)
-    cholQ_cond = cholesky(Q_cond)
+    cholQ_cond = sparse_cholesky(Q_cond)
 
     simu_c(cholQ, Q_cond, cholQ_cond, dat, dat_indices, dat_var, 15369)
 

@@ -509,7 +509,7 @@ class PCGA:
             (
                 self.objective_function_ls(simul_obs)
                 + 0.5 * smxb.T.dot(self.Q.solve(smxb))
-            )
+            )[0]
         )
 
     def objective_function_no_beta(self, s_cur, simul_obs) -> float:
@@ -532,8 +532,10 @@ class PCGA:
             XTinvQX, XTinvQs
         )  # inexpensive solve p by p where p <= 3, usually p = 1 (scalar division)
         return float(
-            self.objective_function_ls(simul_obs)
-            + 0.5 * (np.dot(invZs.T, invZs) - np.dot(XTinvQs.T, tmp))
+            (
+                self.objective_function_ls(simul_obs)
+                + 0.5 * (np.dot(invZs.T, invZs) - np.dot(XTinvQs.T, tmp))
+            )[0]
         )
 
     def rmse(self, residuals: NDArrayFloat, is_normalized: bool) -> float:
@@ -1116,12 +1118,12 @@ class PCGA:
                 x, info = gmres(
                     Afun,
                     b,
-                    tol=itertol,
                     restart=restart,
                     maxiter=solver_maxiter,
                     callback=callback,
                     M=P,
                     atol=itertol,
+                    rtol=itertol,
                     callback_type="legacy",
                 )
                 self.loginfo(
@@ -1133,7 +1135,7 @@ class PCGA:
                         Afun,
                         b,
                         x0=x,
-                        tol=itertol,
+                        rtol=itertol,
                         maxiter=solver_maxiter,
                         callback=callback,
                         M=P,
@@ -1144,7 +1146,7 @@ class PCGA:
                     )
             else:
                 x, info = minres(
-                    Afun, b, tol=itertol, maxiter=solver_maxiter, callback=callback
+                    Afun, b, rtol=itertol, maxiter=solver_maxiter, callback=callback
                 )
                 self.loginfo(
                     "-- Number of iterations for minres %g" % (callback.itercount())
@@ -1155,7 +1157,7 @@ class PCGA:
                         Afun,
                         b,
                         x0=x,
-                        tol=itertol,
+                        rtol=itertol,
                         maxiter=solver_maxiter,
                         callback=callback,
                         atol=itertol,
@@ -1797,7 +1799,8 @@ class PCGA:
             )
             b[n : n + p] = self.drift.mat[i : i + 1, :].T
 
-            v[i] = self.prior_s_var[i] - np.dot(b.T, P(b))
+            tmp = float(np.dot(b.T, P(b))[0, 0])
+            v[i] = self.prior_s_var[i] - tmp
 
             if i % 10000 == 0 and i > 0:
                 self.loginfo("%d-th element evaluation done.." % (i))
