@@ -3,6 +3,7 @@
 from pathlib import Path
 from typing import List, Optional, Union
 
+import matplotlib.pyplot as plt
 import nested_grid_plotter as ngp
 import numpy as np
 
@@ -22,14 +23,12 @@ def plot_2d_grad_res_adj_vs_fd(
     inj_locations: Optional[Union[NDArrayFloat, List[NDArrayFloat]]] = None,
 ) -> None:
     plotter = ngp.NestedGridPlotter(
-        fig_params={"constrained_layout": True, "figsize": (10, 8)},
-        subplots_mosaic_params={
-            "fig0": dict(
-                mosaic=[["ax1-1"], ["ax1-2"], ["ax1-3"]],
-                sharey=True,
-                sharex=True,
-            )
-        },
+        plt.figure(constrained_layout=True, figsize=(10, 8)),
+        ngp.SubplotsMosaicBuilder(
+            mosaic=[["ax1-1"], ["ax1-2"], ["ax1-3"]],
+            sharey=True,
+            sharex=True,
+        ),
     )
 
     # We multiply the residuals so that the high residulas is just below the max values
