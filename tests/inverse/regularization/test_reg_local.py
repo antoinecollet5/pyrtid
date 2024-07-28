@@ -1,8 +1,13 @@
 """Tests for the regularizator classes."""
 
 import numpy as np
+import pyrtid.inverse as dminv
 import pytest
-from pyrtid.inverse.regularization import TikhonovRegularizator, TVRegularizator
+from pyrtid.inverse.regularization import (
+    DiscreteRegularizator,
+    TikhonovRegularizator,
+    TVRegularizator,
+)
 from pyrtid.utils.types import NDArrayFloat
 
 
@@ -22,11 +27,42 @@ def get_param_values() -> NDArrayFloat:
     return param
 
 
+def test_discrete_exceptions() -> None:
+    for modes in [[], [1.0]]:
+        with pytest.raises(ValueError, match="At least two modes must be provided!"):
+            DiscreteRegularizator(modes=modes)
+
+    with pytest.raises(
+        ValueError, match=r'penalty should be among \["least-squares", "gaussian"\]'
+    ):
+        DiscreteRegularizator(modes=[1, 20], penalty="Anything")
+
+    with pytest.raises(
+        ValueError, match=r'penalty should be among \["least-squares", "gaussian"\]'
+    ):
+        instance = DiscreteRegularizator(modes=[1, 20], penalty="gaussian")
+        instance.penalty = "not valid"
+
+
 @pytest.mark.parametrize(
     "regularizator",
     [
         TikhonovRegularizator(3.6, 7.5),
         TVRegularizator(3.6, 7.5),
+        DiscreteRegularizator(modes=[7.0, 15.0], penalty="gaussian"),
+        DiscreteRegularizator(modes=[7.0, 8.5, 2.3, 15.0], penalty="gaussian"),
+        DiscreteRegularizator(
+            modes=[7.0, 8.5, 2.3, 15.0],
+            penalty="gaussian",
+            preconditioner=dminv.LogTransform(),
+        ),
+        DiscreteRegularizator(modes=[2.3, 15.0], penalty="least-squares"),
+        DiscreteRegularizator(modes=[7.0, 8.5, 2.3, 15.0], penalty="least-squares"),
+        DiscreteRegularizator(
+            modes=[7.0, 8.5, 2.3, 15.0],
+            penalty="least-squares",
+            preconditioner=dminv.LogTransform(),
+        ),
     ],
 )
 def test_regularizator_gradients_by_fd(regularizator) -> None:

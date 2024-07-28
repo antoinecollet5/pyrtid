@@ -40,13 +40,21 @@ Tikhonov (for smooth spatial distribution)
 
     TikhonovRegularizator
 
-Total Variation (for smooth spatial distribution)
+Total Variation (for blocky spatial distribution)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. autosummary::
    :toctree: _autosummary
 
     TVRegularizator
+
+Discrete to impose specific discrete values to the field
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. autosummary::
+   :toctree: _autosummary
+
+    DiscreteRegularizator
 
 Global
 ======
@@ -141,6 +149,7 @@ from pyrtid.inverse.regularization.covariances import (
     generate_dense_matrix,
     get_prior_eigen_factorization,
 )
+from pyrtid.inverse.regularization.discrete import DiscreteRegularizator
 from pyrtid.inverse.regularization.geostatistical import (
     EnsembleRegularizator,
     GeostatisticalRegularizator,
@@ -186,4 +195,5 @@ __all__ = [
     "AdaptiveUCRegweight",
     "AdaptiveRegweight",
     "ConstantRegWeight",
+    "DiscreteRegularizator",
 ]
