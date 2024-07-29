@@ -83,13 +83,12 @@ class DiscreteRegularizator(Regularizator):
         ValueError
             If less than two modes are provided.
         """
-
+        super().__init__(preconditioner)
         if len(modes) < 2:
             raise ValueError("At least two modes must be provided!")
 
-        self.modes: List[float] = sorted(preconditioner(np.asarray(modes)))
+        self.modes: List[float] = sorted(self.preconditioner(np.asarray(modes)))
         self.penalty = penalty
-        self.preconditioner = preconditioner
 
     @property
     def penalty(self) -> str:
