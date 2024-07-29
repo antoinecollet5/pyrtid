@@ -451,6 +451,7 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
             gtol_linesearch=self.solver_config.gtol_linesearch,
             xtol_linesearch=self.solver_config.xtol_linesearch,
             eps_SY=self.solver_config.eps_SY,
+            logger=logging.getLogger("L-BFGS-B"),
         )
 
 
@@ -807,4 +808,5 @@ class LBFGSBEnsembleInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfi
             gtol_linesearch=self.solver_config.gtol_linesearch,
             xtol_linesearch=self.solver_config.xtol_linesearch,
             eps_SY=self.solver_config.eps_SY,
+            logger=logging.getLogger("L-BFGS-B"),
         )
