@@ -661,7 +661,7 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         """Check if s init has the correct size."""
         if s_init.size == expected_s_dim:
             s_init = s_init.ravel("F")
-        if s_init.ndim != 2 or s_init.shape[0] != expected_s_dim:  # type: ignore
+        if s_init.ndim != 2 and s_init.shape[0] != expected_s_dim:  # type: ignore
             raise ValueError(
                 "s_init must be either a 1D vector of shape (N_s)"
                 " or a 2D array of shape (N_s, N_e) with N_s the number of"
