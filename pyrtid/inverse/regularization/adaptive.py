@@ -107,7 +107,7 @@ class AdaptiveUCRegweight(AdaptiveRegweight):
             return False
 
         _old: float = copy.copy(self.reg_weight)
-        if loss_ls_history[-1] < n_obs:
+        if loss_ls_history[-1] < n_obs and len(loss_ls_history) != 1:
             self._has_noise_level_been_reached = True
 
         # Case 3: loss_ls if below the approximate noise level
