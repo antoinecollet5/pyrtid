@@ -66,7 +66,7 @@ def solve_adj_density(
 
     # Add the density observations derivative (adjoint source term)
     a_tr_model.a_density[:, :, time_index] -= (
-        a_tr_model.a_density_sources.getcol(time_index)
+        a_tr_model.a_density_sources[:, [time_index]]
         .todense()
         .reshape(shape, order="F")
     )

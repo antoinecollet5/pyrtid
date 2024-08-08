@@ -64,11 +64,9 @@ def solve_adj_geochem(
 
     # 2.2) Add the sources from the LS objective function
     for sp in range(tr_model.n_sp):
-        a_tr_model.a_immob[sp, :, :, time_index] -= (
-            a_tr_model.a_grade_sources[sp]
-            .getcol(time_index)
-            .reshape(geometry.nx, geometry.ny, order="F")
-        )
+        a_tr_model.a_immob[sp, :, :, time_index] -= a_tr_model.a_grade_sources[sp][
+            :, [time_index]
+        ].reshape(geometry.nx, geometry.ny, order="F")
 
     # 2.3) Add the contributions from the transport equation
     # + deal with the adjoint numerical acceleration

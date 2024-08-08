@@ -169,7 +169,7 @@ def get_diffusion_adjoint_gradient(
         fwd_model, adj_model, DerivationVariable.DIFFUSION
     )
     # Add the adjoint sources for initial time (t0)
-    return grad + adj_model.a_tr_model.a_diffusion_sources.getcol(0).todense().reshape(
+    return grad + adj_model.a_tr_model.a_diffusion_sources[:, [0]].todense().reshape(
         grad.shape, order="F"
     )
 
@@ -209,7 +209,7 @@ def get_porosity_adjoint_gradient(
         fwd_model, adj_model, DerivationVariable.POROSITY
     )
     # Add the adjoint sources for initial time (t0)
-    return grad + adj_model.a_tr_model.a_porosity_sources.getcol(0).todense().reshape(
+    return grad + adj_model.a_tr_model.a_porosity_sources[:, [0]].todense().reshape(
         grad.shape, order="F"
     )
 
@@ -242,9 +242,9 @@ def get_permeability_adjoint_gradient(
         ) + _get_perm_gradient_from_darcy_eq_saturated(fwd_model, adj_model)
 
     # Add the adjoint sources for initial time (t0)
-    return grad + adj_model.a_fl_model.a_permeability_sources.getcol(
-        0
-    ).todense().reshape(grad.shape, order="F")
+    return grad + adj_model.a_fl_model.a_permeability_sources[:, [0]].todense().reshape(
+        grad.shape, order="F"
+    )
 
 
 def _get_perm_gradient_from_diffusivity_eq_saturated(
@@ -863,11 +863,9 @@ def get_sc_adjoint_gradient_saturated(
     )
 
     # We sum along the temporal axis
-    return np.sum(
-        grad, axis=-1
-    ) + adj_model.a_fl_model.a_storage_coefficient_sources.getcol(0).todense().reshape(
-        (fwd_model.geometry.nx, fwd_model.geometry.ny), order="F"
-    )
+    return np.sum(grad, axis=-1) + adj_model.a_fl_model.a_storage_coefficient_sources[
+        :, 0
+    ].todense().reshape((fwd_model.geometry.nx, fwd_model.geometry.ny), order="F")
 
 
 def get_sc_adjoint_gradient_density(
@@ -904,11 +902,9 @@ def get_sc_adjoint_gradient_density(
     )
 
     # We sum along the temporal axis
-    return np.sum(
-        grad, axis=-1
-    ) + adj_model.a_fl_model.a_storage_coefficient_sources.getcol(0).todense().reshape(
-        (fwd_model.geometry.nx, fwd_model.geometry.ny), order="F"
-    )
+    return np.sum(grad, axis=-1) + adj_model.a_fl_model.a_storage_coefficient_sources[
+        :, 0
+    ].todense().reshape((fwd_model.geometry.nx, fwd_model.geometry.ny), order="F")
 
 
 def get_initial_grade_adjoint_gradient(
@@ -942,8 +938,7 @@ def get_initial_grade_adjoint_gradient(
     )
     # Add adjoint sources for time t=0
     grad += (
-        adj_model.a_tr_model.a_grade_sources[sp]
-        .getcol(0)
+        adj_model.a_tr_model.a_grade_sources[sp][:, 0]
         .todense()
         .reshape(grad.shape, order="F")
     )
@@ -1010,10 +1005,10 @@ def get_initial_head_adjoint_gradient(
 
     # Add adjoint sources for t=0
     # 1) head sources
-    grad += adj_model.a_fl_model.a_head_sources.getcol(0).todense().ravel("F")  # type: ignore
+    grad += adj_model.a_fl_model.a_head_sources[:, [0]].todense().ravel("F")  # type: ignore
     # 2) pressure sources
     grad += (
-        adj_model.a_fl_model.a_pressure_sources.getcol(0).todense().ravel("F")
+        adj_model.a_fl_model.a_pressure_sources[:, [0]].todense().ravel("F")
         * GRAVITY
         * WATER_DENSITY
     )
@@ -1061,10 +1056,10 @@ def get_initial_pressure_adjoint_gradient(
 
     # Add adjoint sources for t=0
     # 1) pressure sources
-    grad += adj_model.a_fl_model.a_pressure_sources.getcol(0).todense().ravel("F")  # type: ignore
+    grad += adj_model.a_fl_model.a_pressure_sources[:, [0]].todense().ravel("F")  # type: ignore
     # 2) head sources
     grad += (
-        adj_model.a_fl_model.a_head_sources.getcol(0).todense().ravel("F")
+        adj_model.a_fl_model.a_head_sources[:, [0]].todense().ravel("F")
         / GRAVITY
         / fwd_model.tr_model.ldensity[0].ravel("F")
     )
@@ -1134,7 +1129,7 @@ def get_initial_conc_adjoint_gradient(
             +(1.0 - crank_diff) * (a_mob[:, :-1] - a_mob[:, 1:]) * dmean
         ) * tmp
 
-    return -grad + adj_model.a_tr_model.a_conc_sources[sp].getcol(0).todense().reshape(
+    return -grad + adj_model.a_tr_model.a_conc_sources[sp][:, 0].todense().reshape(
         grad.shape, order="F"
     )
 

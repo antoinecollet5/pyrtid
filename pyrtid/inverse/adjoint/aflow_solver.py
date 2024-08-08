@@ -610,7 +610,7 @@ def solve_adj_flow_saturated(
 
     # 4) Add the source terms: observation on the head field
     tmp -= (
-        a_fl_model.a_head_sources.getcol(time_index).todense().ravel("F")
+        a_fl_model.a_head_sources[:, [time_index]].todense().ravel("F")
         / fl_model.storage_coefficient.ravel("F")
         / geometry.mesh_volume
     )
@@ -618,7 +618,7 @@ def solve_adj_flow_saturated(
     # 5) Obtain the adjoint pressure and add it as a source term (observation on the
     # pressure field)
     a_fl_model.a_pressure[:, :, time_index] = -(
-        a_fl_model.a_pressure_sources.getcol(time_index)
+        a_fl_model.a_pressure_sources[:, [time_index]]
         .todense()
         .reshape(geometry.nx, geometry.ny, order="F")
     )
@@ -685,7 +685,7 @@ def solve_adj_flow_density(
 
     # 4) Add the source terms: observation on the pressure field
     tmp -= (
-        a_fl_model.a_pressure_sources.getcol(time_index).todense().ravel("F")
+        a_fl_model.a_pressure_sources[:, [time_index]].todense().ravel("F")
         / fl_model.storage_coefficient.ravel("F")
         / geometry.mesh_volume
     )
@@ -693,7 +693,7 @@ def solve_adj_flow_density(
     # 5) Obtain the adjoint head field and add it as a source term (observation on the
     # head field)
     a_fl_model.a_head[:, :, time_index] = -(
-        a_fl_model.a_head_sources.getcol(time_index)
+        a_fl_model.a_head_sources[:, [time_index]]
         .todense()
         .reshape(geometry.nx, geometry.ny, order="F")
     )

@@ -464,7 +464,7 @@ def solve_adj_transport_transient_semi_implicit(
     for sp in range(tmp.shape[0]):
         # Add the source terms
         tmp[sp, :] -= (
-            a_tr_model.a_conc_sources[sp].getcol(time_index).todense().ravel()
+            a_tr_model.a_conc_sources[sp][:, [time_index]].todense().ravel()
             / geometry.mesh_volume
         )
 
