@@ -184,7 +184,7 @@ class TimeParameters:
         "Save the current number of fixed point iterations."
         self.lnfpi.append(self.nfpi)
 
-    def update_dt(self, n_iter: float, dt_max_cfl: float) -> None:
+    def update_dt(self, n_iter: float, dt_max_cfl: float, max_fpi: int) -> None:
         """
         Update the timestep.
 
@@ -192,8 +192,12 @@ class TimeParameters:
         ----------
         n_iter: int
             Number of iterations required to solve the last timestep.
+        dt_max_cfl: float
+            Maximum timestep according to the CFL.
+        max_fpi: int
+            Maximum number of fixed point iterations per timestep.
         """
-        if n_iter < 20:
+        if n_iter < max_fpi:
             # increase dt by 2%
             self.dt *= 1.02
         else:
@@ -308,6 +312,10 @@ class TransportParameters:
         Whether to skip the reactive-transport step, considering only the flow problem.
     fpi_eps: float
        Tolerance on the transport-chemistry coupling error. The default value is 1e-5.
+    max_fpi: int
+        Maximum number of fixed point iterations per timestep. If this number is reached
+        then the numerical acceleration is temporarily disabled, otherwise, the
+        timestep is reduced.
     """
 
     def __init__(
@@ -320,6 +328,7 @@ class TransportParameters:
         is_numerical_acceleration: bool = False,
         is_skip_rt: bool = False,
         fpi_eps: float = 1e-5,
+        max_fpi: int = 20,
     ) -> None:
         """Initialize the instance."""
         self.diffusion: float = diffusion
@@ -330,6 +339,7 @@ class TransportParameters:
         self.is_numerical_acceleration: bool = is_numerical_acceleration
         self.is_skip_rt: bool = is_skip_rt
         self.fpi_eps: float = fpi_eps
+        self.max_fpi: int = max_fpi
 
 
 class GeochemicalParameters:
@@ -1002,7 +1012,9 @@ class TransportModel:
         "q_next",
         "tolerance",
         "is_numerical_acceleration",
+        "is_num_acc_for_timestep",
         "fpi_eps",
+        "max_fpi",
         "molar_mass",
         "is_skip_rt",
     ]
@@ -1050,7 +1062,10 @@ class TransportModel:
         self.cst_conc_nn: NDArrayInt = np.array([], dtype=np.int32)
         self.tolerance: float = tr_params.tolerance
         self.is_numerical_acceleration: bool = tr_params.is_numerical_acceleration
+        # The numerical acceleration can be temporarily disabled
+        self.is_num_acc_for_timestep: bool = self.is_numerical_acceleration
         self.fpi_eps: float = tr_params.fpi_eps
+        self.max_fpi: int = tr_params.max_fpi
         self.molar_mass: float = gch_params.Ms
         self.is_skip_rt: bool = tr_params.is_skip_rt
 

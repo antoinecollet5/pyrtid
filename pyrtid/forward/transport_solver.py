@@ -517,7 +517,7 @@ def solve_transport_semi_implicit(
     ).T
 
     # Chemical source term
-    if tr_model.is_numerical_acceleration and nfpi == 1 and time_index != 1:
+    if tr_model.is_num_acc_for_timestep and nfpi == 1 and time_index != 1:
         dmdt = tr_model.limmob[time_index - 1] - tr_model.limmob[time_index - 2]
         # avoid negative values
         if np.any(tr_model.lmob[time_index - 1] - dmdt < 0):

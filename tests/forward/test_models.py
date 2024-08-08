@@ -52,7 +52,7 @@ def test_time_params(
     for i in range(100):
         # Save the previous timestep
         time_params.save_dt()
-        time_params.update_dt(1, 1e30)
+        time_params.update_dt(1, 1e30, 20)
 
     assert time_params.dt == expected_dt_max
     assert len(time_params.ldt) == 100
@@ -70,7 +70,7 @@ def test_time_params(
     for i in range(20):
         time_params.save_dt()
         time_params.save_nfpi()
-        time_params.update_dt(30, 1e30)
+        time_params.update_dt(30, 1e30, 20)
 
     assert time_params.dt == expected_dt_min
     assert len(time_params.ldt) == 20

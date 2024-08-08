@@ -158,7 +158,10 @@ class ForwardSolver:
         # Sequential iterative approach with operator splitting
         while self.model.time_params.time_elapsed < self.model.time_params.duration:
             time_index += 1  # Update the number of time iterations
-
+            # Reset numerical acceleration if it was temporarily disabled
+            self.model.tr_model.is_num_acc_for_timestep = (
+                self.model.tr_model.is_numerical_acceleration
+            )
             self._solve_system_for_timestep(time_index, is_verbose)
 
     def _solve_system_for_timestep(
@@ -171,7 +174,9 @@ class ForwardSolver:
             dt_max_cfl = self.model.time_params.get_dt_max_cfl(
                 self.model, time_index - 1
             )
-            self.model.time_params.update_dt(self.model.time_params.nfpi, dt_max_cfl)
+            self.model.time_params.update_dt(
+                self.model.time_params.nfpi, dt_max_cfl, self.model.tr_model.max_fpi
+            )
         # Important: need to save the timestep after the update, otherwise, the
         # wrong timestep is used in the adjoint
         # Save the timesteps to the list of timesteps
@@ -215,6 +220,13 @@ class ForwardSolver:
 
         # Iterate the chemistry transport system while the convergence is no meet
         while not has_converged:
+            if self.model.time_params.nfpi > self.model.tr_model.max_fpi:
+                if self.model.tr_model.is_num_acc_for_timestep:
+                    # temporary disabling of numerical acceleration
+                    self.model.tr_model.is_num_acc_for_timestep = False
+                # restart the timestep
+                self._solve_system_for_timestep(time_index, is_verbose)
+
             # Save the grade for the fix point iterations
             self.model.tr_model.immob_prev = self.model.tr_model.limmob[
                 time_index
