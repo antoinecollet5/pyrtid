@@ -497,7 +497,7 @@ def solve_adj_transport_transient_semi_implicit(
     # Solve Ax = b with A sparse using LU preconditioner
     for sp in range(tmp.shape[0]):
         tmp[sp], exit_code = gmres(
-            q_next.tocsc(), tmp[sp], M=preconditioner, atol=tr_model.tolerance
+            q_next.tocsc(), tmp[sp], M=preconditioner, rtol=tr_model.tolerance
         )
 
     # Note: we go backward in time, so time_index -1...

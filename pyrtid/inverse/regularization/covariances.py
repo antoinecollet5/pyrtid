@@ -366,7 +366,7 @@ class EnsembleCovarianceMatrix(CovarianceMatrix):
         return self.anomalies.T @ self.anomalies / (self.n_ens - 1)
 
     def solve(
-        self, b: NDArrayFloat, tol: float = 1e-12, maxiter: int = 1000
+        self, b: NDArrayFloat, rtol: float = 1e-12, maxiter: int = 1000
     ) -> NDArrayFloat:
         """
         Solve A^{T}Ax = b, with A, the anomalies matrix instance.
@@ -377,7 +377,7 @@ class EnsembleCovarianceMatrix(CovarianceMatrix):
         x, info = gmres(
             self,
             b,
-            tol=tol,
+            rtol=rtol,
             maxiter=maxiter,
             callback=residual,
             atol=0.0,
@@ -449,14 +449,14 @@ class FFTCovarianceMatrix(KernelCovarianceMatrix):
         return toeplitz_product(x, self.first_row, self.param_shape) * (1 + self.nugget)
 
     def solve(
-        self, b: NDArrayFloat, tol: float = 1e-12, maxiter: int = 1000
+        self, b: NDArrayFloat, rtol: float = 1e-12, maxiter: int = 1000
     ) -> NDArrayFloat:
         """Solve Ax = b, with A, the current covariance matrix instance."""
         residual = CallBack()
         x, info = gmres(
             self,
             b,
-            tol=tol,
+            rtol=rtol,
             maxiter=maxiter,
             callback=residual,
             M=self.preconditioner,
@@ -513,14 +513,14 @@ class HCovarianceMatrix(KernelCovarianceMatrix):
         return self.H.transpmult(x, y, self.is_verbose)
 
     def solve(
-        self, b: NDArrayFloat, tol: float = 1e-12, maxiter: int = 1000
+        self, b: NDArrayFloat, rtol: float = 1e-12, maxiter: int = 1000
     ) -> NDArrayFloat:
         """Solve Ax = b, with A, the current covariance matrix instance."""
         residual = CallBack()
         x, info = lgmres(
             self,
             b,
-            tol=tol,
+            rtol=rtol,
             maxiter=maxiter,
             callback=residual,
             M=self.preconditioner,

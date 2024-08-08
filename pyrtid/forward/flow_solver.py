@@ -364,7 +364,7 @@ def solve_flow_stationary(
 
     # Solve Ax = b with A sparse using LU preconditioner
     res, exit_code = gmres(
-        fl_model.q_next.tocsc(), tmp, M=preconditioner, atol=fl_model.tolerance
+        fl_model.q_next.tocsc(), tmp, M=preconditioner, rtol=fl_model.tolerance
     )
 
     # Here we don't append but we overwrite the already existing head for t0.
@@ -796,7 +796,7 @@ def solve_flow_transient_semi_implicit(
 
     # Solve Ax = b with A sparse using LU preconditioner
     res, exit_code = gmres(
-        _q_next, tmp, x0=None, M=preconditioner, atol=fl_model.tolerance
+        _q_next, tmp, x0=None, M=preconditioner, rtol=fl_model.tolerance
     )
 
     if fl_model.is_gravity:

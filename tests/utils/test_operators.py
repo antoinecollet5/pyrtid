@@ -17,8 +17,8 @@ def test_get_super_ilu_preconditioner() -> None:
     B = get_super_ilu_preconditioner(A)
     x = np.array([1.0, 2.0, 3.0], dtype=float)
     np.testing.assert_allclose(
-        gmres(A, x, M=B, atol=1e-15, callback_type="legacy")[0],
-        gmres(A, x, atol=1e-15, callback_type="legacy")[0],
+        gmres(A, x, M=B, rtol=1e-15, callback_type="legacy")[0],
+        gmres(A, x, rtol=1e-15, callback_type="legacy")[0],
     )
 
 
