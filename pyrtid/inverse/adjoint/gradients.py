@@ -193,15 +193,18 @@ def get_porosity_adjoint_gradient(
         Gradient of the objective function with respect to the porosity.
     """
     grad = np.zeros(
-        (fwd_model.geometry.nx, fwd_model.geometry.ny, fwd_model.time_params.nt)
+        (fwd_model.geometry.nx, fwd_model.geometry.ny, fwd_model.time_params.nt - 1)
     )
 
     for sp in range(fwd_model.tr_model.n_sp):
         mob = fwd_model.tr_model.mob[sp]
+        immob = fwd_model.tr_model.immob[sp]
         amob = adj_model.a_tr_model.a_mob[sp]
 
         grad += (
-            (mob[:, :, 1:] - mob[:, :, :-1]) / fwd_model.time_params.dt * amob[:, :, 1:]
+            (mob[:, :, 1:] - mob[:, :, :-1] + immob[:, :, 1:] - immob[:, :, :-1])
+            / fwd_model.time_params.ldt
+            * amob[:, :, 1:]
         ) * fwd_model.geometry.mesh_volume
 
     # We sum along the temporal axis + get the diffusion gradient
@@ -938,7 +941,7 @@ def get_initial_grade_adjoint_gradient(
     )
     # Add adjoint sources for time t=0
     grad += (
-        adj_model.a_tr_model.a_grade_sources[sp][:, 0]
+        adj_model.a_tr_model.a_grade_sources[sp][:, [0]]
         .todense()
         .reshape(grad.shape, order="F")
     )
