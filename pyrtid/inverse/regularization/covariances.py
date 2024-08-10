@@ -29,7 +29,6 @@ from pyrtid.inverse.regularization.toeplitz import (
     toeplitz_product,
 )
 from pyrtid.utils import get_pts_coords_regular_grid, sparse_cholesky
-from pyrtid.utils.operators import get_super_ilu_preconditioner
 from pyrtid.utils.spde import get_variance
 from pyrtid.utils.types import NDArrayFloat, NDArrayInt
 
@@ -626,8 +625,6 @@ class SparseInvCovarianceMatrix(CovarianceMatrix):
             self.inv_mat_cho_factor: Factor = sparse_cholesky(self.inv_mat)
         else:
             self.inv_mat_cho_factor: Factor = inv_mat_cho_factor
-
-        self.preconditioner = get_super_ilu_preconditioner(self.inv_mat)
         super().__init__(inv_mat.shape)
 
     def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
