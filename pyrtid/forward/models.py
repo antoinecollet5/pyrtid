@@ -268,7 +268,7 @@ class FlowParameters:
         regime: FlowRegime = FlowRegime.STATIONARY,
         is_gravity: bool = False,
         vertical_axis: VerticalAxis = VerticalAxis.DZ,
-        tolerance: float = 1e-8,
+        rtol: float = 1e-8,
     ) -> None:
         """Initialize the instance."""
         self.permeability: float = permeability
@@ -277,7 +277,7 @@ class FlowParameters:
         self.regime: FlowRegime = regime
         self.is_gravity: bool = is_gravity
         self.vertical_axis: VerticalAxis = vertical_axis
-        self.tolerance: float = tolerance
+        self.rtol: float = rtol
 
 
 class TransportParameters:
@@ -324,7 +324,7 @@ class TransportParameters:
         porosity: float = 1.0,
         crank_nicolson_advection: float = 0.5,
         crank_nicolson_diffusion: float = 1.0,
-        tolerance: float = 1e-8,
+        rtol: float = 1e-8,
         is_numerical_acceleration: bool = False,
         is_skip_rt: bool = False,
         fpi_eps: float = 1e-5,
@@ -335,7 +335,7 @@ class TransportParameters:
         self.porosity: float = porosity
         self.crank_nicolson_advection: float = crank_nicolson_advection
         self.crank_nicolson_diffusion: float = crank_nicolson_diffusion
-        self.tolerance: float = tolerance
+        self.rtol: float = rtol
         self.is_numerical_acceleration: bool = is_numerical_acceleration
         self.is_skip_rt: bool = is_skip_rt
         self.fpi_eps: float = fpi_eps
@@ -647,7 +647,7 @@ class FlowModel(ABC):
         "regime",
         "q_prev",
         "q_next",
-        "tolerance",
+        "rtol",
         "is_boundary_east",
         "is_boundary_west",
         "is_boundary_north",
@@ -678,7 +678,7 @@ class FlowModel(ABC):
         self.q_prev = lil_array((geometry.nx * geometry.ny, 1))
         self.q_next = lil_array((geometry.nx * geometry.ny, 1))
         self.cst_head_nn: NDArrayInt = np.array([], dtype=np.int32)
-        self.tolerance = fl_params.tolerance
+        self.rtol = fl_params.rtol
         self.vertical_axis = fl_params.vertical_axis
         self.vertical_mesh_size = {
             VerticalAxis.DX: geometry.dx,
@@ -1010,7 +1010,7 @@ class TransportModel:
         "q_next_diffusion",
         "q_prev",
         "q_next",
-        "tolerance",
+        "rtol",
         "is_numerical_acceleration",
         "is_num_acc_for_timestep",
         "fpi_eps",
@@ -1060,7 +1060,7 @@ class TransportModel:
         self.q_prev: lil_matrix = lil_array((geometry.nx * geometry.ny, 1))
         self.q_next: lil_matrix = lil_array((geometry.nx * geometry.ny, 1))
         self.cst_conc_nn: NDArrayInt = np.array([], dtype=np.int32)
-        self.tolerance: float = tr_params.tolerance
+        self.rtol: float = tr_params.rtol
         self.is_numerical_acceleration: bool = tr_params.is_numerical_acceleration
         # The numerical acceleration can be temporarily disabled
         self.is_num_acc_for_timestep: bool = self.is_numerical_acceleration

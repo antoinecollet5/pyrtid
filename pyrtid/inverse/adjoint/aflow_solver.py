@@ -596,7 +596,7 @@ def solve_adj_flow_saturated(
     )
 
     # 2) Build LU preconditioner for Q_{next}
-    preconditioner = get_super_ilu_preconditioner(
+    super_ilu, preconditioner = get_super_ilu_preconditioner(
         _q_next, drop_tol=1e-10, fill_factor=100
     )
 
@@ -638,7 +638,14 @@ def solve_adj_flow_saturated(
     )
 
     # 7) Solve Ax = b with A sparse using LU preconditioner
-    res, exit_code = lgmres(_q_next, tmp, M=preconditioner, rtol=a_fl_model.tolerance)
+
+    res, exit_code = lgmres(
+        _q_next,
+        tmp,
+        x0=super_ilu.solve(tmp) if super_ilu is not None else None,
+        M=preconditioner,
+        rtol=a_fl_model.rtol,
+    )
 
     # 8) Impose null adjoint head the the cst head boundaries
     if time_index == 0:
@@ -670,7 +677,7 @@ def solve_adj_flow_density(
     )
 
     # 2) Build LU preconditioner for Q_{next}
-    preconditioner = get_super_ilu_preconditioner(
+    super_ilu, preconditioner = get_super_ilu_preconditioner(
         _q_next, drop_tol=1e-10, fill_factor=100
     )
 
@@ -719,7 +726,13 @@ def solve_adj_flow_density(
     )
 
     # 7) Solve Ax = b with A sparse using LU preconditioner
-    res, exit_code = lgmres(_q_next, tmp, M=preconditioner, rtol=a_fl_model.tolerance)
+    res, exit_code = lgmres(
+        _q_next,
+        tmp,
+        x0=super_ilu.solve(tmp) if super_ilu is not None else None,
+        M=preconditioner,
+        rtol=a_fl_model.rtol,
+    )
 
     # 8) Impose null adjoint head the the cst head boundaries
     if time_index == 0:

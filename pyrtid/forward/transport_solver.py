@@ -540,14 +540,18 @@ def solve_transport_semi_implicit(
     )
 
     # Build the LU preconditioning
-    preconditioner = get_super_ilu_preconditioner(
+    super_ilu, preconditioner = get_super_ilu_preconditioner(
         q_next.tocsc(), drop_tol=1e-10, fill_factor=100
     )
 
     # Solve Ax = b with A sparse using LU preconditioner
     for sp in range(tmp.shape[0]):
         tmp[sp, :], exit_code = gmres(
-            q_next.tocsc(), tmp[sp, :], M=preconditioner, rtol=tr_model.tolerance
+            q_next.tocsc(),
+            tmp[sp, :],
+            x0=super_ilu.solve(tmp[sp, :]) if super_ilu is not None else None,
+            M=preconditioner,
+            rtol=tr_model.rtol,
         )
 
     tr_model.lmob[time_index] = tmp.reshape(

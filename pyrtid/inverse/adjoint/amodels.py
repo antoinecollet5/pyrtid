@@ -41,7 +41,7 @@ class AdjointFlowModel(ABC):
         "q_prev_init",
         "q_next_init",
         "crank_nicolson",
-        "tolerance",
+        "rtol",
     ]
 
     def __init__(self, geometry: Geometry, time_params: TimeParameters) -> None:
@@ -85,7 +85,7 @@ class AdjointFlowModel(ABC):
         # is used. This attribute only purpose is to test the impact of an
         # incorrect discretization.
         self.crank_nicolson: Optional[float] = None
-        self.tolerance: float = 1e-15
+        self.rtol: float = 1e-8
 
     def clear_adjoint_sources(self) -> None:
         """

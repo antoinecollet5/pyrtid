@@ -355,7 +355,7 @@ def solve_flow_stationary(
     ]
 
     # LU preconditioner
-    preconditioner = get_super_ilu_preconditioner(
+    super_ilu, preconditioner = get_super_ilu_preconditioner(
         fl_model.q_next.tocsc(), drop_tol=1e-10, fill_factor=100
     )
 
@@ -364,9 +364,12 @@ def solve_flow_stationary(
 
     # Solve Ax = b with A sparse using LU preconditioner
     res, exit_code = gmres(
-        fl_model.q_next.tocsc(), tmp, M=preconditioner, rtol=fl_model.tolerance
+        fl_model.q_next.tocsc(),
+        tmp,
+        x0=super_ilu.solve(tmp) if super_ilu is not None else None,
+        M=preconditioner,
+        rtol=fl_model.rtol,
     )
-
     # Here we don't append but we overwrite the already existing head for t0.
     fl_model.lhead[0] = res.reshape(geometry.ny, geometry.nx).T
 
@@ -761,7 +764,7 @@ def solve_flow_transient_semi_implicit(
     _q_prev = _q_prev.tocsc()
 
     # Get LU preconditioner
-    preconditioner = get_super_ilu_preconditioner(
+    super_ilu, preconditioner = get_super_ilu_preconditioner(
         _q_next, drop_tol=1e-10, fill_factor=100
     )
 
@@ -796,7 +799,11 @@ def solve_flow_transient_semi_implicit(
 
     # Solve Ax = b with A sparse using LU preconditioner
     res, exit_code = gmres(
-        _q_next, tmp, x0=None, M=preconditioner, rtol=fl_model.tolerance
+        _q_next,
+        tmp,
+        x0=super_ilu.solve(tmp) if super_ilu is not None else None,
+        M=preconditioner,
+        rtol=fl_model.rtol,
     )
 
     if fl_model.is_gravity:
