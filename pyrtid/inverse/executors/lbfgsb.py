@@ -298,6 +298,8 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
             # number of updated values for the current parameter
             n_vals: int = param.size_preconditioned_values
 
+            # If the regularization weight for this parameter is constant,
+            # no update, go to the next parameter
             if not param.regularizators or isinstance(
                 param.reg_weight_update_strategy, ConstantRegWeight
             ):
