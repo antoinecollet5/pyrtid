@@ -331,6 +331,7 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
                     _loss_ls_grad,
                     _loss_reg_grad,
                     self.data_model.n_obs,
+                    logger=logging.getLogger("RW updater"),
                 )
             )
 

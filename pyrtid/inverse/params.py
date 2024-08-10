@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import copy
 import json
+import logging
 from typing import Callable, List, Optional, Sequence, Union
 
 import numpy as np
@@ -459,6 +460,7 @@ class AdjustableParameter:
         loss_ls_grad: NDArrayFloat,
         loss_reg_grad: NDArrayFloat,
         n_obs: int,
+        logger: Optional[logging.Logger] = None,
     ) -> bool:
         """
         Update the regularization weight.
@@ -466,11 +468,17 @@ class AdjustableParameter:
         Parameters
         ----------
         loss_ls_history : List[float]
-            List of successive ls objective functions.
+            List of past LS cost function.
+        loss_ls_grad : NDArrayFloat
+            Current LS cost function gradient.
+        loss_reg_grad : NDArrayFloat
+            Current Reg cost function gradient.
         n_obs: int
             Number of observation which is an approximation of the noise level in the
             LS solution.
-
+        logger: Optional[logging.Logger]
+            Optional :class:`logging.Logger` instance used for event logging.
+            The default is None.
         Returns
         -------
         bool
@@ -483,6 +491,7 @@ class AdjustableParameter:
             loss_ls_grad,
             loss_reg_grad,
             n_obs,
+            logger,
         )
 
 
