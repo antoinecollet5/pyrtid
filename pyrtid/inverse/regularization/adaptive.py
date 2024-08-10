@@ -1,6 +1,7 @@
 import copy
+import logging
 from abc import ABC
-from typing import List, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import scipy as sp
@@ -24,6 +25,7 @@ class AdaptiveRegweight(RegWeightUpdateStrategy, ABC):
         "reg_weight_bounds",
         "convergence_factor",
         "_has_noise_level_been_reached",
+        "_has_been_above_noise_level",
     ]
 
     def __init__(
@@ -49,6 +51,7 @@ class AdaptiveRegweight(RegWeightUpdateStrategy, ABC):
 
         super().__init__(reg_weight_init)
         # internal state used only in the case of adaptive regularization strategy
+        self._has_been_above_noise_level = False
         self._has_noise_level_been_reached = False
         self.convergence_factor: float = convergence_factor
 
@@ -66,6 +69,32 @@ class AdaptiveRegweight(RegWeightUpdateStrategy, ABC):
 class AdaptiveUCRegweight(AdaptiveRegweight):
     """Implement an adaptive regularization parameter choice based on the U-Curve."""
 
+    def __init__(
+        self,
+        reg_weight_init: float = 1.0,
+        reg_weigh_bounds: Union[Tuple[float, float], NDArrayFloat] = (1e-10, 1e10),
+        convergence_factor: float = 0.05,
+        n_update_explo_phase: int = 5,
+    ) -> None:
+        """
+
+        Parameters
+        ----------
+        reg_weight_init : float, optional
+            Initial regularization weight, by default 1.0
+        reg_weigh_bounds : Union[Tuple[float, float], NDArrayFloat], optional
+            Bounds for the optimization parameter, by default (1e-10, 1e10)
+        convergence_factor : float, optional
+            Convergence criteria for the regularization weight, by default 0.05
+        n_update_explo_phase: int
+            Number of regularization weight to perform before entering the optimization
+            phase.The default is 5.
+        """
+        super().__init__(reg_weight_init, reg_weigh_bounds, convergence_factor)
+        # internal state used only in the case of adaptive regularization strategy
+        self.n_update_explo_phase = n_update_explo_phase
+        self.n_regw_update: int = 0
+
     def _update_reg_weight(
         self,
         loss_ls_history: List[float],
@@ -74,6 +103,7 @@ class AdaptiveUCRegweight(AdaptiveRegweight):
         loss_ls_grad: NDArrayFloat,
         loss_reg_grad: NDArrayFloat,
         n_obs: int,
+        logger: Optional[logging.Logger] = None,
     ) -> bool:
         """
         Update the regularization weight.
@@ -90,15 +120,15 @@ class AdaptiveUCRegweight(AdaptiveRegweight):
             Current LS cost function gradient.
         loss_reg_grad : NDArrayFloat
             Current Reg cost function gradient.
-        n_obs : int
-            Number of observations used in the LS cost function.
+        logger: Optional[logging.Logger]
+            Optional :class:`logging.Logger` instance used for event logging.
+            The default is None.
 
         Returns
         -------
         bool
             Whether the regularization parameter (weight) has changed.
         """
-
         # Case 1: no regularization loss has been saved
         if len(loss_reg_history) == 0:
             return False
@@ -107,22 +137,32 @@ class AdaptiveUCRegweight(AdaptiveRegweight):
             return False
 
         _old: float = copy.copy(self.reg_weight)
-        if loss_ls_history[-1] < n_obs and len(loss_ls_history) != 1:
-            self._has_noise_level_been_reached = True
 
-        # Case 3: loss_ls if below the approximate noise level
-        # noise level = n_obs because loss_ls is scaled by n_obs
-        # Exploration phase
-        if not self._has_noise_level_been_reached:
+        # Case 1: Exploration phase
+        if self.n_regw_update < self.n_update_explo_phase:
+            loss_ls_grad_manhattan_norm = sp.linalg.norm(loss_ls_grad, ord=1)
             loss_reg_grad_manhattan_norm = sp.linalg.norm(loss_reg_grad, ord=1)
             # means the regularization gradient is 0.0 -> no weight update
             if loss_reg_grad_manhattan_norm == 0.0:
                 return False
+            if loss_ls_grad_manhattan_norm == 0.0:
+                return False
+
             self.reg_weight = (
-                0.5 * sp.linalg.norm(loss_ls_grad, ord=1) / loss_reg_grad_manhattan_norm
+                0.5 * loss_ls_grad_manhattan_norm / loss_reg_grad_manhattan_norm
             )
-        # Case 4: we compute the optimal regularization weight
-        # Optimization phase
+
+            if logger is not None:
+                logger.info("Exploration phase.")
+
+            if logger is not None:
+                logger.info(
+                    f"loss_ls_grad_manhattan_norm = {loss_ls_grad_manhattan_norm}"
+                )
+                logger.info(
+                    f"loss_reg_grad_manhattan_norm = {loss_reg_grad_manhattan_norm}"
+                )
+        # Case 2: we compute the optimal regularization weight - Optimization phase
         else:
             # we must have the same number of loss_ls and loss_reg
             assert (
@@ -132,12 +172,26 @@ class AdaptiveUCRegweight(AdaptiveRegweight):
                 reg_weight_history,
                 compute_uc(loss_ls_history, loss_reg_history),
             )
+            if logger is not None:
+                logger.info("Optimization phase.")
+
+        # TODO: test this
+        # Limit the change in the weight to an order of magnitude
+        # if _old != 0.0:
+        #     if np.abs(self.reg_weight / _old) > 10:
+        #         self.reg_weight = _old * 10
+        #     if np.abs(self.reg_weight / _old) < 0.1:
+        #         self.reg_weight = _old / 10.0
 
         # Test the relative change of alpha, if below the threshold, then
+        # do not take the update into account
         if np.abs((self.reg_weight - _old) / _old) < self.convergence_factor:
             self.reg_weight = _old
             return False
 
+        # Update comptor
+        if _old != self.reg_weight:
+            self.n_regw_update += 1
         # return if it has changed ?
         return _old != self.reg_weight
 

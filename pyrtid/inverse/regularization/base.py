@@ -2,8 +2,9 @@
 @author: acollet
 """
 
+import logging
 from abc import ABC, abstractmethod
-from typing import List
+from typing import List, Optional
 
 from pyrtid.inverse.preconditioner import NoTransform, Preconditioner
 from pyrtid.utils.finite_differences import finite_gradient
@@ -36,6 +37,7 @@ class RegWeightUpdateStrategy(ABC):
         loss_ls_grad: NDArrayFloat,
         loss_reg_grad: NDArrayFloat,
         n_obs: int,
+        logger: Optional[logging.Logger] = None,
     ) -> bool:
         """
         Update the regularization weight.
@@ -54,6 +56,9 @@ class RegWeightUpdateStrategy(ABC):
             Current Reg cost function gradient.
         n_obs : int
             Number of observations used in the LS cost function.
+        logger: Optional[logging.Logger]
+            Optional :class:`logging.Logger` instance used for event logging.
+            The default is None.
 
         Returns
         -------
@@ -67,6 +72,7 @@ class RegWeightUpdateStrategy(ABC):
             loss_ls_grad,
             loss_reg_grad,
             n_obs,
+            logger,
         )
 
     def _update_reg_weight(
@@ -77,6 +83,7 @@ class RegWeightUpdateStrategy(ABC):
         loss_ls_grad: NDArrayFloat,
         loss_reg_grad: NDArrayFloat,
         n_obs: int,
+        logger: Optional[logging.Logger] = None,
     ) -> bool:
         # by default no update
         return False
