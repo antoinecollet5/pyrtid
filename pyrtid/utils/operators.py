@@ -1,10 +1,10 @@
 """Provide some derivative operators."""
 
 # pylint: disable=C0103 # doesn't conform to snake_case naming style
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 
 import numpy as np
-from scipy.sparse import csc_array
+from scipy.sparse import csc_array, csc_matrix
 from scipy.sparse.linalg import LinearOperator, SuperLU, spilu
 
 from pyrtid.utils.types import NDArrayFloat
@@ -118,7 +118,7 @@ def hessian_cfd(param: NDArrayFloat, dx: float, axis: int = 0) -> NDArrayFloat:
 
 
 def get_super_ilu_preconditioner(
-    mat: csc_array, **kwargs
+    mat: Union[csc_array, csc_matrix], **kwargs
 ) -> Tuple[Optional[SuperLU], Optional[LinearOperator]]:
     """
     Get an incomplete LU preconditioner for the given sparse matrix.
