@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from typing import Tuple, Union
 
 import numpy as np
@@ -358,6 +359,9 @@ def solve_flow_stationary(
     super_ilu, preconditioner = get_super_ilu_preconditioner(
         fl_model.q_next.tocsc(), drop_tol=1e-10, fill_factor=100
     )
+
+    if super_ilu is None:
+        warnings.warn("SuperILU: q_next is singular in stationary flow!")
 
     # Add the source terms
     tmp += flw_sources.flatten(order="F")
@@ -767,6 +771,10 @@ def solve_flow_transient_semi_implicit(
     super_ilu, preconditioner = get_super_ilu_preconditioner(
         _q_next, drop_tol=1e-10, fill_factor=100
     )
+    if super_ilu is None:
+        warnings.warn(
+            f"SuperILU: q_next is singular in transient flow at it={time_index}!"
+        )
 
     # Add the source terms
     sources = (

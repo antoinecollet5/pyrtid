@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from typing import Tuple
 
 import numpy as np
@@ -599,6 +600,11 @@ def solve_adj_flow_saturated(
     super_ilu, preconditioner = get_super_ilu_preconditioner(
         _q_next, drop_tol=1e-10, fill_factor=100
     )
+    if super_ilu is None:
+        warnings.warn(
+            "SuperILU: q_next is singular in adjoint "
+            f"saturated flow at it={time_index}!"
+        )
 
     # 3) Obtain Q_{prev} @ h^{n+1}
     try:
@@ -680,6 +686,11 @@ def solve_adj_flow_density(
     super_ilu, preconditioner = get_super_ilu_preconditioner(
         _q_next, drop_tol=1e-10, fill_factor=100
     )
+    if super_ilu is None:
+        warnings.warn(
+            "SuperILU: q_next is singular in adjoint "
+            f"density flow at it={time_index}!"
+        )
 
     # 3) Obtain Q_{prev} @ p^{n+1}
     try:

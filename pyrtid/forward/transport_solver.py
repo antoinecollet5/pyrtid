@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from typing import Tuple
 
 import numpy as np
@@ -543,6 +544,8 @@ def solve_transport_semi_implicit(
     super_ilu, preconditioner = get_super_ilu_preconditioner(
         q_next.tocsc(), drop_tol=1e-10, fill_factor=100
     )
+    if super_ilu is None:
+        warnings.warn(f"SuperILU: q_next is singular in transport at it={time_index}!")
 
     # Solve Ax = b with A sparse using LU preconditioner
     for sp in range(tmp.shape[0]):
