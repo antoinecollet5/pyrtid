@@ -867,7 +867,7 @@ def get_sc_adjoint_gradient_saturated(
 
     # We sum along the temporal axis
     return np.sum(grad, axis=-1) + adj_model.a_fl_model.a_storage_coefficient_sources[
-        :, 0
+        :, [0]
     ].todense().reshape((fwd_model.geometry.nx, fwd_model.geometry.ny), order="F")
 
 
