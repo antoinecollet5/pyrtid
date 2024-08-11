@@ -14,19 +14,32 @@ from scipy.sparse.linalg import gmres
 
 def test_get_super_ilu_preconditioner() -> None:
     A = csc_array([[1.0, 0.0, 0.0], [5.0, 0.0, 2.0], [0.0, -1.0, 0.0]], dtype=float)
-    B = get_super_ilu_preconditioner(A)
+    super_ilu, preconditioner = get_super_ilu_preconditioner(A)
     x = np.array([1.0, 2.0, 3.0], dtype=float)
+    b = A @ x
+    np.testing.assert_allclose(gmres(A, b, rtol=1e-15, callback_type="legacy")[0], x)
     np.testing.assert_allclose(
-        gmres(A, x, M=B, rtol=1e-15, callback_type="legacy")[0],
-        gmres(A, x, rtol=1e-15, callback_type="legacy")[0],
+        gmres(A, b, M=preconditioner, rtol=1e-15, callback_type="legacy")[0], x
+    )
+    np.testing.assert_allclose(
+        gmres(
+            A,
+            b,
+            x0=super_ilu.solve(b),
+            M=preconditioner,
+            rtol=1e-15,
+            callback_type="legacy",
+        )[0],
+        x,
     )
 
 
 def test_factor_excatly_singular() -> None:
     # all partial derivatives are zero
     A = csc_array([[1.0, 1.0, 1.0], [1.0, 1.0, 1.0], [1.0, 1.0, 1.0]], dtype=float)
-    B = get_super_ilu_preconditioner(A)
-    assert B is None
+    super_ilu, preconditioner = get_super_ilu_preconditioner(A)
+    assert super_ilu is None
+    assert preconditioner is None
 
 
 @pytest.mark.parametrize(
