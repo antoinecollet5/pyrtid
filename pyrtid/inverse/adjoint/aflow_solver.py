@@ -221,6 +221,13 @@ def make_initial_adj_flow_matrices(
 
     q_prev.setdiag(q_prev.diagonal() + diag)
 
+    # Add 1 to the diagonal for conditionning. Note that lambda_h^0 (and lambda_p^{0})
+    # is not used in the gradient at constant nodes
+    if fl_model.regime == FlowRegime.STATIONARY and not is_q_prev_for_gradient:
+        diag = np.zeros(q_next.shape[0])
+        diag[fl_model.cst_head_nn] = 1.0
+        q_next.setdiag(q_next.diagonal() + diag)
+
     return q_next, q_prev
 
 
@@ -591,12 +598,27 @@ def solve_adj_flow_saturated(
     dh/dt = div K grad h + ...
     """
 
-    # 1) Build adjoint flow matrices Q_{prev} and Q_{next}
+    # 1) Obtain the adjoint pressure and add it as a source term (observation on the
+    # pressure field)
+    a_fl_model.a_pressure[:, :, time_index] = -(
+        a_fl_model.a_pressure_sources[:, [time_index]]
+        .todense()
+        .reshape(geometry.nx, geometry.ny, order="F")
+    )
+
+    # If transient, no need to solve for t=0 because the gradient
+    # does not depend on the lmanda_h^{0}
+    if time_index == 0 and fl_model.regime == FlowRegime.TRANSIENT:
+        # To avoid lambda_h^0 undefined
+        a_fl_model.a_head[:, :, 0] = a_fl_model.a_head[:, :, 1]
+        return 0
+
+    # 2) Build adjoint flow matrices Q_{prev} and Q_{next}
     _q_next, _q_prev = get_aflow_matrices(
         geometry, fl_model, tr_model, a_fl_model, time_params, time_index
     )
 
-    # 2) Build LU preconditioner for Q_{next}
+    # 3) Build LU preconditioner for Q_{next}
     super_ilu, preconditioner = get_super_ilu_preconditioner(
         _q_next, drop_tol=1e-10, fill_factor=100
     )
@@ -606,7 +628,7 @@ def solve_adj_flow_saturated(
             f"saturated flow at it={time_index}!"
         )
 
-    # 3) Obtain Q_{prev} @ h^{n+1}
+    # 4) Obtain Q_{prev} @ h^{n+1}
     try:
         prev_vector = a_fl_model.a_head[:, :, time_index + 1].ravel("F")
     except IndexError:
@@ -614,20 +636,13 @@ def solve_adj_flow_saturated(
         prev_vector = np.zeros(_q_next.shape[0], dtype=np.float64)
     tmp = _q_prev.dot(prev_vector)
 
-    # 4) Add the source terms: observation on the head field
+    # 5) Add the source terms: observation on the head field
     tmp -= (
         a_fl_model.a_head_sources[:, [time_index]].todense().ravel("F")
         / fl_model.storage_coefficient.ravel("F")
         / geometry.mesh_volume
     )
 
-    # 5) Obtain the adjoint pressure and add it as a source term (observation on the
-    # pressure field)
-    a_fl_model.a_pressure[:, :, time_index] = -(
-        a_fl_model.a_pressure_sources[:, [time_index]]
-        .todense()
-        .reshape(geometry.nx, geometry.ny, order="F")
-    )
     tmp += (
         (
             a_fl_model.a_pressure[:, :, time_index].ravel("F")
@@ -677,12 +692,27 @@ def solve_adj_flow_density(
     dh/dt = div K grad h + ...
     """
 
-    # 1) Build adjoint flow matrices Q_{prev} and Q_{next}
+    # 1) Obtain the adjoint head field and add it as a source term (observation on the
+    # head field)
+    a_fl_model.a_head[:, :, time_index] = -(
+        a_fl_model.a_head_sources[:, [time_index]]
+        .todense()
+        .reshape(geometry.nx, geometry.ny, order="F")
+    )
+
+    # If transient, no need to solve for t=0 because the gradient
+    # does not depend on the lmanda_p^{0}
+    if time_index == 0 and fl_model.regime == FlowRegime.TRANSIENT:
+        # To avoid lambda_p^0 undefined
+        a_fl_model.a_pressure[:, :, 0] = a_fl_model.a_pressure[:, :, 1]
+        return 0
+
+    # 2) Build adjoint flow matrices Q_{prev} and Q_{next}
     _q_next, _q_prev = get_aflow_matrices(
         geometry, fl_model, tr_model, a_fl_model, time_params, time_index
     )
 
-    # 2) Build LU preconditioner for Q_{next}
+    # 3) Build LU preconditioner for Q_{next}
     super_ilu, preconditioner = get_super_ilu_preconditioner(
         _q_next, drop_tol=1e-10, fill_factor=100
     )
@@ -692,7 +722,7 @@ def solve_adj_flow_density(
             f"density flow at it={time_index}!"
         )
 
-    # 3) Obtain Q_{prev} @ p^{n+1}
+    # 4) Obtain Q_{prev} @ p^{n+1}
     try:
         prev_vector = a_fl_model.a_pressure[:, :, time_index + 1].ravel("F")
     except IndexError:
@@ -701,21 +731,14 @@ def solve_adj_flow_density(
     # Multiply prev matrix by prev vector (p^{n+1}
     tmp = _q_prev.dot(prev_vector)
 
-    # 4) Add the source terms: observation on the pressure field
+    # 5) Add the source terms: observation on the pressure field
     tmp -= (
         a_fl_model.a_pressure_sources[:, [time_index]].todense().ravel("F")
         / fl_model.storage_coefficient.ravel("F")
         / geometry.mesh_volume
     )
 
-    # 5) Obtain the adjoint head field and add it as a source term (observation on the
-    # head field)
-    a_fl_model.a_head[:, :, time_index] = -(
-        a_fl_model.a_head_sources[:, [time_index]]
-        .todense()
-        .reshape(geometry.nx, geometry.ny, order="F")
-    )
-    # Handle the density (forward variable) for n = 0 (initial system state).
+    # 6) Handle the density (forward variable) for n = 0 (initial system state).
     if time_index != 0:
         density = tr_model.ldensity[time_index - 1]  # type: ignore
     else:
@@ -731,12 +754,12 @@ def solve_adj_flow_density(
         / GRAVITY
     )
 
-    # 6) Add the source terms from mob observations (adjoint transport)
+    # 7) Add the source terms from mob observations (adjoint transport)
     tmp += get_adjoint_transport_src_terms(
         geometry, fl_model, a_fl_model, time_index, True
     )
 
-    # 7) Solve Ax = b with A sparse using LU preconditioner
+    # 8) Solve Ax = b with A sparse using LU preconditioner
     res, exit_code = lgmres(
         _q_next,
         tmp,
@@ -745,11 +768,11 @@ def solve_adj_flow_density(
         rtol=a_fl_model.rtol,
     )
 
-    # 8) Impose null adjoint head the the cst head boundaries
+    # 9) Impose null adjoint head the the cst head boundaries
     if time_index == 0:
         res[fl_model.cst_head_nn] = 0.0
 
-    # 9) Update the adjoint pressure field
+    # 10) Update the adjoint pressure field
     a_fl_model.a_pressure[:, :, time_index] = res.reshape(geometry.ny, geometry.nx).T
 
     return exit_code
