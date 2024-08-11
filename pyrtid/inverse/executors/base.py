@@ -393,7 +393,11 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         logging.info(f"{'' :=^{DISPLAY_TOP_LEN}}")
 
     def _run_forward_model(
-        self, s: NDArrayFloat, run_n: int, is_save_state: bool = True
+        self,
+        s: NDArrayFloat,
+        run_n: int,
+        is_save_state: bool = True,
+        is_verbose: bool = False,
     ) -> NDArrayFloat:
         """
         Run the forward model and returns the prediction vector.
@@ -407,6 +411,8 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         is_save_state: bool
             Whether the parameter values must be stored or not.
             The default is True.
+        is_verbose: bool
+            Whether to display info. The default is False.
 
         Returns
         -------
@@ -430,7 +436,7 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
             self.pre_run_transformation(self.fwd_model)
 
         # Solve the forward model with the new parameters
-        ForwardSolver(self.fwd_model).solve()
+        ForwardSolver(self.fwd_model).solve(is_verbose=is_verbose)
 
         d_pred = get_predictions_matching_observations(
             self.fwd_model, self.inv_model.observables, self.solver_config.hm_end_time
@@ -507,9 +513,16 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         return d_pred  # shape (N_obs, N_e)
 
     def eval_scaled_loss(
-        self, s_cond: NDArrayFloat, is_save_state: bool = True
+        self, s_cond: NDArrayFloat, is_save_state: bool = True, is_verbose: bool = False
     ) -> float:
-        """Compute the model scaled_loss function."""
+        """
+        Compute the model scaled_loss function.
+
+        Parameters
+        ----------
+        is_verbose: bool
+            Whether to display info. The default is False.
+        """
 
         d_obs = get_observables_values_as_1d_vector(
             self.inv_model.observables, max_obs_time=self.solver_config.hm_end_time
@@ -518,7 +531,10 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         loss_ls = eval_loss_ls(
             d_obs,
             self._run_forward_model(
-                s_cond, self.inv_model.nb_f_calls + 1, is_save_state=is_save_state
+                s_cond,
+                self.inv_model.nb_f_calls + 1,
+                is_save_state=is_save_state,
+                is_verbose=is_verbose,
             ),
             get_observables_uncertainties_as_1d_vector(
                 self.inv_model.observables, max_obs_time=self.solver_config.hm_end_time

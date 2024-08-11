@@ -103,7 +103,13 @@ class ForwardSolver:
         )
 
     def solve(self, is_verbose: bool = False) -> None:
-        """Solve the forward problem."""
+        """Solve the forward problem.
+
+        Parameters
+        ----------
+        is_verbose: bool
+            Whether to display info. The default is False.
+        """
         # Reinit all
         self.model.reinit()
 
