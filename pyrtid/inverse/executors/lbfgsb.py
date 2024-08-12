@@ -325,6 +325,7 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
                 param.reg_weight,
             )
 
+            # unweighted loss reg are stored at the parameter level
             has_been_updated.append(
                 param.update_reg_weight(
                     self.inv_model.loss_ls_history,  # not scaled not preconditioned

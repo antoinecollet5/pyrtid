@@ -59,7 +59,7 @@ class InverseModel:
         "loss_ls_unscaled",
         "loss_reg_unscaled",
         "loss_ls_history",
-        "loss_reg_history",
+        "loss_reg_weighted_history",
         "loss_scaled_history",
         "list_losses_for_fd_grad",
         "list_d_pred",
@@ -115,7 +115,7 @@ class InverseModel:
         self.is_regularization_at_first_round: bool = True
         self.nb_g_calls = 0
         self.loss_ls_history: List[float] = []
-        self.loss_reg_history: List[float] = []
+        self.loss_reg_weighted_history: List[float] = []
         self.list_losses_for_fd_grad: List[float] = []
         self.loss_scaled_history: List[float] = []
         self.list_d_pred: List[NDArrayFloat] = []

@@ -564,14 +564,14 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
 
         logging.info(f"Loss (obs fit)        = {loss_ls}")
         logging.info(rf"Loss (obs fit) / Nobs = {loss_ls/d_obs.size}")
-        logging.info(f"Loss (regularization) = {loss_reg}")
+        logging.info(f"Loss (weighted reg)   = {loss_reg}")
         logging.info(f"Scaling factor        = {self.inv_model.scaling_factor}")
         logging.info(f"Loss (scaled)         = {loss_scaled}\n")
 
         # Save the loss and the associated regularization weight
         if is_save_state:
             self.inv_model.loss_ls_history.append(loss_ls)
-            self.inv_model.loss_reg_history.append(loss_reg)
+            self.inv_model.loss_reg_weighted_history.append(loss_reg)
             self.inv_model.loss_scaled_history.append(loss_scaled)
 
         return loss_scaled
