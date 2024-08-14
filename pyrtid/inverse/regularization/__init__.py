@@ -15,20 +15,6 @@ Base class from which to derive regularizator implementations.
 
    Regularizator
 
-Strategies for the weight evaluation
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Class to indicate what strategy to use to weight the objective
-function regularization term.
-
-.. autosummary::
-   :toctree: _autosummary
-
-    RegWeightUpdateStrategy,
-    AdaptiveUCRegweight
-    AdaptiveRegweight
-    ConstantRegWeight
-
 Local
 =====
 
@@ -126,6 +112,33 @@ Stochastic partial differential equation compression (SPDE)
 
     eigen_factorize_cov_mat
 
+Regularization weights selection
+================================
+
+Strategies for the weight evaluation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Class to indicate what strategy to use to weight the objective
+function regularization term.
+
+.. autosummary::
+   :toctree: _autosummary
+
+    RegWeightUpdateStrategy,
+    AdaptiveUCRegweight
+    AdaptiveRegweight
+    ConstantRegWeight
+
+Curvature in the context of L-curve plot
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Evaluate curvature of a L-curve
+
+.. autosummary::
+   :toctree: _autosummary
+
+    get_l_curvature
+
 """
 
 from pyrtid.inverse.regularization.adaptive import (
@@ -154,6 +167,7 @@ from pyrtid.inverse.regularization.geostatistical import (
     EnsembleRegularizator,
     GeostatisticalRegularizator,
 )
+from pyrtid.inverse.regularization.lcurve import get_l_curvature
 from pyrtid.inverse.regularization.priors import (
     ConstantDriftMatrix,
     ConstantPriorTerm,
@@ -196,4 +210,5 @@ __all__ = [
     "AdaptiveRegweight",
     "ConstantRegWeight",
     "DiscreteRegularizator",
+    "get_l_curvature",
 ]
