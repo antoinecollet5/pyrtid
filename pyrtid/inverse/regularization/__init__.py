@@ -127,6 +127,7 @@ function regularization term.
     RegWeightUpdateStrategy,
     AdaptiveUCRegweight
     AdaptiveRegweight
+    AdaptiveGradientNormRegweight
     ConstantRegWeight
 
 Curvature in the context of L-curve plot
@@ -142,6 +143,7 @@ Evaluate curvature of a L-curve
 """
 
 from pyrtid.inverse.regularization.adaptive import (
+    AdaptiveGradientNormRegweight,
     AdaptiveRegweight,
     AdaptiveUCRegweight,
 )
@@ -211,4 +213,5 @@ __all__ = [
     "ConstantRegWeight",
     "DiscreteRegularizator",
     "get_l_curvature",
+    "AdaptiveGradientNormRegweight",
 ]

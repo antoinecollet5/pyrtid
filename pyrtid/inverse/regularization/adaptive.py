@@ -66,6 +66,185 @@ class AdaptiveRegweight(RegWeightUpdateStrategy, ABC):
         )
 
 
+class AdaptiveGradientNormRegweight(AdaptiveRegweight):
+    """Implement an adaptive regularization parameter choice based on the U-Curve."""
+
+    def __init__(
+        self,
+        norm: Optional[Union[int, float, str]] = None,
+        reg_weight_init: float = 1.0,
+        reg_weigh_bounds: Union[Tuple[float, float], NDArrayFloat] = (1e-10, 1e10),
+        convergence_factor: float = 0.05,
+    ) -> None:
+        """
+        Initialize the instance.
+
+        Parameters
+        ----------
+        norm: {int, inf, -inf, 'fro', 'nuc', None}, optional
+            Order of the norm, inf means NumPy’s inf object. The default is None.
+        reg_weight_init : float, optional
+            Initial regularization weight, by default 1.0
+        reg_weigh_bounds : Union[Tuple[float, float], NDArrayFloat], optional
+            Bounds for the optimization parameter, by default (1e-10, 1e10)
+        convergence_factor : float, optional
+            Convergence criteria for the regularization weight, by default 0.05
+
+        Notes
+        -----
+        For values of ``ord <= 0``, the result is, strictly speaking, not a
+        mathematical 'norm', but it may still be useful for various numerical
+        purposes.
+
+        The following norms can be calculated:
+
+        =====  ============================  ==========================
+        norm   norm for matrices             norm for vectors
+        =====  ============================  ==========================
+        None   Frobenius norm                2-norm
+        'fro'  Frobenius norm                --
+        'nuc'  nuclear norm                  --
+        inf    max(sum(abs(a), axis=1))      max(abs(a))
+        -inf   min(sum(abs(a), axis=1))      min(abs(a))
+        0      --                            sum(a != 0)
+        1      max(sum(abs(a), axis=0))      as below
+        -1     min(sum(abs(a), axis=0))      as below
+        2      2-norm (largest sing. value)  as below
+        -2     smallest singular value       as below
+        other  --                            sum(abs(a)**ord)**(1./ord)
+        =====  ============================  ==========================
+
+        The Frobenius norm is given by [1]_:
+
+            :math:`||A||_F = [\\sum_{i,j} abs(a_{i,j})^2]^{1/2}`
+
+        The nuclear norm is the sum of the singular values.
+
+        References
+        ----------
+        .. [1] G. H. Golub and C. F. Van Loan, *Matrix Computations*,
+            Baltimore, MD, Johns Hopkins University Press, 1985, pg. 15
+
+        """
+        super().__init__(reg_weight_init, reg_weigh_bounds, convergence_factor)
+        # internal state used only in the case of adaptive regularization strategy
+        self.n_regw_update: int = 0
+        self.is_noise_dominated: bool = False
+        self.loss_ls_grad_norms: List[float] = []
+        self.loss_reg_grad_norms: List[float] = []
+
+        try:
+            sp.linalg.norm(np.ones(10), ord=norm)
+        except ValueError:
+            raise ValueError(
+                'Not a valid norm! Check the "ord" parameter from'
+                " https://docs.scipy.org/doc/scipy/reference/generated/scipy.linalg.norm.html"
+            )
+        self.norm = norm
+
+    def _update_reg_weight(
+        self,
+        loss_ls_history: List[float],
+        loss_reg_history: List[float],
+        reg_weight_history: List[float],
+        loss_ls_grad: NDArrayFloat,
+        loss_reg_grad: NDArrayFloat,
+        n_obs: int,
+        logger: Optional[logging.Logger] = None,
+    ) -> bool:
+        """
+        Update the regularization weight.
+
+        Parameters
+        ----------
+        loss_ls_history : List[float]
+            List of past LS cost function.
+        loss_reg_history : List[float]
+            List of past regularization cost function.
+        reg_weight_history : List[float]
+            List of past regularization parameter (weight).
+        loss_ls_grad : NDArrayFloat
+            Current LS cost function gradient.
+        loss_reg_grad : NDArrayFloat
+            Current Reg cost function gradient.
+        logger: Optional[logging.Logger]
+            Optional :class:`logging.Logger` instance used for event logging.
+            The default is None.
+
+        Returns
+        -------
+        bool
+            Whether the regularization parameter (weight) has changed.
+        """
+        # Case 1: no regularization loss has been saved
+        if len(loss_reg_history) == 0:
+            return False
+        # Case 2: the regularization is null
+        if loss_reg_history[-1] == 0:
+            return False
+
+        _old: float = copy.copy(self.reg_weight)
+
+        self.loss_ls_grad_norms.append(sp.linalg.norm(loss_ls_grad, ord=self.norm))
+        self.loss_reg_grad_norms.append(sp.linalg.norm(loss_reg_grad, ord=self.norm))
+
+        # Determine the initial status
+        if self.n_regw_update == 0:
+            self.is_noise_dominated = (
+                self.loss_ls_grad_norms[-1] < self.loss_reg_grad_norms[-1]
+            )
+
+        # means the regularization gradient is 0.0 -> no weight update
+        if self.loss_reg_grad_norms[-1] == 0.0:
+            return False
+        if self.loss_ls_grad_norms[-1] == 0.0:
+            return False
+
+        if self.is_noise_dominated:
+            # We increase the regularization weight to make sure that the
+            # noise is removed and prevent overfit
+            self.reg_weight = (
+                (self.loss_reg_grad_norms[-1]) / self.loss_ls_grad_norms[-1]
+            )
+        else:
+            # We  increase the regularization weight
+            self.reg_weight = (
+                self.loss_ls_grad_norms[-1] / (self.loss_reg_grad_norms[-1])
+            )
+
+        if logger is not None:
+            logger.info(
+                f"loss_ls_grad_{self.norm}_norm = " f"{self.loss_ls_grad_norms[-1]}"
+            )
+            logger.info(
+                f"loss_reg_grad_{self.norm}_norm = " f"{self.loss_reg_grad_norms[-1]}"
+            )
+
+        # Test the relative change of loss ls, if below the threshold, then
+        # do not take the update into account
+        if len(loss_ls_history) >= 2:
+            if (
+                np.abs(
+                    (loss_ls_history[-1] - loss_ls_history[-2]) / loss_ls_history[-2]
+                )
+                < self.convergence_factor
+            ):
+                self.reg_weight = _old
+                return False
+
+        # Test the relative change of alpha, if below the threshold, then
+        # do not take the update into account
+        if np.abs((self.reg_weight - _old) / _old) < self.convergence_factor:
+            self.reg_weight = _old
+            return False
+
+        # Update comptor
+        if _old != self.reg_weight:
+            self.n_regw_update += 1
+        # return if it has changed ?
+        return _old != self.reg_weight
+
+
 class AdaptiveUCRegweight(AdaptiveRegweight):
     """Implement an adaptive regularization parameter choice based on the U-Curve."""
 
@@ -94,6 +273,9 @@ class AdaptiveUCRegweight(AdaptiveRegweight):
         # internal state used only in the case of adaptive regularization strategy
         self.n_update_explo_phase = n_update_explo_phase
         self.n_regw_update: int = 0
+        self.is_noise_dominated: bool = False
+        self.loss_ls_grad_norms: List[float] = []
+        self.loss_reg_grad_norms: List[float] = []
 
     def _update_reg_weight(
         self,
@@ -140,28 +322,62 @@ class AdaptiveUCRegweight(AdaptiveRegweight):
 
         # Case 1: Exploration phase
         if self.n_regw_update < self.n_update_explo_phase:
-            loss_ls_grad_manhattan_norm = sp.linalg.norm(loss_ls_grad, ord=1)
-            loss_reg_grad_manhattan_norm = sp.linalg.norm(loss_reg_grad, ord=1)
+            self.loss_ls_grad_norms.append(sp.linalg.norm(loss_ls_grad, ord=np.inf))
+            self.loss_reg_grad_norms.append(sp.linalg.norm(loss_reg_grad, ord=np.inf))
+
+            # Determine the initial status
+            if self.n_regw_update == 0:
+                self.is_noise_dominated = (
+                    self.loss_ls_grad_norms[-1] < self.loss_reg_grad_norms[-1]
+                )
+
             # means the regularization gradient is 0.0 -> no weight update
-            if loss_reg_grad_manhattan_norm == 0.0:
+            if self.loss_reg_grad_norms[-1] == 0.0:
                 return False
-            if loss_ls_grad_manhattan_norm == 0.0:
+            if self.loss_ls_grad_norms[-1] == 0.0:
                 return False
 
-            self.reg_weight = (
-                0.5 * loss_ls_grad_manhattan_norm / loss_reg_grad_manhattan_norm
-            )
+            if self.is_noise_dominated:
+                # We increase the regularization weight to make sure that the
+                # noise is removed and prevent overfit
+                self.reg_weight = (
+                    (self.loss_reg_grad_norms[-1]) / self.loss_ls_grad_norms[-1]
+                )
+            else:
+                # We  increase the regularization weight
+                self.reg_weight = (
+                    self.loss_ls_grad_norms[-1] / (self.loss_reg_grad_norms[-1])
+                )
 
             if logger is not None:
                 logger.info("Exploration phase.")
 
             if logger is not None:
                 logger.info(
-                    f"loss_ls_grad_manhattan_norm = {loss_ls_grad_manhattan_norm}"
+                    "loss_ls_grad_manhattan_norm = " f"{self.loss_ls_grad_norms[-1]}"
                 )
                 logger.info(
-                    f"loss_reg_grad_manhattan_norm = {loss_reg_grad_manhattan_norm}"
+                    "loss_reg_grad_manhattan_norm = " f"{self.loss_reg_grad_norms[-1]}"
                 )
+
+                logger.info(
+                    "loss_ls_grad_squared_norm = "
+                    f"{sp.linalg.norm(loss_ls_grad, ord=2)}"
+                )
+                logger.info(
+                    "loss_reg_grad_squared_norm = "
+                    f"{sp.linalg.norm(loss_reg_grad, ord=2)}"
+                )
+
+                logger.info(
+                    "loss_ls_grad_inf_norm = "
+                    f"{sp.linalg.norm(loss_ls_grad, ord=np.inf)}"
+                )
+                logger.info(
+                    "loss_reg_grad_inf_norm = "
+                    f"{sp.linalg.norm(loss_reg_grad, ord=np.inf)}"
+                )
+
         # Case 2: we compute the optimal regularization weight - Optimization phase
         else:
             # we must have the same number of loss_ls and loss_reg
