@@ -2029,6 +2029,7 @@ class GDPNCS(Preconditioner):
         NDArrayFloat
             Conditioned (transformed) parameter values.
         """
+        assert s_raw.size == self._cholQ_nc.P().size
         if self.is_update_mean:
             return np.hstack((self.theta, self.estimated_mean))
         return self.theta
