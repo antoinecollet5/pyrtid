@@ -426,10 +426,10 @@ def condition_precision_matrix(
 
 
 def kriging(
-    Q: csc_array,
+    Q_cond: csc_array,
     dat: NDArrayFloat,
     dat_indices: NDArrayInt,
-    cholQ: Optional[Factor] = None,
+    cholQ_cond: Optional[Factor] = None,
     dat_var: Optional[NDArrayFloat] = None,
 ) -> NDArrayFloat:
     """
@@ -437,13 +437,13 @@ def kriging(
 
     Parameters
     ----------
-    Q : csc_array
-        Unconditional precision matrix.
+    Q_cond : csc_array
+        Conditional precision matrix.
     dat : NDArrayFloat
         Conditional values.
     dat_indices : NDArrayInt
         Grid cell indices of the conditional values. The default is None.
-    cholQ : Factor
+    cholQ_cond : Factor
         Cholesky decomposition of the unconditional precision matrix.
     dat_var : NDArrayFloat
         Variance of the conditional data. The default is None.
@@ -453,12 +453,12 @@ def kriging(
     NDArrayFloat
         Krigging.
     """
-    if cholQ is None:
-        _cholQ = sparse_cholesky((Q.tocsc()))
+    if cholQ_cond is None:
+        _cholQ_cond = sparse_cholesky((Q_cond.tocsc()))
     else:
-        _cholQ = cholQ
+        _cholQ_cond = cholQ_cond
 
-    input = np.zeros(Q.shape[0])
+    input = np.zeros(Q_cond.shape[0])
     input[dat_indices] = dat
     if dat_var is not None:
         input[dat_indices] /= dat_var
@@ -472,7 +472,7 @@ def kriging(
     #     input_bis[dat_indices] /= dat_var
     # checking the correctness
     # np.testing.assert_allclose(input, input_bis)
-    return _cholQ(input)
+    return _cholQ_cond(input)
 
 
 def d_simu_nc_mat_vec(cholQ: Factor, b: NDArrayFloat) -> NDArrayFloat:
@@ -540,12 +540,12 @@ def simu_c(
     NDArrayFloat
         Conditional simulation.
     """
-    z_k = kriging(Q_cond, dat, dat_indices, cholQ=cholQ_cond, dat_var=dat_var)
+    z_k = kriging(Q_cond, dat, dat_indices, cholQ_cond=cholQ_cond, dat_var=dat_var)
     # z_k = krig_prec2(Q_cond, dat * 1 / grid_var[dat_indices], dat_indices)
     z_nc = simu_nc(cholQ, w, random_state)
     dat_nc = z_nc[dat_indices]
     # z_nck = krig_chol(QTT_factor, QTD, dat_nc, dat_indices)
-    z_nck = kriging(Q_cond, dat_nc, dat_indices, cholQ=cholQ_cond, dat_var=dat_var)
+    z_nck = kriging(Q_cond, dat_nc, dat_indices, cholQ_cond=cholQ_cond, dat_var=dat_var)
     return z_k - (z_nc - z_nck)
 
 
