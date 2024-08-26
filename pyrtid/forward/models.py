@@ -9,9 +9,10 @@ Note :
 
 from __future__ import annotations
 
+import warnings
 from abc import ABC
 from dataclasses import dataclass
-from typing import List, Optional, Sequence, Tuple, Union
+from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 from scipy.sparse import lil_array, lil_matrix
@@ -1312,11 +1313,11 @@ class ForwardModel:
             geometry, time_params, tr_params, gch_params
         )
         if source_terms is not None:
-            self.source_terms: List[SourceTerm] = object_or_object_sequence_to_list(
-                source_terms
-            )
+            self.source_terms: Dict[str, SourceTerm] = {
+                v.name: v for v in object_or_object_sequence_to_list(source_terms)
+            }
         else:
-            self.source_terms: List[SourceTerm] = []
+            self.source_terms: Dict[str, SourceTerm] = {}
         if boundary_conditions is None:
             return
         for condition in object_or_object_sequence_to_list(boundary_conditions):
@@ -1332,7 +1333,7 @@ class ForwardModel:
         _conc_src = np.zeros((self.tr_model.n_sp, geometry.nx, geometry.ny))
 
         # iterate the source terms
-        for source in self.source_terms:
+        for source in self.source_terms.values():
             # identify the source term applying
             _fl, _conc = source.get_values(time)
             nids = source.get_node_indices(geometry)
@@ -1367,7 +1368,12 @@ class ForwardModel:
 
     def add_src_term(self, source_term: SourceTerm) -> None:
         """Add a source term."""
-        self.source_terms.append(source_term)
+        if self.source_terms.get(source_term.name) is not None:
+            warnings.warn(
+                f"{source_term.name} is already among the source terms"
+                " and has been overwritten!"
+            )
+        self.source_terms[source_term.name] = source_term
 
     def add_boundary_conditions(self, condition: BoundaryCondition) -> None:
         """Add a boundary condition to the flow or the transport model."""

@@ -168,7 +168,7 @@ def model() -> ForwardModel:
 def test_add_source_term(model) -> None:
     assert len(model.source_terms) == 1
     source_term = SourceTerm(
-        "some_name",
+        "some_name2",
         np.array([1], dtype=np.int32),
         np.array([1.0], dtype=np.float64),
         np.array([1.0], dtype=np.float64),
