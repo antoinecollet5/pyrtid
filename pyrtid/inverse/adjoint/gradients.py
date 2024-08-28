@@ -1229,8 +1229,8 @@ def compute_adjoint_gradient(
         # 5) Apply preconditioning and flatten
         param_values = get_parameter_values_from_model(fwd_model, param)
         param_grad = param.preconditioner.dbacktransform_vec(
-            param.preconditioner(param_values.ravel("F")),
-            param_grad.ravel("F"),
+            param.preconditioner(param_values),
+            param_grad,
         )
 
         # 6) Save the preconditioned gradient
