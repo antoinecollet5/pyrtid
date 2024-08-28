@@ -10,6 +10,7 @@ def apply_default_rc_params() -> None:
             "font.family": "sans-serif",
             "font.sans-serif": ["Helvetica", "DejaVu Sans"],
             "font.size": 16,
+            "mathtext.fontset": "cm",
             "text.usetex": False,
             "savefig.format": "svg",
             "svg.fonttype": "none",  # to store text as text, not as path
