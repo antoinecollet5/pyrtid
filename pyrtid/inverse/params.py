@@ -445,6 +445,9 @@ class AdjustableParameter:
             values: NDArrayFloat = self.values.copy()
             if s_raw is not None:
                 values = s_raw.reshape(values.shape, order="F")
+            # Note: I could add # .reshape(values.shape, order="F") to the next line
+            # but I consider that the regularization must return a field of the
+            # same shape as values. This is where the responsibility is.
             grad += reg.eval_loss_gradient(values)
         return grad
 
