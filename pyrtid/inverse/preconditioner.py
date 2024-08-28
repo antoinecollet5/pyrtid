@@ -659,7 +659,9 @@ class NoTransform(Preconditioner):
 class LinearTransform(Preconditioner):
     """Apply a linear transform to the parameter."""
 
-    def __init__(self, slope: float, y_intercept: float) -> None:
+    def __init__(
+        self, slope: Union[float, NDArrayFloat], y_intercept: Union[float, NDArrayFloat]
+    ) -> None:
         """
         Initialize the instance.
 
@@ -2267,7 +2269,7 @@ class GDPCS(GDPNCS):
 class SubSelector(Preconditioner):
     """Apply a selection on the input field."""
 
-    def __init__(self, node_numbers: NDArrayInt, field_size: int) -> None:
+    def __init__(self, node_numbers: NDArrayInt, field_shape: Sequence[int]) -> None:
         """
         Initialize the instance.
 
@@ -2275,12 +2277,17 @@ class SubSelector(Preconditioner):
         ----------
         node_numbers : NDArrayInt
             Node to sample.
-        field_size : int
+        field_shape : int
             Size of the field to be sampled.
         """
         self.node_numbers = np.array(node_numbers)
-        self.field_size = int(field_size)
-        self.s_raw = np.zeros(field_size)
+        self.field_shape: Sequence[int] = field_shape
+        self.s_raw = np.zeros(self.field_size)
+
+    @property
+    def field_size(self) -> int:
+        """Return the number of values in the field."""
+        return np.prod(self.field_shape)
 
     def _transform(self, s_raw: NDArrayFloat) -> NDArrayFloat:
         """
@@ -2298,7 +2305,7 @@ class SubSelector(Preconditioner):
         """
         self.s_raw = np.array(s_raw).ravel("F")
         assert np.size(s_raw) == self.field_size
-        return self.s_raw[self.node_numbers]
+        return self.s_raw[self.node_numbers]  # ! this is 1D.
 
     def _backtransform(self, s_cond: NDArrayFloat) -> NDArrayFloat:
         """
@@ -2317,7 +2324,7 @@ class SubSelector(Preconditioner):
         assert np.size(s_cond) == self.node_numbers.size
         out = self.s_raw.copy()
         out[self.node_numbers] = s_cond
-        return out
+        return out.reshape(self.field_shape, order="F")
 
     def _dtransform_vec(
         self, s_raw: NDArrayFloat, gradient: NDArrayFloat
@@ -2329,7 +2336,7 @@ class SubSelector(Preconditioner):
         assert np.size(gradient) == self.node_numbers.size
         out = np.zeros(self.field_size)
         out[self.node_numbers] = gradient
-        return out
+        return out.reshape(self.field_shape, order="F")
 
     def _dbacktransform_vec(
         self, s_cond: NDArrayFloat, gradient: NDArrayFloat
