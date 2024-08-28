@@ -9,15 +9,7 @@ import numpy as np
 from scipy.sparse import lil_array
 from scipy.sparse.linalg import gmres
 
-from pyrtid.utils import (
-    arithmetic_mean,
-    get_array_borders_selection,
-    get_super_ilu_preconditioner,
-    harmonic_mean,
-)
-from pyrtid.utils.types import NDArrayFloat
-
-from .models import (
+from pyrtid.forward.models import (
     GRAVITY,
     WATER_DENSITY,
     FlowModel,
@@ -27,6 +19,13 @@ from .models import (
     VerticalAxis,
     get_owner_neigh_indices,
 )
+from pyrtid.utils import (
+    arithmetic_mean,
+    get_array_borders_selection,
+    get_super_ilu_preconditioner,
+    harmonic_mean,
+)
+from pyrtid.utils.types import NDArrayFloat
 
 
 def get_kmean(
