@@ -7,13 +7,18 @@ TODO: add references.
 """
 
 from dataclasses import dataclass
+from typing import Optional
 
 import numpy as np
 
+from pyrtid.forward.models import Geometry
 from pyrtid.inverse.preconditioner import NoTransform, Preconditioner
-from pyrtid.inverse.regularization.base import Regularizator
+from pyrtid.inverse.regularization.base import (
+    Regularizator,
+    make_spatial_gradient_matrices,
+)
 from pyrtid.utils.operators import gradient_ffd
-from pyrtid.utils.types import NDArrayFloat
+from pyrtid.utils.types import NDArrayFloat, NDArrayInt
 
 
 @dataclass
@@ -101,3 +106,108 @@ class TVRegularizator(Regularizator):
                 gradient_ffd(param, self.dy, axis=1)[:, :-1] / self.dy / den[:, :-1]
             )
         return grad
+
+
+@dataclass
+class TVMatRegularizator(Regularizator):
+    r"""
+    Apply a Total Variation (sharpening) regularization with matrix formulation.
+
+    Attributes
+    ----------
+    geometry : Geometry
+        Geometry of the field
+    sub_selection : Optional[NDArrayInt], optional
+        Optional sub selection of the field. Non selected elements will be
+        ignored in the gradient computation (as if non existing). If None, all
+        elements are used. By default None.
+    eps: float
+        Small factor added in the square root to deal with the singularity at
+        $\nabla u = 0$ when computing the gradient. The default is 1e-20.
+    preconditioner: Preconditioner
+        Parameter pre-transformation operator (variable change for the solver).
+        The default is the identity function: f(x) = x, which means no change
+        is made.
+
+    """
+
+    geometry: Geometry
+    sub_selection: Optional[NDArrayInt] = None
+    eps: float = 1e-20
+    preconditioner: Preconditioner = NoTransform()
+
+    def __post_init__(self) -> None:
+        """Post initialize the object."""
+        self.mat_grad_x, self.mat_grad_y = make_spatial_gradient_matrices(
+            self.geometry, self.sub_selection
+        )
+
+    def _eval_loss(self, param: NDArrayFloat) -> float:
+        r"""
+        Compute the gradient of the regularization loss function analytically.
+
+        .. math::
+
+        \mathcal{R}_{TN}(u) = \frac{1}{2} \sum_{j=1}^{M} \sum_{i=1}^{N}
+        \left( \dfrac{u_{i+1, j} - u_{i,j}}{dx} \right)^{2}
+
+        Parameters
+        ----------
+        param : NDArrayFloat
+            The parameter for which the regularization is computed.
+
+        Returns
+        -------
+        float
+        """
+        return float(
+            np.sum(
+                np.sqrt(
+                    (self.mat_grad_x @ param.ravel("F")) ** 2.0
+                    + (self.mat_grad_y @ param.ravel("F")) ** 2.0
+                    + self.eps
+                )
+            )
+        )
+        # This is the same as -> simpler for derivation
+        # f += 0.5 * float(
+        #     np.sum(
+        #         (
+        #             param.ravel("F")
+        #             @ self.mat_grad_x
+        #             @ self.mat_grad_x
+        #             @ param.ravel("F")
+        #         )
+        #     )
+        # )
+
+    def eval_loss_gradient_analytical(self, param: NDArrayFloat) -> NDArrayFloat:
+        r"""
+        Compute the gradient of the regularization loss function analytically.
+
+        Parameters
+        ----------
+        param : NDArrayFloat
+            The parameter for which the regularization is computed.
+
+        Returns
+        -------
+        NDArrayFloat
+            The regularization gradient.
+        """
+        # TODO: still not correct
+        grad = np.zeros(param.size)
+        # den = np.sqrt(
+        #     (self.mat_grad_x @ param.ravel("F")) ** 2.0
+        #     + (self.mat_grad_y @ param.ravel("F")) ** 2.0
+        #     + self.eps
+        # )
+        grad += (
+            2
+            * (
+                self.mat_grad_x.T @ self.mat_grad_x
+                + self.mat_grad_y.T @ self.mat_grad_y
+            )
+            @ param.ravel("F")
+        )
+        return grad.reshape(param.shape, order="F")
