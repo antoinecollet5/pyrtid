@@ -188,7 +188,7 @@ class AdjointSolver:
             if nafpi > max_nafpi:
                 raise RuntimeError(
                     f"The adjoint fixed point loop at time iteration {time_index}"
-                    f" (t={self.fwd_model.time_params.ldt[time_index]}), exceeded the"
+                    f" (t={self.fwd_model.time_params.times[time_index]}), exceeded the"
                     f" maximum number of fpi iterations allowed ({max_nafpi}!)\n"
                     f"The convergence criteria might be too low. Try to diminish it."
                 )
