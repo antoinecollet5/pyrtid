@@ -92,6 +92,9 @@ base_solver_config_params_ds = """is_verbose: bool
         seeded with `random_state`.
         If `random_state` is already a ``Generator`` or ``RandomState``
         instance then that instance is used.
+    is_fwd_verbose: bool = False
+        Whether to solve the forward problem displaying all information.
+        By default False.
         """
 
 
@@ -112,6 +115,7 @@ class BaseSolverConfig:
     random_state: Optional[Union[int, np.random.Generator, np.random.RandomState]] = (
         np.random.default_rng(198873)
     )
+    is_fwd_verbose: bool = False
 
 
 _BaseSolverConfig = TypeVar("_BaseSolverConfig", bound=BaseSolverConfig)
@@ -436,7 +440,9 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
             self.pre_run_transformation(self.fwd_model)
 
         # Solve the forward model with the new parameters
-        ForwardSolver(self.fwd_model).solve(is_verbose=is_verbose)
+        ForwardSolver(self.fwd_model).solve(
+            is_verbose=is_verbose or self.solver_config.is_fwd_verbose
+        )
 
         d_pred = get_predictions_matching_observations(
             self.fwd_model, self.inv_model.observables, self.solver_config.hm_end_time
@@ -534,7 +540,7 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
                 s_cond,
                 self.inv_model.nb_f_calls + 1,
                 is_save_state=is_save_state,
-                is_verbose=is_verbose,
+                is_verbose=is_verbose or self.solver_config.is_fwd_verbose,
             ),
             get_observables_uncertainties_as_1d_vector(
                 self.inv_model.observables, max_obs_time=self.solver_config.hm_end_time
@@ -711,6 +717,10 @@ adjoint_solver_config_params_ds = """is_check_gradient: bool
     is_adj_numerical_acceleration: bool
         Whether to use numerical acceleration in the adjoint state.
         The default is False.
+    is_adj_verbose: bool = False
+        Whether to solve the adjoint problem displaying information.
+        By default False.
+
         """
 
 
@@ -735,6 +745,7 @@ class AdjointSolverConfig(BaseSolverConfig):
     afpi_eps: float = 1e-5
     max_nafpi: int = 50
     is_adj_numerical_acceleration: bool = False
+    is_adj_verbose: bool = False
 
 
 _AdjointSolverConfig = TypeVar("_AdjointSolverConfig", bound=AdjointSolverConfig)
@@ -840,7 +851,7 @@ class AdjointInversionExecutor(BaseInversionExecutor, Generic[_AdjointSolverConf
             solver.solve(
                 self.inv_model.observables,
                 self.solver_config.hm_end_time,
-                is_verbose=is_verbose,
+                is_verbose=is_verbose or self.solver_config.is_adj_verbose,
                 max_nafpi=self.solver_config.max_nafpi,
             )
             # Compute the gradient with the adjoint state method
