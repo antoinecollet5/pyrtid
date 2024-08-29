@@ -2354,8 +2354,11 @@ class SubSelector(Preconditioner):
         Return the inverse of the backtransform 1st derivative times a vector.
         """
         # no effect here. We just sub sample the gradient
-        assert gradient.size == self.field_size
-        return gradient.ravel("F")[self.node_numbers]
+        assert gradient.size == self.node_numbers.size
+        assert s_cond.size == self.node_numbers.size
+        out = np.zeros(self.field_size)
+        out[self.node_numbers] = gradient
+        return out
 
     def transform_bounds(self, bounds: NDArrayFloat) -> NDArrayFloat:
         """
