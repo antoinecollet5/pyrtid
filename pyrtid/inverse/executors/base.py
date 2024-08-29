@@ -70,8 +70,7 @@ def register_params_ds(params_ds: str):  # type: ignore
     return decorator
 
 
-base_solver_config_params_ds = """is_verbose: bool
-        Whether to display inversion information. The default is True.
+base_solver_config_params_ds = """
     hm_end_time: Optional[float]
         Time at which the history matching ends and the forecast begins.
         This is not to confuse with the simulation `duration` which
@@ -108,7 +107,6 @@ class BaseSolverConfig:
     ----------
     """
 
-    is_verbose: bool = True
     hm_end_time: Optional[float] = None
     is_parallel: bool = False
     max_workers: int = 2
