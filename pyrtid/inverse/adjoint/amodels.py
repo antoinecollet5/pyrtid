@@ -167,6 +167,7 @@ class AdjointTransportModel:
     a_gch_src_term: NDArrayFloat
     afpi_eps: float
     is_adj_numerical_acceleration: bool
+    is_adj_num_acc_for_timestep: bool
     n_sp: int
     """
 
@@ -187,6 +188,7 @@ class AdjointTransportModel:
         "a_gch_src_term",
         "afpi_eps",
         "is_adj_numerical_acceleration",
+        "is_adj_num_acc_for_timestep",
         "n_sp",
     ]
 
@@ -259,7 +261,8 @@ class AdjointTransportModel:
         self.q_prev: lil_matrix = lil_array((geometry.nx * geometry.ny, 1))
         self.q_next: lil_matrix = lil_array((geometry.nx * geometry.ny, 1))
         self.afpi_eps = afpi_eps
-        self.is_adj_numerical_acceleration = is_adj_numerical_acceleration
+        self.is_adj_numerical_acceleration: bool = is_adj_numerical_acceleration
+        self.is_adj_num_acc_for_timestep: bool = self.is_adj_numerical_acceleration
 
     def clear_adjoint_sources(self) -> None:
         """Reset all adjoint sources to zero."""

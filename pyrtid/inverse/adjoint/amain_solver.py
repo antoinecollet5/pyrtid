@@ -120,6 +120,9 @@ class AdjointSolver:
             -1,
             -1,  # type: ignore
         ):  # Reverse order in time, and reverse order in operator sequence
+            self.adj_model.a_tr_model.is_adj_num_acc_for_timestep = (
+                self.adj_model.a_tr_model.is_adj_numerical_acceleration
+            )
             self._solve_system_for_timestep(time_index, is_verbose, max_nafpi)
 
     def _solve_system_for_timestep(
@@ -146,6 +149,21 @@ class AdjointSolver:
 
         # 2) Iterate the chemistry transport system while the convergence is no meet
         while not has_converged:
+            if nafpi > max_nafpi:
+                if self.adj_model.a_tr_model.is_adj_num_acc_for_timestep:
+                    # temporary disabling of numerical acceleration
+                    self.adj_model.a_tr_model.is_adj_num_acc_for_timestep = False
+                    nafpi = 1
+                # restart the timestep
+                else:
+                    raise RuntimeError(
+                        f"The adjoint fixed point loop at time iteration {time_index}"
+                        f" (t={self.fwd_model.time_params.times[time_index]}), exceeded"
+                        f"the maximum number of fpi iterations allowed ({max_nafpi}!)\n"
+                        f"The convergence criteria might be too low. Try to diminish "
+                        "it or increase the maximum number of fpi iterations!"
+                    )
+
             # 2.1) Start by solving adjoint geochemistry
             solve_adj_geochem(
                 self.fwd_model.tr_model,
@@ -184,14 +202,6 @@ class AdjointSolver:
 
             # Update the number of FPI
             nafpi += 1
-
-            if nafpi > max_nafpi:
-                raise RuntimeError(
-                    f"The adjoint fixed point loop at time iteration {time_index}"
-                    f" (t={self.fwd_model.time_params.times[time_index]}), exceeded the"
-                    f" maximum number of fpi iterations allowed ({max_nafpi}!)\n"
-                    f"The convergence criteria might be too low. Try to diminish it."
-                )
 
         # 3) Need to compute the adjoint darcy velocities
         update_adjoint_u_darcy(

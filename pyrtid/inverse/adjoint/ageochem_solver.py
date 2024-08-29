@@ -71,7 +71,7 @@ def solve_adj_geochem(
     # 2.3) Add the contributions from the transport equation
     # + deal with the adjoint numerical acceleration
     if (
-        a_tr_model.is_adj_numerical_acceleration
+        a_tr_model.is_adj_num_acc_for_timestep
         and nafpi == 1
         and time_index < time_params.nts - 1
     ):
