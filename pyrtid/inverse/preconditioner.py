@@ -2353,11 +2353,33 @@ class SubSelector(Preconditioner):
         """
         Return the inverse of the backtransform 1st derivative times a vector.
         """
-        # not possible to restore the gradient because of data losses while subsampling
-        raise NotImplementedError(
-            "_dbacktransform_inv_vec is not implemented for "
-            "SubSelectors! Contact developers for detail!"
-        )
+        # no effect here. We just sub sample the gradient
+        assert gradient.size == self.field_size
+        return gradient.ravel("F")[self.node_numbers]
+
+    def transform_bounds(self, bounds: NDArrayFloat) -> NDArrayFloat:
+        """
+        Transform the bounds to match the preconditioned values.
+
+        Parameters
+        ----------
+        bounds : NDArrayFloat
+            Array of shape (N_s, 2).
+
+        Returns
+        -------
+        NDArrayFloat
+            Array of shape (N_s, 2) with transformed bounds.
+        """
+        # store s_raw
+        s_raw = self.s_raw
+        # calling transform_bounds modify s_raw (set at the upper bound)
+        # which is not necessarily desired
+        bounds = super().transform_bounds(bounds)
+        # restore s_raw
+        self.s_raw = s_raw
+        # return the bounds
+        return bounds
 
 
 class Slicer(SubSelector):
