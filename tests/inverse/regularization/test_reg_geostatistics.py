@@ -63,7 +63,7 @@ def get_param_values() -> NDArrayFloat:
     rng = np.random.default_rng(26659)
     param += rng.random(get_domain_shape()) * 5.0
 
-    return param
+    return param.ravel("F")
 
 
 @pytest.mark.parametrize(

@@ -352,7 +352,7 @@ class EnsembleCovarianceMatrix(CovarianceMatrix):
         """Return the number of members in the ensemble."""
         return self.ensemble.shape[0]
 
-    def matvec(self, x: NDArrayFloat) -> NDArrayFloat:
+    def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
         """Return the covariance matrix times the vector x (dot product)."""
         return np.linalg.multi_dot([self.anomalies.T, self.anomalies, x]) / (
             self.n_ens - 1

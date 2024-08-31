@@ -396,7 +396,7 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
 
     def _run_forward_model(
         self,
-        s: NDArrayFloat,
+        s_cond: NDArrayFloat,
         run_n: int,
         is_save_state: bool = True,
         is_verbose: bool = False,
@@ -406,8 +406,8 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
 
         Parameters
         ----------
-        m : np.array
-            Inverted parameters values as a 1D vector.
+        s_cond : np.array
+            Conditioned parameter values as a 1D vector.
         run_n: int
             Run number.
         is_save_state: bool
@@ -427,7 +427,7 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         # Update the model with the new values of x (preconditioned)
         update_model_with_parameters_values(
             self.fwd_model,
-            s,
+            s_cond,
             self.inv_model.parameters_to_adjust,
             is_preconditioned=True,
             is_to_save=is_save_state,  # This is not finite differences

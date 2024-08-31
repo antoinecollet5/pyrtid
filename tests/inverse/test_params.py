@@ -5,6 +5,7 @@ from typing import Any, Dict
 
 import numpy as np
 import pytest
+from pyrtid.forward import Geometry
 from pyrtid.inverse import AdjustableParameter
 from pyrtid.inverse.preconditioner import ChainedTransforms, LogTransform, Slicer
 from pyrtid.inverse.regularization import TikhonovRegularizator, TVRegularizator
@@ -67,7 +68,10 @@ from pyrtid.inverse.regularization import TikhonovRegularizator, TVRegularizator
                 "lbounds": 1e-6,
                 "preconditioner": LogTransform(),
                 "regularizators": [
-                    TikhonovRegularizator(dx=2, dy=2, preconditioner=LogTransform()),
+                    TikhonovRegularizator(
+                        Geometry(dx=2, dy=2, nx=10, ny=10),
+                        preconditioner=LogTransform(),
+                    ),
                 ],
             },
             does_not_raise(),  # All OK
@@ -79,7 +83,7 @@ from pyrtid.inverse.regularization import TikhonovRegularizator, TVRegularizator
                 "lbounds": 1e-6,
                 "preconditioner": LogTransform(),
                 "regularizators": [
-                    TVRegularizator(dx=2, dy=2),
+                    TVRegularizator(Geometry(dx=2, dy=2, nx=10, ny=10)),
                 ],
             },
             does_not_raise(),  # All OK
@@ -139,7 +143,7 @@ def test_get_min_max_values(example_kwargs, example_kwargs2) -> None:
 
 def test_get_bounds(example_kwargs) -> None:
     # default behavior
-    param = AdjustableParameter("any_param_name", values=np.ones((5, 1)))
+    param = AdjustableParameter(name="any_param_name", values=np.ones((5, 1)))
     np.testing.assert_array_equal(
         param.get_bounds(),
         np.array([[-np.inf, np.inf]] * 5),
@@ -167,7 +171,9 @@ def test_transform_slicing(example_kwargs, span, expected) -> None:
 
     param = AdjustableParameter(**example_kwargs, preconditioner=pcd)
 
-    np.testing.assert_array_equal(expected, param.preconditioner(np.ones([5, 5]) * 2.0))
+    np.testing.assert_array_equal(
+        expected, param.preconditioner(np.ones([5 * 5]) * 2.0)
+    )
 
 
 # def test_get_values_from_model_field(example_kwargs) -> None:
@@ -203,7 +209,9 @@ def test_get_j_and_g_reg(example_kwargs) -> None:
     param = AdjustableParameter(
         **example_kwargs,
         regularizators=[
-            TikhonovRegularizator(dx=2.0, dy=2.0, preconditioner=LogTransform())
+            TikhonovRegularizator(
+                Geometry(dx=2, dy=2, nx=5, ny=5), preconditioner=LogTransform()
+            )
         ],
     )
     assert param.eval_loss_reg() == 0.0
@@ -212,9 +220,13 @@ def test_get_j_and_g_reg(example_kwargs) -> None:
 
     param = AdjustableParameter(
         **example_kwargs,
-        # regularizators=[
-        #     TVRegularizator(dx=2.0, dy=2.0, eps=1e-20, preconditioner=LogTransform())
-        # ]
+        regularizators=[
+            TVRegularizator(
+                Geometry(dx=2, dy=2, nx=5, ny=5),
+                eps=1e-20,
+                preconditioner=LogTransform(),
+            )
+        ],
     )
     assert param.eval_loss_reg() < 1e-08
     np.testing.assert_array_equal(param.eval_loss_reg_gradient(), 0.0)

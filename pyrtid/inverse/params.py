@@ -420,16 +420,14 @@ class AdjustableParameter:
             values: NDArrayFloat = self.values.copy()
             if s_raw is not None:
                 values = s_raw
-            if self.values.size != 0:
-                values = values.reshape(self.values.shape, order="F")
-            _sum += reg.eval_loss(values)
+            _sum += reg.eval_loss(values.ravel("F"))
         return _sum
 
     def eval_loss_reg_gradient(
         self, s_raw: Optional[NDArrayFloat] = None
     ) -> NDArrayFloat:
         """
-        Return the regularization objective function gradient.
+        Return the regularization objective function gradient as a 1D array.
 
         Parameters
         ----------
@@ -440,15 +438,15 @@ class AdjustableParameter:
 
         The returned gradient is not preconditioned.
         """
-        grad: NDArrayFloat = np.zeros(self.values.shape)
+        grad: NDArrayFloat = np.zeros(self.values.size)
         for reg in self.regularizators:
             values: NDArrayFloat = self.values.copy()
             if s_raw is not None:
-                values = s_raw.reshape(values.shape, order="F")
+                values = s_raw
             # Note: I could add # .reshape(values.shape, order="F") to the next line
             # but I consider that the regularization must return a field of the
             # same shape as values. This is where the responsibility is.
-            grad += reg.eval_loss_gradient(values)
+            grad += reg.eval_loss_gradient(values.ravel("F"))
         return grad
 
     def save_reg_status(self, reg_param: float, loss_reg: float) -> None:
@@ -636,7 +634,7 @@ def get_backconditioned_adj_gradient(
 ) -> NDArrayFloat:
     return param.preconditioner.dbacktransform_vec(
         param.preconditioner(param.values.ravel("F")),
-        param.grad_adj_history[index],
+        param.grad_adj_history[index].ravel("F"),
     ).reshape(param.values.shape, order="F")
 
 
@@ -645,7 +643,7 @@ def get_backconditioned_fd_gradient(
 ) -> NDArrayFloat:
     return param.preconditioner.dbacktransform_vec(
         param.preconditioner(param.values.ravel("F")),
-        param.grad_fd_history[index],
+        param.grad_fd_history[index].ravel("F"),
     ).reshape(param.values.shape, order="F")
 
 
@@ -799,7 +797,7 @@ def eval_weighted_loss_reg_gradient(
             values = x[idx : idx + values.size]
             idx += values.size
         # values must be unpreconditioned
-        param_grad = param.eval_loss_reg_gradient(values).ravel("F") * param.reg_weight
+        param_grad = param.eval_loss_reg_gradient(values) * param.reg_weight
 
         full_grad = np.hstack(
             (

@@ -28,10 +28,8 @@ class TVRegularizator(Regularizator):
 
     Attributes
     ----------
-    dx: float
-        Mesh size in m for the x direction (axis 0).
-    dy: float
-        Mesh size in m for the y direction (axis 1).
+    geometry : Geometry
+        Geometry of the field.
     eps: float
         Small factor added in the square root to deal with the singularity at
         $\nabla u = 0$ when computing the gradient. The default is 1e-20.
@@ -42,22 +40,21 @@ class TVRegularizator(Regularizator):
 
     """
 
-    dx: float
-    dy: float
+    geometry: Geometry
     eps: float = 1e-20
     preconditioner: Preconditioner = NoTransform()
 
-    def _get_grid_cell_l1(self, param: NDArrayFloat) -> NDArrayFloat:
+    def _get_grid_cell_l1(self, values: NDArrayFloat) -> NDArrayFloat:
         # sum of squared spatial gradient
-        sg2 = np.zeros_like(param)
-        if param.shape[0] > 2:
-            sg2 += np.square(gradient_ffd(param, self.dx, axis=0))
-        if param.shape[1] > 2:
-            sg2 += np.square(gradient_ffd(param, self.dy, axis=1))
+        sg2 = np.zeros_like(values)
+        if values.shape[0] > 2:
+            sg2 += np.square(gradient_ffd(values, self.geometry.dx, axis=0))
+        if values.shape[1] > 2:
+            sg2 += np.square(gradient_ffd(values, self.geometry.dy, axis=1))
         # Add epsilon to prevent undetermination when deriving
         return np.sqrt(sg2 + self.eps)
 
-    def _eval_loss(self, param: NDArrayFloat) -> float:
+    def _eval_loss(self, values: NDArrayFloat) -> float:
         r"""
         Compute the gradient of the regularization loss function analytically.
 
@@ -68,22 +65,23 @@ class TVRegularizator(Regularizator):
 
         Parameters
         ----------
-        param : NDArrayFloat
+        values : NDArrayFloat
             The parameter for which the regularization is computed.
 
         Returns
         -------
         float
         """
-        return float(np.sum(self._get_grid_cell_l1(param)))
+        _values = values.reshape(self.geometry.nx, self.geometry.ny, order="F")
+        return float(np.sum(self._get_grid_cell_l1(_values)))
 
-    def eval_loss_gradient_analytical(self, param: NDArrayFloat) -> NDArrayFloat:
+    def _eval_loss_gradient_analytical(self, values: NDArrayFloat) -> NDArrayFloat:
         """
         Compute the gradient of the regularization loss function analytically.
 
         Parameters
         ----------
-        param : NDArrayFloat
+        values : NDArrayFloat
             The parameter for which the regularization is computed.
 
         Returns
@@ -91,21 +89,30 @@ class TVRegularizator(Regularizator):
         NDArrayFloat
             The regularization gradient.
         """
-        grad = np.zeros_like(param)
-        den = self._get_grid_cell_l1(param)
+        _values = values.reshape(self.geometry.nx, self.geometry.ny, order="F")
+        grad = np.zeros_like(_values)
+        den = self._get_grid_cell_l1(_values)
 
-        if param.shape[0] > 2:
-            grad -= gradient_ffd(param, self.dx, axis=0) / self.dx / den
+        if _values.shape[0] > 2:
+            grad -= (
+                gradient_ffd(_values, self.geometry.dx, axis=0) / self.geometry.dx / den
+            )
             grad[1:, :] += (
-                gradient_ffd(param, self.dx, axis=0)[:-1, :] / self.dx / den[:-1, :]
+                gradient_ffd(_values, self.geometry.dx, axis=0)[:-1, :]
+                / self.geometry.dx
+                / den[:-1, :]
             )
 
-        if param.shape[1] > 2:
-            grad -= gradient_ffd(param, self.dy, axis=1) / self.dy / den
-            grad[:, 1:] += (
-                gradient_ffd(param, self.dy, axis=1)[:, :-1] / self.dy / den[:, :-1]
+        if _values.shape[1] > 2:
+            grad -= (
+                gradient_ffd(_values, self.geometry.dy, axis=1) / self.geometry.dy / den
             )
-        return grad
+            grad[:, 1:] += (
+                gradient_ffd(_values, self.geometry.dy, axis=1)[:, :-1]
+                / self.geometry.dy
+                / den[:, :-1]
+            )
+        return grad.ravel("F")
 
 
 @dataclass
@@ -142,7 +149,7 @@ class TVMatRegularizator(Regularizator):
             self.geometry, self.sub_selection
         )
 
-    def _eval_loss(self, param: NDArrayFloat) -> float:
+    def _eval_loss(self, values: NDArrayFloat) -> float:
         r"""
         Compute the gradient of the regularization loss function analytically.
 
@@ -153,7 +160,7 @@ class TVMatRegularizator(Regularizator):
 
         Parameters
         ----------
-        param : NDArrayFloat
+        values : NDArrayFloat
             The parameter for which the regularization is computed.
 
         Returns
@@ -163,8 +170,8 @@ class TVMatRegularizator(Regularizator):
         return float(
             np.sum(
                 np.sqrt(
-                    (self.mat_grad_x @ param.ravel("F")) ** 2.0
-                    + (self.mat_grad_y @ param.ravel("F")) ** 2.0
+                    (self.mat_grad_x @ values.ravel("F")) ** 2.0
+                    + (self.mat_grad_y @ values.ravel("F")) ** 2.0
                     + self.eps
                 )
             )
@@ -173,21 +180,21 @@ class TVMatRegularizator(Regularizator):
         # f += 0.5 * float(
         #     np.sum(
         #         (
-        #             param.ravel("F")
+        #             values.ravel("F")
         #             @ self.mat_grad_x
         #             @ self.mat_grad_x
-        #             @ param.ravel("F")
+        #             @ values.ravel("F")
         #         )
         #     )
         # )
 
-    def eval_loss_gradient_analytical(self, param: NDArrayFloat) -> NDArrayFloat:
+    def _eval_loss_gradient_analytical(self, values: NDArrayFloat) -> NDArrayFloat:
         r"""
         Compute the gradient of the regularization loss function analytically.
 
         Parameters
         ----------
-        param : NDArrayFloat
+        values : NDArrayFloat
             The parameter for which the regularization is computed.
 
         Returns
@@ -196,10 +203,10 @@ class TVMatRegularizator(Regularizator):
             The regularization gradient.
         """
         # TODO: still not correct
-        grad = np.zeros(param.size)
+        grad = np.zeros(values.size)
         # den = np.sqrt(
-        #     (self.mat_grad_x @ param.ravel("F")) ** 2.0
-        #     + (self.mat_grad_y @ param.ravel("F")) ** 2.0
+        #     (self.mat_grad_x @ values.ravel("F")) ** 2.0
+        #     + (self.mat_grad_y @ values.ravel("F")) ** 2.0
         #     + self.eps
         # )
         grad += (
@@ -208,6 +215,6 @@ class TVMatRegularizator(Regularizator):
                 self.mat_grad_x.T @ self.mat_grad_x
                 + self.mat_grad_y.T @ self.mat_grad_y
             )
-            @ param.ravel("F")
+            @ values.ravel("F")
         )
-        return grad.reshape(param.shape, order="F")
+        return grad.reshape(values.shape, order="F")

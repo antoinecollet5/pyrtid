@@ -1,6 +1,7 @@
 """Tests for the regularizator classes."""
 
 import numpy as np
+import pyrtid.forward as dmfwd
 import pyrtid.inverse as dminv
 import pytest
 from pyrtid.inverse.regularization import (
@@ -24,7 +25,7 @@ def get_param_values() -> NDArrayFloat:
     rng = np.random.default_rng(26659)
     param += rng.random((nx, ny)) * 5.0
 
-    return param
+    return param.ravel("F")
 
 
 def test_discrete_exceptions() -> None:
@@ -47,8 +48,8 @@ def test_discrete_exceptions() -> None:
 @pytest.mark.parametrize(
     "regularizator",
     [
-        TikhonovRegularizator(3.6, 7.5),
-        TVRegularizator(3.6, 7.5),
+        TikhonovRegularizator(dmfwd.Geometry(dx=3.6, dy=7.5, nx=15, ny=26)),
+        TVRegularizator(dmfwd.Geometry(dx=3.6, dy=7.5, nx=15, ny=26)),
         DiscreteRegularizator(modes=[7.0, 15.0], penalty="gaussian"),
         DiscreteRegularizator(modes=[7.0, 8.5, 2.3, 15.0], penalty="gaussian"),
         DiscreteRegularizator(

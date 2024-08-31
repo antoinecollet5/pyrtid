@@ -128,13 +128,13 @@ class Regularizator(ABC):
         """
         self.preconditioner: Preconditioner = preconditioner
 
-    def eval_loss(self, param: NDArrayFloat) -> float:
+    def eval_loss(self, values: NDArrayFloat) -> float:
         """
         Compute the regularization loss function.
 
         Parameters
         ----------
-        param : NDArrayFloat
+        values : NDArrayFloat
             The parameter for which the regularization is computed.
 
         Returns
@@ -142,19 +142,42 @@ class Regularizator(ABC):
         NDArrayFloat
             The regularization gradient.
         """
-        return self._eval_loss(self.preconditioner(param))
+        if not values.ndim == 1:
+            raise ValueError("The 'eval_loss' method expects a 1D vector!")
+
+        return self._eval_loss(self.preconditioner(values))
 
     @abstractmethod
-    def _eval_loss(self, param: NDArrayFloat) -> float: ...  # pragma: no cover
+    def _eval_loss(self, values: NDArrayFloat) -> float: ...  # pragma: no cover
 
-    @abstractmethod
-    def eval_loss_gradient_analytical(self, param: NDArrayFloat) -> NDArrayFloat:
+    def eval_loss_gradient_analytical(self, values: NDArrayFloat) -> NDArrayFloat:
         """
         Compute the gradient of the regularization loss function analytically.
 
         Parameters
         ----------
-        param : NDArrayFloat
+        values : NDArrayFloat
+            The parameter for which the regularization is computed.
+
+        Returns
+        -------
+        NDArrayFloat
+            The regularization gradient.
+        """
+        if not values.ndim == 1:
+            raise ValueError(
+                "The 'eval_loss_gradient_analytical' method expects a 1D vector!"
+            )
+        return self._eval_loss_gradient_analytical(values)
+
+    @abstractmethod
+    def _eval_loss_gradient_analytical(self, values: NDArrayFloat) -> NDArrayFloat:
+        """
+        Compute the gradient of the regularization loss function analytically.
+
+        Parameters
+        ----------
+        values : NDArrayFloat
             The parameter for which the regularization is computed.
 
         Returns
@@ -165,7 +188,7 @@ class Regularizator(ABC):
 
     def eval_loss_gradient(
         self,
-        param: NDArrayFloat,
+        values: NDArrayFloat,
         is_finite_differences: bool = False,
         max_workers: int = 1,
     ) -> NDArrayFloat:
@@ -174,11 +197,11 @@ class Regularizator(ABC):
 
         Parameters
         ----------
-        param : NDArrayFloat
+        values : NDArrayFloat
             The parameter for which the regularization is computed.
         is_finite_differences: bool
             If true, a numerical approximation by 2nd order finite difference is
-            returned. Cost twice the `param` dimensions in terms of loss function
+            returned. Cost twice the `values` dimensions in terms of loss function
             calls. The default is False.
         max_workers: int
             Number of workers used  if the gradient is approximated by finite
@@ -190,12 +213,15 @@ class Regularizator(ABC):
         NDArrayFloat
             The regularization gradient (not preconditioned).
         """
+        if not values.ndim == 1:
+            raise ValueError("The 'eval_loss_gradient' method expects a 1D vector!")
+
         if is_finite_differences:
-            return finite_gradient(param, self.eval_loss, max_workers=max_workers)
+            return finite_gradient(values, self.eval_loss, max_workers=max_workers)
         else:
             return self.preconditioner.dtransform_vec(
-                param,
-                self.eval_loss_gradient_analytical(self.preconditioner(param)),
+                values,
+                self.eval_loss_gradient_analytical(self.preconditioner(values)),
             )
 
 
@@ -238,7 +264,7 @@ def make_spatial_gradient_matrices(
 
     # X contribution
     if geometry.nx >= 2:
-        tmp = geometry.gamma_ij_x / geometry.mesh_volume * 1.0
+        tmp = geometry.gamma_ij_x / geometry.mesh_volume / 2.0
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
             geometry,
@@ -265,7 +291,7 @@ def make_spatial_gradient_matrices(
 
     # Y contribution
     if geometry.ny >= 2:
-        tmp = geometry.gamma_ij_y / geometry.mesh_volume
+        tmp = geometry.gamma_ij_y / geometry.mesh_volume / 2.0
 
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(

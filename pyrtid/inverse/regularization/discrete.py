@@ -122,7 +122,7 @@ class DiscreteRegularizator(Regularizator):
             return float(np.sum(min_squared_distance(param, self.modes)))
         return float(np.sum(gaussian_distance_from_modes(param, self.modes)))
 
-    def eval_loss_gradient_analytical(self, param: NDArrayFloat) -> NDArrayFloat:
+    def _eval_loss_gradient_analytical(self, param: NDArrayFloat) -> NDArrayFloat:
         """
         Compute the gradient of the regularization loss function analytically.
 

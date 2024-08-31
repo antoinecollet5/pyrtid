@@ -115,13 +115,41 @@ class Preconditioner(ABC):
         """Initialize the instance."""
 
     def transform(self, s_raw: NDArrayFloat) -> NDArrayFloat:
-        """Apply the preconditioning/parametrization."""
+        """
+        Apply the preconditioning/parametrization.
+
+        Parameters
+        ----------
+        s_raw : NDArrayFloat
+            The non-conditioned values as a 1D array.
+
+        Returns
+        -------
+        NDArrayFloat
+            The conditioned values as a 1D vector.
+        """
+        if not s_raw.ndim == 1:
+            raise ValueError("'transfrom' method expects a 1D vector!")
         self.test_bounds_tr(s_raw)  # test that s_raw is in the supported range
         # call the _transform method defined in child classes
         return self._transform(s_raw)
 
     def backtransform(self, s_cond: NDArrayFloat) -> NDArrayFloat:
-        """Apply the back-preconditioning/parametrization."""
+        """
+        Apply the back-preconditioning/parametrization.
+
+        Parameters
+        ----------
+        s_raw : NDArrayFloat
+            The conditioned values as a 1D array.
+
+        Returns
+        -------
+        NDArrayFloat
+            The non-conditioned values as a 1D vector.
+        """
+        if not s_cond.ndim == 1:
+            raise ValueError("'backtransfrom' method expects a 1D vector!")
         self.test_bounds_btr(s_cond)  # test that s_cond is in the supported range
         # call the _backtransform method defined in child classes
         return self._backtransform(s_cond)
@@ -140,7 +168,7 @@ class Preconditioner(ABC):
         self, s_raw: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
         """
-        Return the transform 1st derivative times a vector.
+        Return the transform 1st derivative times a vector as a 1-D vector..
 
         Because the preconditioner operates a variable change in the function: the new
         objective function J is J2(s2) = J[s], with s the adjusted parameter vector.
@@ -167,6 +195,8 @@ class Preconditioner(ABC):
             Product of the 1st derivative w.r.t. the conditioned (transformed)
             values and any vector b with size $N_{s2}$.
         """
+        if not s_raw.ndim == 1 or not gradient.ndim == 1:
+            raise ValueError("'dtransfrom_vec' method expects 1D vectors!")
         self.test_bounds_tr(s_raw)  # test that s_raw is in the supported range
         # call the _dtransform_vec method defined in child classes
         return self._dtransform_vec(s_raw, gradient)
@@ -209,6 +239,9 @@ class Preconditioner(ABC):
             Product of the 1st derivative w.r.t. the conditioned (transformed)
             values and any vector b with size $N_{s}$.
         """
+        if not s_cond.ndim == 1 or not gradient.ndim == 1:
+            raise ValueError("'dtransfrom_vec' method expects 1D vectors!")
+
         self.test_bounds_btr(s_cond)  # test that s_cond is in the supported range
         # call the _dbacktransform_vec method defined in child classes
         return self._dbacktransform_vec(s_cond, gradient)
@@ -246,6 +279,9 @@ class Preconditioner(ABC):
             Product of the 1st derivative w.r.t. the conditioned (transformed)
             values and any vector b with size $N_{s}$.
         """
+        if not s_cond.ndim == 1 or not gradient.ndim == 1:
+            raise ValueError("'dbacktransfrom_inv_vec' method expects 1D vectors!")
+
         self.test_bounds_btr(s_cond)  # test that s_cond is in the supported range
         # call the _dbacktransform_vec method defined in child classes
         return self._dbacktransform_inv_vec(s_cond, gradient)
@@ -521,7 +557,7 @@ class ChainedTransforms(Preconditioner):
         self, s_raw: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
         """
-        Return the transform 1st derivative times a vector.
+        Return the transform 1st derivative times a vector as a 1-D vector..
         """
 
         def _chain_derivative_op(s, _gradient, i) -> NDArrayFloat:
@@ -645,7 +681,7 @@ class NoTransform(Preconditioner):
         self, s_raw: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
         """
-        Return the transform 1st derivative times a vector.
+        Return the transform 1st derivative times a vector as a 1-D vector..
         """
         return gradient
 
@@ -721,7 +757,7 @@ class LinearTransform(Preconditioner):
         self, s_raw: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
         """
-        Return the transform 1st derivative times a vector.
+        Return the transform 1st derivative times a vector as a 1-D vector..
         """
         return self.slope * gradient
 
@@ -784,7 +820,7 @@ class SqrtTransform(Preconditioner):
         self, s_raw: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
         """
-        Return the transform 1st derivative times a vector.
+        Return the transform 1st derivative times a vector as a 1-D vector..
         """
         return 1 / (2.0 * np.sqrt(s_raw)) * gradient
 
@@ -851,7 +887,7 @@ class InvAbsTransform(Preconditioner):
         self, s_raw: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
         """
-        Return the transform 1st derivative times a vector.
+        Return the transform 1st derivative times a vector as a 1-D vector..
         """
         return self.signs * gradient
 
@@ -931,7 +967,7 @@ class LogTransform(Preconditioner):
         self, s_raw: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
         """
-        Return the transform 1st derivative times a vector.
+        Return the transform 1st derivative times a vector as a 1-D vector..
         """
         return 1 / s_raw * gradient
 
@@ -1301,7 +1337,7 @@ class RangeRescaler(Preconditioner):
         self, s_raw: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
         """
-        Return the transform 1st derivative times a vector.
+        Return the transform 1st derivative times a vector as a 1-D vector..
         """
         # we apply the chain rule
         return (
@@ -1434,7 +1470,7 @@ class SigmoidRescaler(Preconditioner):
         self, s_raw: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
         """
-        Return the transform 1st derivative times a vector.
+        Return the transform 1st derivative times a vector as a 1-D vector..
         """
         return (
             darctanh_wrapper(s_raw, s0=self.s0, rate=self.rate, supremum=self.supremum)
@@ -1580,7 +1616,7 @@ class Normalizer(Preconditioner):
         self, s_raw: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
         """
-        Return the transform 1st derivative times a vector.
+        Return the transform 1st derivative times a vector as a 1-D vector..
         """
         return gradient / self.prior_std
 
@@ -1655,7 +1691,7 @@ class StdRescaler(Preconditioner):
         self, s_raw: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
         """
-        Return the transform 1st derivative times a vector.
+        Return the transform 1st derivative times a vector as a 1-D vector..
         """
         return gradient / self.prior_std
 
@@ -1733,7 +1769,7 @@ class BoundsRescaler(Preconditioner):
         self, s_raw: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
         """
-        Return the transform 1st derivative times a vector.
+        Return the transform 1st derivative times a vector as a 1-D vector..
         """
         _s_raw = s_raw.clip(self.lbounds + self.EPSILON, self.ubounds - self.EPSILON)
         return (
@@ -2078,7 +2114,7 @@ class GDPNCS(Preconditioner):
         self, s_raw: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
         """
-        Return the transform 1st derivative times a vector.
+        Return the transform 1st derivative times a vector as a 1-D vector..
         """
         return np.zeros_like(s_raw)
 
@@ -2089,12 +2125,10 @@ class GDPNCS(Preconditioner):
         Return the backtransform 1st derivative times a vector.
         """
         out = d_gd_parametrize_mat_vec(
-            self.W,
-            self.theta,
-            spde.d_simu_nc_mat_vec(self._cholQ_nc, gradient.ravel("F")),
+            self.W, self.theta, spde.d_simu_nc_mat_vec(self._cholQ_nc, gradient)
         )
         if self.is_update_mean:
-            return np.hstack((out, np.sum(gradient.ravel("F"))))
+            return np.hstack((out, np.sum(gradient)))
         return out
 
     def _dbacktransform_inv_vec(
@@ -2236,7 +2270,7 @@ class GDPCS(GDPNCS):
         self, s_raw: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
         """
-        Return the transform 1st derivative times a vector.
+        Return the transform 1st derivative times a vector as a 1-D vector..
         """
         return np.zeros_like(s_raw)
 
@@ -2244,17 +2278,13 @@ class GDPCS(GDPNCS):
         self, s_cond: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
         """
-        Return the transform 1st derivative times a vector.
+        Return the transform 1st derivative times a vector as a 1-D vector..
         """
         out = d_gd_parametrize_mat_vec(
             self.W,
             self.theta,
             spde.d_simu_c_matvec(
-                self._cholQ_nc,
-                self._cholQ_c,
-                self.dat_nn,
-                self.dat_var,
-                gradient.ravel("F"),
+                self._cholQ_nc, self._cholQ_c, self.dat_nn, self.dat_var, gradient
             ),
         )
         if self.is_update_mean:
@@ -2264,8 +2294,8 @@ class GDPCS(GDPNCS):
             return np.hstack(
                 (
                     out,
-                    np.sum(gradient.ravel("F"))
-                    - (1 / self.dat_var @ (Z.T @ self._cholQ_c(gradient.ravel("F")))),
+                    np.sum(gradient)
+                    - (1 / self.dat_var @ (Z.T @ self._cholQ_c(gradient))),
                 )
             )
         return out
@@ -2346,7 +2376,7 @@ class SubSelector(Preconditioner):
         self, s_raw: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
         """
-        Return the transform 1st derivative times a vector.
+        Return the transform 1st derivative times a vector as a 1-D vector..
         """
         assert np.size(s_raw) == self.field_size
         assert np.size(gradient) == self.node_numbers.size
@@ -2549,7 +2579,7 @@ class Uniform2Gaussian(Preconditioner):
         self, s_raw: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
         """
-        Return the transform 1st derivative times a vector.
+        Return the transform 1st derivative times a vector as a 1-D vector..
         """
         return (
             gaussian_cfd_inv_deriv(
@@ -2648,7 +2678,7 @@ class BoundsClipper(Preconditioner):
         self, s_raw: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
         """
-        Return the transform 1st derivative times a vector.
+        Return the transform 1st derivative times a vector as a 1-D vector..
         """
         return gradient
 
@@ -2658,15 +2688,13 @@ class BoundsClipper(Preconditioner):
         """
         Return the backtransform 1st derivative times a vector.
         """
-        assert s_cond.size == gradient.size
         gradient = gradient.copy()
-        _s_cond = s_cond.reshape(gradient.shape)
         # lower bound
-        gradient[_s_cond < self.lbounds] = 0.0
-        gradient[_s_cond == self.lbounds] /= 2.0
+        gradient[s_cond < self.lbounds] = 0.0
+        gradient[s_cond == self.lbounds] /= 2.0
         # upper bound
-        gradient[_s_cond > self.ubounds] = 0.0
-        gradient[_s_cond == self.ubounds] /= 2.0
+        gradient[s_cond > self.ubounds] = 0.0
+        gradient[s_cond == self.ubounds] /= 2.0
         return gradient
 
     def _dbacktransform_inv_vec(
@@ -2675,6 +2703,7 @@ class BoundsClipper(Preconditioner):
         """
         Return the inverse of the backtransform 1st derivative times a vector.
         """
+        # should have the same effect as gradient / np.sign(s_sond)
         return gradient
 
     def transform_bounds(self, bounds: NDArrayFloat) -> NDArrayFloat:

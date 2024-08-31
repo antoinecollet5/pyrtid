@@ -10,6 +10,7 @@ from pyrtid.inverse.preconditioner import NoTransform, Preconditioner
 from pyrtid.inverse.regularization.base import Regularizator
 from pyrtid.inverse.regularization.covariances import CovarianceMatrix
 from pyrtid.inverse.regularization.priors import NullPriorTerm, PriorTerm
+from pyrtid.utils.finite_differences import finite_gradient
 from pyrtid.utils.types import NDArrayFloat
 
 
@@ -86,7 +87,7 @@ class GeostatisticalRegularizator(Regularizator):
         NDArrayFloat
             The regularization gradient.
         """
-        _values = values.ravel(order="F")
+        _values = values
         residuals: NDArrayFloat = _values - self.prior.get_values(_values)
         return float(
             0.5
@@ -96,7 +97,7 @@ class GeostatisticalRegularizator(Regularizator):
             )
         )
 
-    def eval_loss_gradient_analytical(self, values: NDArrayFloat) -> NDArrayFloat:
+    def _eval_loss_gradient_analytical(self, values: NDArrayFloat) -> NDArrayFloat:
         """
         Compute the gradient of the regularization loss function analytically.
 
@@ -110,15 +111,13 @@ class GeostatisticalRegularizator(Regularizator):
         NDArrayFloat
             The regularization gradient (2d).
         """
-        _values = values.ravel(order="F")
+        _values = values
         residuals: NDArrayFloat = _values - self.prior.get_values(_values)
         # right part $Q^{-1} * (m - m_{prior})$
         _right_part = self.cov_m.solve(residuals).ravel()
         # left part gradient -> special method to get more efficient
         # $ [I - dm_{prior}/dm]^{T} Q^{-1} (m - m_{prior})$
-        return (_right_part - self.prior.get_gradient_dot_product(_right_part)).reshape(
-            values.shape, order="F"
-        )
+        return _right_part - self.prior.get_gradient_dot_product(_right_part)
 
 
 class EnsembleRegularizator(GeostatisticalRegularizator):
@@ -137,7 +136,7 @@ class EnsembleRegularizator(GeostatisticalRegularizator):
         is made.
     """
 
-    def _eval_loss(self, ens: NDArrayFloat) -> float:
+    def eval_loss(self, ens: NDArrayFloat) -> float:
         r"""
         TODO: update this.
         Compute the gradient of the regularization loss function analytically.
@@ -157,6 +156,11 @@ class EnsembleRegularizator(GeostatisticalRegularizator):
         NDArrayFloat
             The regularization gradient.
         """
+        if not ens.ndim == 2:
+            raise ValueError(
+                "The 'EnsembleRegularizator.eval_loss' method expects a 2D vector!"
+            )
+
         _values = ens
         residuals: NDArrayFloat = _values - self.prior.get_values(_values)
         # residuals = - self.prior.get_values(_values)
@@ -181,6 +185,11 @@ class EnsembleRegularizator(GeostatisticalRegularizator):
         NDArrayFloat
             The regularization gradient (2d).
         """
+        if not ens.ndim == 2:
+            raise ValueError(
+                "The 'EnsembleRegularizator.eval_loss_gradient_analytical' "
+                "method expects a 2D vector!"
+            )
         _values = ens
         residuals: NDArrayFloat = _values - self.prior.get_values(_values)
         # residuals = _values * 0.0 - self.prior.get_values(_values)
@@ -207,6 +216,47 @@ class EnsembleRegularizator(GeostatisticalRegularizator):
                 keepdims=True,
             )
         ) / ens.shape[1]
+
+    def eval_loss_gradient(
+        self,
+        ens: NDArrayFloat,
+        is_finite_differences: bool = False,
+        max_workers: int = 1,
+    ) -> NDArrayFloat:
+        """
+        Compute the gradient of the regularization loss function.
+
+        Parameters
+        ----------
+        values : NDArrayFloat
+            The parameter for which the regularization is computed.
+        is_finite_differences: bool
+            If true, a numerical approximation by 2nd order finite difference is
+            returned. Cost twice the `values` dimensions in terms of loss function
+            calls. The default is False.
+        max_workers: int
+            Number of workers used  if the gradient is approximated by finite
+            differences. If different from one, the calculation relies on
+            multi-processing to decrease the computation time. The default is 1.
+
+        Returns
+        -------
+        NDArrayFloat
+            The regularization gradient (not preconditioned).
+        """
+        if not ens.ndim == 2:
+            raise ValueError(
+                "The 'EnsembleRegularizator.eval_loss_gradient_analytical' "
+                "method expects a 2D vector!"
+            )
+
+        if is_finite_differences:
+            return finite_gradient(ens, self.eval_loss, max_workers=max_workers)
+        else:
+            return self.preconditioner.dtransform_vec(
+                ens,
+                self.eval_loss_gradient_analytical(self.preconditioner(ens)),
+            )
 
 
 # def compute_best_beta(

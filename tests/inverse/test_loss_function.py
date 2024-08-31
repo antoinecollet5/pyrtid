@@ -95,7 +95,7 @@ def test_eval_model_loss_function(
 
     param = dminv.AdjustableParameter(
         dminv.ParameterName.POROSITY,
-        regularizators=TikhonovRegularizator(dx=geometry.dx, dy=geometry.dy),
+        regularizators=TikhonovRegularizator(geometry),
         reg_weight_update_strategy=dminv.regularization.ConstantRegWeight(reg_weight),
     )
 

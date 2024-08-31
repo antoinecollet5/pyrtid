@@ -1218,27 +1218,27 @@ def compute_adjoint_gradient(
 
         # 3) regularization of loss function gradient (also non-preconditioned
         # to this point)
-        param_grad += param.eval_loss_reg_gradient() * param.reg_weight
+        param_grad += (
+            param.eval_loss_reg_gradient().reshape(param.values.shape, order="F")
+            * param.reg_weight
+        )
 
         # 4) Save the non-preconditioned gradient
         if is_save_state:
-            param.grad_adj_raw_history.append(
-                param_grad.copy().reshape(param.values.shape, order="F")
-            )
+            param.grad_adj_raw_history.append(param_grad.copy())
 
         # 5) Apply preconditioning and flatten
         param_values = get_parameter_values_from_model(fwd_model, param)
         param_grad = param.preconditioner.dbacktransform_vec(
-            param.preconditioner(param_values),
-            param_grad,
+            param.preconditioner(param_values.ravel("F")),
+            param_grad.ravel("F"),
         )
 
         # 6) Save the preconditioned gradient
         if is_save_state:
             param.grad_adj_history.append(param_grad.copy())
-
         # 7) update the global gradient vector
-        grad = np.hstack((grad, param_grad.ravel("F")))
+        grad = np.hstack((grad, param_grad))
     return grad
 
 

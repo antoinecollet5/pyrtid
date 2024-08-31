@@ -119,7 +119,7 @@ def get_loss_ls_grad_from_scaled_loss_grad(
     """
     _loss_reg_grad = param.eval_loss_reg_gradient(
         param.preconditioner.backtransform(s_cond[idx : idx + n_vals])
-    ).ravel("F")
+    )
 
     # unscaled and unconditioned LS gradient
     return (
@@ -167,7 +167,7 @@ def update_gradient(
     # 1) Current unconditioned reg gradient
     loss_reg_grad = param.eval_loss_reg_gradient(
         param.preconditioner.backtransform(s_cond[idx : idx + n_vals])
-    ).ravel("F")
+    )
 
     # unscaled and unconditioned LS gradient
     loss_ls_grad = get_loss_ls_grad_from_scaled_loss_grad(
@@ -315,7 +315,7 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
             # scaling and the potential preconditioning.
             _loss_reg_grad = param.eval_loss_reg_gradient(
                 param.preconditioner.backtransform(s_cond[idx : idx + n_vals])
-            ).ravel("F")
+            )
 
             # unscaled and unconditioned LS gradient
             _loss_ls_grad = get_loss_ls_grad_from_scaled_loss_grad(
