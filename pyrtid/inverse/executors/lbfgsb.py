@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Deque, List, Optional, Tuple
+from typing import Callable, Deque, List, Optional, Tuple
 
 import numpy as np
 from lbfgsb import minimize_lbfgsb
@@ -218,6 +218,9 @@ class LBFGSBSolverConfig(AdjointSolverConfig):
     max_steplength: float = 1e8
     xtol_linesearch: float = 1e-5
     eps_SY: float = 2.2e-16
+    gradient_scaler: Optional[
+        Callable[[NDArrayFloat, NDArrayFloat, NDArrayFloat, NDArrayFloat], float]
+    ] = None
 
 
 class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
@@ -287,9 +290,9 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
             Update f0, grad and G.
         """
         # should be equal (with rounding errors)
-        np.testing.assert_almost_equal(
-            self.inv_model.loss_total_unscaled, loss / self.inv_model.scaling_factor
-        )
+        lbfgsb_sf = (
+            loss / self.inv_model.scaling_factor
+        ) / self.inv_model.loss_total_unscaled
 
         # Regularization weight that has been used up to now
         has_been_updated: List[bool] = []
@@ -318,7 +321,7 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
             _loss_ls_grad = get_loss_ls_grad_from_scaled_loss_grad(
                 param,
                 s_cond,
-                loss_grad,
+                loss_grad / lbfgsb_sf,
                 idx,
                 n_vals,
                 self.inv_model.scaling_factor,
@@ -350,8 +353,10 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
             self.inv_model.parameters_to_adjust, self.fwd_model, s_cond=s_cond
         )
         loss = (
-            self.inv_model.loss_ls_unscaled + loss_reg
-        ) * self.inv_model.scaling_factor
+            (self.inv_model.loss_ls_unscaled + loss_reg)
+            * self.inv_model.scaling_factor
+            * lbfgsb_sf
+        )
 
         # Update the previous objective function to prevent early break
         # This is a hack specific to lbfgsb
@@ -381,24 +386,30 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
             n_vals: int = param.size_preconditioned_values
 
             # # 1) Current unconditioned reg gradient
-            loss_grad[idx : idx + n_vals] = update_gradient(
-                param,
-                s_cond,
-                loss_grad[idx : idx + n_vals],
-                idx,
-                n_vals,
-                self.inv_model.scaling_factor,
+            loss_grad[idx : idx + n_vals] = (
+                update_gradient(
+                    param,
+                    s_cond,
+                    loss_grad[idx : idx + n_vals] / lbfgsb_sf,
+                    idx,
+                    n_vals,
+                    self.inv_model.scaling_factor,
+                )
+                * lbfgsb_sf
             )
             # 2) Update past gradients stored in G
             for _j, _s_cond in enumerate(reversed(S)):
                 # going over S and G backward
-                G[len(G) - _j - 1][idx : idx + n_vals] = update_gradient(
-                    param,
-                    _s_cond,
-                    G[len(G) - _j - 1][idx : idx + n_vals],
-                    idx,
-                    n_vals,
-                    self.inv_model.scaling_factor,
+                G[len(G) - _j - 1][idx : idx + n_vals] = (
+                    update_gradient(
+                        param,
+                        _s_cond,
+                        G[len(G) - _j - 1][idx : idx + n_vals] / lbfgsb_sf,
+                        idx,
+                        n_vals,
+                        self.inv_model.scaling_factor,
+                    )
+                    * lbfgsb_sf
                 )
 
             # update the global index
@@ -455,6 +466,7 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
             gtol_linesearch=self.solver_config.gtol_linesearch,
             xtol_linesearch=self.solver_config.xtol_linesearch,
             eps_SY=self.solver_config.eps_SY,
+            gradient_scaler=self.solver_config.gradient_scaler,
             logger=logging.getLogger("L-BFGS-B"),
         )
 
