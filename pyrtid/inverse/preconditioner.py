@@ -343,6 +343,7 @@ class Preconditioner(ABC):
         shape: Optional[Union[int, Sequence[int]]] = None,
         rtol: float = 1e-5,
         eps: Optional[float] = None,
+        skip_checks: Optional[Sequence[int]] = None,
     ) -> None:
         """
         Test if the backconditioner and the derivatives times a vector are correct.
@@ -362,6 +363,9 @@ class Preconditioner(ABC):
         eps : Optional[float], optional
             The epsilon for the computation of the approximated preconditioner first
             derivative by finite difference. by default None.
+        skip_checks: Optional[Sequence[int]]
+            List of checks to skip. This is useful when some preconditioner will fail
+            tests while remaining correct. The default is None.
 
         Raises
         ------
@@ -371,50 +375,56 @@ class Preconditioner(ABC):
         # Add a small epsilon to avoid boundary cases
         test_data = self._get_test_data(lbounds=lbounds, ubounds=ubounds, shape=shape)
 
+        _skip_checks = skip_checks if skip_checks is not None else []
+
         # 1) check if the back and pre-conditioner match
-        try:
-            np.testing.assert_allclose(
-                test_data, self.backtransform(self.transform(test_data)), rtol=rtol
-            )
-        except AssertionError as e:
-            raise ValueError(
-                "The given backconditioner does not match the preconditioner! or"
-                " the provided bounds are not correct."
-            ) from e
+        if 1 not in _skip_checks:
+            try:
+                np.testing.assert_allclose(
+                    test_data, self.backtransform(self.transform(test_data)), rtol=rtol
+                )
+            except AssertionError as e:
+                raise ValueError(
+                    "The given backconditioner does not match the preconditioner! or"
+                    " the provided bounds are not correct."
+                ) from e
 
         # 2) check by finite difference if the pre-conditioner 1st derivative is correct
         # transform to ensure the correct size
-        gradient = self.transform(test_data)
-        np.testing.assert_allclose(
-            self.dtransform_vec(test_data, gradient),
-            # Finite difference differentiation
-            nd.Jacobian(self.transform, step=eps)(test_data).T @ gradient,
-            rtol=rtol,
-        )  # type: ignore
+        if 2 not in _skip_checks:
+            gradient = self.transform(test_data)
+            np.testing.assert_allclose(
+                self.dtransform_vec(test_data, gradient),
+                # Finite difference differentiation
+                nd.Jacobian(self.transform, step=eps)(test_data).T @ gradient,
+                rtol=rtol,
+            )  # type: ignore
 
         # 3) check by finite difference if the back-conditioner derivative is correct
-        gradient = test_data
-        np.testing.assert_allclose(
-            self.dbacktransform_vec(self.transform(test_data), gradient),
-            # Finite difference differentiation
-            nd.Jacobian(self.backtransform, step=eps)(self.transform(test_data)).T
-            @ gradient,  # type: ignore
-            rtol=rtol,
-        )
+        if 3 not in _skip_checks:
+            gradient = test_data
+            np.testing.assert_allclose(
+                self.dbacktransform_vec(self.transform(test_data), gradient),
+                # Finite difference differentiation
+                nd.Jacobian(self.backtransform, step=eps)(self.transform(test_data)).T
+                @ gradient,  # type: ignore
+                rtol=rtol,
+            )
 
         # 4) check that dbacktransform_inv_vec is correct
         # Note: for some preconditioners, this function does not exists. In that case
         # it expects a NotImplementedError
-        try:
-            np.testing.assert_allclose(
-                self.dbacktransform_inv_vec(
-                    self.transform(test_data),
-                    self.dbacktransform_vec(self.transform(test_data), gradient),
-                ),
-                gradient,
-            )
-        except NotImplementedError:
-            pass
+        if 4 not in _skip_checks:
+            try:
+                np.testing.assert_allclose(
+                    self.dbacktransform_inv_vec(
+                        self.transform(test_data),
+                        self.dbacktransform_vec(self.transform(test_data), gradient),
+                    ),
+                    gradient,
+                )
+            except NotImplementedError:
+                pass
 
     def transform_bounds(self, bounds: NDArrayFloat) -> NDArrayFloat:
         """
@@ -2079,10 +2089,12 @@ class GDPNCS(Preconditioner):
         Return the backtransform 1st derivative times a vector.
         """
         out = d_gd_parametrize_mat_vec(
-            self.W, self.theta, spde.d_simu_nc_mat_vec(self._cholQ_nc, gradient)
+            self.W,
+            self.theta,
+            spde.d_simu_nc_mat_vec(self._cholQ_nc, gradient.ravel("F")),
         )
         if self.is_update_mean:
-            return np.hstack((out, np.sum(gradient)))
+            return np.hstack((out, np.sum(gradient.ravel("F"))))
         return out
 
     def _dbacktransform_inv_vec(
@@ -2238,7 +2250,11 @@ class GDPCS(GDPNCS):
             self.W,
             self.theta,
             spde.d_simu_c_matvec(
-                self._cholQ_nc, self._cholQ_c, self.dat_nn, self.dat_var, gradient
+                self._cholQ_nc,
+                self._cholQ_c,
+                self.dat_nn,
+                self.dat_var,
+                gradient.ravel("F"),
             ),
         )
         if self.is_update_mean:
@@ -2248,8 +2264,8 @@ class GDPCS(GDPNCS):
             return np.hstack(
                 (
                     out,
-                    np.sum(gradient)
-                    - (1 / self.dat_var @ (Z.T @ self._cholQ_c(gradient))),
+                    np.sum(gradient.ravel("F"))
+                    - (1 / self.dat_var @ (Z.T @ self._cholQ_c(gradient.ravel("F")))),
                 )
             )
         return out
@@ -2383,6 +2399,40 @@ class SubSelector(Preconditioner):
         self.s_raw = s_raw
         # return the bounds
         return bounds
+
+    def _test_preconditioner(
+        self,
+        lbounds: Union[float, NDArrayFloat],
+        ubounds: Union[float, NDArrayFloat],
+        shape: Optional[Union[int, Sequence[int]]] = None,
+        rtol: float = 1e-5,
+        eps: Optional[float] = None,
+    ) -> None:
+        """
+        Test if the backconditioner and the derivatives times a vector are correct.
+
+        This is a development tool.
+
+        Parameters
+        ----------
+        lbounds : Union[float, NDArrayFloat]
+            _description_
+        ubounds : Union[float, NDArrayFloat]
+            _description_
+        shape : Optional[Union[int, Sequence[int]]], optional
+            _description_, by default None
+        rtol : float, optional
+            _description_, by default 1e-5
+        eps : Optional[float], optional
+            The epsilon for the computation of the approximated preconditioner first
+            derivative by finite difference. by default None.
+
+        Raises
+        ------
+        ValueError
+            If one of the backconditioner of the gradient conditioner are incorrect.
+        """
+        super()._test_preconditioner(lbounds, ubounds, shape, rtol, eps, [4])
 
 
 class Slicer(SubSelector):
@@ -2608,13 +2658,15 @@ class BoundsClipper(Preconditioner):
         """
         Return the backtransform 1st derivative times a vector.
         """
+        assert s_cond.size == gradient.size
         gradient = gradient.copy()
+        _s_cond = s_cond.reshape(gradient.shape)
         # lower bound
-        gradient[s_cond < self.lbounds] = 0.0
-        gradient[s_cond == self.lbounds] /= 2.0
+        gradient[_s_cond < self.lbounds] = 0.0
+        gradient[_s_cond == self.lbounds] /= 2.0
         # upper bound
-        gradient[s_cond > self.ubounds] = 0.0
-        gradient[s_cond == self.ubounds] /= 2.0
+        gradient[_s_cond > self.ubounds] = 0.0
+        gradient[_s_cond == self.ubounds] /= 2.0
         return gradient
 
     def _dbacktransform_inv_vec(
@@ -2623,7 +2675,6 @@ class BoundsClipper(Preconditioner):
         """
         Return the inverse of the backtransform 1st derivative times a vector.
         """
-        # should have the same effect as gradient / np.sign(s_sond)
         return gradient
 
     def transform_bounds(self, bounds: NDArrayFloat) -> NDArrayFloat:
