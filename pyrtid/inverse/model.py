@@ -20,17 +20,19 @@ class InverseModel:
     ----------
     scaling_factor: float
         Multiplication coefficient to make the objective function equal to zero at
-        the first iteration. In practise, solvers manage correctly in the range
-        [-1e6, 1e6].
+        the first iteration.
     is_check_gradient: bool
         Whether to check the gradient by finite difference at each iteration. This is
         expensive but very useful. If the gradient is not correct, an exception
         is raised.
     is_use_adjoint: bool
         Whether to use the adjoint for the gradient calculation.
-    loss_scaled_history: List[float]
+    loss_history: List[float]
         List of successive objective functions computed while optimizing.
         Note: the values are not scaled.
+    loss_scaled_history: List[float]
+        List of successive objective functions computed while optimizing.
+        Note: the values are scaled.
     list_losses_for_fd_grad: List[float]
         List of successive objective functions computed while computing the gradients
         by finite difference. Note: the values are not scaled.
@@ -60,7 +62,7 @@ class InverseModel:
         "loss_reg_unscaled",
         "loss_ls_history",
         "loss_reg_weighted_history",
-        "loss_scaled_history",
+        "loss_history",
         "list_losses_for_fd_grad",
         "list_d_pred",
         "is_first_loss_function_call_in_round",
@@ -117,7 +119,7 @@ class InverseModel:
         self.loss_ls_history: List[float] = []
         self.loss_reg_weighted_history: List[float] = []
         self.list_losses_for_fd_grad: List[float] = []
-        self.loss_scaled_history: List[float] = []
+        self.loss_history: List[float] = []
         self.list_d_pred: List[NDArrayFloat] = []
         self.is_first_loss_function_call_in_round: bool = True
         self.loss_ls_unscaled: float = 0.0
@@ -125,9 +127,14 @@ class InverseModel:
         self.n_update_rw: int = 0
 
     @property
+    def loss_scaled_history(self) -> List[float]:
+        """Return the scaled losses"""
+        return [j * self.scaling_factor for j in self.loss_history]
+
+    @property
     def nb_f_calls(self) -> int:
         """Return the number of times the objective function has been called."""
-        return len(self.loss_scaled_history) + len(self.list_losses_for_fd_grad)
+        return len(self.loss_history) + len(self.list_losses_for_fd_grad)
 
     @property
     def nb_adjusted_values(self) -> int:

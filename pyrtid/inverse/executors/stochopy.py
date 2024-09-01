@@ -98,7 +98,7 @@ class StochopyInversionExecutor(BaseInversionExecutor[StochopySolverConfig]):
             )
 
             res = stochopy_minimize(
-                self.eval_scaled_loss,
+                self.eval_loss,
                 get_parameters_bounds(
                     self.inv_model.parameters_to_adjust, is_preconditioned=True
                 ),

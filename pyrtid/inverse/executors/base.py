@@ -516,11 +516,11 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
 
         return d_pred  # shape (N_obs, N_e)
 
-    def eval_scaled_loss(
+    def eval_loss(
         self, s_cond: NDArrayFloat, is_save_state: bool = True, is_verbose: bool = False
     ) -> float:
         """
-        Compute the model scaled_loss function.
+        Compute the model loss function.
 
         Parameters
         ----------
@@ -557,8 +557,11 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         loss_total = loss_ls + loss_reg
 
         # Apply the scaling coefficient
-        loss_scaled = loss_total * self.inv_model.get_loss_function_scaling_factor(
-            loss_total, is_first_call=self.inv_model.nb_f_calls == 0
+        loss_total_scaled = (
+            loss_total
+            * self.inv_model.get_loss_function_scaling_factor(
+                loss_total, is_first_call=self.inv_model.nb_f_calls == 0
+            )
         )
 
         # Store the last objective function values (ls and reg terms)
@@ -567,35 +570,19 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         self.inv_model.loss_reg_unscaled = loss_reg
 
         logging.info(f"Loss (obs fit)        = {loss_ls}")
-        logging.info(rf"Loss (obs fit) / Nobs = {loss_ls/d_obs.size}")
+        logging.info(f"Loss (obs fit) / Nobs = {loss_ls/d_obs.size}")
         logging.info(f"Loss (weighted reg)   = {loss_reg}")
+        logging.info(f"Total loss            = {loss_total}")
         logging.info(f"Scaling factor        = {self.inv_model.scaling_factor}")
-        logging.info(f"Loss (scaled)         = {loss_scaled}\n")
+        logging.info(f"Loss (scaled)         = {loss_total_scaled}\n")
 
         # Save the loss and the associated regularization weight
         if is_save_state:
             self.inv_model.loss_ls_history.append(loss_ls)
             self.inv_model.loss_reg_weighted_history.append(loss_reg)
-            self.inv_model.loss_scaled_history.append(loss_scaled)
+            self.inv_model.loss_history.append(loss_total)
 
-        return loss_scaled
-
-    def eval_scaled_loss_gradient(self, s_cond: NDArrayFloat) -> NDArrayFloat:
-        """
-        Return the gradient of the objective function with regard to `s_cond`.
-
-        Parameters
-        ----------
-        s_cond: NDArrayFloat
-            1D vector of preconditioned adjusted values.
-
-        Returns
-        -------
-        objective : NDArrayFloat
-            The gradient vector. Note that the dimension is the same as for x.
-
-        """
-        return np.zeros(s_cond.shape)
+        return loss_total
 
     @abstractmethod
     def run(self) -> Optional[Union[Sequence[Any], NDArrayFloat]]:
@@ -808,7 +795,7 @@ class AdjointInversionExecutor(BaseInversionExecutor, Generic[_AdjointSolverConf
             max_nafpi=max_nafpi,
         )
 
-    def eval_scaled_loss_gradient(
+    def eval_loss_gradient(
         self, s_cond: NDArrayFloat, is_verbose: bool = False, is_save_state: bool = True
     ) -> NDArrayFloat:
         """
@@ -854,14 +841,11 @@ class AdjointInversionExecutor(BaseInversionExecutor, Generic[_AdjointSolverConf
             )
             # Compute the gradient with the adjoint state method
 
-            adj_grad = (
-                compute_adjoint_gradient(
-                    self.fwd_model,
-                    self.adj_model,
-                    self.inv_model.parameters_to_adjust,
-                    is_save_state,
-                )
-                * self.inv_model.scaling_factor
+            adj_grad = compute_adjoint_gradient(
+                self.fwd_model,
+                self.adj_model,
+                self.inv_model.parameters_to_adjust,
+                is_save_state,
             )
 
         if (
@@ -869,14 +853,11 @@ class AdjointInversionExecutor(BaseInversionExecutor, Generic[_AdjointSolverConf
             or self.solver_config.is_check_gradient
         ):
             # Compute the gradient by finite difference
-            fd_grad = (
-                compute_fd_gradient(
-                    self.fwd_model,
-                    self.inv_model.observables,
-                    self.inv_model.parameters_to_adjust,
-                    is_save_state,
-                )
-                * self.inv_model.scaling_factor
+            fd_grad = compute_fd_gradient(
+                self.fwd_model,
+                self.inv_model.observables,
+                self.inv_model.parameters_to_adjust,
+                is_save_state,
             )
 
         if self.solver_config.is_check_gradient:

@@ -81,13 +81,12 @@ lbfgsb_solver_config_params_ds = r"""
     """
 
 
-def get_loss_ls_grad_from_scaled_loss_grad(
+def get_loss_ls_grad_from_loss_grad(
     param: AdjustableParameter,
     s_cond: NDArrayFloat,
     loss_grad: NDArrayFloat,
     idx: int,
     n_vals: int,
-    scaling_factor: float,
     reg_weight: float,
 ) -> NDArrayFloat:
     """
@@ -107,8 +106,6 @@ def get_loss_ls_grad_from_scaled_loss_grad(
         Index of the first preconditioned value in the loss_grad vector.
     n_vals : int
         Number of preconditioned adjusted values for the given parameter.
-    scaling_factor : float
-        Scaling factor applied to the preconditioned gradient.
     reg_weight : float
         Regularization weight used to compute loss_grad.
 
@@ -125,7 +122,7 @@ def get_loss_ls_grad_from_scaled_loss_grad(
     return (
         param.preconditioner.dbacktransform_inv_vec(
             s_cond[idx : idx + n_vals],
-            loss_grad[idx : idx + n_vals] / scaling_factor,
+            loss_grad[idx : idx + n_vals],
         )
         - _loss_reg_grad * reg_weight
     )
@@ -137,7 +134,6 @@ def update_gradient(
     loss_grad: NDArrayFloat,
     idx: int,
     n_vals: int,
-    scaling_factor: float,
 ) -> NDArrayFloat:
     """
     Update the global loss_gradient with the new param regularization weight.
@@ -156,8 +152,6 @@ def update_gradient(
         Index of the first preconditioned value in the loss_grad vector.
     n_vals : int
         Number of preconditioned adjusted values for the given parameter.
-    scaling_factor : float
-        Scaling factor applied to the preconditioned gradient.
 
     Returns
     -------
@@ -170,22 +164,18 @@ def update_gradient(
     )
 
     # unscaled and unconditioned LS gradient
-    loss_ls_grad = get_loss_ls_grad_from_scaled_loss_grad(
+    loss_ls_grad = get_loss_ls_grad_from_loss_grad(
         param,
         s_cond,
         loss_grad,
         idx,
         n_vals,
-        scaling_factor,
         param.reg_weight_history[-1],
     )
-    return (
-        param.preconditioner.dbacktransform_vec(
-            s_cond[idx : idx + n_vals],
-            loss_ls_grad + loss_reg_grad * param.reg_weight,
-        ).ravel("F")
-        * scaling_factor
-    )
+    return param.preconditioner.dbacktransform_vec(
+        s_cond[idx : idx + n_vals],
+        loss_ls_grad + loss_reg_grad * param.reg_weight,
+    ).ravel("F")
 
 
 @register_params_ds(lbfgsb_solver_config_params_ds)
@@ -290,9 +280,7 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
             Update f0, grad and G.
         """
         # should be equal (with rounding errors)
-        lbfgsb_sf = (
-            loss / self.inv_model.scaling_factor
-        ) / self.inv_model.loss_total_unscaled
+        lbfgsb_sf = (loss) / self.inv_model.loss_total_unscaled
 
         # Regularization weight that has been used up to now
         has_been_updated: List[bool] = []
@@ -318,13 +306,12 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
             )
 
             # unscaled and unconditioned LS gradient
-            _loss_ls_grad = get_loss_ls_grad_from_scaled_loss_grad(
+            _loss_ls_grad = get_loss_ls_grad_from_loss_grad(
                 param,
                 s_cond,
                 loss_grad / lbfgsb_sf,
                 idx,
                 n_vals,
-                self.inv_model.scaling_factor,
                 param.reg_weight,
             )
 
@@ -352,11 +339,7 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
         loss_reg: float = eval_weighted_loss_reg(
             self.inv_model.parameters_to_adjust, self.fwd_model, s_cond=s_cond
         )
-        loss = (
-            (self.inv_model.loss_ls_unscaled + loss_reg)
-            * self.inv_model.scaling_factor
-            * lbfgsb_sf
-        )
+        loss = (self.inv_model.loss_ls_unscaled + loss_reg) * lbfgsb_sf
 
         # Update the previous objective function to prevent early break
         # This is a hack specific to lbfgsb
@@ -393,7 +376,6 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
                     loss_grad[idx : idx + n_vals] / lbfgsb_sf,
                     idx,
                     n_vals,
-                    self.inv_model.scaling_factor,
                 )
                 * lbfgsb_sf
             )
@@ -407,7 +389,6 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
                         G[len(G) - _j - 1][idx : idx + n_vals] / lbfgsb_sf,
                         idx,
                         n_vals,
-                        self.inv_model.scaling_factor,
                     )
                     * lbfgsb_sf
                 )
@@ -425,14 +406,6 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
         # return updated_j, updated_grad, G
         return loss, loss_old, loss_grad, G
 
-    def get_ftarget(self) -> Optional[float]:
-        if self.solver_config.ftarget is None:
-            return None
-        return self.solver_config.ftarget * self.inv_model.scaling_factor
-
-    def get_gtol(self) -> float:
-        return self.solver_config.gtol * self.inv_model.scaling_factor
-
     def run(self) -> ScipyOptimizeResult:
         """
         Run the history matching.
@@ -443,8 +416,8 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
         super().run()
         return minimize_lbfgsb(
             x0=self.data_model.s_init,
-            fun=self.eval_scaled_loss,
-            jac=self.eval_scaled_loss_gradient,  # type: ignore
+            fun=self.eval_loss,
+            jac=self.eval_loss_gradient,  # type: ignore
             update_fun_def=(
                 self._update_fun_def
                 if self.inv_model.is_adaptive_regularization()
@@ -454,9 +427,9 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
                 self.inv_model.parameters_to_adjust, is_preconditioned=True
             ),
             maxcor=self.solver_config.maxcor,
-            ftarget=self.get_ftarget,
+            ftarget=self.solver_config.ftarget,
             ftol=self.solver_config.ftol,
-            gtol=self.get_gtol,
+            gtol=self.solver_config.gtol,
             maxiter=self.solver_config.maxiter,
             maxfun=self.solver_config.maxfun,
             iprint=self.solver_config.iprint,
@@ -537,7 +510,7 @@ class LBFGSBEnsembleInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfi
         # Compute back the data misfit objective function
         # (remove the previous regularization term)
         # + we must take the scaling factor into account
-        j0: float = j / self.inv_model.scaling_factor - old_weight * loss_reg
+        j0: float = j - old_weight * loss_reg
 
         # Check that it did not when wrong -> The objective function should be the
         # same (taking into account rounding errors)
@@ -557,17 +530,17 @@ class LBFGSBEnsembleInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfi
 
         self.inv_model.loss_reg_weight = new_weight
         # updated j (scaled with the scaling factor)
-        updated_j: float = (j0 + new_weight * loss_reg) * self.inv_model.scaling_factor
+        updated_j: float = j0 + new_weight * loss_reg
 
         # Update the current gradient
         coef = new_weight - old_weight
         updated_grad = (
-            grad / self.inv_model.scaling_factor
+            grad
             + coef
             * self.eval_weighted_loss_reg_gradient(
                 x.reshape(self.data_model.s_init.shape)
             ).ravel()
-        ) * self.inv_model.scaling_factor
+        )
 
         # Update all past gradients in G
         for _x in X:
@@ -576,13 +549,12 @@ class LBFGSBEnsembleInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfi
             # Note: eval_weighted_loss_reg_gradient is very fast to obtain
             G.append(
                 (
-                    G.popleft() / self.inv_model.scaling_factor
+                    G.popleft()
                     + coef
                     * self.eval_weighted_loss_reg_gradient(
                         _x.reshape(self.data_model.s_init.shape)
                     ).ravel()
                 )
-                * self.inv_model.scaling_factor
             )
 
         # Check that all gradients have been correctly updated
@@ -674,13 +646,11 @@ class LBFGSBEnsembleInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfi
                 self.inv_model.loss_reg_weight = 0.0
                 return
 
-        if loss_reg == 0:
+            # if loss_reg == 0:
             self.inv_model.loss_reg_weight = 0.0
             return
 
-    def eval_scaled_loss(
-        self, s_ensemble: NDArrayFloat, is_save_state: bool = True
-    ) -> float:
+    def eval_loss(self, s_ensemble: NDArrayFloat, is_save_state: bool = True) -> float:
         """
         Return the objective function and the gradient for the ensemble.
 
@@ -750,9 +720,7 @@ class LBFGSBEnsembleInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfi
         )
 
         # Store the losses to the inverse model
-        self.inv_model.loss_scaled_history += list(
-            losses * self.inv_model.scaling_factor
-        )
+        self.inv_model.loss_history += list(losses)
 
         # Need to store this locally because the mechanisms in inverse models
         self.nb_f_calls += 1
@@ -786,12 +754,6 @@ class LBFGSBEnsembleInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfi
     def get_gradient(self, s_cond: NDArrayFloat) -> NDArrayFloat:
         return self.grad.ravel()
 
-    def get_ftarget(self) -> float:
-        return self.solver_config.ftarget * self.inv_model.scaling_factor
-
-    def get_gtol(self) -> float:
-        return self.solver_config.gtol * self.inv_model.scaling_factor
-
     def run(self) -> ScipyOptimizeResult:
         """
         Run the history matching.
@@ -802,7 +764,7 @@ class LBFGSBEnsembleInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfi
         super().run()
         return minimize_lbfgsb(
             x0=self.data_model.s_init.ravel(),
-            fun=self.eval_scaled_loss,
+            fun=self.eval_loss,
             jac=self.get_gradient,  # type: ignore
             bounds=np.tile(
                 get_parameters_bounds(
@@ -811,8 +773,8 @@ class LBFGSBEnsembleInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfi
                 self.data_model.n_ensemble,
             ).T,
             maxcor=self.solver_config.maxcor,
-            gtol=self.get_gtol,
-            ftarget=self.get_ftarget,
+            gtol=self.solver_config.gtol,
+            ftarget=self.solver_config.ftarget,
             ftol=self.solver_config.ftol,
             # update_fun_def=self.update_fun_def,
             maxiter=self.solver_config.maxiter,

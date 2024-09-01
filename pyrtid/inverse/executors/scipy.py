@@ -130,13 +130,13 @@ class ScipyInversionExecutor(AdjointInversionExecutor[ScipySolverConfig]):
             )
 
             res = scipy_minimize(
-                self.eval_scaled_loss,
+                self.eval_loss,
                 x0,
                 bounds=get_parameters_bounds(
                     self.inv_model.parameters_to_adjust, is_preconditioned=True
                 ),
                 method=self.solver_config.solver_name,
-                jac=self.eval_scaled_loss_gradient,
+                jac=self.eval_loss_gradient,
                 options=_options,
             )
             # The output parameter vector becomes the input
