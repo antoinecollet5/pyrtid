@@ -2,6 +2,7 @@ from contextlib import nullcontext as does_not_raise
 
 import numdifftools as nd
 import numpy as np
+import pyrtid.forward as dmfwd
 import pyrtid.inverse as dminv
 import pyrtid.utils.spde as spde
 import pytest
@@ -226,7 +227,7 @@ def test_gd_parametrize(ne, expected_exception) -> None:
         ],
         [
             dminv.SubSelector,
-            ([1, 2, 6], 10),
+            ([1, 2, 6], dmfwd.Geometry(nx=5, ny=2, dx=1.0, dy=1.0)),
             {},
             np.ones(10) * 0.1,
             np.ones(10) * 1.0,

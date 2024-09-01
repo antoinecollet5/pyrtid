@@ -4,8 +4,8 @@ from contextlib import nullcontext as does_not_raise
 from typing import Any, Dict
 
 import numpy as np
+import pyrtid.forward as dmfwd
 import pytest
-from pyrtid.forward import Geometry
 from pyrtid.inverse import AdjustableParameter
 from pyrtid.inverse.preconditioner import ChainedTransforms, LogTransform, Slicer
 from pyrtid.inverse.regularization import TikhonovRegularizator, TVRegularizator
@@ -69,7 +69,7 @@ from pyrtid.inverse.regularization import TikhonovRegularizator, TVRegularizator
                 "preconditioner": LogTransform(),
                 "regularizators": [
                     TikhonovRegularizator(
-                        Geometry(dx=2, dy=2, nx=10, ny=10),
+                        dmfwd.Geometry(dx=2, dy=2, nx=10, ny=10),
                         preconditioner=LogTransform(),
                     ),
                 ],
@@ -83,7 +83,7 @@ from pyrtid.inverse.regularization import TikhonovRegularizator, TVRegularizator
                 "lbounds": 1e-6,
                 "preconditioner": LogTransform(),
                 "regularizators": [
-                    TVRegularizator(Geometry(dx=2, dy=2, nx=10, ny=10)),
+                    TVRegularizator(dmfwd.Geometry(dx=2, dy=2, nx=10, ny=10)),
                 ],
             },
             does_not_raise(),  # All OK
@@ -167,7 +167,9 @@ def test_get_bounds(example_kwargs) -> None:
 def test_transform_slicing(example_kwargs, span, expected) -> None:
     # need to remove the log preconditioner from here
     pcd = example_kwargs.pop("preconditioner")
-    pcd = ChainedTransforms([pcd, Slicer((5, 5), span)])
+    pcd = ChainedTransforms(
+        [pcd, Slicer(dmfwd.Geometry(nx=5, ny=5, dx=1.0, dy=1.0), span)]
+    )
 
     param = AdjustableParameter(**example_kwargs, preconditioner=pcd)
 
@@ -210,7 +212,7 @@ def test_get_j_and_g_reg(example_kwargs) -> None:
         **example_kwargs,
         regularizators=[
             TikhonovRegularizator(
-                Geometry(dx=2, dy=2, nx=5, ny=5), preconditioner=LogTransform()
+                dmfwd.Geometry(dx=2, dy=2, nx=5, ny=5), preconditioner=LogTransform()
             )
         ],
     )
@@ -222,7 +224,7 @@ def test_get_j_and_g_reg(example_kwargs) -> None:
         **example_kwargs,
         regularizators=[
             TVRegularizator(
-                Geometry(dx=2, dy=2, nx=5, ny=5),
+                dmfwd.Geometry(dx=2, dy=2, nx=5, ny=5),
                 eps=1e-20,
                 preconditioner=LogTransform(),
             )

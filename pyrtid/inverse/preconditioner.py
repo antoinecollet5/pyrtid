@@ -89,6 +89,7 @@ from scipy.sparse import csc_array, lil_array
 from sksparse.cholmod import Factor
 
 import pyrtid.utils.spde as spde
+from pyrtid.forward.models import Geometry
 from pyrtid.utils import object_or_object_sequence_to_list, sparse_cholesky
 from pyrtid.utils.types import NDArrayBool, NDArrayFloat, NDArrayInt
 
@@ -2315,7 +2316,7 @@ class GDPCS(GDPNCS):
 class SubSelector(Preconditioner):
     """Apply a selection on the input field."""
 
-    def __init__(self, node_numbers: NDArrayInt, field_shape: Sequence[int]) -> None:
+    def __init__(self, node_numbers: NDArrayInt, geometry: Geometry) -> None:
         """
         Initialize the instance.
 
@@ -2327,13 +2328,8 @@ class SubSelector(Preconditioner):
             Size of the field to be sampled.
         """
         self.node_numbers = np.array(node_numbers)
-        self.field_shape: Sequence[int] = field_shape
+        self.field_size: int = geometry.n_grid_cells
         self.s_raw = np.zeros(self.field_size)
-
-    @property
-    def field_size(self) -> int:
-        """Return the number of values in the field."""
-        return np.prod(self.field_shape)
 
     def _transform(self, s_raw: NDArrayFloat) -> NDArrayFloat:
         """
@@ -2349,7 +2345,7 @@ class SubSelector(Preconditioner):
         NDArrayFloat
             Conditioned (transformed) parameter values.
         """
-        self.s_raw = np.array(s_raw).ravel("F")
+        self.s_raw = s_raw
         assert np.size(s_raw) == self.field_size
         return self.s_raw[self.node_numbers]  # ! this is 1D.
 
@@ -2370,7 +2366,7 @@ class SubSelector(Preconditioner):
         assert np.size(s_cond) == self.node_numbers.size
         out = self.s_raw.copy()
         out[self.node_numbers] = s_cond
-        return out.reshape(self.field_shape, order="F")
+        return out
 
     def _dtransform_vec(
         self, s_raw: NDArrayFloat, gradient: NDArrayFloat
@@ -2382,7 +2378,7 @@ class SubSelector(Preconditioner):
         assert np.size(gradient) == self.node_numbers.size
         out = np.zeros(self.field_size)
         out[self.node_numbers] = gradient
-        return out.reshape(self.field_shape, order="F")
+        return out
 
     def _dbacktransform_vec(
         self, s_cond: NDArrayFloat, gradient: NDArrayFloat
@@ -2391,7 +2387,7 @@ class SubSelector(Preconditioner):
         Return the backtransform 1st derivative times a vector.
         """
         assert gradient.size == self.field_size
-        return gradient.ravel("F")[self.node_numbers]
+        return gradient[self.node_numbers]
 
     def _dbacktransform_inv_vec(
         self, s_cond: NDArrayFloat, gradient: NDArrayFloat
@@ -2470,16 +2466,16 @@ class Slicer(SubSelector):
 
     def __init__(
         self,
-        grid_dim: Tuple[int, int],
+        geometry: Geometry,
         span: Union[NDArrayInt, Tuple[slice, slice], NDArrayBool] = (
             slice(None),
             slice(None),
         ),
     ) -> None:
         """Initialize the instance."""
-        field_size = int(np.prod(grid_dim))
-        node_numbers = np.arange(field_size).reshape(grid_dim, order="F")[span]
-        super().__init__(node_numbers, field_size)
+        field_size = geometry.n_grid_cells
+        node_numbers = np.arange(field_size).reshape(geometry.shape, order="F")[span]
+        super().__init__(node_numbers, geometry)
 
 
 def gaussian_cfd(x: NDArrayFloat, mu: float, std: float) -> NDArrayFloat:
