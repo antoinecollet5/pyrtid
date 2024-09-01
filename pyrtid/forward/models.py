@@ -461,6 +461,11 @@ class Geometry:
         return (self.nx, self.ny)
 
     @property
+    def n_grid_cells(self) -> int:
+        """Return the number of grid cells."""
+        return self.nx * self.ny
+
+    @property
     def mesh_volume(self) -> float:
         """Return the volume of a voxel in m3."""
         return self.dx * self.dy * self.dz
