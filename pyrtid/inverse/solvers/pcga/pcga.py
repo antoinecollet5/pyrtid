@@ -1325,9 +1325,7 @@ class PCGA:
                 self.istate.cR_cur = cR_all[:, i : i + 1]
                 i_best = i
                 self.loginfo(
-                    "{:d}-th solution obj {} (alpha {}, beta {})".format(
-                        i, obj, alpha[i], np.array(beta).ravel().tolist()
-                    )
+                    f"{i:d}-th solution obj {obj} (alpha {alpha[i]}, beta {beta})"
                 )
 
         if i_best == -1:
