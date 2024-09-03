@@ -512,7 +512,7 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
                 loss_ls, is_first_call=self.inv_model.nb_f_calls == 0
             )
 
-            self.inv_model.loss_scaled_history.append(loss_scaled)
+            self.inv_model.loss_history.append(loss_scaled)
 
         return d_pred  # shape (N_obs, N_e)
 

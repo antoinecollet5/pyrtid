@@ -737,7 +737,7 @@ class LBFGSBEnsembleInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfi
 
         # Save the loss and the associated regularization weight
         if is_save_state:
-            self.inv_model.loss_scaled_history.append(scaled_loss)
+            self.inv_model.loss_history.append(scaled_loss)
 
         # The loss_ls gradient is the stacking of all members gradient
         # (independent from each others).
