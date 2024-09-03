@@ -1436,6 +1436,7 @@ class PCGA:
 
         # s_init has shape (s_dim, 1)
         simul_obs_init = self.forward_model(s_init)
+        self.istate.simul_obs_best = simul_obs_init
 
         self.simul_obs_init = simul_obs_init
         residuals = (simul_obs_init - self.obs).ravel()
