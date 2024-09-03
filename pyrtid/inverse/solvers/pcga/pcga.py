@@ -1441,8 +1441,8 @@ class PCGA:
         rmse_init: float = self.rmse(residuals, False)
         n_rmse_init: float = self.rmse(residuals, True)
         loss_ls_init = self.objective_function_ls(simul_obs_init)
-        # initial objective function
-        obj = self.objective_function_no_beta(s_init, simul_obs_init)
+        # initial objective function -> very high
+        obj = 1e20
 
         self.display_objfun(
             loss_ls_init, simul_obs_init.size, rmse_init, n_rmse_init, obj=obj
