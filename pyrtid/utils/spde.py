@@ -334,10 +334,11 @@ def simu_nc(
         w = random_state.normal(size=cholQ.L().shape[0])  # white noise
 
     # Note: https://scikit-sparse.readthedocs.io/en/latest/cholmod.html
-    # We want to solve A'z = w  ==> z = A^{-T}w
-    # We use the cholesky factorization LDL' = PAA'P'
-    # So LD^{1/2} = PA and A = P^{-1}LD^{1/2}
-    # Finally z = A^{-T} w = P'L^{-T}D^{-1/2} w
+    # We want to solve A z = w  ==> z = A^{-1} w
+    # We use the cholesky factorization LDL' = PA'AP'
+    # with P' = P^{-1} the permutation that makes the decomposition unique.
+    # So LD^{1/2} = PA' and A = D^{1/2}L'P
+    # Finally z = P'L^{-T}D^{-1/2} w
     # Possible to do it with gmres -> not efficient without preconditioner
     # from scipy.sparse.linalg import gmres
     # L, D = cholQ.L_D()
@@ -356,7 +357,7 @@ def simu_nc_t(
     ] = None,
 ) -> NDArrayFloat:
     """
-    Return a non conditional simulation for the given precision matrix factorization.
+    Return the transpose operator of :func:`simu_nc`.
 
     Parameters
     ----------
@@ -389,12 +390,39 @@ def simu_nc_t(
         w = random_state.normal(size=cholQ.L().shape[0])  # white noise
 
     # Note: https://scikit-sparse.readthedocs.io/en/latest/cholmod.html
-    # We want to solve Az = w  ==> z = A^{-1}w
-    # We use the cholesky factorization LDL' = PAA'P'
-    # So LD^{1/2} = PA and A = P^{-1}LD^{1/2}
-    # Finally z = A^{-1} w = D^{-1/2}L^{-1}P w
-    # CHOLMOD is the most performant
+    # We want to solve z = A^{-T} w
+    # since A = D^{1/2}L'P  (see simu_nc)
+    # A^{-1} = P'L^{-T}D^{-1/2}
+    # z = D^{1/2}L^{-1} P w
     return 1.0 / np.sqrt(cholQ.D()) * cholQ.solve_L(cholQ.apply_P(w))
+
+
+def simu_nc_t_inv(
+    cholQ: Factor,
+    z: NDArrayFloat,
+) -> NDArrayFloat:
+    """
+    Return the inverse of the transpose operator :func:`simu_nc_t` of :func:`simu_nc`.
+
+    Parameters
+    ----------
+    cholQ : Factor
+        The cholesky factorization of precision matrix.
+    z: NDArrayFloat
+        Input vector (results of :func:`simu_nc_t`.)
+
+    Returns
+    -------
+    NDArrayFloat
+        Input of :func:`simu_nc` that caused the input z.
+
+
+    """
+    # Note: https://scikit-sparse.readthedocs.io/en/latest/cholmod.html
+    # We want to w = A^{T} z
+    # z = D^{1/2}L^{-1} P w (see simu_nc_t)
+    # So w = P^{-1}LD^{1/2} z
+    return cholQ.apply_Pt(cholQ.L_D()[0] @ (np.sqrt(cholQ.D()) * z))
 
 
 def condition_precision_matrix(
@@ -476,6 +504,25 @@ def kriging(
 
 
 def d_simu_nc_mat_vec(cholQ: Factor, b: NDArrayFloat) -> NDArrayFloat:
+    """
+    Return the product between the derivative of simu_nc and a vector.
+
+    Parameters
+    ----------
+    cholQ : Factor
+        _description_
+    b : NDArrayFloat
+        _description_
+
+    Returns
+    -------
+    NDArrayFloat
+        _description_
+    """
+    return simu_nc_t(cholQ, b)
+
+
+def d_simu_nc_mat_vec_inv(cholQ: Factor, b: NDArrayFloat) -> NDArrayFloat:
     """
     Return the product between the derivative of simu_nc and a vector.
 

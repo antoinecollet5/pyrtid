@@ -3,17 +3,9 @@
 from contextlib import nullcontext as does_not_raise
 
 import numpy as np
+import pyrtid.utils.spde as spde
 import pytest
 from pyrtid.utils import sparse_cholesky
-from pyrtid.utils.spde import (
-    condition_precision_matrix,
-    get_laplacian_matrix,
-    get_laplacian_matrix_for_loops,
-    get_precision_matrix,
-    kriging,
-    simu_c,
-    simu_nc,
-)
 from scipy.sparse import csc_array
 from sksparse.cholmod import Factor
 
@@ -28,7 +20,7 @@ def _get_precision_matrix(alpha) -> csc_array:
     dy = 1.3
     dz = 1
     field_dimension = 2
-    return get_precision_matrix(
+    return spde.get_precision_matrix(
         nx, ny, nz, dx, dy, dz, kappa, alpha, spatial_dim=field_dimension
     )
 
@@ -47,8 +39,8 @@ def test_get_laplacian_matrix(kappa) -> None:
     dx = 2.1
     dy = 1.3
     dz = 2.0
-    a = get_laplacian_matrix_for_loops(nx, ny, nz, dx, dy, dz, kappa)
-    b = get_laplacian_matrix(nx, ny, nz, dx, dy, dz, kappa)
+    a = spde.get_laplacian_matrix_for_loops(nx, ny, nz, dx, dy, dz, kappa)
+    b = spde.get_laplacian_matrix(nx, ny, nz, dx, dy, dz, kappa)
 
     # see stackoverflow Q 30685024
     assert (a != b).nnz == 0
@@ -97,7 +89,7 @@ def test_get_precision_matrix(alpha, expected_exception) -> None:
     ],
 )
 def test_simu_nc(alpha, random_state) -> None:
-    assert simu_nc(_get_cholQ(alpha), random_state=random_state).shape == (45,)
+    assert spde.simu_nc(_get_cholQ(alpha), random_state=random_state).shape == (45,)
 
 
 @pytest.mark.parametrize(
@@ -115,7 +107,7 @@ def test_simu_nc(alpha, random_state) -> None:
 def test_kriging(Q, cholQ, dat_var) -> None:
     dat = np.array([5.5, 0.6, 7.9])
     dat_indices = np.array([5, 6, 10])
-    assert kriging(Q, dat, dat_indices, cholQ, dat_var=dat_var).shape == (45,)
+    assert spde.kriging(Q, dat, dat_indices, cholQ, dat_var=dat_var).shape == (45,)
 
 
 def test_simu_c() -> None:
@@ -124,13 +116,44 @@ def test_simu_c() -> None:
     dat = np.array([5.5, 0.6, 7.9])
     dat_indices = np.array([5, 6, 10])
     dat_var = np.array([5.5, 0.6, 7.9])
-    Q_cond = condition_precision_matrix(Q, dat_indices, dat_var)
+    Q_cond = spde.condition_precision_matrix(Q, dat_indices, dat_var)
     cholQ_cond = sparse_cholesky(Q_cond)
 
-    simu_c(cholQ, Q_cond, cholQ_cond, dat, dat_indices, dat_var, 15369)
+    spde.simu_c(cholQ, Q_cond, cholQ_cond, dat, dat_indices, dat_var, 15369)
 
 
 def test_condition_precision_matrix() -> None:
     alpha = 2.0
     Q = _get_precision_matrix(alpha)
-    condition_precision_matrix(Q, np.array([1, 3, 6]), np.random.normal(size=3) ** 2)
+    spde.condition_precision_matrix(
+        Q, np.array([1, 3, 6]), np.random.normal(size=3) ** 2
+    )
+
+
+def test_simu_nc_t_inv() -> None:
+    # from pyrtid.utils.spde import simu_nc_t, simu_nc_t_inv
+
+    # Grid
+    nx = 20  # number of voxels along the x axis
+    ny = 20  # number of voxels along the y axis
+    nz = 1
+    dx = 5.0  # voxel dimension along the x axis
+    dy = 5.0  # voxel dimension along the y axis
+    dz = 5.0
+
+    len_scale = 20.0  # m
+    kappa = 1 / len_scale
+    alpha = 1.0
+    std = 150.0  # standard deviation of the field
+
+    # Create a precision matrix
+    Q = spde.get_precision_matrix(
+        nx, ny, nz, dx, dy, dz, kappa, alpha, spatial_dim=2, sigma=std
+    )
+    cholQ = sparse_cholesky(Q)
+
+    w = np.random.default_rng(2024).normal(size=cholQ.L().shape[0])
+
+    np.testing.assert_allclose(
+        spde.simu_nc_t_inv(cholQ, spde.simu_nc_t(cholQ, w)), w, rtol=1e-12
+    )
