@@ -407,7 +407,7 @@ def simu_nc_t_inv(
     Parameters
     ----------
     cholQ : Factor
-        The cholesky factorization of precision matrix.
+        The cholesky factorization of precision matrix Q.
     z: NDArrayFloat
         Input vector (results of :func:`simu_nc_t`.)
 
@@ -510,14 +510,15 @@ def d_simu_nc_mat_vec(cholQ: Factor, b: NDArrayFloat) -> NDArrayFloat:
     Parameters
     ----------
     cholQ : Factor
-        _description_
+        The cholesky factorization of unconditional precision matrix Q.
     b : NDArrayFloat
-        _description_
+        Input vector b.
 
     Returns
     -------
     NDArrayFloat
-        _description_
+        Results of the transposed non-conditional simulation operator
+        applied to the input vector b.
     """
     return simu_nc_t(cholQ, b)
 
@@ -529,16 +530,18 @@ def d_simu_nc_mat_vec_inv(cholQ: Factor, b: NDArrayFloat) -> NDArrayFloat:
     Parameters
     ----------
     cholQ : Factor
-        _description_
+        The cholesky factorization of unconditional precision matrix Q.
+
     b : NDArrayFloat
-        _description_
+        Input vector b.
 
     Returns
     -------
     NDArrayFloat
-        _description_
+        Results of the inverse-transposed non-conditional simulation operator applied
+        to the input vector b.
     """
-    return simu_nc_t(cholQ, b)
+    return simu_nc_t_inv(cholQ, b)
 
 
 def simu_c(

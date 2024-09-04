@@ -157,3 +157,9 @@ def test_simu_nc_t_inv() -> None:
     np.testing.assert_allclose(
         spde.simu_nc_t_inv(cholQ, spde.simu_nc_t(cholQ, w)), w, rtol=1e-12
     )
+
+    np.testing.assert_allclose(
+        spde.d_simu_nc_mat_vec_inv(cholQ, spde.d_simu_nc_mat_vec(cholQ, w)),
+        w,
+        rtol=1e-12,
+    )
