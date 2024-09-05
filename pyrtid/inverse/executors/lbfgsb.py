@@ -133,6 +133,7 @@ def update_gradient(
     loss_grad: NDArrayFloat,
     idx: int,
     n_vals: int,
+    grad_index: int,
 ) -> NDArrayFloat:
     """
     Update the global loss_gradient with the new param regularization weight.
@@ -151,6 +152,11 @@ def update_gradient(
         Index of the first preconditioned value in the loss_grad vector.
     n_vals : int
         Number of preconditioned adjusted values for the given parameter.
+    grad_index: int
+        Gradient index in the sequence. This is useful only if a preconditioner
+        does not have dbacktransform_inv_vec implemented. In that case the LS gradient
+        must be stored and retrieved. There is a safe mechanism in the executor to
+        ensure that this is the case.
 
     Returns
     -------
@@ -163,14 +169,18 @@ def update_gradient(
     )
 
     # unscaled and unconditioned LS gradient
-    loss_ls_grad = get_loss_ls_grad_from_loss_grad(
-        param,
-        s_cond,
-        loss_grad,
-        idx,
-        n_vals,
-        param.reg_weight_history[-1],
-    )
+    try:
+        loss_ls_grad = get_loss_ls_grad_from_loss_grad(
+            param,
+            s_cond,
+            loss_grad,
+            idx,
+            n_vals,
+            param.reg_weight_history[-1],
+        )
+    except NotImplementedError:
+        loss_ls_grad = param.grad_adj_raw_history[grad_index]
+
     return param.preconditioner.dbacktransform_vec(
         s_cond[idx : idx + n_vals],
         loss_ls_grad + loss_reg_grad * param.reg_weight,
@@ -375,6 +385,7 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
                     loss_grad[idx : idx + n_vals] / lbfgsb_sf,
                     idx,
                     n_vals,
+                    -1,
                 )
                 * lbfgsb_sf
             )
@@ -388,6 +399,7 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
                         G[len(G) - _j - 1][idx : idx + n_vals] / lbfgsb_sf,
                         idx,
                         n_vals,
+                        -_j - 2,
                     )
                     * lbfgsb_sf
                 )
