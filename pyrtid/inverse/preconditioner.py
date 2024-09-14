@@ -83,6 +83,7 @@ import logging
 import pickle
 from abc import ABC, abstractmethod
 from concurrent.futures import ProcessPoolExecutor
+from dataclasses import dataclass
 from typing import Generator, List, Optional, Sequence, Tuple, Union
 
 import numdifftools as nd
@@ -2890,7 +2891,7 @@ def cost_fun(
     pcd: Preconditioner,
     s_nc: NDArrayFloat,
     grad_nc: NDArrayFloat,
-    max_s_nc_update_target,
+    max_update_target,
     is_target_preconditioned: bool,
 ) -> float:
     return np.log(
@@ -2901,7 +2902,7 @@ def cost_fun(
                 grad_nc=grad_nc,
                 is_preconditioned=is_target_preconditioned,
             )
-            - max_s_nc_update_target
+            - max_update_target
         )
         ** 2
         + 1.0
@@ -2936,17 +2937,44 @@ def is_picklable(obj):
     return True
 
 
+@dataclass
+class GradientScalerConfig:
+    """
+
+    Attributes
+    ----------
+    max_update_target : float
+        Maximum update desired on the parameter values.
+    is_target_preconditioned : bool
+        Whether the target is defined for the preconditioned parameter values or not.
+    max_workers : int, optional
+        The maximum number of workers to evaluate the maximum change in parallel. If the
+        preconditioner to not picklable, then it is set to 1. By default 50.
+    rtol : float, optional
+        Relative tolerance on the target to consider a convergence. By default 0.05.
+    lb : float, optional
+        Lower bound for the searched interval in first round. By default 1e-10.
+    ub : float, optional
+        Upper bound for the searched interval in first round. By default 1e10.
+    n_samples_in_first_round : int, optional
+        Number of samples used to cover the searched interval in the first round.
+        By default 50.
+    """
+
+    max_update_target: float
+    is_target_preconditioned: bool
+    max_workers: int = 50
+    rtol: float = 0.05
+    lb: float = 1e-10
+    ub: float = 1e10
+    n_samples_in_first_round: int = 50
+
+
 def scale_preconditioned_gradient(
     s_nc: NDArrayFloat,
     grad_nc: NDArrayFloat,
     pcd: Preconditioner,
-    max_s_nc_update_target: float,
-    is_target_preconditioned: bool,
-    max_workers: int = 10,
-    rtol: float = 0.05,
-    lb: float = 1e-10,
-    ub: float = 1e10,
-    n_samples_in_first_round: int = 50,
+    gsc: GradientScalerConfig,
     logger: Optional[logging.Logger] = None,
 ) -> Preconditioner:
     """
@@ -2962,22 +2990,8 @@ def scale_preconditioned_gradient(
         Conditioned gradient.
     pcd : Preconditioner
         Preconditioner instance.
-    max_s_nc_update_target : float
-        Maximum update desired on the non-conditioned parameter values.
-    is_target_preconditioned : bool
-        Whether the target is defined for the preconditioned parameter values or not.
-    max_workers : int, optional
-        The maximum number of workers to evaluate the maximum change in parallel. If the
-        preconditioner to not picklable, then it is set to 1. By default 10.
-    rtol : float, optional
-        Relative tolerance on the target to consider a convergence. By default 0.05.
-    lb : float, optional
-        Lower bound for the searched interval in first round. By default 1e-10.
-    ub : float, optional
-        Upper bound for the searched interval in first round. By default 1e10.
-    n_samples_in_first_round : int, optional
-        Number of samples used to cover the searched interval in the first round.
-        By default 50.
+    gsc: GradientScalerConfig
+        Configuration for the gradient scaling.
     logger : Optional[logging.Logger], optional
         Optional :class:`logging.Logger` instance used for event logging.
         The default is None.
@@ -2990,21 +3004,21 @@ def scale_preconditioned_gradient(
     if logger is not None:
         logger.info("Scaling the preconditioned gradient!")
         init_max_change = get_max_update(
-            copy.copy(pcd), s_nc, grad_nc, is_target_preconditioned
+            copy.copy(pcd), s_nc, grad_nc, gsc.is_target_preconditioned
         )
         logger.info("Initial scaling factor = 1.0")
         logger.info(f"Initial maximum change   = {init_max_change:.2e}")
-        logger.info(f"Objective maximum change = {max_s_nc_update_target:.2e}\n")
+        logger.info(f"Objective maximum change = {gsc.max_update_target:.2e}\n")
 
     # If the initial maximum change already respects the objective, then leave
     if (
         np.abs(
             get_relative_error(
                 init_max_change,
-                max_s_nc_update_target,
+                gsc.max_update_target,
             )
         )
-        <= rtol
+        <= gsc.rtol
     ):
         if logger is not None:
             logger.info("Target already fulfilled, skipping optimization \n")
@@ -3028,17 +3042,22 @@ def scale_preconditioned_gradient(
 
     def get_is_target_preconditioned() -> Generator:
         while True:
-            yield is_target_preconditioned
+            yield gsc.is_target_preconditioned
 
     _max_workers = 1
-    if is_picklable(pcd) and max_workers != 1:
-        _max_workers = max_workers
+    if is_picklable(pcd) and gsc.max_workers != 1:
+        _max_workers = gsc.max_workers
 
     # minimum 50 samples
-    if n_samples_in_first_round < 50:
+    if gsc.n_samples_in_first_round < 50:
         if logger is not None:
             logger.info("Setting 'samples_in_first_round' to 50!\n")
         n_samples_in_first_round = 50
+    else:
+        n_samples_in_first_round = gsc.n_samples_in_first_round
+
+    lb = copy.copy(gsc.lb)
+    ub = copy.copy(gsc.ub)
 
     while (
         np.abs(
@@ -3047,12 +3066,12 @@ def scale_preconditioned_gradient(
                     scale_pcd(scaling_factor, pcd),
                     s_nc,
                     grad_nc,
-                    is_target_preconditioned,
+                    gsc.is_target_preconditioned,
                 ),
-                max_s_nc_update_target,
+                gsc.max_update_target,
             )
         )
-        > rtol
+        > gsc.rtol
     ):
         if round == 6:
             if logger is not None:
@@ -3083,11 +3102,11 @@ def scale_preconditioned_gradient(
                         scale_pcd(_scaling_factor, copy.copy(pcd)),
                         s_nc,
                         grad_nc,
-                        is_target_preconditioned,
+                        gsc.is_target_preconditioned,
                     )
                 )
         else:
-            with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            with ProcessPoolExecutor(max_workers=_max_workers) as executor:
                 max_s_nc_updates = list(
                     executor.map(
                         get_max_update_wrapper,
@@ -3099,7 +3118,7 @@ def scale_preconditioned_gradient(
                     )
                 )
 
-        squared_diff = (np.array(max_s_nc_updates) - max_s_nc_update_target) ** 2
+        squared_diff = (np.array(max_s_nc_updates) - gsc.max_update_target) ** 2
         argmin = np.argmin(np.log(squared_diff + 1.0))
         scaling_factor = scaling_factors[argmin]
         if argmin == 0:
@@ -3116,7 +3135,7 @@ def scale_preconditioned_gradient(
             logger.info(
                 f"Post round {round}: Max s_nc change = {max_s_nc_updates[argmin]:.2e}"
             )
-            _re = get_relative_error(max_s_nc_updates[argmin], max_s_nc_update_target)
+            _re = get_relative_error(max_s_nc_updates[argmin], gsc.max_update_target)
             logger.info(f"Post round {round}: Rel. error to target = {_re:.2%}\n")
 
         # update the round number

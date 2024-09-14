@@ -9,6 +9,7 @@ import pyrtid.inverse as dminv
 import pyrtid.utils.spde as spde
 import pytest
 from pyrtid.inverse.preconditioner import (
+    GradientScalerConfig,
     arctanh_wrapper,
     darctanh_wrapper,
     dtanh_wrapper,
@@ -477,8 +478,14 @@ def test_GDP_SPDE(is_update_mean: bool) -> None:
     grad_nc = (
         np.random.default_rng(2024).normal(scale=1.0, size=(nx * ny * nz)) * 1e-5 + 2e-5
     )  # 1.0
-    max_s_nc_update_target = 1e-1
-    rtol = 1e-2  # 1 percent precision
+
+    gsc_nc = GradientScalerConfig(
+        max_workers=10,
+        max_update_target=1e-1,
+        is_target_preconditioned=False,
+        n_samples_in_first_round=10,
+        rtol=1e-2,  # 1 percent precision
+    )
 
     initial_max_update = get_max_update(pcd_gdpncs, s_nc, grad_nc, False)
     logger.info(f"initial_max_update = {initial_max_update}")
@@ -487,16 +494,16 @@ def test_GDP_SPDE(is_update_mean: bool) -> None:
         s_nc,
         grad_nc,
         pcd_gdpncs,
-        max_s_nc_update_target=max_s_nc_update_target,
-        is_target_preconditioned=False,
-        rtol=rtol,
-        max_workers=1,
+        gsc_nc,
         logger=logging.getLogger("SCALER"),
     )
+
     new_max_update = get_max_update(new_pcd, s_nc, grad_nc, False)
     logger.info(f"new_max_update = {new_max_update}")
 
-    np.testing.assert_allclose(new_max_update, max_s_nc_update_target, rtol=rtol)
+    np.testing.assert_allclose(
+        new_max_update, gsc_nc.max_update_target, rtol=gsc_nc.rtol
+    )
 
     # Conditional simulations
     pcd_gdpcs = dminv.GDPCS(
@@ -534,8 +541,13 @@ def test_GDP_SPDE(is_update_mean: bool) -> None:
     grad_nc = (
         np.random.default_rng(2024).normal(scale=1.0, size=(nx * ny * nz)) * 2e1 + 3e1
     )  # 1.0
-    max_s_nc_update_target = 100.0
-    rtol = 1e-2  # 1 percent precision
+
+    gsc_cond = GradientScalerConfig(
+        max_update_target=100.0,
+        is_target_preconditioned=False,
+        n_samples_in_first_round=60,
+        rtol=1e-2,  # 1 percent precision
+    )
 
     initial_max_update = get_max_update(pcd_gdpcs, s_nc, grad_nc, False)
     logger.info(f"initial_max_update = {initial_max_update}")
@@ -544,16 +556,15 @@ def test_GDP_SPDE(is_update_mean: bool) -> None:
         s_nc,
         grad_nc,
         pcd_gdpcs,
-        max_s_nc_update_target=max_s_nc_update_target,
-        is_target_preconditioned=False,
-        rtol=rtol,
-        max_workers=1,
+        gsc_cond,
         logger=scaler_log,
     )
     new_max_update = get_max_update(new_pcd, s_nc, grad_nc, False)
     logger.info(f"new_max_update = {new_max_update}")
 
-    np.testing.assert_allclose(new_max_update, max_s_nc_update_target, rtol=rtol)
+    np.testing.assert_allclose(
+        new_max_update, gsc_cond.max_update_target, rtol=gsc_cond.rtol
+    )
 
     if not is_update_mean:
         # now make a tests that fails -> does not find a satisfying scaling scalar
@@ -561,10 +572,12 @@ def test_GDP_SPDE(is_update_mean: bool) -> None:
             s_nc,
             grad_nc,
             pcd_gdpcs,
-            max_s_nc_update_target=1000.0,  # not a feasible value
-            is_target_preconditioned=False,
-            rtol=rtol,
-            max_workers=10,
+            GradientScalerConfig(
+                max_update_target=10000.0,
+                is_target_preconditioned=False,
+                n_samples_in_first_round=10,
+                rtol=1e-2,  # 1 percent precision
+            ),
             logger=scaler_log,
         )
         # so the preconditioner is not modified
@@ -721,7 +734,7 @@ def test_boundsclipper() -> None:
 
 
 @pytest.mark.parametrize(
-    "pcd,is_target_preconditioned, max_s_nc_update_target,",
+    "pcd,is_target_preconditioned, max_update_target,",
     (
         [dminv.LinearTransform(slope=50.0, y_intercept=0.0), True, 0.8],
         [dminv.LinearTransform(slope=50.0, y_intercept=0.0), True, np.log(10)],
@@ -733,12 +746,19 @@ def test_boundsclipper() -> None:
 )
 def test_gradient_scaling(
     pcd: dminv.Preconditioner,
-    max_s_nc_update_target: float,
+    max_update_target: float,
     is_target_preconditioned: bool,
 ) -> None:
     s_nc = np.ones(10) * 0.1  # 0.1
     grad_nc = np.ones_like(s_nc) * 0.1  # 1.0
-    rtol = 1e-2  # 1 percent precision
+
+    gsc = GradientScalerConfig(
+        max_workers=10,
+        max_update_target=max_update_target,
+        is_target_preconditioned=is_target_preconditioned,
+        n_samples_in_first_round=10,
+        rtol=1e-2,  # 1 percent precision
+    )
 
     initial_max_update = get_max_update(pcd, s_nc, grad_nc, is_target_preconditioned)
     logger.info(f"Initial_max_update = {initial_max_update}\n")
@@ -747,26 +767,20 @@ def test_gradient_scaling(
         s_nc,
         grad_nc,
         pcd,
-        max_s_nc_update_target=max_s_nc_update_target,
-        is_target_preconditioned=is_target_preconditioned,
-        rtol=rtol,
+        gsc,
         logger=scaler_log,
-        max_workers=10,
     )
     new_max_update = get_max_update(new_pcd, s_nc, grad_nc, is_target_preconditioned)
     logging.info(f"New_max_update = {new_max_update}")
 
-    np.testing.assert_allclose(new_max_update, max_s_nc_update_target, rtol=rtol)
+    np.testing.assert_allclose(new_max_update, max_update_target, rtol=gsc.rtol)
 
     # Call again -> the preconditioner should not be modified
     new_new_pcd = scale_preconditioned_gradient(
         s_nc,
         grad_nc,
         new_pcd,
-        max_s_nc_update_target=max_s_nc_update_target,
-        is_target_preconditioned=is_target_preconditioned,
-        rtol=rtol,
-        n_samples_in_first_round=10,
+        gsc,
         logger=scaler_log,
     )
     assert new_new_pcd is new_pcd  # test that it is the same object
