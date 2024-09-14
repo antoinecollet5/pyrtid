@@ -40,6 +40,16 @@ They can be combined through the :class:`ChainedTransforms` interface.
     Uniform2Gaussian
     BoundsClipper
 
+Gradient Scaling
+^^^^^^^^^^^^^^^^
+
+Configuration for the gradient scaling approach with L-BFGS-B.
+
+.. autosummary::
+   :toctree: _autosummary
+
+    GradientScalerConfig
+
 
 Functions
 =========
@@ -2940,6 +2950,7 @@ def is_picklable(obj):
 @dataclass
 class GradientScalerConfig:
     """
+    Configuration for the gradient scaling when using L-BFGS-B for the inversion.
 
     Attributes
     ----------
