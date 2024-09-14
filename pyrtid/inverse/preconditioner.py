@@ -78,8 +78,12 @@ Transformation functions derivatives.
 
 """
 
+import copy
+import logging
+import pickle
 from abc import ABC, abstractmethod
-from typing import List, Optional, Sequence, Tuple, Union
+from concurrent.futures import ProcessPoolExecutor
+from typing import Generator, List, Optional, Sequence, Tuple, Union
 
 import numdifftools as nd
 import numpy as np
@@ -2795,3 +2799,329 @@ class BoundsClipper(Preconditioner):
             nd.Jacobian(self.backtransform, step=eps)(test_data).T @ gradient,  # type: ignore
             rtol=rtol,
         )
+
+
+def scale_pcd(scaling_factor: float, pcd: Preconditioner) -> Preconditioner:
+    """Scale the given preconditioner with the scaling factor."""
+    return ChainedTransforms(
+        [copy.copy(pcd), LinearTransform(slope=scaling_factor, y_intercept=0.0)]
+    )
+
+
+def get_max_update(
+    pcd: Preconditioner,
+    s_nc: NDArrayFloat,
+    grad_nc: NDArrayFloat,
+    is_preconditioned: bool,
+) -> float:
+    """
+    Get the max update of parameter values with gradient descent on conditioned values.
+
+    Parameters
+    ----------
+    pcd : Preconditioner
+        Preconditioner.
+    s_nc : NDArrayFloat
+        Non conditioned parameter values.
+    grad_nc : NDArrayFloat
+        Gradient of the objective function with respect to the non conditioned parameter
+        values.
+    is_preconditioned: bool
+        Whether the max update is evaluated on the preconditioned values or not.
+
+    Returns
+    -------
+    float
+        Maximum update of the parameter values.
+    """
+    pcd = copy.copy(pcd)
+    s_cond = pcd(s_nc)
+    if is_preconditioned:
+        return float(
+            sp.linalg.norm(
+                pcd.dbacktransform_vec(s_cond, grad_nc),
+                ord=np.inf,
+            )
+        )
+    else:
+        return float(
+            sp.linalg.norm(
+                pcd.backtransform(s_cond - pcd.dbacktransform_vec(s_cond, grad_nc))
+                - s_nc,
+                ord=np.inf,
+            )
+        )
+
+
+def get_max_update_wrapper(
+    scaling_factor: float,
+    pcd: Preconditioner,
+    s_nc: NDArrayFloat,
+    grad_nc: NDArrayFloat,
+    is_preconditioned: bool,
+) -> float:
+    """
+    Get the max update of parameter values with gradient descent on conditioned values.
+
+    Parameters
+    ----------
+    pcd : Preconditioner
+        Preconditioner.
+    s_nc : NDArrayFloat
+        Non conditioned parameter values.
+    grad_nc : NDArrayFloat
+        Gradient of the objective function with respect to the non conditioned parameter
+        values.
+    is_preconditioned: bool
+        Whether the max update is evaluated on the preconditioned values or not.
+
+    Returns
+    -------
+    float
+        Maximum update of the parameter values.
+    """
+    return get_max_update(
+        scale_pcd(scaling_factor, pcd), s_nc, grad_nc, is_preconditioned
+    )
+
+
+def cost_fun(
+    scaling_factor: float,
+    pcd: Preconditioner,
+    s_nc: NDArrayFloat,
+    grad_nc: NDArrayFloat,
+    max_s_nc_update_target,
+    is_target_preconditioned: bool,
+) -> float:
+    return np.log(
+        (
+            get_max_update(
+                scale_pcd(scaling_factor, pcd),
+                s_nc=s_nc,
+                grad_nc=grad_nc,
+                is_preconditioned=is_target_preconditioned,
+            )
+            - max_s_nc_update_target
+        )
+        ** 2
+        + 1.0
+    )  # Add 1.0 because of the log
+
+
+def get_relative_error(x: float, x_ref: float) -> float:
+    """
+    Get the relative error between x and the reference x_ref.
+
+    Parameters
+    ----------
+    x : float
+        Value.
+    x_ref : float
+        Reference value.
+
+    Returns
+    -------
+    float
+        Relative error between x and x_ref.
+    """
+    return (x - x_ref) / x_ref
+
+
+def is_picklable(obj):
+    try:
+        pickle.dumps(obj)
+
+    except (pickle.PicklingError, TypeError):
+        return False
+    return True
+
+
+def scale_preconditioned_gradient(
+    s_nc: NDArrayFloat,
+    grad_nc: NDArrayFloat,
+    pcd: Preconditioner,
+    max_s_nc_update_target: float,
+    is_target_preconditioned: bool,
+    max_workers: int = 10,
+    rtol: float = 0.05,
+    lb: float = 1e-10,
+    ub: float = 1e10,
+    n_samples_in_first_round: int = 50,
+    logger: Optional[logging.Logger] = None,
+) -> Preconditioner:
+    """
+    Add a LinearTransform to the precondition gradient to ensure a defined update.
+
+    TODO: add the maths and explanations.
+
+    Parameters
+    ----------
+    s_nc : NDArrayFloat
+        Non conditioned parameter values.
+    grad_cond : NDArrayFloat
+        Conditioned gradient.
+    pcd : Preconditioner
+        Preconditioner instance.
+    max_s_nc_update_target : float
+        Maximum update desired on the non-conditioned parameter values.
+    is_target_preconditioned : bool
+        Whether the target is defined for the preconditioned parameter values or not.
+    max_workers : int, optional
+        The maximum number of workers to evaluate the maximum change in parallel. If the
+        preconditioner to not picklable, then it is set to 1. By default 10.
+    rtol : float, optional
+        Relative tolerance on the target to consider a convergence. By default 0.05.
+    lb : float, optional
+        Lower bound for the searched interval in first round. By default 1e-10.
+    ub : float, optional
+        Upper bound for the searched interval in first round. By default 1e10.
+    n_samples_in_first_round : int, optional
+        Number of samples used to cover the searched interval in the first round.
+        By default 50.
+    logger : Optional[logging.Logger], optional
+        Optional :class:`logging.Logger` instance used for event logging.
+        The default is None.
+
+    Returns
+    -------
+    Preconditioner
+        The updated preconditioner with the linear transform.
+    """
+    if logger is not None:
+        logger.info("Scaling the preconditioned gradient!")
+        init_max_change = get_max_update(
+            copy.copy(pcd), s_nc, grad_nc, is_target_preconditioned
+        )
+        logger.info("Initial scaling factor = 1.0")
+        logger.info(f"Initial maximum change   = {init_max_change:.2e}")
+        logger.info(f"Objective maximum change = {max_s_nc_update_target:.2e}\n")
+
+    # If the initial maximum change already respects the objective, then leave
+    if (
+        np.abs(
+            get_relative_error(
+                init_max_change,
+                max_s_nc_update_target,
+            )
+        )
+        <= rtol
+    ):
+        if logger is not None:
+            logger.info("Target already fulfilled, skipping optimization \n")
+        return pcd
+
+    # step 1: explore
+    scaling_factor = 1.0  # initial guess
+    round = 1
+
+    def get_pcd() -> Generator:
+        while True:
+            yield copy.copy(pcd)
+
+    def get_s_nc() -> Generator:
+        while True:
+            yield s_nc
+
+    def get_grad_nc() -> Generator:
+        while True:
+            yield grad_nc
+
+    def get_is_target_preconditioned() -> Generator:
+        while True:
+            yield is_target_preconditioned
+
+    _max_workers = 1
+    if is_picklable(pcd) and max_workers != 1:
+        _max_workers = max_workers
+
+    # minimum 50 samples
+    if n_samples_in_first_round < 50:
+        if logger is not None:
+            logger.info("Setting 'samples_in_first_round' to 50!\n")
+        n_samples_in_first_round = 50
+
+    while (
+        np.abs(
+            get_relative_error(
+                get_max_update(
+                    scale_pcd(scaling_factor, pcd),
+                    s_nc,
+                    grad_nc,
+                    is_target_preconditioned,
+                ),
+                max_s_nc_update_target,
+            )
+        )
+        > rtol
+    ):
+        if round == 6:
+            if logger is not None:
+                logger.info(
+                    "Did not converge in 5 rounds! The update target might"
+                    " not be feasible for the given preconditioner >>"
+                    "The scaling factor remains 1."
+                )
+            return pcd
+
+        if logger is not None:
+            logger.info(f"Optimization round {round}")
+            logger.info(f"lower bound   = {lb:.2e}")
+            logger.info(f"upper bound   = {ub:.2e}")
+
+        scaling_factors = np.logspace(
+            np.log10(lb),
+            np.log10(ub),
+            n_samples_in_first_round - (round - 1) * 10,
+            base=10,
+        )
+
+        if _max_workers == 1:
+            max_s_nc_updates: List[float] = []
+            for _scaling_factor in scaling_factors:
+                max_s_nc_updates.append(
+                    get_max_update(
+                        scale_pcd(_scaling_factor, copy.copy(pcd)),
+                        s_nc,
+                        grad_nc,
+                        is_target_preconditioned,
+                    )
+                )
+        else:
+            with ProcessPoolExecutor(max_workers=max_workers) as executor:
+                max_s_nc_updates = list(
+                    executor.map(
+                        get_max_update_wrapper,
+                        scaling_factors,
+                        get_pcd(),
+                        get_s_nc(),
+                        get_grad_nc(),
+                        get_is_target_preconditioned(),
+                    )
+                )
+
+        squared_diff = (np.array(max_s_nc_updates) - max_s_nc_update_target) ** 2
+        argmin = np.argmin(np.log(squared_diff + 1.0))
+        scaling_factor = scaling_factors[argmin]
+        if argmin == 0:
+            lb = scaling_factor
+        else:
+            lb = scaling_factors[argmin - 1]
+        if argmin == len(scaling_factors) - 1:
+            ub = scaling_factor
+        else:
+            ub = scaling_factors[argmin + 1]
+
+        if logger is not None:
+            logger.info(f"Post round {round}: Scaling factor  = {scaling_factor:.2e}")
+            logger.info(
+                f"Post round {round}: Max s_nc change = {max_s_nc_updates[argmin]:.2e}"
+            )
+            _re = get_relative_error(max_s_nc_updates[argmin], max_s_nc_update_target)
+            logger.info(f"Post round {round}: Rel. error to target = {_re:.2%}\n")
+
+        # update the round number
+        round += 1
+
+    return ChainedTransforms(
+        [copy.copy(pcd), LinearTransform(slope=scaling_factor, y_intercept=0.0)]
+    )

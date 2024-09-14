@@ -1,3 +1,5 @@
+import copy
+import logging
 from contextlib import nullcontext as does_not_raise
 
 import numdifftools as nd
@@ -12,10 +14,12 @@ from pyrtid.inverse.preconditioner import (
     dtanh_wrapper,
     gd_parametrize,
     get_gd_weights,
+    get_max_update,
     get_theta_init_normal,
     get_theta_init_uniform,
     logistic,
     logit,
+    scale_preconditioned_gradient,
     tanh_wrapper,
     to_new_range,
     to_new_range_derivative,
@@ -27,6 +31,11 @@ from pyrtid.utils import (
     sparse_cholesky,
 )
 from scipy._lib._util import check_random_state  # To handle random_state
+
+logger = logging.getLogger("ROOT")
+scaler_log = logging.getLogger("SCALER")
+logger.setLevel(logging.INFO)
+scaler_log.setLevel(logging.INFO)
 
 
 @pytest.mark.parametrize(
@@ -384,14 +393,14 @@ def test_GDP_SPDE(is_update_mean: bool) -> None:
 
     len_scale = 20.0  # m
     kappa = 1 / len_scale
-    alpha = 1.0
+    scaling_factor = 1.0
 
     mean = 100.0  # trend of the field
     std = 150.0  # standard deviation of the field
 
     # Create a precision matrix
     Q_ref = spde.get_precision_matrix(
-        nx, ny, nz, dx, dy, dz, kappa, alpha, spatial_dim=2, sigma=std
+        nx, ny, nz, dx, dy, dz, kappa, scaling_factor, spatial_dim=2, sigma=std
     )
     cholQ_ref = sparse_cholesky(Q_ref)
     # Non conditional simulation -> change the random state to obtain a different field
@@ -418,31 +427,26 @@ def test_GDP_SPDE(is_update_mean: bool) -> None:
     estimated_mean = float(np.average(dat_val_noisy))
     estimated_std = float(np.std(dat_val_noisy))
 
-    alpha = 1
+    scaling_factor = 1
 
     # Create a precision matrix
     Q_nc = spde.get_precision_matrix(
-        nx, ny, 1, dx, dy, 1.0, kappa, alpha, spatial_dim=2, sigma=estimated_std
+        nx,
+        ny,
+        1,
+        dx,
+        dy,
+        1.0,
+        kappa,
+        scaling_factor,
+        spatial_dim=2,
+        sigma=estimated_std,
     )
     Q_c = spde.condition_precision_matrix(Q_nc, dat_nn, dat_var)
 
     # Decompose with cholesky
     cholQ_nc = sparse_cholesky(Q_nc)
     cholQ_c = sparse_cholesky(Q_c)
-
-    # Krigeage = average of conditional simulations
-    (
-        spde.kriging(
-            Q_c,
-            dat_val_noisy - estimated_mean,
-            dat_nn,
-            cholQ_c,
-            dat_var,
-        )
-        .reshape(ny, nx)
-        .T
-        + estimated_mean
-    )
 
     lbounds = np.ones((nx * ny)) * -1000
     ubounds = np.ones((nx * ny)) * 1500
@@ -455,7 +459,7 @@ def test_GDP_SPDE(is_update_mean: bool) -> None:
         ne, Q_nc, estimated_mean, is_update_mean=is_update_mean
     ).test_preconditioner(lbounds, ubounds)
     # with extra parameters
-    pcd = dminv.GDPNCS(
+    pcd_gdpncs = dminv.GDPNCS(
         ne,
         Q_nc,
         estimated_mean,
@@ -464,12 +468,38 @@ def test_GDP_SPDE(is_update_mean: bool) -> None:
         random_state=2024,
         is_update_mean=is_update_mean,
     )
-    np.testing.assert_allclose(pcd.theta, theta_test)
-    pcd.test_preconditioner(lbounds, ubounds, eps=1e-8)
-    pcd.transform_bounds(np.vstack([lbounds, ubounds]).T)
+    s_nc = pcd_gdpncs.backtransform(pcd_gdpncs(np.zeros(cholQ_nc.P().size)))
+    np.testing.assert_allclose(pcd_gdpncs.theta, theta_test, rtol=1e-5)
+    pcd_gdpncs.test_preconditioner(lbounds, ubounds, eps=1e-8)
+    pcd_gdpncs.transform_bounds(np.vstack([lbounds, ubounds]).T)
+
+    # Test gradient scaling
+    grad_nc = (
+        np.random.default_rng(2024).normal(scale=1.0, size=(nx * ny * nz)) * 1e-5 + 2e-5
+    )  # 1.0
+    max_s_nc_update_target = 1e-1
+    rtol = 1e-2  # 1 percent precision
+
+    initial_max_update = get_max_update(pcd_gdpncs, s_nc, grad_nc, False)
+    logger.info(f"initial_max_update = {initial_max_update}")
+
+    new_pcd = scale_preconditioned_gradient(
+        s_nc,
+        grad_nc,
+        pcd_gdpncs,
+        max_s_nc_update_target=max_s_nc_update_target,
+        is_target_preconditioned=False,
+        rtol=rtol,
+        max_workers=1,
+        logger=logging.getLogger("SCALER"),
+    )
+    new_max_update = get_max_update(new_pcd, s_nc, grad_nc, False)
+    logger.info(f"new_max_update = {new_max_update}")
+
+    np.testing.assert_allclose(new_max_update, max_s_nc_update_target, rtol=rtol)
 
     # Conditional simulations
-    pcd = dminv.GDPCS(
+    pcd_gdpcs = dminv.GDPCS(
         ne,
         Q_nc,
         Q_c,
@@ -477,11 +507,11 @@ def test_GDP_SPDE(is_update_mean: bool) -> None:
         dat_nn,
         dat_val,
         dat_var,
-        is_update_mean=is_update_mean,
+        is_update_mean=False,
     )
-    pcd.test_preconditioner(lbounds, ubounds)
+    pcd_gdpcs.test_preconditioner(lbounds, ubounds)
     # with extra parameters
-    pcd = dminv.GDPCS(
+    pcd_gdpcs = dminv.GDPCS(
         ne,
         Q_nc,
         Q_c,
@@ -495,8 +525,51 @@ def test_GDP_SPDE(is_update_mean: bool) -> None:
         random_state=2024,
         is_update_mean=is_update_mean,
     )
-    pcd.test_preconditioner(lbounds, ubounds, rtol=1e-4, eps=1e-6)
-    pcd.transform_bounds(np.vstack([lbounds, ubounds]).T)
+    copy.copy(pcd_gdpcs).test_preconditioner(lbounds, ubounds, rtol=1e-4, eps=1e-6)
+    # pcd_gdpcs.test_preconditioner(lbounds, ubounds, rtol=1e-4, eps=1e-6)
+    pcd_gdpcs.transform_bounds(np.vstack([lbounds, ubounds]).T)
+    s_nc = pcd_gdpcs.backtransform(pcd_gdpcs(np.zeros(cholQ_nc.P().size)))
+    np.testing.assert_allclose(pcd_gdpcs.theta, theta_test)
+
+    grad_nc = (
+        np.random.default_rng(2024).normal(scale=1.0, size=(nx * ny * nz)) * 2e1 + 3e1
+    )  # 1.0
+    max_s_nc_update_target = 100.0
+    rtol = 1e-2  # 1 percent precision
+
+    initial_max_update = get_max_update(pcd_gdpcs, s_nc, grad_nc, False)
+    logger.info(f"initial_max_update = {initial_max_update}")
+
+    new_pcd = scale_preconditioned_gradient(
+        s_nc,
+        grad_nc,
+        pcd_gdpcs,
+        max_s_nc_update_target=max_s_nc_update_target,
+        is_target_preconditioned=False,
+        rtol=rtol,
+        max_workers=1,
+        logger=scaler_log,
+    )
+    new_max_update = get_max_update(new_pcd, s_nc, grad_nc, False)
+    logger.info(f"new_max_update = {new_max_update}")
+
+    np.testing.assert_allclose(new_max_update, max_s_nc_update_target, rtol=rtol)
+
+    if not is_update_mean:
+        # now make a tests that fails -> does not find a satisfying scaling scalar
+        new_pcd = scale_preconditioned_gradient(
+            s_nc,
+            grad_nc,
+            pcd_gdpcs,
+            max_s_nc_update_target=1000.0,  # not a feasible value
+            is_target_preconditioned=False,
+            rtol=rtol,
+            max_workers=10,
+            logger=scaler_log,
+        )
+        # so the preconditioner is not modified
+
+        assert new_pcd is pcd_gdpcs
 
 
 @pytest.mark.parametrize(
@@ -604,7 +677,7 @@ def test_uniform2gaussian() -> None:
 def test_boundsclipper() -> None:
     pcd = dminv.BoundsClipper(np.ones(15) * -1.0, np.ones(15) * 5.0)
 
-    test_data = np.arange(-5, 10, 1)
+    test_data = np.arange(-5, 10, 1, dtype=np.float64)
 
     np.testing.assert_array_equal(
         np.array(
@@ -645,3 +718,55 @@ def test_boundsclipper() -> None:
     )
 
     pcd.test_preconditioner(lbounds=np.zeros(15), ubounds=np.ones(15) * 10.0)
+
+
+@pytest.mark.parametrize(
+    "pcd,is_target_preconditioned, max_s_nc_update_target,",
+    (
+        [dminv.LinearTransform(slope=50.0, y_intercept=0.0), True, 0.8],
+        [dminv.LinearTransform(slope=50.0, y_intercept=0.0), True, np.log(10)],
+        [dminv.LinearTransform(slope=50.0, y_intercept=0.0), False, 0.8],
+        [dminv.LinearTransform(slope=50.0, y_intercept=0.0), False, np.log(10)],
+        [dminv.LogTransform(), True, 0.8],
+        [dminv.LogTransform(), True, np.log(10)],
+    ),
+)
+def test_gradient_scaling(
+    pcd: dminv.Preconditioner,
+    max_s_nc_update_target: float,
+    is_target_preconditioned: bool,
+) -> None:
+    s_nc = np.ones(10) * 0.1  # 0.1
+    grad_nc = np.ones_like(s_nc) * 0.1  # 1.0
+    rtol = 1e-2  # 1 percent precision
+
+    initial_max_update = get_max_update(pcd, s_nc, grad_nc, is_target_preconditioned)
+    logger.info(f"Initial_max_update = {initial_max_update}\n")
+
+    new_pcd = scale_preconditioned_gradient(
+        s_nc,
+        grad_nc,
+        pcd,
+        max_s_nc_update_target=max_s_nc_update_target,
+        is_target_preconditioned=is_target_preconditioned,
+        rtol=rtol,
+        logger=scaler_log,
+        max_workers=10,
+    )
+    new_max_update = get_max_update(new_pcd, s_nc, grad_nc, is_target_preconditioned)
+    logging.info(f"New_max_update = {new_max_update}")
+
+    np.testing.assert_allclose(new_max_update, max_s_nc_update_target, rtol=rtol)
+
+    # Call again -> the preconditioner should not be modified
+    new_new_pcd = scale_preconditioned_gradient(
+        s_nc,
+        grad_nc,
+        new_pcd,
+        max_s_nc_update_target=max_s_nc_update_target,
+        is_target_preconditioned=is_target_preconditioned,
+        rtol=rtol,
+        n_samples_in_first_round=10,
+        logger=scaler_log,
+    )
+    assert new_new_pcd is new_pcd  # test that it is the same object
