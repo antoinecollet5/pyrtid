@@ -247,7 +247,7 @@ def test_preconditioners(
 ) -> None:
     with expected_exception:
         p: dminv.Preconditioner = precond(*args, **kwargs)
-        p._test_preconditioner(lbounds=lbounds, ubounds=ubounds, eps=eps)
+        p.test_preconditioner(lbounds=lbounds, ubounds=ubounds, eps=eps)
         p.transform_bounds(np.vstack([lbounds, ubounds]).T)
 
 
@@ -317,7 +317,7 @@ def test_bad_preconditioner() -> None:
             " the provided bounds are not correct."
         ),
     ):
-        pcd._test_preconditioner(1.0, 2.0)
+        pcd.test_preconditioner(1.0, 2.0)
 
 
 def test_std_rescaler() -> None:
@@ -329,7 +329,7 @@ def test_std_rescaler() -> None:
         mean = np.mean(s_cond)
 
         # test the correctness
-        pcd._test_preconditioner(-1e-6, 1e6, shape=(250), eps=1e-3)
+        pcd.test_preconditioner(-1e-6, 1e6, shape=(250), eps=1e-3)
 
         # test that the scaling is correct -> should be zero because we remove the prior
         np.testing.assert_allclose(
@@ -453,7 +453,7 @@ def test_GDP_SPDE(is_update_mean: bool) -> None:
     # Non conditional simulations
     dminv.GDPNCS(
         ne, Q_nc, estimated_mean, is_update_mean=is_update_mean
-    )._test_preconditioner(lbounds, ubounds)
+    ).test_preconditioner(lbounds, ubounds)
     # with extra parameters
     pcd = dminv.GDPNCS(
         ne,
@@ -465,7 +465,7 @@ def test_GDP_SPDE(is_update_mean: bool) -> None:
         is_update_mean=is_update_mean,
     )
     np.testing.assert_allclose(pcd.theta, theta_test)
-    pcd._test_preconditioner(lbounds, ubounds, eps=1e-8)
+    pcd.test_preconditioner(lbounds, ubounds, eps=1e-8)
     pcd.transform_bounds(np.vstack([lbounds, ubounds]).T)
 
     # Conditional simulations
@@ -479,7 +479,7 @@ def test_GDP_SPDE(is_update_mean: bool) -> None:
         dat_var,
         is_update_mean=is_update_mean,
     )
-    pcd._test_preconditioner(lbounds, ubounds)
+    pcd.test_preconditioner(lbounds, ubounds)
     # with extra parameters
     pcd = dminv.GDPCS(
         ne,
@@ -495,7 +495,7 @@ def test_GDP_SPDE(is_update_mean: bool) -> None:
         random_state=2024,
         is_update_mean=is_update_mean,
     )
-    pcd._test_preconditioner(lbounds, ubounds, rtol=1e-4, eps=1e-6)
+    pcd.test_preconditioner(lbounds, ubounds, rtol=1e-4, eps=1e-6)
     pcd.transform_bounds(np.vstack([lbounds, ubounds]).T)
 
 
@@ -586,7 +586,7 @@ def test_sigmoid_rescaler_bounded(is_log10, rate):
     x2 = pcd.transform(y)
     np.testing.assert_allclose(x, x2, rtol=1e-4)
 
-    pcd._test_preconditioner(1e-9, 1e-4, shape=(100,), eps=1e-9, rtol=1e-4)
+    pcd.test_preconditioner(1e-9, 1e-4, shape=(100,), eps=1e-9, rtol=1e-4)
 
     np.testing.assert_allclose(
         pcd.transform_bounds(np.array([[1, 2, 3], [2, 3, 5]]).T),
@@ -598,7 +598,7 @@ def test_sigmoid_rescaler_bounded(is_log10, rate):
 
 def test_uniform2gaussian() -> None:
     pcd = dminv.Uniform2Gaussian(ud_lbound=-3, ud_ubound=5.0, gd_mu=2.0, gd_std=12.78)
-    pcd._test_preconditioner(-2, 2)
+    pcd.test_preconditioner(-2, 2)
 
 
 def test_boundsclipper() -> None:
@@ -644,4 +644,4 @@ def test_boundsclipper() -> None:
         rtol=1e-5,
     )
 
-    pcd._test_preconditioner(lbounds=np.zeros(15), ubounds=np.ones(15) * 10.0)
+    pcd.test_preconditioner(lbounds=np.zeros(15), ubounds=np.ones(15) * 10.0)

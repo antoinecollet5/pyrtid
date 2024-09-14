@@ -373,6 +373,40 @@ class Preconditioner(ABC):
                 f"[{self.LBOUND_COND}, {self.UBOUND_COND}]"
             )
 
+    def test_preconditioner(
+        self,
+        lbounds: Union[float, NDArrayFloat],
+        ubounds: Union[float, NDArrayFloat],
+        shape: Optional[Union[int, Sequence[int]]] = None,
+        rtol: float = 1e-5,
+        eps: Optional[float] = None,
+    ) -> None:
+        """
+        Test if the backconditioner and the derivatives times a vector are correct.
+
+        This is a development tool.
+
+        Parameters
+        ----------
+        lbounds : Union[float, NDArrayFloat]
+            _description_
+        ubounds : Union[float, NDArrayFloat]
+            _description_
+        shape : Optional[Union[int, Sequence[int]]], optional
+            _description_, by default None
+        rtol : float, optional
+            _description_, by default 1e-5
+        eps : Optional[float], optional
+            The epsilon for the computation of the approximated preconditioner first
+            derivative by finite difference. by default None.
+
+        Raises
+        ------
+        ValueError
+            If one of the backconditioner of the gradient conditioner are incorrect.
+        """
+        self._test_preconditioner(lbounds, ubounds, shape, rtol, eps)
+
     def _test_preconditioner(
         self,
         lbounds: Union[float, NDArrayFloat],
@@ -2426,7 +2460,7 @@ class SubSelector(Preconditioner):
         # return the bounds
         return bounds
 
-    def _test_preconditioner(
+    def test_preconditioner(
         self,
         lbounds: Union[float, NDArrayFloat],
         ubounds: Union[float, NDArrayFloat],
@@ -2718,7 +2752,7 @@ class BoundsClipper(Preconditioner):
         """
         return bounds
 
-    def _test_preconditioner(
+    def test_preconditioner(
         self,
         lbounds: Union[float, NDArrayFloat],
         ubounds: Union[float, NDArrayFloat],
