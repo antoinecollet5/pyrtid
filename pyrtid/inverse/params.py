@@ -15,7 +15,11 @@ import numpy as np
 
 from pyrtid.forward import ForwardModel
 from pyrtid.inverse.obs import StateVariable, get_array_from_state_variable
-from pyrtid.inverse.preconditioner import NoTransform, Preconditioner
+from pyrtid.inverse.preconditioner import (
+    GradientScalerConfig,
+    NoTransform,
+    Preconditioner,
+)
 from pyrtid.inverse.regularization import (
     AdaptiveRegweight,
     ConstantRegWeight,
@@ -124,6 +128,7 @@ class AdjustableParameter:
         "reg_weight_history",
         "loss_reg_history",
         "sp",
+        "gradient_scaler_config",
     ]
 
     def __init__(
@@ -137,6 +142,7 @@ class AdjustableParameter:
         filters: Optional[List[Filter]] = None,
         sp: Optional[int] = None,
         reg_weight_update_strategy: RegWeightUpdateStrategy = (ConstantRegWeight(1.0)),
+        gradient_scaler_config: Optional[GradientScalerConfig] = None,
     ) -> None:
         """
         Initialize the instance.
@@ -166,6 +172,10 @@ class AdjustableParameter:
         reg_weight_update_strategy: RegWeightUpdateStrategy
             Strategy for the regularization parameter (weight) update.
             This has no effect if no regularizator is defined. The default is no_update.
+        gradient_scaler_config: Optional[GradientScalerConfig]
+            Condifguration for the gradient scaling approach with L-BFGS-B.
+            This configuration is used only if the L-BFGS-B optimizer is used for
+            inversion. The default is None.
 
         Raises
         ------
@@ -208,6 +218,10 @@ class AdjustableParameter:
         self.reg_weight_update_strategy = reg_weight_update_strategy
         # initialize internal lists
         self.init_state()
+
+        self.gradient_scaler_config: Optional[GradientScalerConfig] = (
+            gradient_scaler_config
+        )
 
     def init_state(self) -> None:
         """Initialize the internal state (lists, comptors, etc.)"""
@@ -307,6 +321,7 @@ class AdjustableParameter:
                 "filters": self.filters,
                 "reg_weight": self.reg_weight,
                 "reg_weight_update_strategy": self.reg_weight_update_strategy,
+                "gradient_sclaer_config": self.gradient_scaler_config,
             },
             indent=4,
             sort_keys=False,

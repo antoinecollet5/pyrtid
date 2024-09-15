@@ -14,14 +14,16 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Callable, Deque, List, Optional, Tuple
+from typing import Deque, List, Optional, Tuple
 
+import numpy as np
+import scipy as sp
 from lbfgsb import minimize_lbfgsb
-from scipy.optimize import OptimizeResult as ScipyOptimizeResult
 
 from pyrtid.inverse.executors.base import (
     AdjointInversionExecutor,
     AdjointSolverConfig,
+    DataModel,
     adjoint_solver_config_params_ds,
     base_solver_config_params_ds,
     register_params_ds,
@@ -29,8 +31,11 @@ from pyrtid.inverse.executors.base import (
 from pyrtid.inverse.params import (
     AdjustableParameter,
     eval_weighted_loss_reg,
+    get_parameter_values_from_model,
     get_parameters_bounds,
+    get_parameters_values_from_model,
 )
+from pyrtid.inverse.preconditioner import get_factor_enforcing_grad_inf_norm, scale_pcd
 from pyrtid.inverse.regularization import ConstantRegWeight
 from pyrtid.utils.types import NDArrayFloat
 
@@ -217,9 +222,6 @@ class LBFGSBSolverConfig(AdjointSolverConfig):
     max_steplength: float = 1e8
     xtol_linesearch: float = 1e-5
     eps_SY: float = 2.2e-16
-    gradient_scaler: Optional[
-        Callable[[NDArrayFloat, NDArrayFloat, NDArrayFloat, NDArrayFloat], float]
-    ] = None
 
 
 class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
@@ -408,8 +410,10 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
             idx += n_vals
 
         logging.info(f"New loss regularization   = {loss_reg}")
-        logging.info(f"New loss (scaled)         = {loss}\n")
-
+        logging.info(f"New loss (total)          = {loss}")
+        logging.info(
+            f"New loss (total scaled)   = {loss*self.inv_model.scaling_factor}\n"
+        )
         logging.info(
             f"- Updating regularization weights # {self.inv_model.n_update_rw} over"
         )
@@ -417,7 +421,83 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
         # return updated_j, updated_grad, G
         return loss, loss_old, loss_grad, G
 
-    def run(self) -> ScipyOptimizeResult:
+    def is_gradient_scaling_needed(self) -> bool:
+        """
+        Return whether an initial gradient scaling is needed.
+
+        True if the user has defined a configuration for gradient scaler for at least
+        one of the adjusted parameter.
+        """
+        for param in self.inv_model.parameters_to_adjust:
+            if param.gradient_scaler_config is not None:
+                return True
+        return False
+
+    def scale_initial_gradient(self) -> Tuple[float, NDArrayFloat]:
+        """
+        Perform a parameter scaling to enforce the infinite norm of the first gradient.
+        """
+
+        # evaluate objective function and its gradient
+        fun: float = self.eval_loss(self.data_model.s_init)
+        grad_cond: NDArrayFloat = self.eval_loss_gradient(
+            self.data_model.s_init, is_save_state=True
+        )  # type: ignore
+
+        idx = 0
+
+        for param in self.inv_model.parameters_to_adjust:
+            param_grad_cond = param.grad_adj_history[-1]  # conditioned
+            idx += param_grad_cond.size
+            if param.gradient_scaler_config is None:
+                # no scaling for this parameter
+                continue
+            # otherwise, update the preconditioner
+            param_values = get_parameter_values_from_model(self.fwd_model, param).ravel(
+                "F"
+            )
+            param_grad_nc = param.grad_adj_raw_history[-1].ravel("F")
+            scaling_factor = get_factor_enforcing_grad_inf_norm(
+                param_values,
+                param_grad_nc,  # non conditioned
+                param.preconditioner,
+                param.gradient_scaler_config,
+                logger=logging.getLogger("GRADIENT-SCALER"),
+                lb_nc=param.lbounds,
+                ub_nc=param.ubounds,
+            )
+            if scaling_factor == 1.0:
+                # if no update of the parameters values
+                continue
+            # otherwise update the preconditioner
+            param.preconditioner = scale_pcd(scaling_factor, param.preconditioner)
+            # Apply preconditioning to the gradient and flatten
+            param_grad_cond = param.preconditioner.dbacktransform_vec(
+                param.preconditioner(param_values),
+                param_grad_nc,
+            )
+
+            # Save the preconditioned gradient
+            param.grad_adj_history[-1] = param_grad_cond.copy()
+
+            # Update the preconditioned gradient
+            grad_cond[idx - param_grad_cond.size : idx] = param_grad_cond
+
+        # since there's been an update of the preconditioners, it is necessary to
+        # redefine s_init
+        # Need to differentiate flux and grids
+        self.data_model = DataModel(
+            self.obs,
+            get_parameters_values_from_model(
+                self.fwd_model,
+                self.inv_model.parameters_to_adjust,
+                is_preconditioned=True,
+            ),
+            self.std_obs**2,
+        )
+        return fun, grad_cond
+
+    def run(self) -> sp.optimize.OptimizeResult:
         """
         Run the history matching.
 
@@ -425,6 +505,29 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
         required by the HM algorithms.
         """
         super().run()
+
+        # step one -> gradient scaling
+        if self.is_gradient_scaling_needed():
+            fun, jac = self.scale_initial_gradient()
+            checkpoint = sp.optimize.OptimizeResult(
+                fun=fun,
+                jac=jac,
+                nfev=1,
+                njev=1,
+                nit=0,
+                status="restart",
+                message="restart",
+                x=self.data_model.s_init,
+                success=False,
+                hess_inv=sp.optimize.LbfgsInvHessProduct(
+                    np.empty((0, self.data_model.s_dim)),
+                    np.empty((0, self.data_model.s_dim)),
+                ),
+            )
+        else:
+            checkpoint = None
+
+        # run L-BFGS-B
         return minimize_lbfgsb(
             x0=self.data_model.s_init,
             fun=self.eval_loss,
@@ -437,6 +540,7 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
             bounds=get_parameters_bounds(
                 self.inv_model.parameters_to_adjust, is_preconditioned=True
             ),
+            checkpoint=checkpoint,
             maxcor=self.solver_config.maxcor,
             ftarget=self.solver_config.ftarget,
             ftol=self.solver_config.ftol,
@@ -450,6 +554,5 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
             gtol_linesearch=self.solver_config.gtol_linesearch,
             xtol_linesearch=self.solver_config.xtol_linesearch,
             eps_SY=self.solver_config.eps_SY,
-            gradient_scaler=self.solver_config.gradient_scaler,
             logger=logging.getLogger("L-BFGS-B"),
         )

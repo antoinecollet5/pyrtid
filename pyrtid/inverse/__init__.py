@@ -138,6 +138,7 @@ from pyrtid.inverse.preconditioner import (
     BoundsClipper,
     BoundsRescaler,
     ChainedTransforms,
+    GradientScalerConfig,
     InvAbsTransform,
     LinearTransform,
     LogTransform,
@@ -220,4 +221,5 @@ __all__ = [
     "Slicer",
     "Uniform2Gaussian",
     "BoundsClipper",
+    "GradientScalerConfig",
 ]
