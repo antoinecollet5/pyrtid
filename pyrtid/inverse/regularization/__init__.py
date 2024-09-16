@@ -126,7 +126,7 @@ function regularization term.
 .. autosummary::
    :toctree: _autosummary
 
-    RegWeightUpdateStrategy,
+    RegWeightUpdateStrategy
     AdaptiveUCRegweight
     AdaptiveRegweight
     AdaptiveGradientNormRegweight

@@ -67,8 +67,8 @@ from pyrtid.inverse.solvers import PCGA, PostCovEstimation
 from pyrtid.utils.types import NDArrayFloat
 
 pcga_solver_config_params_ds = (
-    "solver_kwargs: Optional[Dict[str, Any]]\n"
-    "   Additional arguments for PCGA instance. The default is None."
+    r"solver_kwargs: Optional[Dict[str, Any]]\n"
+    r"   Additional arguments for PCGA instance. The default is None."
 )
 
 
