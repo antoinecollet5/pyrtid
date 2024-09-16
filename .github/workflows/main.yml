@@ -95,20 +95,14 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: install libsuitesparse
-        run: sudo apt install -y libsuitesparse-dev
-
-      - name: Install tox
-        run: python3 -m pip install tox
-
-      - name: Set up xvfb
+      - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb
-          sleep 3
+          sudo apt install -y libsuitesparse-dev
+          python -m pip install --upgrade pip
+          python -m pip install tox tox-gh-actions
 
       - name: Run tox
-        run: xvfb-run tox
+        run: tox
 
       - name: Upload distribution artifacts
         uses: actions/upload-artifact@v4
