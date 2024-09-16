@@ -66,3 +66,8 @@ Reactive Transport Inversion is a reactive transport inversion demonstrator writ
 
 .. |DOI| image:: https://zenodo.org/badge/DOI/10.5281/zenodo.8192031.svg
    :target: https://doi.org/10.5281/zenodo.8192031
+
+
+.. image:: https://api.codacy.com/project/badge/Grade/173d498c8d4e4eb4a3bea24d32ffebe3
+   :alt: Codacy Badge
+   :target: https://app.codacy.com/gh/antoinecollet5/pyrtid?utm_source=github.com&utm_medium=referral&utm_content=antoinecollet5/pyrtid&utm_campaign=Badge_Grade
