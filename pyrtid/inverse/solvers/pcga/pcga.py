@@ -513,7 +513,7 @@ class PCGA:
             (
                 self.objective_function_ls(simul_obs)
                 + 0.5 * smxb.T.dot(self.Q.solve(smxb))
-            )[0]
+            ).item()
         )
 
     def objective_function_no_beta(self, s_cur, simul_obs) -> float:
@@ -539,7 +539,7 @@ class PCGA:
             (
                 self.objective_function_ls(simul_obs)
                 + 0.5 * (np.dot(invZs.T, invZs) - np.dot(XTinvQs.T, tmp))
-            )[0]
+            ).item()
         )
 
     def rmse(self, residuals: NDArrayFloat, is_normalized: bool) -> float:
