@@ -20,8 +20,8 @@ Different executors are provided (scipy, stochopy, pyesmda, pypcga, l-bfgs-b, si
     ESMDASolverConfig
     ESMDARSInversionExecutor
     ESMDARSSolverConfig
-    ESMDADMCInversionExecutor,
-    ESMDADMCSolverConfig,
+    ESMDADMCInversionExecutor
+    ESMDADMCSolverConfig
     LBFGSBInversionExecutor
     LBFGSBSolverConfig
     PCGAInversionExecutor
