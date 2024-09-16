@@ -1,4 +1,3 @@
-import copy
 import logging
 from contextlib import nullcontext as does_not_raise
 from typing import Optional
@@ -533,7 +532,7 @@ def test_GDP_SPDE(is_update_mean: bool) -> None:
         random_state=2024,
         is_update_mean=is_update_mean,
     )
-    copy.copy(pcd_gdpcs).test_preconditioner(lbounds, ubounds, rtol=1e-4, eps=1e-6)
+    pcd_gdpcs.smart_copy().test_preconditioner(lbounds, ubounds, rtol=1e-4, eps=1e-6)
     # pcd_gdpcs.test_preconditioner(lbounds, ubounds, rtol=1e-4, eps=1e-6)
     pcd_gdpcs.transform_bounds(np.vstack([lbounds, ubounds]).T)
     s_nc = pcd_gdpcs.backtransform(pcd_gdpcs(np.zeros(cholQ_nc.P().size)))

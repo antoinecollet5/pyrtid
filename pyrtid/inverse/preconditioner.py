@@ -88,6 +88,8 @@ Transformation functions derivatives.
 
 """
 
+from __future__ import annotations
+
 import copy
 import logging
 import pickle
@@ -534,6 +536,16 @@ class Preconditioner(ABC):
         # does not hold
         return np.sort(np.array([self(bounds[:, 0]), self(bounds[:, 1])]).T, axis=1)
 
+    def smart_copy(self) -> Preconditioner:
+        """
+        Return a copy of the instance mixing shallow and deep copy.
+
+        Since some preconditioners are modified inplace when calling :func:`transform`
+        or :func:`backtransform`, it is necessary to deepcopy some attributes so that
+        the original instance is not altered.
+        """
+        return copy.copy(self)
+
 
 class ChainedTransforms(Preconditioner):
     """Combinaison of multiple preconditioners."""
@@ -691,6 +703,10 @@ class ChainedTransforms(Preconditioner):
 
         # successively transform the data with each preconditioner
         return chain_op(bounds, 0)
+
+    def smart_copy(self) -> ChainedTransforms:
+        """Return a deep copy of the instance."""
+        return ChainedTransforms([p.smart_copy() for p in self.pcds])
 
 
 class NoTransform(Preconditioner):
@@ -2211,9 +2227,16 @@ class GDPNCS(Preconditioner):
         if self.is_update_mean:
             n_cond += 1
         bounds = np.zeros((n_cond, 2))
-        bounds[:, 0] = -np.inf
-        bounds[:, 1] = np.inf
+        bounds[:, 0] = -1e100  # np.inf
+        bounds[:, 1] = 1e100  # np.inf
         return bounds
+
+    def smart_copy(self) -> GDPNCS:
+        """Return a deep copy of the instance."""
+        cp = copy.copy(self)
+        cp.theta = copy.deepcopy(cp.theta)
+        cp.estimated_mean = copy.deepcopy(cp.estimated_mean)
+        return cp
 
 
 class GDPCS(GDPNCS):
@@ -2816,7 +2839,7 @@ class BoundsClipper(Preconditioner):
 def scale_pcd(scaling_factor: float, pcd: Preconditioner) -> Preconditioner:
     """Scale the given preconditioner with the scaling factor."""
     return ChainedTransforms(
-        [copy.copy(pcd), LinearTransform(slope=scaling_factor, y_intercept=0.0)]
+        [pcd.smart_copy(), LinearTransform(slope=scaling_factor, y_intercept=0.0)]
     )
 
 
@@ -2888,7 +2911,7 @@ def get_max_update(
     float
         Maximum update of the parameter values.
     """
-    pcd = copy.copy(pcd)
+    pcd = pcd.smart_copy()
     pcd_scaled = scale_pcd(scaling_factor, pcd)
     s_cond = pcd_scaled(s_nc)
     with warnings.catch_warnings():
@@ -3033,7 +3056,7 @@ def get_factor_enforcing_grad_inf_norm(
 
     def get_pcd() -> Generator:
         while True:
-            yield copy.copy(pcd)
+            yield pcd.smart_copy()
 
     def get_s_nc() -> Generator:
         while True:
@@ -3067,8 +3090,8 @@ def get_factor_enforcing_grad_inf_norm(
     else:
         n_samples_in_first_round = gsc.n_samples_in_first_round
 
-    lb = copy.copy(gsc.lb)
-    ub = copy.copy(gsc.ub)
+    lb = copy.deepcopy(gsc.lb)
+    ub = copy.deepcopy(gsc.ub)
 
     while (
         np.abs(
