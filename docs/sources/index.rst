@@ -8,7 +8,6 @@ Welcome to PyRTID's documentation!
    :caption: Contents:
 
    installation
-   tutorials/index
    contributing
    bibliography
    glossary
