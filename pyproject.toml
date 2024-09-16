@@ -56,8 +56,12 @@ Issues = "https://github.com/antoinecollet5/pyrtid/issues"
 Changelog = "https://github.com/antoinecollet5/pyrtid/blob/master/CHANGELOG.rst"
 
 [tool.setuptools]
-py-modules = []
-packages = ["pyrtid"]
+# packages = ["pyrtid"]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["pyrtid*"]
+exclude = ["docs*", "tests*"]
 
 [tool.setuptools.dynamic]
 version = { attr = "pyrtid.__about__.__version__" }
