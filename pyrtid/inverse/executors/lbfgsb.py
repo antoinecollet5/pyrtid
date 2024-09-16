@@ -291,7 +291,11 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
             Update f0, grad and G.
         """
         # should be equal (with rounding errors)
-        lbfgsb_sf = (loss) / self.inv_model.loss_total_unscaled
+        assert (
+            np.abs(loss - self.inv_model.loss_total_unscaled)
+            / self.inv_model.loss_total_unscaled
+            < 1e20
+        )
 
         # Regularization weight that has been used up to now
         has_been_updated: List[bool] = []
@@ -312,19 +316,24 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
             # Compute scaled gradients
             # This step is a bit complex because we must take into account both the
             # scaling and the potential preconditioning.
+
+            # 1) Current unconditioned reg gradient
             _loss_reg_grad = param.eval_loss_reg_gradient(
                 param.preconditioner.backtransform(s_cond[idx : idx + n_vals])
             )
 
             # unscaled and unconditioned LS gradient
-            _loss_ls_grad = get_loss_ls_grad_from_loss_grad(
-                param,
-                s_cond,
-                loss_grad / lbfgsb_sf,
-                idx,
-                n_vals,
-                param.reg_weight,
-            )
+            try:
+                _loss_ls_grad = get_loss_ls_grad_from_loss_grad(
+                    param,
+                    s_cond,
+                    loss_grad,
+                    idx,
+                    n_vals,
+                    param.reg_weight,
+                )
+            except NotImplementedError:
+                _loss_ls_grad = param.grad_adj_raw_history[-1]
 
             # unweighted loss reg are stored at the parameter level
             has_been_updated.append(
@@ -350,7 +359,7 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
         loss_reg: float = eval_weighted_loss_reg(
             self.inv_model.parameters_to_adjust, self.fwd_model, s_cond=s_cond
         )
-        loss = (self.inv_model.loss_ls_unscaled + loss_reg) * lbfgsb_sf
+        loss = self.inv_model.loss_ls_unscaled + loss_reg
 
         # Update the previous objective function to prevent early break
         # This is a hack specific to lbfgsb
@@ -380,30 +389,24 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
             n_vals: int = param.size_preconditioned_values
 
             # # 1) Current unconditioned reg gradient
-            loss_grad[idx : idx + n_vals] = (
-                update_gradient(
-                    param,
-                    s_cond,
-                    loss_grad[idx : idx + n_vals] / lbfgsb_sf,
-                    idx,
-                    n_vals,
-                    -1,
-                )
-                * lbfgsb_sf
+            loss_grad[idx : idx + n_vals] = update_gradient(
+                param,
+                s_cond,
+                loss_grad[idx : idx + n_vals],
+                idx,
+                n_vals,
+                -1,
             )
             # 2) Update past gradients stored in G
             for _j, _s_cond in enumerate(reversed(S)):
                 # going over S and G backward
-                G[len(G) - _j - 1][idx : idx + n_vals] = (
-                    update_gradient(
-                        param,
-                        _s_cond,
-                        G[len(G) - _j - 1][idx : idx + n_vals] / lbfgsb_sf,
-                        idx,
-                        n_vals,
-                        -_j - 2,
-                    )
-                    * lbfgsb_sf
+                G[len(G) - _j - 1][idx : idx + n_vals] = update_gradient(
+                    param,
+                    _s_cond,
+                    G[len(G) - _j - 1][idx : idx + n_vals],
+                    idx,
+                    n_vals,
+                    -_j - 2,
                 )
 
             # update the global index
