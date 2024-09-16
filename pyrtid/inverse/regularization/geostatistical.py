@@ -94,7 +94,7 @@ class GeostatisticalRegularizator(Regularizator):
             * np.dot(
                 residuals.T,
                 self.cov_m.solve(residuals),
-            )
+            ).item()
         )
 
     def _eval_loss_gradient_analytical(self, values: NDArrayFloat) -> NDArrayFloat:
