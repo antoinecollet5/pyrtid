@@ -221,7 +221,7 @@ def make_transient_flow_matrices(
     q_prev = lil_array((dim, dim), dtype=np.float64)
     q_next = lil_array((dim, dim), dtype=np.float64)
 
-    stocoeff = fl_model.storage_coefficient.ravel("F")
+    sc = fl_model.storage_coefficient.ravel("F")
 
     # X contribution
     if geometry.nx > 1:
@@ -240,7 +240,7 @@ def make_transient_flow_matrices(
             geometry.gamma_ij_x
             / geometry.dx
             / geometry.mesh_volume
-            / stocoeff[idc_owner]
+            / sc[idc_owner]
             * kmean[idc_owner]
         )
 
@@ -265,7 +265,7 @@ def make_transient_flow_matrices(
             geometry.gamma_ij_x
             / geometry.dx
             / geometry.mesh_volume
-            / stocoeff[idc_owner]
+            / sc[idc_owner]
             * kmean[idc_neigh]
         )
 
@@ -295,7 +295,7 @@ def make_transient_flow_matrices(
             geometry.gamma_ij_y
             / geometry.dy
             / geometry.mesh_volume
-            / stocoeff[idc_owner]
+            / sc[idc_owner]
             * kmean[idc_owner]
         )
 
@@ -320,7 +320,7 @@ def make_transient_flow_matrices(
             geometry.gamma_ij_y
             / geometry.dy
             / geometry.mesh_volume
-            / stocoeff[idc_owner]
+            / sc[idc_owner]
             * kmean[idc_neigh]
         )
 

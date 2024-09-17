@@ -45,7 +45,7 @@ def make_initial_adj_flow_matrices(
     dim = geometry.nx * geometry.ny
     q_prev = lil_array((dim, dim), dtype=np.float64)
     q_next = lil_array((dim, dim), dtype=np.float64)
-    stocoeff = fl_model.storage_coefficient.ravel("F")
+    sc = fl_model.storage_coefficient.ravel("F")
     if a_fl_model.crank_nicolson is None:
         fl_crank = fl_model.crank_nicolson
     else:
@@ -72,7 +72,7 @@ def make_initial_adj_flow_matrices(
             (slice(1, geometry.nx), slice(None)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
-        tmp = _tmp / stocoeff[idc_owner] * kmean[idc_owner]
+        tmp = _tmp / sc[idc_owner] * kmean[idc_owner]
 
         if fl_model.regime == FlowRegime.STATIONARY:
             q_next[idc_owner, idc_owner] += tmp  # type: ignore
@@ -89,7 +89,7 @@ def make_initial_adj_flow_matrices(
             owner_indices_to_keep=oitkg,
             neigh_indices_to_keep=fl_model.free_head_nn,
         )
-        tmp = _tmp / stocoeff[idc_owner] * kmean[idc_owner]
+        tmp = _tmp / sc[idc_owner] * kmean[idc_owner]
         if fl_model.regime == FlowRegime.STATIONARY:
             q_next[idc_owner, idc_neigh] -= tmp
         # Handle density flow
@@ -106,7 +106,7 @@ def make_initial_adj_flow_matrices(
             (slice(0, geometry.nx - 1), slice(None)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
-        tmp = _tmp / stocoeff[idc_owner] * kmean[idc_neigh]
+        tmp = _tmp / sc[idc_owner] * kmean[idc_neigh]
 
         if fl_model.regime == FlowRegime.STATIONARY:
             q_next[idc_owner, idc_owner] += tmp
@@ -123,7 +123,7 @@ def make_initial_adj_flow_matrices(
             owner_indices_to_keep=oitkg,
             neigh_indices_to_keep=fl_model.free_head_nn,
         )
-        tmp = _tmp / stocoeff[idc_owner] * kmean[idc_neigh]
+        tmp = _tmp / sc[idc_owner] * kmean[idc_neigh]
 
         if fl_model.regime == FlowRegime.STATIONARY:
             q_next[idc_owner, idc_neigh] -= tmp
@@ -147,7 +147,7 @@ def make_initial_adj_flow_matrices(
             (slice(None), slice(1, geometry.ny)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
-        tmp = _tmp / stocoeff[idc_owner] * kmean[idc_owner]
+        tmp = _tmp / sc[idc_owner] * kmean[idc_owner]
 
         if fl_model.regime == FlowRegime.STATIONARY:
             q_next[idc_owner, idc_owner] += tmp
@@ -164,7 +164,7 @@ def make_initial_adj_flow_matrices(
             owner_indices_to_keep=oitkg,
             neigh_indices_to_keep=fl_model.free_head_nn,
         )
-        tmp = _tmp / stocoeff[idc_owner] * kmean[idc_owner]
+        tmp = _tmp / sc[idc_owner] * kmean[idc_owner]
 
         if fl_model.regime == FlowRegime.STATIONARY:
             q_next[idc_owner, idc_neigh] -= tmp
@@ -182,7 +182,7 @@ def make_initial_adj_flow_matrices(
             (slice(None), slice(0, geometry.ny - 1)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
-        tmp = _tmp / stocoeff[idc_owner] * kmean[idc_neigh]
+        tmp = _tmp / sc[idc_owner] * kmean[idc_neigh]
 
         if fl_model.regime == FlowRegime.STATIONARY:
             q_next[idc_owner, idc_owner] += tmp
@@ -199,7 +199,7 @@ def make_initial_adj_flow_matrices(
             owner_indices_to_keep=oitkg,
             neigh_indices_to_keep=fl_model.free_head_nn,
         )
-        tmp = _tmp / stocoeff[idc_owner] * kmean[idc_neigh]
+        tmp = _tmp / sc[idc_owner] * kmean[idc_neigh]
 
         if fl_model.regime == FlowRegime.STATIONARY:
             q_next[idc_owner, idc_neigh] -= tmp
@@ -251,7 +251,7 @@ def make_transient_adj_flow_matrices(
     dim = geometry.nx * geometry.ny
     q_prev = lil_array((dim, dim), dtype=np.float64)
     q_next = lil_array((dim, dim), dtype=np.float64)
-    stocoeff = fl_model.storage_coefficient.ravel("F")
+    sc = fl_model.storage_coefficient.ravel("F")
     if a_fl_model.crank_nicolson is None:
         fl_crank: float = fl_model.crank_nicolson
     else:
@@ -278,7 +278,7 @@ def make_transient_adj_flow_matrices(
             owner_indices_to_keep=fl_model.free_head_nn,
         )
         # Add the storage coefficient with respect to the owner mesh
-        tmp_next = _tmp / stocoeff[idc_owner] * kmean[idc_owner]
+        tmp_next = _tmp / sc[idc_owner] * kmean[idc_owner]
         tmp_prev = tmp_next.copy()
 
         if fl_model.is_gravity:
@@ -296,7 +296,7 @@ def make_transient_adj_flow_matrices(
             neigh_indices_to_keep=fl_model.free_head_nn,
         )
         # Add the storage coefficient with respect to the owner mesh
-        tmp_next = _tmp / stocoeff[idc_owner] * kmean[idc_owner]
+        tmp_next = _tmp / sc[idc_owner] * kmean[idc_owner]
         tmp_prev = tmp_next.copy()
 
         if fl_model.is_gravity:
@@ -316,7 +316,7 @@ def make_transient_adj_flow_matrices(
             owner_indices_to_keep=fl_model.free_head_nn,
         )
         # Add the storage coefficient with respect to the owner mesh
-        tmp_next = _tmp / stocoeff[idc_owner] * kmean[idc_neigh]
+        tmp_next = _tmp / sc[idc_owner] * kmean[idc_neigh]
         tmp_prev = tmp_next.copy()
 
         if fl_model.is_gravity:
@@ -334,7 +334,7 @@ def make_transient_adj_flow_matrices(
             neigh_indices_to_keep=fl_model.free_head_nn,
         )
         # Add the storage coefficient with respect to the owner mesh
-        tmp_next = _tmp / stocoeff[idc_owner] * kmean[idc_neigh]
+        tmp_next = _tmp / sc[idc_owner] * kmean[idc_neigh]
         tmp_prev = tmp_next.copy()
 
         if fl_model.is_gravity:
@@ -366,7 +366,7 @@ def make_transient_adj_flow_matrices(
             owner_indices_to_keep=fl_model.free_head_nn,
         )
         # Add the storage coefficient with respect to the owner mesh
-        tmp_next = _tmp / stocoeff[idc_owner] * kmean[idc_owner]
+        tmp_next = _tmp / sc[idc_owner] * kmean[idc_owner]
         tmp_prev = tmp_next.copy()
 
         if fl_model.is_gravity:
@@ -384,7 +384,7 @@ def make_transient_adj_flow_matrices(
             neigh_indices_to_keep=fl_model.free_head_nn,
         )
         # Add the storage coefficient with respect to the owner mesh
-        tmp_next = _tmp / stocoeff[idc_owner] * kmean[idc_owner]
+        tmp_next = _tmp / sc[idc_owner] * kmean[idc_owner]
         tmp_prev = tmp_next.copy()
 
         if fl_model.is_gravity:
@@ -405,7 +405,7 @@ def make_transient_adj_flow_matrices(
             owner_indices_to_keep=fl_model.free_head_nn,
         )
         # Add the storage coefficient with respect to the owner mesh
-        tmp_next = _tmp / stocoeff[idc_owner] * kmean[idc_neigh]
+        tmp_next = _tmp / sc[idc_owner] * kmean[idc_neigh]
         tmp_prev = tmp_next.copy()
 
         if fl_model.is_gravity:
@@ -423,7 +423,7 @@ def make_transient_adj_flow_matrices(
             neigh_indices_to_keep=fl_model.free_head_nn,
         )
         # Add the storage coefficient with respect to the owner mesh
-        tmp_next = _tmp / stocoeff[idc_owner] * kmean[idc_neigh]
+        tmp_next = _tmp / sc[idc_owner] * kmean[idc_neigh]
         tmp_prev = tmp_next.copy()
 
         if fl_model.is_gravity:
