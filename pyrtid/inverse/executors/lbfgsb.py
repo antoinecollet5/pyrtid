@@ -12,6 +12,7 @@ to match the new function and obtain the correct Hessian approximation.
 
 from __future__ import annotations
 
+import copy
 import logging
 from dataclasses import dataclass
 from typing import Deque, List, Optional, Tuple
@@ -297,6 +298,8 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
             < 1e20
         )
 
+        logging.info("- Trying to update the regularization weights")
+
         # Regularization weight that has been used up to now
         has_been_updated: List[bool] = []
         idx = 0  # idx of the first value for the parameter
@@ -350,10 +353,13 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
 
         # No need to update anything
         if not any(has_been_updated):
+            logging.info("- No regularization weights update.\n")
             return loss, loss_old, loss_grad, G
 
         # Update the number of times the regularization weights have been updated
         self.inv_model.n_update_rw += 1
+
+        logging.info(f"- Update # {self.inv_model.n_update_rw}")
 
         # Update the objective function (scaled)
         loss_reg: float = eval_weighted_loss_reg(
@@ -367,10 +373,6 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
             abs(loss_old), abs(loss), 1
         ) < self.solver_config.ftol:
             loss_old *= 2.0
-
-        logging.info(
-            f"- Updating regularization weights # {self.inv_model.n_update_rw}"
-        )
 
         # Update all gradients
         idx = 0  # idx of the first value for the parameter
@@ -415,10 +417,10 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
         logging.info(f"New loss regularization   = {loss_reg}")
         logging.info(f"New loss (total)          = {loss}")
         logging.info(
-            f"New loss (total scaled)   = {loss*self.inv_model.scaling_factor}\n"
+            f"New loss (total scaled)   = {loss*self.inv_model.scaling_factor}"
         )
         logging.info(
-            f"- Updating regularization weights # {self.inv_model.n_update_rw} over"
+            f"- Updating regularization weights # {self.inv_model.n_update_rw} over.\n"
         )
 
         # return updated_j, updated_grad, G
@@ -447,8 +449,18 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
             self.data_model.s_init, is_save_state=True
         )  # type: ignore
 
-        idx = 0
+        # Adaptive regularization step -> should be done before
+        if self.inv_model.is_adaptive_regularization():
+            fun, _, grad_cond, _ = self._update_fun_def(
+                self.data_model.s_init,
+                fun,
+                copy.copy(fun),
+                grad_cond,
+                Deque([]),
+                Deque([]),
+            )
 
+        idx = 0
         for param in self.inv_model.parameters_to_adjust:
             param_grad_cond = param.grad_adj_history[-1]  # conditioned
             idx += param_grad_cond.size
@@ -498,6 +510,7 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
             ),
             self.std_obs**2,
         )
+
         return fun, grad_cond
 
     def run(self) -> sp.optimize.OptimizeResult:
