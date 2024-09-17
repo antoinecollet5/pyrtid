@@ -184,7 +184,7 @@ def update_gradient(
             param.reg_weight_history[-1],
         )
     except NotImplementedError:
-        loss_ls_grad = param.grad_adj_raw_history[grad_index]
+        loss_ls_grad = param.grad_adj_raw_history[grad_index].ravel("F")
 
     return param.preconditioner.dbacktransform_vec(
         s_cond[idx : idx + n_vals],
