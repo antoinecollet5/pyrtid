@@ -298,6 +298,14 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
             < 1e20
         )
 
+        # In this case, the update already took place
+        if (
+            self.is_gradient_scaling_needed()
+            and len(self.inv_model.loss_ls_history) == 1
+            and self.inv_model.n_update_rw == 1
+        ):
+            return loss, loss_old, loss_grad, G
+
         logging.info("- Trying to update the regularization weights")
 
         # Regularization weight that has been used up to now
