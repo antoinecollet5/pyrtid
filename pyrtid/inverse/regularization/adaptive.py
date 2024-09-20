@@ -5,6 +5,7 @@ from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import scipy as sp
+from lbfgsb.base import get_bounds
 
 from pyrtid.inverse.regularization.base import RegWeightUpdateStrategy
 from pyrtid.utils import NDArrayFloat
@@ -19,6 +20,9 @@ class AdaptiveRegweight(RegWeightUpdateStrategy, ABC):
         Current regularization weight (parameter).
     reg_weight_bounds: NDArrayFloat
         Bounds for the reg_weight used in adaptive strategies.
+    is_use_first_adjusted_weight_as_upper_bound: bool
+        Whether the first weight determined by the method should becoe the
+        upper bound. It prevent weight explosion.
     """
 
     __slots__ = [
@@ -26,13 +30,16 @@ class AdaptiveRegweight(RegWeightUpdateStrategy, ABC):
         "convergence_factor",
         "_has_noise_level_been_reached",
         "_has_been_above_noise_level",
+        "is_use_first_adjusted_weight_as_upper_bound",
+        "n_regw_update",
     ]
 
     def __init__(
         self,
         reg_weight_init: float = 1.0,
-        reg_weigh_bounds: Union[Tuple[float, float], NDArrayFloat] = (1e-10, 1e10),
+        reg_weight_bounds: Union[Tuple[float, float], NDArrayFloat] = (1e-10, 1e10),
         convergence_factor: float = 0.05,
+        is_use_first_adjusted_weight_as_upper_bound: bool = True,
     ) -> None:
         """
 
@@ -40,20 +47,32 @@ class AdaptiveRegweight(RegWeightUpdateStrategy, ABC):
         ----------
         reg_weight_init : float, optional
             Initial regularization weight, by default 1.0
-        reg_weigh_bounds : Union[Tuple[float, float], NDArrayFloat], optional
+        reg_weight_bounds : Union[Tuple[float, float], NDArrayFloat], optional
             Bounds for the optimization parameter, by default (1e-10, 1e10)
         convergence_factor : float, optional
             Convergence criteria for the regularization weight, by default 0.05
         """
-        # TODO: add a check on the bounds and update the initial value accordingly
-        # (must be positive)
-        self.reg_weight_bounds = reg_weigh_bounds
+        self.reg_weight_bounds = np.array(
+            [get_bounds(np.array([reg_weight_init]), np.array([reg_weight_bounds]))]
+        ).ravel()
+        if reg_weight_init < 0.0:
+            raise ValueError(
+                "The initial regularization weight should be positive or null!"
+            )
+        if (self.reg_weight_bounds < 0).any():
+            raise ValueError(
+                "The bounds for the regularization weight should be positive or null!"
+            )
 
         super().__init__(reg_weight_init)
         # internal state used only in the case of adaptive regularization strategy
+        self.n_regw_update: int = 0
         self._has_been_above_noise_level = False
         self._has_noise_level_been_reached = False
         self.convergence_factor: float = convergence_factor
+        self.is_use_first_adjusted_weight_as_upper_bound: bool = (
+            is_use_first_adjusted_weight_as_upper_bound
+        )
 
     @property
     def reg_weight(self) -> float:
@@ -65,6 +84,57 @@ class AdaptiveRegweight(RegWeightUpdateStrategy, ABC):
             max(self.reg_weight_bounds[0], value), self.reg_weight_bounds[1]
         )
 
+    def update_reg_weight(
+        self,
+        loss_ls_history: List[float],
+        loss_reg_history: List[float],
+        reg_weight_history: List[float],
+        loss_ls_grad: NDArrayFloat,
+        loss_reg_grad: NDArrayFloat,
+        n_obs: int,
+        logger: Optional[logging.Logger] = None,
+    ) -> bool:
+        """
+        Update the regularization weight.
+
+        Parameters
+        ----------
+        loss_ls_history : List[float]
+            List of past LS cost function.
+        loss_reg_history : List[float]
+            List of past regularization cost function.
+        reg_weight_history : List[float]
+            List of past regularization parameter (weight).
+        loss_ls_grad : NDArrayFloat
+            Current LS cost function gradient.
+        loss_reg_grad : NDArrayFloat
+            Current Reg cost function gradient.
+        n_obs : int
+            Number of observations used in the LS cost function.
+        logger: Optional[logging.Logger]
+            Optional :class:`logging.Logger` instance used for event logging.
+            The default is None.
+
+        Returns
+        -------
+        bool
+            Whether the regularization parameter (weight) has changed.
+        """
+        res = super().update_reg_weight(
+            loss_ls_history,
+            loss_reg_history,
+            reg_weight_history,
+            loss_ls_grad,
+            loss_reg_grad,
+            n_obs,
+            logger,
+        )
+        if self.is_use_first_adjusted_weight_as_upper_bound and self.n_regw_update == 1:
+            self.reg_weight_bounds[1] = self.reg_weight
+            if logger is not None:
+                logger.info(f"Updating reg weight bounds to {self.reg_weight_bounds}.")
+        return res
+
 
 class AdaptiveGradientNormRegweight(AdaptiveRegweight):
     """Implement an adaptive regularization parameter choice based on the U-Curve."""
@@ -73,8 +143,9 @@ class AdaptiveGradientNormRegweight(AdaptiveRegweight):
         self,
         norm: Optional[Union[int, float, str]] = None,
         reg_weight_init: float = 1.0,
-        reg_weigh_bounds: Union[Tuple[float, float], NDArrayFloat] = (1e-10, 1e10),
+        reg_weight_bounds: Union[Tuple[float, float], NDArrayFloat] = (1e-10, 1e10),
         convergence_factor: float = 0.05,
+        is_use_first_adjusted_weight_as_upper_bound: bool = True,
     ) -> None:
         """
         Initialize the instance.
@@ -82,13 +153,17 @@ class AdaptiveGradientNormRegweight(AdaptiveRegweight):
         Parameters
         ----------
         norm: {int, inf, -inf, 'fro', 'nuc', None}, optional
-            Order of the norm, inf means NumPy’s inf object. The default is None.
+            Order of the norm, inf means NumPy’s inf object. The default is None which
+            means the l2 (Frobenius norm) is used.
         reg_weight_init : float, optional
             Initial regularization weight, by default 1.0
-        reg_weigh_bounds : Union[Tuple[float, float], NDArrayFloat], optional
+        reg_weight_bounds : Union[Tuple[float, float], NDArrayFloat], optional
             Bounds for the optimization parameter, by default (1e-10, 1e10)
         convergence_factor : float, optional
             Convergence criteria for the regularization weight, by default 0.05
+        is_use_first_adjusted_weight_as_upper_bound: bool
+            Whether the first weight determined by the method should becoe the
+            upper bound. It prevent weight explosion. The default is True.
 
         Notes
         -----
@@ -126,9 +201,12 @@ class AdaptiveGradientNormRegweight(AdaptiveRegweight):
             Baltimore, MD, Johns Hopkins University Press, 1985, pg. 15
 
         """
-        super().__init__(reg_weight_init, reg_weigh_bounds, convergence_factor)
-        # internal state used only in the case of adaptive regularization strategy
-        self.n_regw_update: int = 0
+        super().__init__(
+            reg_weight_init,
+            reg_weight_bounds,
+            convergence_factor,
+            is_use_first_adjusted_weight_as_upper_bound,
+        )
         self.is_noise_dominated: bool = False
         self.loss_ls_grad_norms: List[float] = []
         self.loss_reg_grad_norms: List[float] = []
@@ -251,9 +329,10 @@ class AdaptiveUCRegweight(AdaptiveRegweight):
     def __init__(
         self,
         reg_weight_init: float = 1.0,
-        reg_weigh_bounds: Union[Tuple[float, float], NDArrayFloat] = (1e-10, 1e10),
+        reg_weight_bounds: Union[Tuple[float, float], NDArrayFloat] = (1e-10, 1e10),
         convergence_factor: float = 0.05,
         n_update_explo_phase: int = 5,
+        is_use_first_adjusted_weight_as_upper_bound: bool = True,
     ) -> None:
         """
 
@@ -261,18 +340,25 @@ class AdaptiveUCRegweight(AdaptiveRegweight):
         ----------
         reg_weight_init : float, optional
             Initial regularization weight, by default 1.0
-        reg_weigh_bounds : Union[Tuple[float, float], NDArrayFloat], optional
+        reg_weight_bounds : Union[Tuple[float, float], NDArrayFloat], optional
             Bounds for the optimization parameter, by default (1e-10, 1e10)
         convergence_factor : float, optional
             Convergence criteria for the regularization weight, by default 0.05
         n_update_explo_phase: int
             Number of regularization weight to perform before entering the optimization
             phase.The default is 5.
+        is_use_first_adjusted_weight_as_upper_bound: bool
+            Whether the first weight determined by the method should becoe the
+            upper bound. It prevent weight explosion. The default is True.
         """
-        super().__init__(reg_weight_init, reg_weigh_bounds, convergence_factor)
+        super().__init__(
+            reg_weight_init,
+            reg_weight_bounds,
+            convergence_factor,
+            is_use_first_adjusted_weight_as_upper_bound,
+        )
         # internal state used only in the case of adaptive regularization strategy
         self.n_update_explo_phase = n_update_explo_phase
-        self.n_regw_update: int = 0
         self.is_noise_dominated: bool = False
         self.loss_ls_grad_norms: List[float] = []
         self.loss_reg_grad_norms: List[float] = []
