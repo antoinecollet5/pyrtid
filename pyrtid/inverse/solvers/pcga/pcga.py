@@ -78,9 +78,15 @@ class InternalState:
 
     @property
     def obj_best(self) -> float:
-        """Return the best objective function obtained in the optimization."""
+        """
+        Return the best objective function obtained in the optimization.
+
+        The first objective function is ignored because beta is minimized.
+        """
         if len(self.objvals) == 0:
             return np.inf
+        if len(self.objvals) == 1:
+            return 1e20  # very high value to avoid convergence
         return float(np.min(self.objvals))
 
 
@@ -502,19 +508,58 @@ class PCGA:
     def objective_function_ls(self, simul_obs) -> float:
         """0.5(y-h(s))^TR^{-1}(y-h(s))"""
         ymhs = (self.obs - simul_obs).ravel()
-        return float((0.5 * ymhs.T.dot(self.cov_obs_solve(ymhs))))
+        return 0.5 * ymhs.T.dot(self.cov_obs_solve(ymhs)).item()
+
+    def objective_function_reg(
+        self, s_cur: NDArrayFloat, beta_cur: NDArrayFloat
+    ) -> float:
+        """0.5(s-Xb)^TC^{-1}(s-Xb)"""
+        smxb = (s_cur - np.dot(self.drift.mat, beta_cur)).ravel()
+        return float(0.5 * smxb.T.dot(self.Q.solve(smxb)).item())
 
     def objective_function(self, s_cur, beta_cur, simul_obs) -> float:
         """
         0.5(y-h(s))^TR^{-1}(y-h(s)) + 0.5*(s-Xb)^TQ^{-1}(s-Xb)
         """
-        smxb = (s_cur - np.dot(self.drift.mat, beta_cur)).ravel()
-        return float(
-            (
-                self.objective_function_ls(simul_obs)
-                + 0.5 * smxb.T.dot(self.Q.solve(smxb))
-            ).item()
+        return self.objective_function_ls(simul_obs) + self.objective_function_reg(
+            s_cur, beta_cur
         )
+
+    def objective_function_no_beta_new(self, s_cur, simul_obs) -> float:
+        """
+        marginalized objective w.r.t. beta
+        0.5(y-h(s))^TR^{-1}(y-h(s)) + 0.5*(s-Xb)^TQ^{-1}(s-Xb)
+
+        Note: this is an alternative way, more expensive.
+        """
+        X = self.drift.mat
+
+        def fun(beta: NDArrayFloat) -> float:
+            """-X^TC^{-1}(s-Xb)"""
+            smxb = (s_cur - np.dot(X, np.atleast_2d(beta))).ravel()
+            return float(0.5 * smxb.T.dot(self.Q.solve(smxb)).item())
+
+        # We solve with a newton to find the optimal alpha
+        def jac_wrt_beta(beta: NDArrayFloat) -> NDArrayFloat:
+            """-X^TC^{-1}(s-Xb)"""
+            smxb = (s_cur - np.dot(X, np.atleast_2d(beta))).ravel()
+            return -X.T.dot(self.Q.solve(smxb))
+
+        hess = X.T.dot(self.Q.solve(X))
+
+        def hess_wrt_beta(beta: NDArrayFloat) -> NDArrayFloat:
+            """X^TC^{-1}X"""
+            return hess
+
+        res = sp.optimize.minimize(
+            x0=sp.linalg.lstsq(X, s_cur)[0].ravel(),
+            fun=fun,
+            method="trust-exact",
+            jac=jac_wrt_beta,
+            hess=hess_wrt_beta,
+        )
+        self.loginfo(f"new reg part = {res.fun}")
+        return self.objective_function_ls(simul_obs) + res.fun
 
     def objective_function_no_beta(self, s_cur, simul_obs) -> float:
         """
@@ -1399,6 +1444,7 @@ class PCGA:
         n_iter: int = 0,
         obj: Optional[float] = None,
         res: Optional[float] = None,
+        is_beta: bool = True,
     ) -> None:
         if n_iter != 0:
             self.loginfo(f"== iteration {n_iter + 1:d} summary ==")
@@ -1411,7 +1457,10 @@ class PCGA:
             "norm RMSE (norm(obs. diff./sqrtR)/sqrt(nobs))": n_rmse,
         }
         if obj is not None:
-            dat["objective function"] = obj
+            if is_beta:
+                dat["objective function"] = obj
+            else:
+                dat["objective function (no beta)"] = obj
         if res is not None:
             dat[f"relative L2-norm diff btw sol {n_iter:d} and sol {n_iter+1:d}"] = res
 
@@ -1441,16 +1490,22 @@ class PCGA:
         rmse_init: float = self.rmse(residuals, False)
         n_rmse_init: float = self.rmse(residuals, True)
         loss_ls_init = self.objective_function_ls(simul_obs_init)
-        # initial objective function -> very high
-        obj = 1e20
-
-        self.display_objfun(
-            loss_ls_init, simul_obs_init.size, rmse_init, n_rmse_init, obj=obj
-        )
 
         simul_obs_cur = np.copy(simul_obs_init)
         s_cur = np.copy(s_init)
         s_past = np.copy(s_init)
+
+        # initial objective function -> very high
+        obj = self.objective_function_no_beta(s_cur, simul_obs_cur)
+
+        self.display_objfun(
+            loss_ls_init,
+            simul_obs_init.size,
+            rmse_init,
+            n_rmse_init,
+            obj=obj,
+            is_beta=False,
+        )
 
         # save the initial objective function
         self.istate.objvals.append(float(obj))
