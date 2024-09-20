@@ -72,7 +72,7 @@ def get_dM(
                     * mob2
                 ),
                 immob1,
-                gch_params.stocoef * mob2,
+                mob2 / gch_params.stocoef,
             ]
         ),
         axis=0,
@@ -112,7 +112,7 @@ def get_dM_pos(
                     * mob2
                 ),
                 immob1,
-                gch_params.stocoef * mob2,
+                mob2 / gch_params.stocoef,
             ]
         ),
         axis=0,

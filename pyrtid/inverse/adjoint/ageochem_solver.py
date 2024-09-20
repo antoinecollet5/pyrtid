@@ -189,7 +189,7 @@ def ddMdmobnext(
 
     if sp == 1:
         mask = dm_pos == 2
-        deriv[mask] = -gch_params.stocoef
+        deriv[mask] = -1.0 / gch_params.stocoef
 
     # Mask for null values
     deriv[dM == 0] = 0
