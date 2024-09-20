@@ -29,6 +29,7 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+*.npy
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
@@ -126,3 +127,8 @@ _autosummary/
 examples/articles/gd_gan/wgan_both_2202_b.pt
 examples/articles/gd_gan/iswgan_conditioner_b.pt
 /devs
+
+# tests on server
+pid.txt
+template.sh*
+output.logfile
