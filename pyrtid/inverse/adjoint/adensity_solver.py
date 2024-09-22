@@ -122,7 +122,7 @@ def _add_darcy_contribution(
     geometry: Geometry,
 ) -> None:
     # X contribution
-    if fl_model.vertical_axis == VerticalAxis.DX:
+    if fl_model.vertical_axis == VerticalAxis.X:
         kij = get_kmean(geometry, fl_model, axis=0, is_flatten=False)[:-1, :]
         a_u_darcy_x_old = (
             a_fl_model.a_u_darcy_x[1:-1, :, time_index + 1] * kij / WATER_DENSITY
@@ -139,7 +139,7 @@ def _add_darcy_contribution(
         # Right
         a_tr_model.a_density[1:, :, time_index] += a_u_darcy_x_old * drhomean
     # Y Contribution
-    elif fl_model.vertical_axis == VerticalAxis.DY:
+    elif fl_model.vertical_axis == VerticalAxis.Y:
         kij = get_kmean(geometry, fl_model, axis=1, is_flatten=False)[:, :-1]
         a_u_darcy_y_old = (
             a_fl_model.a_u_darcy_y[:, 1:-1, time_index + 1] * kij / WATER_DENSITY

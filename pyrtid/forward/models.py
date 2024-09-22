@@ -231,9 +231,9 @@ class FlowRegime(StrEnum):
 
 
 class VerticalAxis(StrEnum):
-    DX = "dx"
-    DY = "dy"
-    DZ = "dz"
+    X = "x"
+    Y = "y"
+    Z = "z"
 
 
 class FlowParameters:
@@ -268,7 +268,7 @@ class FlowParameters:
         crank_nicolson: float = 1.0,
         regime: FlowRegime = FlowRegime.STATIONARY,
         is_gravity: bool = False,
-        vertical_axis: VerticalAxis = VerticalAxis.DZ,
+        vertical_axis: VerticalAxis = VerticalAxis.Z,
         rtol: float = 1e-8,
     ) -> None:
         """Initialize the instance."""
@@ -687,9 +687,9 @@ class FlowModel(ABC):
         self.rtol = fl_params.rtol
         self.vertical_axis = fl_params.vertical_axis
         self.vertical_mesh_size = {
-            VerticalAxis.DX: geometry.dx,
-            VerticalAxis.DY: geometry.dy,
-            VerticalAxis.DZ: geometry.dz,
+            VerticalAxis.X: geometry.dx,
+            VerticalAxis.Y: geometry.dy,
+            VerticalAxis.Z: geometry.dz,
         }[fl_params.vertical_axis]
 
         # Indicate whether there is a boundary on the border of the domain
@@ -888,9 +888,9 @@ class FlowModel(ABC):
 
     def get_vertical_dim(self) -> int:
         """Return the number of voxel along the vertical_axis axis."""
-        if self.vertical_axis == VerticalAxis.DX:
+        if self.vertical_axis == VerticalAxis.X:
             return self.lhead[0].shape[0]
-        elif self.vertical_axis == VerticalAxis.DY:
+        elif self.vertical_axis == VerticalAxis.Y:
             return self.lhead[0].shape[1]
         else:
             return 1
@@ -898,9 +898,9 @@ class FlowModel(ABC):
     def _get_mesh_center_vertical_pos(self) -> NDArrayFloat:
         """Return the vertical position of the grid cells centers."""
         xv, yv = np.meshgrid(range(self.head.shape[0]), range(self.head.shape[1]))
-        if self.vertical_axis == VerticalAxis.DX:
+        if self.vertical_axis == VerticalAxis.X:
             return (xv + 0.5) * self.vertical_mesh_size
-        elif self.vertical_axis == VerticalAxis.DY:
+        elif self.vertical_axis == VerticalAxis.Y:
             return (yv + 0.5) * self.vertical_mesh_size
         else:
             return np.array([[0.5 * self.vertical_mesh_size]])

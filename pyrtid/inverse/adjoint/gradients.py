@@ -438,7 +438,7 @@ def _get_perm_gradient_from_diffusivity_eq_density(
             is_flatten=False,
         )[:-1]
         tmp = 0.0
-        if fwd_model.fl_model.vertical_axis == VerticalAxis.DX:
+        if fwd_model.fl_model.vertical_axis == VerticalAxis.X:
             tmp = rhomean_x**2 * GRAVITY
 
         # Forward scheme
@@ -527,7 +527,7 @@ def _get_perm_gradient_from_diffusivity_eq_density(
             is_flatten=False,
         )[:, :-1]
         tmp = 0.0
-        if fwd_model.fl_model.vertical_axis == VerticalAxis.DY:
+        if fwd_model.fl_model.vertical_axis == VerticalAxis.Y:
             tmp = rhomean_y**2 * GRAVITY
 
         # Forward scheme
@@ -715,7 +715,7 @@ def _get_perm_gradient_from_darcy_eq_density(
     if fwd_model.geometry.nx > 1:
         a_u_darcy_x = adj_model.a_fl_model.a_u_darcy_x[1:-1, :, :]
 
-        if fwd_model.fl_model.vertical_axis == VerticalAxis.DX:
+        if fwd_model.fl_model.vertical_axis == VerticalAxis.X:
             rho_ij_g_x = (
                 get_rhomean2(
                     fwd_model.geometry,
@@ -763,7 +763,7 @@ def _get_perm_gradient_from_darcy_eq_density(
     if fwd_model.geometry.ny > 1:
         a_u_darcy_y = adj_model.a_fl_model.a_u_darcy_y[:, 1:-1, :]
 
-        if fwd_model.fl_model.vertical_axis == VerticalAxis.DY:
+        if fwd_model.fl_model.vertical_axis == VerticalAxis.Y:
             rho_ij_g_y = (
                 get_rhomean2(
                     fwd_model.geometry,

@@ -466,7 +466,7 @@ def find_ux_boundary_density(
     rhomean = get_rhomean2(
         geometry, tr_model, axis=0, time_index=time_index - 1, is_flatten=False
     )[:-1, :]
-    if fl_model.vertical_axis == VerticalAxis.DX:
+    if fl_model.vertical_axis == VerticalAxis.X:
         rho_ij_g = rhomean * GRAVITY
     else:
         rho_ij_g = 0.0
@@ -505,7 +505,7 @@ def find_uy_boundary_density(
         geometry, tr_model, axis=1, time_index=time_index - 1, is_flatten=False
     )[:, :-1]
 
-    if fl_model.vertical_axis == VerticalAxis.DY:
+    if fl_model.vertical_axis == VerticalAxis.Y:
         rho_ij_g = rhomean * GRAVITY
     else:
         rho_ij_g = 0.0
@@ -653,7 +653,7 @@ def get_gravity_gradient(
 ) -> NDArrayFloat:
     tmp = np.zeros(geometry.nx * geometry.ny)
 
-    if fl_model.vertical_axis == VerticalAxis.DX:
+    if fl_model.vertical_axis == VerticalAxis.X:
         kmean = get_kmean(geometry, fl_model, axis=0)
         rhomean = get_rhomean2(geometry, tr_model, axis=0, time_index=time_index - 1)
 
@@ -689,7 +689,7 @@ def get_gravity_gradient(
             * kmean[idc_neigh]
         )
 
-    elif fl_model.vertical_axis == VerticalAxis.DY:
+    elif fl_model.vertical_axis == VerticalAxis.Y:
         kmean = get_kmean(geometry, fl_model, axis=1)
         rhomean = get_rhomean2(geometry, tr_model, axis=1, time_index=time_index - 1)
 
