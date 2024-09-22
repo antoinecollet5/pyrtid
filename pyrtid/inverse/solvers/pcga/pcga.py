@@ -643,7 +643,6 @@ class PCGA:
         self,
         s_cur: NDArrayFloat,
         simul_obs: NDArrayFloat,
-        is_use_cholesky: bool = False,
     ):
         """
         Solve the geostatistical system using a direct solver.
@@ -741,14 +740,10 @@ class PCGA:
             # Ax = b, b = obs - h(s) + Hs
             b[:n] = self.obs[:] - simul_obs + Hs[:]
 
-            if is_use_cholesky:
-                LA = self.build_cholesky(Psi, HX)
-                x = self.solve_cholesky(LA, b, self.Q.n_pc)
-            else:
-                A = self.build_dense_A(Psi, HX)
-                # Create matrix system and solve it
-                # cokriging matrix
-                x = sp.linalg.solve(A, b)
+            # use cholesky factorization to solve the system
+            # this is much more efficient than direct solve
+            LA = self.build_cholesky(Psi, HX)
+            x = self.solve_cholesky(LA, b, self.Q.n_pc)
 
             # Extract components and return final solution
             # x dimension (n+p,1)
@@ -1350,9 +1345,11 @@ class PCGA:
                 lenRi = int((n - sigma_cR.shape[0]) / lenR)
                 strtidx = sigma_cR.shape[0]
                 for iR in range(lenR):
-                    tmp_cR[strtidx : strtidx + lenRi] = alpha[iR] * uniqueR[iR]
+                    tmp_cR[strtidx : strtidx + lenRi] = (
+                        alpha[min(iR, alpha.size - 1)] * uniqueR[iR]
+                    )
                     strtidx = strtidx + lenRi
-                tmp_cR[strtidx:] = alpha[iR] * uniqueR[iR]
+                tmp_cR[strtidx:] = alpha[min(iR, alpha.size - 1)] * uniqueR[iR]
 
             tmp_cR[tmp_cR <= 0] = 1.0e-16  # temporary fix for zero tmp_cR
             cR_all[:, i : i + 1] = Q2_all[:, i : i + 1] * np.exp(
@@ -1645,12 +1642,12 @@ class PCGA:
                     "start direct posterior variance computation "
                     "- this option works for O(nobs) ~ 100"
                 )
-                self.post_diagv = self.ComputePosteriorDiagonalEntriesDirect(
+                self.post_diagv = self.compute_posterior_diagonal_entries_direct(
                     self.HZ, self.HX, self.istate.i_best, self.cov_obs
                 )
             else:
                 self.loginfo("start posterior variance computation")
-                self.post_diagv = self.ComputePosteriorDiagonalEntries(
+                self.post_diagv = self.compute_posterior_diagonal_entries(
                     self.HZ, self.HX, self.istate.i_best, self.cov_obs
                 )
             self.loginfo("posterior diag. computed in %f secs" % (time() - start))
@@ -1774,8 +1771,8 @@ class PCGA:
         A[n : n + p, 0:n] = np.copy(HX.T)
         return A
 
-    def ComputePosteriorDiagonalEntriesDirect(
-        self, HZ, HX, i_best, cov_obs, is_use_cholesky: bool = True
+    def compute_posterior_diagonal_entries_direct(
+        self, HZ, HX, i_best, cov_obs
     ) -> NDArrayFloat:
         """Computing posterior diagonal entries using cholesky."""
 
@@ -1791,7 +1788,7 @@ class PCGA:
             - np.sum(b_all * self.solve_cholesky(LA, b_all, self.Q.n_pc), axis=0)
         ).reshape(-1, 1)
 
-    def ComputePosteriorDiagonalEntries(self, HZ, HX, i_best, R):
+    def compute_posterior_diagonal_entries(self, HZ, HX, i_best, R):
         """
         Computing posterior diagonal entries using iterative approach
         """
