@@ -64,6 +64,19 @@ Observables and utilities
     eval_model_loss_ls
     update_perturbation_values
 
+.. currentmodule:: pyrtid.inverse
+
+Loss functions
+^^^^^^^^^^^^^^
+
+.. autosummary::
+   :toctree: _autosummary
+
+    eval_loss_ls,
+    eval_model_loss_function,
+    eval_model_loss_ls,
+    get_theoretical_noise_level,
+
 Preconditioners
 ^^^^^^^^^^^^^^^
 
@@ -106,6 +119,7 @@ from pyrtid.inverse.loss_function import (
     eval_loss_ls,
     eval_model_loss_function,
     eval_model_loss_ls,
+    get_theoretical_noise_level,
 )
 from pyrtid.inverse.model import InverseModel
 from pyrtid.inverse.obs import (
@@ -222,4 +236,5 @@ __all__ = [
     "Uniform2Gaussian",
     "BoundsClipper",
     "GradientScalerConfig",
+    "get_theoretical_noise_level",
 ]

@@ -1,18 +1,17 @@
-from typing import Optional
+from typing import Optional, Sequence
 
 import numpy as np
 
 from pyrtid.forward import ForwardModel
-from pyrtid.inverse.params import eval_weighted_loss_reg
-from pyrtid.utils.types import NDArrayFloat
-
-from .obs import (
+from pyrtid.inverse.obs import (
+    Observable,
     Observables,
     get_observables_uncertainties_as_1d_vector,
     get_observables_values_as_1d_vector,
     get_predictions_matching_observations,
 )
-from .params import AdjustableParameters
+from pyrtid.inverse.params import AdjustableParameters, eval_weighted_loss_reg
+from pyrtid.utils.types import NDArrayFloat
 
 
 def eval_loss_ls(
@@ -106,3 +105,19 @@ def eval_model_loss_function(
     return eval_model_loss_ls(
         model, observables, max_obs_time
     ) + eval_weighted_loss_reg(parameters_to_adjust, model)
+
+
+def get_theoretical_noise_level(
+    observables: Sequence[Observable], n_std: float = 5
+) -> float:
+    """
+    Get the theoretical noise level in the solution.
+
+    If the obersations uncertaintes are well mastered, it can be used as a threshold for
+    the loss function ad defined by Gao et al. 2006.
+
+    It is propotionnal to the number of observations. And assume that the observation
+    noise is well known.
+    """
+    n_obs = np.sum([obs.values.size for obs in observables])
+    return 0.5 * n_obs + n_std * np.sqrt(0.5 * n_obs)
