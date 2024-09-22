@@ -64,8 +64,9 @@ class InternalState:
         default_factory=lambda: np.array([], dtype=np.float64)
     )
     objvals: List[float] = field(default_factory=lambda: [])
-    Q2_cur: float = 0.0
-    cR_cur: float = 0.0
+    Q2_all: NDArrayFloat = field(default_factory=lambda: np.array([], dtype=np.float64))
+    cR_all: NDArrayFloat = field(default_factory=lambda: np.array([], dtype=np.float64))
+
     Q2_best: NDArrayFloat = field(
         default_factory=lambda: np.array([], dtype=np.float64)
     )
@@ -88,6 +89,15 @@ class InternalState:
         if len(self.objvals) == 1:
             return 1e20  # very high value to avoid convergence
         return float(np.min(self.objvals))
+
+    # TODO: I am not sure about this (21/09/2024)
+    @property
+    def Q2_cur(self) -> float:
+        return self.Q2_all[:, -2:-1]
+
+    @property
+    def cR_cur(self) -> float:
+        return self.cR_all[:, -2:-1]
 
 
 class PCGA:
@@ -667,27 +677,20 @@ class PCGA:
         sqrtGDCovfun = LinearOperator(
             shape=(n, n_pc), matvec=mv, rmatvec=rmv, dtype="d"
         )
-        # sigma_cR = svds(sqrtGDCovfun, k=min(n - p - 1, n_pc - 1), which='LM',
-        # maxiter=n, return_singular_vectors=False)
-
-        if n_pc <= n - p:
-            sigma_cR = svds(
-                sqrtGDCovfun,
-                k=n_pc - 1,
-                which="LM",
-                maxiter=n - p,
-                return_singular_vectors=False,
-                random_state=self.random_state,
-            )
+        if self.Q.n_pc <= n - p:
+            k = self.Q.n_pc - 1
+            _maxiter = n - p
         else:
-            sigma_cR = svds(
-                sqrtGDCovfun,
-                k=n - p,
-                which="LM",
-                maxiter=n_pc,
-                return_singular_vectors=False,
-                random_state=self.random_state,
-            )
+            k = n - p
+            _maxiter = self.Q.n_pc
+        sigma_cR = svds(
+            sqrtGDCovfun,
+            k=k,
+            which="LM",
+            maxiter=_maxiter,
+            return_singular_vectors=False,
+            random_state=self.random_state,
+        )
 
         self.loginfo(
             f"computed Jacobian-Matrix products in : {(start2- start1):.3e} secs"
@@ -763,23 +766,9 @@ class PCGA:
                 if s_hat_all[:, i : i + 1].max() >= self.lm_smax:
                     LM_eval[i] = True
 
+            # TODO: fix this (21/09/2024)
             Q2_all[:, i : i + 1] = np.dot(b[:n].T, xi) / (n - p)
-
-            tmp_cR = np.zeros((n - p, 1), "d")
-
-            # TODO: need to fix this part later 12/7/2020
-            tmp_cR[:] = np.multiply(alpha[i], R[:-p]).reshape(-1, 1)
-
-            uniqueR = np.unique(R)
-            lenR = len(uniqueR)
-            lenRi = int((n - sigma_cR.shape[0]) / lenR)
-            strtidx = sigma_cR.shape[0]
-            for iR in range(lenR):
-                tmp_cR[strtidx : strtidx + lenRi] = alpha[iR] * uniqueR[iR]
-                strtidx = strtidx + lenRi
-            tmp_cR[strtidx:] = alpha[iR] * uniqueR[iR]
-
-            tmp_cR[tmp_cR <= 0] = 1.0e-16  # temporary fix for zero tmp_cR
+            tmp_cR = self.get_cR(i, alpha, sigma_cR)
             cR_all[:, i : i + 1] = Q2_all[:, i : i + 1] * np.exp(
                 np.log(tmp_cR).sum() / (n - p)
             )
@@ -816,10 +805,52 @@ class PCGA:
                 beta = beta_all[:, i : i + 1]
                 simul_obs_new = simul_obs_all[:, i : i + 1]
                 obj_best = obj
-                self.istate.Q2_cur = Q2_all[:, i : i + 1]
-                self.istate.cR_cur = cR_all[:, i : i + 1]
 
         return s_hat, beta, simul_obs_new
+
+    # TODO: fix this (21/09/2024)
+    def get_cR(
+        self, i: int, alpha: NDArrayFloat, sigma_cR: NDArrayFloat
+    ) -> NDArrayFloat:
+        n = self.d_dim
+        p = self.drift.beta_dim
+        R = self.cov_obs
+
+        tmp_cR = np.zeros((n - p, 1), np.float64)
+
+        if R.size == 1:  # single observation variance
+            # self.loginfo(f"alpha[{i}] = {alpha[i]}")
+            tmp_cR[:] = alpha[i] * R  # scalar placed in all meshes
+            tmp_cR[: sigma_cR.shape[0]] = (
+                tmp_cR[: sigma_cR.shape[0]] + (sigma_cR[:, np.newaxis]) ** 2
+            )
+        elif R.ndim == 1:  # diagonal covariance matrix
+            tmp_cR = np.multiply(alpha[i], R[:-p])
+
+            # self.loginfo(f"tmp_cR.shape = {tmp_cR.shape}")
+            # self.loginfo(f"tmp_cR.shape = {tmp_cR.shape}")
+
+            uniqueR = np.unique(R)
+            lenR = len(uniqueR)
+            lenRi = int((n - sigma_cR.shape[0]) / lenR)
+            strtidx = sigma_cR.shape[0]
+            strtidx = +0  # to remove, Antoine 22/09/2024
+            # self.loginfo(f"lenRi = {lenRi}")
+
+            # # this loop works only if self.is_lm == True, otherwise, alpha is a
+            # scalar, there is an issue somewhere.
+            for iR in range(lenR):
+                tmp_cR[strtidx : strtidx + lenRi] = (
+                    alpha[min(iR, alpha.size - 1)] * uniqueR[iR]
+                )
+                strtidx = strtidx + lenRi
+            tmp_cR[strtidx:] = alpha[min(iR, alpha.size - 1)] * uniqueR[iR]
+        else:  # symmetrical square covariance matrix
+            pass
+
+        tmp_cR[tmp_cR <= 0] = 1.0e-16  # temporary fix for zero tmp_cR
+
+        return tmp_cR
 
     def iterative_solve(self, s_cur: NDArrayFloat, simul_obs: NDArrayFloat):
         """
@@ -1366,8 +1397,6 @@ class PCGA:
                 beta = beta_all[:, i : i + 1]
                 simul_obs_new = simul_obs_all[:, i : i + 1]
                 obj_best = obj
-                self.istate.Q2_cur = Q2_all[:, i : i + 1]
-                self.istate.cR_cur = cR_all[:, i : i + 1]
                 i_best = i
                 self.loginfo(
                     f"{i:d}-th solution obj {obj} (alpha {alpha[i]}, beta {beta})"
@@ -1535,8 +1564,6 @@ class PCGA:
                 self.istate.beta_best = beta_cur
                 self.istate.simul_obs_best = simul_obs_cur
                 self.istate.iter_best = n_iter + 1
-                self.istate.Q2_best = self.istate.Q2_cur
-                self.istate.cR_best = self.istate.cR_cur
             # case 2: no progress in objective function
             else:
                 if self.is_line_search:
