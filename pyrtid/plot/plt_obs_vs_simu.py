@@ -41,7 +41,9 @@ def plot_observed_vs_simulated(
     minobs = VERY_LARGE_NB
     maxobs = -VERY_LARGE_NB
     if pred_vector_initial is not None:
-        ax.plot(obs_vector, pred_vector_initial, ".", c="r", zorder=1, label="initial")
+        ax.plot(
+            obs_vector, pred_vector_initial, ".", c="r", zorder=1, label="initial guess"
+        )
         minobs: float = min(
             minobs, float(np.min(np.vstack((obs_vector, pred_vector_initial.ravel()))))
         )
@@ -49,7 +51,7 @@ def plot_observed_vs_simulated(
             maxobs, float(np.max(np.vstack((obs_vector, pred_vector_initial.ravel()))))
         )
     if pred_vector is not None:
-        ax.plot(obs_vector, pred_vector, ".", c="b", zorder=2, label="current")
+        ax.plot(obs_vector, pred_vector, ".", c="b", zorder=2, label="post-inversion")
         minobs: float = min(
             minobs, float(np.min(np.vstack((obs_vector, pred_vector.ravel()))))
         )
