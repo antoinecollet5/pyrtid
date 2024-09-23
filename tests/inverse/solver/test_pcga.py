@@ -130,11 +130,11 @@ def test_large_medium_scale(
         Psi = solver.get_psi(solver.HZ, solver.istate.i_best, solver.cov_obs)
         A = solver.build_dense_A(Psi, solver.HX)
         LA = solver.build_cholesky(Psi, solver.HX)
-        A2 = solver.build_dense_A_from_cholesky(LA, n_pc=eig_mat.n_pc)
+        A2 = solver.build_dense_A_from_cholesky(LA, p=solver.HX.shape[1])
         np.testing.assert_array_almost_equal(A, A2)
 
         b = np.random.default_rng(225464).random(A.shape[0])
 
         x = np.linalg.solve(A, b)
-        x2 = solver.solve_cholesky(LA, b, eig_mat.n_pc)
+        x2 = solver.solve_cholesky(LA, b, p=solver.HX.shape[1])
         np.testing.assert_array_almost_equal(x, x2)
