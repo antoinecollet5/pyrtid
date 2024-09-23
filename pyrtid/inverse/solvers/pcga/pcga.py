@@ -743,7 +743,7 @@ class PCGA:
             # use cholesky factorization to solve the system
             # this is much more efficient than direct solve
             LA = self.build_cholesky(Psi, HX)
-            x = self.solve_cholesky(LA, b, self.Q.n_pc)
+            x = self.solve_cholesky(LA, b, p)
 
             # Extract components and return final solution
             # x dimension (n+p,1)
@@ -1739,7 +1739,7 @@ class PCGA:
         # HQH^{T} and R are positive semi-definite
         # Then we just need to factorize L11
         # Cholesky:
-        L11 = sp.linalg.cholesky(Psi, lower=True)
+        L11 = sp.linalg.cholesky(Psi, lower=True, overwrite_a=False)
         L12 = sp.linalg.solve_triangular(L11, HX, lower=True, trans="N")
         L22 = sp.linalg.cholesky(L12.T @ L12, lower=True)
         return np.hstack(
@@ -1747,18 +1747,17 @@ class PCGA:
         )
 
     @staticmethod
-    def build_dense_A_from_cholesky(LA: NDArrayFloat, n_pc: int) -> NDArrayFloat:
+    def build_dense_A_from_cholesky(LA: NDArrayFloat, p: int) -> NDArrayFloat:
         # We don't build explicitly E, we just build the diagonal values
-        Ev = np.ones(LA.shape[0])
-        Ev[n_pc + 1 :] *= -1
-        return (LA * Ev) @ LA.T
+        E = np.identity(n=LA.shape[0])
+        E[-p:, -p:] *= -1
+        return (LA @ E) @ LA.T
 
     @staticmethod
-    def solve_cholesky(LA: NDArrayFloat, v: NDArrayFloat, n_pc: int) -> NDArrayFloat:
+    def solve_cholesky(LA: NDArrayFloat, v: NDArrayFloat, p: int) -> NDArrayFloat:
         # LA is the lowest triangle of the cholesky factorization LA @ E @ LA.T.
-        Ev = np.ones(LA.shape[0])
-        Ev[n_pc + 1 :] *= -1
-        v = sp.linalg.solve_triangular(LA * Ev, v, lower=True)
+        v = sp.linalg.solve_triangular(LA, v, lower=True)
+        v[-p:] *= -1
         return sp.linalg.solve_triangular(LA.T, v, lower=False)
 
     @staticmethod
@@ -1785,7 +1784,9 @@ class PCGA:
         LA = self.build_cholesky(Psi, HX)
         return (
             self.prior_s_var
-            - np.sum(b_all * self.solve_cholesky(LA, b_all, self.Q.n_pc), axis=0)
+            - np.sum(
+                b_all * self.solve_cholesky(LA, b_all, self.drift.beta_dim), axis=0
+            )
         ).reshape(-1, 1)
 
     def compute_posterior_diagonal_entries(self, HZ, HX, i_best, R):
