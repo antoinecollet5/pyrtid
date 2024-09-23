@@ -1629,8 +1629,9 @@ class PCGA:
             self.istate.objvals.append(float(obj))
             s_past = np.copy(s_cur)
 
-        if n_iter + 1 > self.maxiter and not self.istate.is_success:
-            self.istate.status = "STOP: TOTAL NO. of ITERATIONS REACHED LIMIT"
+            if n_iter + 1 >= self.maxiter:
+                self.istate.status = "STOP: TOTAL NO. of ITERATIONS REACHED LIMIT"
+                self.istate.is_success = True
 
         if self.post_cov_estimation is not None:
             # assume linesearch result close to the current solution
