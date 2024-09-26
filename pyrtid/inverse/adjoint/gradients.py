@@ -906,7 +906,7 @@ def get_sc_adjoint_gradient_density(
 
     # We sum along the temporal axis
     return np.sum(grad, axis=-1) + adj_model.a_fl_model.a_storage_coefficient_sources[
-        :, 0
+        :, [0]
     ].todense().reshape((fwd_model.geometry.nx, fwd_model.geometry.ny), order="F")
 
 
@@ -921,7 +921,7 @@ def get_initial_grade_adjoint_gradient(
     .. math::
 
         \dfrac{\partial \mathcal{L}}{\partial \overline{c}_{i}^{0}} =
-        \dfrac{V_{i} \omega_{e, i}}{\Delta t^{0}} \lambda_{c_{i}}^{1}
+        \dfrac{V_{i} \omega_{i}}{\Delta t^{0}} \lambda_{c_{i}}^{1}
         + \lambda_{\overline{c}_{i}}^{1} \left( 1 + \Delta t^{0} k_{v} A_{s}
         \left( 1 - \dfrac{c_{i}^{1}}{K_{s}}\right) \right)
         - \dfrac{\overline{c}_{i}^{0, \mathrm{obs}}
@@ -1082,7 +1082,7 @@ def get_initial_conc_adjoint_gradient(
     .. math::
 
         \dfrac{\partial \mathcal{L}}{\partial c_{i}^{0}} =
-        \dfrac{V_{i}\omega_{e, i}}{\Delta t^{0}} \lambda_{c_{i}}^{1}
+        \dfrac{V_{i}\omega_{i}}{\Delta t^{0}} \lambda_{c_{i}}^{1}
         - \dfrac{c_{i}^{0, \mathrm{obs}}
         - c_{i}^{0, \mathrm{calc}}}{\left(\sigma_{c_{i}}^{0, \mathrm{obs}}\right)^{2}}
         + \sum_{\mathrm{neigh} \;j} \mathcal{A}_{\Gamma_{ij}} D_{e, ij}
