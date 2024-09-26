@@ -10,6 +10,14 @@ from scipy.sparse import csc_array
 from sksparse.cholmod import Factor
 
 
+def test_matern_kernel() -> None:
+    spatial_dim = 2
+    alpha = 3
+    len_scale = 10.0
+    _nu = 2 * alpha - spatial_dim / 2
+    spde.matern_kernel(np.random.normal(0.0, 5.0, size=50) * len_scale, len_scale, _nu)
+
+
 def _get_precision_matrix(alpha) -> csc_array:
     """Return a precision matrix."""
     kappa = 1.56

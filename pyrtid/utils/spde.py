@@ -14,6 +14,32 @@ from pyrtid.utils.grid import indices_to_node_number, span_to_node_numbers_3d
 from pyrtid.utils.types import NDArrayFloat, NDArrayInt
 
 
+def matern_kernel(r: NDArrayFloat, len_scale: float = 1, v: float = 1) -> NDArrayFloat:
+    """
+    Computes Matérn correlation function for given distances.
+
+    Parameters:
+    -----------
+    r : array
+        Distances between locations.
+    len_scale : float
+        Range parameter (ϕ). Must be greater than 0.
+    v : float
+        Smoothness parameter (nu). Must be greater than 0.
+    Returns:
+    --------
+    Array giving Matern correlation for given distances.
+    """
+    r = np.abs(r)
+    r[r == 0] = 1e-8
+    return (
+        2 ** (1 - v)
+        / sp.special.gamma(v)
+        * (np.sqrt(2 * v) * r / len_scale) ** v
+        * sp.special.kv(v, np.sqrt(2 * v) * r / len_scale)
+    )
+
+
 def get_laplacian_matrix_for_loops(
     nx: int,
     ny: int,
