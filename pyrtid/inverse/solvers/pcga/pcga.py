@@ -6,6 +6,7 @@ The original code has been written by Jonghyun Harry Lee.
 See: https://github.com/jonghyunharrylee/pyPCGA
 """
 
+import copy
 import logging
 import multiprocessing
 from dataclasses import dataclass, field
@@ -86,8 +87,6 @@ class InternalState:
         """
         if len(self.objvals) == 0:
             return np.inf
-        if len(self.objvals) == 1:
-            return 1e20  # very high value to avoid convergence
         return float(np.min(self.objvals))
 
     # TODO: I am not sure about this (21/09/2024)
@@ -1523,6 +1522,7 @@ class PCGA:
 
         # initial objective function -> very high
         obj = self.objective_function_no_beta(s_cur, simul_obs_cur)
+        obj_old = copy.copy(obj)
 
         self.display_objfun(
             loss_ls_init,
@@ -1550,13 +1550,16 @@ class PCGA:
                 s_past, simul_obs_cur, n_iter
             )
 
+            # save the objective function
+            self.istate.objvals.append(float(obj))
+
             self.loginfo(
                 "- Geostat. inversion at iteration %d is %g sec"
                 % ((n_iter + 1), round(time() - start))
             )
 
             # case 1: progress in objective function
-            if obj < self.istate.obj_best:
+            if obj < obj_old:
                 self.istate.s_best = s_cur
                 self.istate.beta_best = beta_cur
                 self.istate.simul_obs_best = simul_obs_cur
@@ -1568,7 +1571,7 @@ class PCGA:
                         "perform simple linesearch due to no progress in obj value"
                     )
                     s_cur, simul_obs_cur, obj = self.line_search(s_cur, s_past)
-                    if obj < self.istate.obj_best:
+                    if obj < obj_old:
                         self.istate.s_best = s_cur
                         self.istate.simul_obs_best = simul_obs_cur
                         self.istate.iter_best = n_iter + 1
@@ -1580,7 +1583,7 @@ class PCGA:
                         else:
                             self.loginfo(
                                 "no progress in obj value but wait for one "
-                                "more iteration.."
+                                "more iteration..."
                             )
                             # allow first few iterations
                             pass  # allow for
@@ -1626,12 +1629,13 @@ class PCGA:
             # To add before the previous check, otherwise
             # obj == self.istate.objvals[-1] and the elif condition is always True
             # which cause an early break
-            self.istate.objvals.append(float(obj))
             s_past = np.copy(s_cur)
 
             if n_iter + 1 >= self.maxiter:
                 self.istate.status = "STOP: TOTAL NO. of ITERATIONS REACHED LIMIT"
                 self.istate.is_success = True
+
+            obj_old = copy.copy(obj)
 
         if self.post_cov_estimation is not None:
             # assume linesearch result close to the current solution
