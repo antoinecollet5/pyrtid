@@ -159,7 +159,7 @@ class Preconditioner(ABC):
 
         Parameters
         ----------
-        s_raw : NDArrayFloat
+        s_cond : NDArrayFloat
             The conditioned values as a 1D array.
 
         Returns
