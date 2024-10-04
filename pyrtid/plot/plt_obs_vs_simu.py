@@ -64,8 +64,8 @@ def plot_observed_vs_simulated(
     _suffix = ""
     if units is not None:
         _suffix = f" [{units}]"
-    ax.set_xlabel("observation" + _suffix, fontweight="bold")
-    ax.set_ylabel("simulation" + _suffix, fontweight="bold")
+    ax.set_xlabel("observed" + _suffix, fontweight="bold")
+    ax.set_ylabel("simulated" + _suffix, fontweight="bold")
     margin: float = 0.05 * np.abs(
         maxobs - minobs
     )  # 5% on each side for a nicer display
