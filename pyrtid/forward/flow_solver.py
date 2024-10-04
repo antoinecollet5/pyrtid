@@ -92,42 +92,43 @@ def get_rhomean2(
     time_index: Union[int, slice],
     is_flatten: bool = True,
 ) -> NDArrayFloat:
-    # return get_rhomean(geometry, tr_model, axis, time_index, is_flatten)
-    density = np.ones_like(np.array(tr_model.ldensity[time_index])) * WATER_DENSITY
-    idx = np.arange(tr_model.ldensity[0].size).reshape(geometry.shape)
-    if density.ndim == 3:
-        idx = np.transpose(
-            np.repeat(idx[:, :, np.newaxis], density.shape[0], axis=-1), axes=(2, 0, 1)
-        )
+    return get_rhomean(geometry, tr_model, axis, time_index, is_flatten)
+    # density = np.ones_like(np.array(tr_model.ldensity[time_index])) * WATER_DENSITY
+    # idx = np.arange(tr_model.ldensity[0].size).reshape(geometry.shape)
+    # if density.ndim == 3:
+    #     idx = np.transpose(
+    #         np.repeat(idx[:, :, np.newaxis],
+    # density.shape[0], axis=-1), axes=(2, 0, 1)
+    #     )
 
-        for t in np.arange(len(tr_model.ldensity))[time_index]:
-            idx[t] *= t
-    else:
-        idx *= np.arange(len(tr_model.ldensity))[time_index]
+    #     for t in np.arange(len(tr_model.ldensity))[time_index]:
+    #         idx[t] *= t
+    # else:
+    #     idx *= np.arange(len(tr_model.ldensity))[time_index]
 
-    density += idx * 1e-3
+    # density += idx * 1e-3
 
-    if density.ndim == 2:
-        rhomean: NDArrayFloat = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
-        if axis == 0:
-            rhomean[:-1, :] = arithmetic_mean(density[:-1, :], density[1:, :])
-        else:
-            rhomean[:, :-1] = arithmetic_mean(density[:, :-1], density[:, 1:])
-    else:
-        rhomean: NDArrayFloat = np.zeros(
-            (geometry.nx, geometry.ny, density.shape[0]), dtype=np.float64
-        )
-        if axis == 0:
-            rhomean[:-1, :, :] = np.transpose(
-                arithmetic_mean(density[:, :-1, :], density[:, 1:, :]), axes=(1, 2, 0)
-            )
-        else:
-            rhomean[:, :-1, :] = np.transpose(
-                arithmetic_mean(density[:, :, :-1], density[:, :, 1:]), axes=(1, 2, 0)
-            )
-    if is_flatten:
-        return rhomean.flatten(order="F")
-    return rhomean
+    # if density.ndim == 2:
+    #     rhomean: NDArrayFloat = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
+    #     if axis == 0:
+    #         rhomean[:-1, :] = arithmetic_mean(density[:-1, :], density[1:, :])
+    #     else:
+    #         rhomean[:, :-1] = arithmetic_mean(density[:, :-1], density[:, 1:])
+    # else:
+    #     rhomean: NDArrayFloat = np.zeros(
+    #         (geometry.nx, geometry.ny, density.shape[0]), dtype=np.float64
+    #     )
+    #     if axis == 0:
+    #         rhomean[:-1, :, :] = np.transpose(
+    #             arithmetic_mean(density[:, :-1, :], density[:, 1:, :]), axes=(1, 2, 0)
+    #         )
+    #     else:
+    #         rhomean[:, :-1, :] = np.transpose(
+    #             arithmetic_mean(density[:, :, :-1], density[:, :, 1:]), axes=(1, 2, 0)
+    #         )
+    # if is_flatten:
+    #     return rhomean.flatten(order="F")
+    # return rhomean
 
 
 def make_stationary_flow_matrices(geometry: Geometry, fl_model: FlowModel) -> lil_array:

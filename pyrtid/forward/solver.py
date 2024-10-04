@@ -143,9 +143,6 @@ class ForwardSolver:
             )
         else:
             # To reproduce HYTEC's behavior -> the initial darcy velocity is null
-            # compute_u_darcy(
-            #     self.model.fl_model, self.model.tr_model, self.model.geometry, 0
-            # )
             self.model.fl_model.lu_darcy_x = [
                 np.zeros((self.model.geometry.nx + 1, self.model.geometry.ny))
             ]
