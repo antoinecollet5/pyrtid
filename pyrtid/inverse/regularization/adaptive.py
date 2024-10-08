@@ -32,6 +32,7 @@ class AdaptiveRegweight(RegWeightUpdateStrategy, ABC):
         "_has_been_above_noise_level",
         "is_use_first_adjusted_weight_as_upper_bound",
         "n_regw_update",
+        "max_relative_change",
     ]
 
     def __init__(
@@ -39,6 +40,7 @@ class AdaptiveRegweight(RegWeightUpdateStrategy, ABC):
         reg_weight_init: float = 1.0,
         reg_weight_bounds: Union[Tuple[float, float], NDArrayFloat] = (1e-10, 1e10),
         convergence_factor: float = 0.05,
+        max_relative_change: float = 1e10,
         is_use_first_adjusted_weight_as_upper_bound: bool = True,
     ) -> None:
         """
@@ -51,6 +53,12 @@ class AdaptiveRegweight(RegWeightUpdateStrategy, ABC):
             Bounds for the optimization parameter, by default (1e-10, 1e10)
         convergence_factor : float, optional
             Convergence criteria for the regularization weight, by default 0.05
+        max_relative_change: float
+            Maximum relative change of the regularization in an update. It avoids
+            a sudden rise/drop. The default is 1e10.
+        is_use_first_adjusted_weight_as_upper_bound: bool
+            Whether the first weight determined by the method should become the
+            upper bound. It prevents weight explosion. The default is True.
         """
         self.reg_weight_bounds = np.array(
             [get_bounds(np.array([reg_weight_init]), np.array([reg_weight_bounds]))]
@@ -73,6 +81,14 @@ class AdaptiveRegweight(RegWeightUpdateStrategy, ABC):
         self.is_use_first_adjusted_weight_as_upper_bound: bool = (
             is_use_first_adjusted_weight_as_upper_bound
         )
+        self.max_relative_change: float = max_relative_change
+
+        if max_relative_change <= convergence_factor:
+            raise ValueError(
+                f"The 'max_relative_change' ({max_relative_change:.2e})"
+                " cannot be lower or equal to the 'convergence_factor' "
+                f"({convergence_factor:.2e})"
+            )
 
     @property
     def reg_weight(self) -> float:
@@ -83,6 +99,38 @@ class AdaptiveRegweight(RegWeightUpdateStrategy, ABC):
         self._reg_weight = min(
             max(self.reg_weight_bounds[0], value), self.reg_weight_bounds[1]
         )
+
+    def _ensure_max_change(
+        self, new_rw: float, old_rw: float, logger: Optional[logging.Logger] = None
+    ) -> float:
+        """
+        Ensure a maximum relative change between the new and the old weights.
+
+        Parameters
+        ----------
+        new_rw: float
+            New regularization weight.
+        old_rw : float
+            Old regularization weight.
+        logger: Optional[logging.Logger]
+            Optional :class:`logging.Logger` instance used for event logging.
+            The default is None.
+        """
+        # maximum relative change
+        # if increase of the regularization weight
+        if old_rw and self.n_regw_update >= 1:
+            if new_rw / old_rw > self.max_relative_change:
+                new_rw = old_rw * self.max_relative_change
+                if logger is not None:
+                    logger.info("Max relative change reached (increase)!")
+
+        # if diminished regularization weight
+        elif new_rw < old_rw and self.n_regw_update >= 1:
+            if old_rw / new_rw > self.max_relative_change:
+                new_rw = old_rw / self.max_relative_change
+                if logger is not None:
+                    logger.info("Max relative change reached (decrease)!")
+        return new_rw
 
     def update_reg_weight(
         self,
@@ -120,7 +168,7 @@ class AdaptiveRegweight(RegWeightUpdateStrategy, ABC):
         bool
             Whether the regularization parameter (weight) has changed.
         """
-        res = super().update_reg_weight(
+        has_rw_changed = super().update_reg_weight(
             loss_ls_history,
             loss_reg_history,
             reg_weight_history,
@@ -129,11 +177,16 @@ class AdaptiveRegweight(RegWeightUpdateStrategy, ABC):
             n_obs,
             logger,
         )
+
+        # Update comptor
+        if has_rw_changed:
+            self.n_regw_update += 1
+
         if self.is_use_first_adjusted_weight_as_upper_bound and self.n_regw_update == 1:
             self.reg_weight_bounds[1] = self.reg_weight
             if logger is not None:
                 logger.info(f"Updating reg weight bounds to {self.reg_weight_bounds}.")
-        return res
+        return has_rw_changed
 
 
 class AdaptiveGradientNormRegweight(AdaptiveRegweight):
@@ -145,6 +198,7 @@ class AdaptiveGradientNormRegweight(AdaptiveRegweight):
         reg_weight_init: float = 1.0,
         reg_weight_bounds: Union[Tuple[float, float], NDArrayFloat] = (1e-10, 1e10),
         convergence_factor: float = 0.05,
+        max_relative_change: float = 1e10,
         is_use_first_adjusted_weight_as_upper_bound: bool = True,
     ) -> None:
         """
@@ -161,9 +215,12 @@ class AdaptiveGradientNormRegweight(AdaptiveRegweight):
             Bounds for the optimization parameter, by default (1e-10, 1e10)
         convergence_factor : float, optional
             Convergence criteria for the regularization weight, by default 0.05
+        max_relative_change: float
+            Maximum relative change of the regularization in an update. It avoids
+            a sudden rise/drop. The default is 1e10.
         is_use_first_adjusted_weight_as_upper_bound: bool
-            Whether the first weight determined by the method should becoe the
-            upper bound. It prevent weight explosion. The default is True.
+            Whether the first weight determined by the method should become the
+            upper bound. It prevents weight explosion. The default is True.
 
         Notes
         -----
@@ -205,7 +262,10 @@ class AdaptiveGradientNormRegweight(AdaptiveRegweight):
             reg_weight_init,
             reg_weight_bounds,
             convergence_factor,
-            is_use_first_adjusted_weight_as_upper_bound,
+            max_relative_change=max_relative_change,
+            is_use_first_adjusted_weight_as_upper_bound=(
+                is_use_first_adjusted_weight_as_upper_bound
+            ),
         )
         self.is_noise_dominated: bool = False
         self.loss_ls_grad_norms: List[float] = []
@@ -316,9 +376,8 @@ class AdaptiveGradientNormRegweight(AdaptiveRegweight):
             self.reg_weight = _old
             return False
 
-        # Update comptor
-        if _old != self.reg_weight:
-            self.n_regw_update += 1
+        self.reg_weight = self._ensure_max_change(self.reg_weight, _old)
+
         # return if it has changed ?
         return _old != self.reg_weight
 
@@ -332,6 +391,7 @@ class AdaptiveUCRegweight(AdaptiveRegweight):
         reg_weight_bounds: Union[Tuple[float, float], NDArrayFloat] = (1e-10, 1e10),
         convergence_factor: float = 0.05,
         n_update_explo_phase: int = 5,
+        max_relative_change: float = 1e10,
         is_use_first_adjusted_weight_as_upper_bound: bool = True,
     ) -> None:
         """
@@ -347,15 +407,21 @@ class AdaptiveUCRegweight(AdaptiveRegweight):
         n_update_explo_phase: int
             Number of regularization weight to perform before entering the optimization
             phase.The default is 5.
+        max_relative_change: float
+            Maximum relative change of the regularization in an update. It avoids
+            a sudden rise/drop. The default is 1e10.
         is_use_first_adjusted_weight_as_upper_bound: bool
-            Whether the first weight determined by the method should becoe the
-            upper bound. It prevent weight explosion. The default is True.
+            Whether the first weight determined by the method should become the
+            upper bound. It prevents weight explosion. The default is True.
         """
         super().__init__(
             reg_weight_init,
             reg_weight_bounds,
             convergence_factor,
-            is_use_first_adjusted_weight_as_upper_bound,
+            max_relative_change=max_relative_change,
+            is_use_first_adjusted_weight_as_upper_bound=(
+                is_use_first_adjusted_weight_as_upper_bound
+            ),
         )
         # internal state used only in the case of adaptive regularization strategy
         self.n_update_explo_phase = n_update_explo_phase
@@ -491,9 +557,8 @@ class AdaptiveUCRegweight(AdaptiveRegweight):
             self.reg_weight = _old
             return False
 
-        # Update comptor
-        if _old != self.reg_weight:
-            self.n_regw_update += 1
+        self.reg_weight = self._ensure_max_change(self.reg_weight, _old)
+
         # return if it has changed ?
         return _old != self.reg_weight
 
