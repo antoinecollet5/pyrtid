@@ -1362,17 +1362,9 @@ class RangeRescaler(Preconditioner):
         # ici il faut faire l'opposé
         # rescaling between 5 and -5 -> the scale does not really matter
         return to_new_range(
-            np.log(s_raw) / np.log(10.0) if self.is_log10 else s_raw,
-            old_lbound=(
-                np.log(self.old_lbound) / np.log(10.0)
-                if self.is_log10
-                else self.old_lbound
-            ),
-            old_ubound=(
-                np.log(self.old_ubound) / np.log(10.0)
-                if self.is_log10
-                else self.old_ubound
-            ),
+            np.log(s_raw) if self.is_log10 else s_raw,
+            old_lbound=(np.log(self.old_lbound) if self.is_log10 else self.old_lbound),
+            old_ubound=(np.log(self.old_ubound) if self.is_log10 else self.old_ubound),
             new_lbound=self.new_lbound,
             new_ubound=self.new_ubound,
         )
