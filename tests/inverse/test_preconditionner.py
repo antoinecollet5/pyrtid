@@ -618,10 +618,13 @@ def test_rescale_to_bounds() -> None:
     assert np.min(y) == 1e-10
 
     def to_new_range_wrapper_log(s) -> NDArrayFloat:
-        return to_new_range(s, -5, 5, -1.0, 1.0, is_log10=True)
+        return to_new_range(s, -1, 1.0, 1.0, 10, is_log10=True)
+
+    x = np.logspace(-1, 1, 100)
+    to_new_range(x, -1.0, 1.0, 1, 10, is_log10=True)
 
     np.testing.assert_allclose(
-        to_new_range_derivative(x, -5, 5, -1.0, 1.0, is_log10=True) * g,
+        to_new_range_derivative(x, -1, 1, 1.0, 10.0, is_log10=True) * g,
         nd.Jacobian(to_new_range_wrapper_log)(x) @ g,
     )
 
