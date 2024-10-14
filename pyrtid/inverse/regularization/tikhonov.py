@@ -149,17 +149,6 @@ class TikhonovMatRegularizator(Regularizator):
         """
         f = 0.0
         f += 0.5 * float(np.sum((self.mat_grad_x @ values.ravel("F")) ** 2.0))
-        # This is the same as -> simpler for derivation
-        # f += 0.5 * float(
-        #     np.sum(
-        #         (
-        #             values.ravel("F").T
-        #             @ self.mat_grad_x.T
-        #             @ self.mat_grad_x
-        #             @ values.ravel("F")
-        #         )
-        #     )
-        # )
         f += 0.5 * float(np.sum((self.mat_grad_y @ values.ravel("F")) ** 2.0))
         return f
 

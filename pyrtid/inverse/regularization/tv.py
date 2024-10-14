@@ -16,6 +16,7 @@ from pyrtid.inverse.preconditioner import NoTransform, Preconditioner
 from pyrtid.inverse.regularization.base import (
     Regularizator,
     make_spatial_gradient_matrices,
+    make_spatial_permutation_matrices,
 )
 from pyrtid.utils.operators import gradient_ffd
 from pyrtid.utils.types import NDArrayFloat, NDArrayInt
@@ -149,6 +150,20 @@ class TVMatRegularizator(Regularizator):
             self.geometry, self.sub_selection
         )
 
+        self.mat_perm_x, self.mat_perm_y = make_spatial_permutation_matrices(
+            self.geometry, self.sub_selection
+        )
+
+        self.permutation = self.mat_perm_x + self.mat_perm_y
+
+    def _get_grid_cell_l1(self, values: NDArrayFloat) -> NDArrayFloat:
+        # Add epsilon to prevent undetermination when deriving
+        return np.sqrt(
+            np.square(self.mat_grad_x @ values)
+            + np.square(self.mat_grad_y @ values)
+            + self.eps
+        )
+
     def _eval_loss(self, values: NDArrayFloat) -> float:
         r"""
         Compute the gradient of the regularization loss function analytically.
@@ -167,26 +182,7 @@ class TVMatRegularizator(Regularizator):
         -------
         float
         """
-        return float(
-            np.sum(
-                np.sqrt(
-                    (self.mat_grad_x @ values.ravel("F")) ** 2.0
-                    + (self.mat_grad_y @ values.ravel("F")) ** 2.0
-                    + self.eps
-                )
-            )
-        )
-        # This is the same as -> simpler for derivation
-        # f += 0.5 * float(
-        #     np.sum(
-        #         (
-        #             values.ravel("F")
-        #             @ self.mat_grad_x
-        #             @ self.mat_grad_x
-        #             @ values.ravel("F")
-        #         )
-        #     )
-        # )
+        return float(np.sum(self._get_grid_cell_l1(values.ravel("F"))))
 
     def _eval_loss_gradient_analytical(self, values: NDArrayFloat) -> NDArrayFloat:
         r"""
@@ -202,19 +198,19 @@ class TVMatRegularizator(Regularizator):
         NDArrayFloat
             The regularization gradient.
         """
-        # TODO: still not correct
         grad = np.zeros(values.size)
-        # den = np.sqrt(
-        #     (self.mat_grad_x @ values.ravel("F")) ** 2.0
-        #     + (self.mat_grad_y @ values.ravel("F")) ** 2.0
-        #     + self.eps
-        # )
+        den = self._get_grid_cell_l1(values.ravel("F"))
+
+        # x contribution
         grad += (
-            2
-            * (
-                self.mat_grad_x.T @ self.mat_grad_x
-                + self.mat_grad_y.T @ self.mat_grad_y
-            )
-            @ values.ravel("F")
-        )
+            self.mat_grad_x @ values.ravel("F") / den
+            - self.mat_perm_x @ (self.mat_grad_x @ values.ravel("F") / den)
+        ) / self.geometry.dx
+
+        # y contribution
+        grad += (
+            self.mat_grad_y @ values.ravel("F") / den
+            - self.mat_perm_y @ (self.mat_grad_y @ values.ravel("F") / den)
+        ) / self.geometry.dy
+
         return grad.reshape(values.shape, order="F")

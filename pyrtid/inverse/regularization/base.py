@@ -233,7 +233,7 @@ def make_spatial_gradient_matrices(
     geometry: Geometry, sub_selection: Optional[NDArrayInt] = None
 ) -> Tuple[csc_array, csc_array]:
     """
-    Make matrices to compute the special gradient along x and y axes of a field.
+    Make matrices to compute the spatial gradient along x and y axes of a field.
 
     The gradient is obtained by the dot product between the field and the matrix.
 
@@ -264,7 +264,7 @@ def make_spatial_gradient_matrices(
 
     # X contribution
     if geometry.nx >= 2:
-        tmp = geometry.gamma_ij_x / geometry.mesh_volume / 2.0
+        tmp = geometry.gamma_ij_x / geometry.mesh_volume / 1.0
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
             geometry,
@@ -277,21 +277,21 @@ def make_spatial_gradient_matrices(
         mat_grad_x[idc_owner, idc_neigh] -= tmp * np.ones(idc_owner.size)  # type: ignore
         mat_grad_x[idc_owner, idc_owner] += tmp * np.ones(idc_owner.size)  # type: ignore
 
-        # Backward scheme
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(1, geometry.nx), slice(None)),
-            (slice(0, geometry.nx - 1), slice(None)),
-            owner_indices_to_keep=_sub_selection,
-            neigh_indices_to_keep=_sub_selection,
-        )
+        # # Backward scheme
+        # idc_owner, idc_neigh = get_owner_neigh_indices(
+        #     geometry,
+        #     (slice(1, geometry.nx), slice(None)),
+        #     (slice(0, geometry.nx - 1), slice(None)),
+        #     owner_indices_to_keep=_sub_selection,
+        #     neigh_indices_to_keep=_sub_selection,
+        # )
 
-        mat_grad_x[idc_owner, idc_neigh] -= tmp * np.ones(idc_owner.size)  # type: ignore
-        mat_grad_x[idc_owner, idc_owner] += tmp * np.ones(idc_owner.size)  # type: ignore
+        # mat_grad_x[idc_owner, idc_neigh] -= tmp * np.ones(idc_owner.size)
+        # mat_grad_x[idc_owner, idc_owner] += tmp * np.ones(idc_owner.size)
 
     # Y contribution
     if geometry.ny >= 2:
-        tmp = geometry.gamma_ij_y / geometry.mesh_volume / 2.0
+        tmp = geometry.gamma_ij_y / geometry.mesh_volume / 1.0
 
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
@@ -306,15 +306,75 @@ def make_spatial_gradient_matrices(
         mat_grad_y[idc_owner, idc_owner] += tmp * np.ones(idc_owner.size)  # type: ignore
 
         # Backward scheme
+        # idc_owner, idc_neigh = get_owner_neigh_indices(
+        #     geometry,
+        #     (slice(None), slice(1, geometry.ny)),
+        #     (slice(None), slice(0, geometry.ny - 1)),
+        #     owner_indices_to_keep=_sub_selection,
+        #     neigh_indices_to_keep=_sub_selection,
+        # )
+
+        # mat_grad_y[idc_owner, idc_neigh] -= tmp * np.ones(idc_owner.size)
+        # mat_grad_y[idc_owner, idc_owner] += tmp * np.ones(idc_owner.size)
+
+    return mat_grad_x.tocsc(), mat_grad_y.tocsc()
+
+
+def make_spatial_permutation_matrices(
+    geometry: Geometry, sub_selection: Optional[NDArrayInt] = None
+) -> Tuple[csc_array, csc_array]:
+    """
+    Make matrices to compute the spatial permutations along x and y axes of a field.
+
+    Parameters
+    ----------
+    geometry : Geometry
+        Geometry of the field
+    sub_selection : Optional[NDArrayInt], optional
+        Optional sub selection of the field. Non selected elements will be
+        ignored in the gradient computation (as if non existing). If None, all
+        elements are used. By default None.
+
+    Returns
+    -------
+    Tuple[csc_array, csc_array]
+        Spatial permutation matrices for x and y axes.
+    """
+    dim = geometry.nx * geometry.ny
+    # matrix for the spatial permutation along the x axis
+    mat_perm_x = lil_array((dim, dim), dtype=np.float64)
+    # matrix for the spatial permutation along the y axis
+    mat_perm_y = lil_array((dim, dim), dtype=np.float64)
+
+    if sub_selection is None:
+        _sub_selection: NDArrayInt = np.arange(dim)
+    else:
+        _sub_selection = sub_selection
+
+    # X contribution
+    if geometry.nx >= 2:
+        # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
             geometry,
-            (slice(None), slice(1, geometry.ny)),
-            (slice(None), slice(0, geometry.ny - 1)),
+            (slice(0, geometry.nx - 1), slice(None)),
+            (slice(1, geometry.nx), slice(None)),
             owner_indices_to_keep=_sub_selection,
             neigh_indices_to_keep=_sub_selection,
         )
 
-        mat_grad_y[idc_owner, idc_neigh] -= tmp * np.ones(idc_owner.size)  # type: ignore
-        mat_grad_y[idc_owner, idc_owner] += tmp * np.ones(idc_owner.size)  # type: ignore
+        mat_perm_x[idc_neigh, idc_owner] = np.ones(idc_owner.size)  # type: ignore
 
-    return mat_grad_x.tocsc(), mat_grad_y.tocsc()
+    # Y contribution
+    if geometry.ny >= 2:
+        # Forward scheme:
+        idc_owner, idc_neigh = get_owner_neigh_indices(
+            geometry,
+            (slice(None), slice(0, geometry.ny - 1)),
+            (slice(None), slice(1, geometry.ny)),
+            owner_indices_to_keep=_sub_selection,
+            neigh_indices_to_keep=_sub_selection,
+        )
+
+        mat_perm_y[idc_neigh, idc_owner] = np.ones(idc_owner.size)  # type: ignore
+
+    return mat_perm_x.tocsc(), mat_perm_y.tocsc()
