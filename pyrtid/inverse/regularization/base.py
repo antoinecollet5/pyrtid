@@ -79,6 +79,11 @@ class RegWeightUpdateStrategy(ABC):
             logger,
         )
 
+    @classmethod
+    def is_adaptive(cls) -> bool:
+        """Return whether the method is adaptive."""
+        return False
+
     def _update_reg_weight(
         self,
         loss_ls_history: List[float],

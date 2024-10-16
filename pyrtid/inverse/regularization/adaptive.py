@@ -32,7 +32,7 @@ class AdaptiveRegweight(RegWeightUpdateStrategy, ABC):
         "_has_been_above_noise_level",
         "is_use_first_adjusted_weight_as_upper_bound",
         "n_regw_update",
-        "max_relative_change",
+        "max_log_cr",
     ]
 
     def __init__(
@@ -40,7 +40,7 @@ class AdaptiveRegweight(RegWeightUpdateStrategy, ABC):
         reg_weight_init: float = 1.0,
         reg_weight_bounds: Union[Tuple[float, float], NDArrayFloat] = (1e-10, 1e10),
         convergence_factor: float = 0.05,
-        max_relative_change: float = 1e10,
+        max_log_cr: float = 2.0,
         is_use_first_adjusted_weight_as_upper_bound: bool = True,
     ) -> None:
         """
@@ -53,9 +53,10 @@ class AdaptiveRegweight(RegWeightUpdateStrategy, ABC):
             Bounds for the optimization parameter, by default (1e-10, 1e10)
         convergence_factor : float, optional
             Convergence criteria for the regularization weight, by default 0.05
-        max_relative_change: float
-            Maximum relative change of the regularization in an update. It avoids
-            a sudden rise/drop. The default is 1e10.
+        max_log_cr: float
+            Maximum log change rate. It avoids a sudden rise/drop.
+            The log is used because it is symmetrical: log(0.5) = - log(2).
+            The default is 2.
         is_use_first_adjusted_weight_as_upper_bound: bool
             Whether the first weight determined by the method should become the
             upper bound. It prevents weight explosion. The default is True.
@@ -81,14 +82,24 @@ class AdaptiveRegweight(RegWeightUpdateStrategy, ABC):
         self.is_use_first_adjusted_weight_as_upper_bound: bool = (
             is_use_first_adjusted_weight_as_upper_bound
         )
-        self.max_relative_change: float = max_relative_change
+        self.max_log_cr: float = max_log_cr
 
-        if max_relative_change <= convergence_factor:
+        if max_log_cr <= 0:
             raise ValueError(
-                f"The 'max_relative_change' ({max_relative_change:.2e})"
+                f"The 'max_log_cr' ({max_log_cr:.2e})" " must be positive! "
+            )
+
+        if max_log_cr <= convergence_factor:
+            raise ValueError(
+                f"The 'max_log_cr' ({max_log_cr:.2e})"
                 " cannot be lower or equal to the 'convergence_factor' "
                 f"({convergence_factor:.2e})"
             )
+
+    @classmethod
+    def is_adaptive(cls) -> bool:
+        """Return whether the method is adaptive."""
+        return True
 
     @property
     def reg_weight(self) -> float:
@@ -100,11 +111,22 @@ class AdaptiveRegweight(RegWeightUpdateStrategy, ABC):
             max(self.reg_weight_bounds[0], value), self.reg_weight_bounds[1]
         )
 
-    def _ensure_max_change(
-        self, new_rw: float, old_rw: float, logger: Optional[logging.Logger] = None
+    @staticmethod
+    def get_log_cr(_old: float, _new: float) -> float:
+        """Note: _odl and _new are always positive."""
+        if _old == 0 or _new == 0:
+            return 0.0
+        return np.log(_new / _old)
+
+    def _ensure_max_log_rc(
+        self,
+        new_rw: float,
+        old_rw: float,
+        gls_log_cr: Optional[float],
+        logger: Optional[logging.Logger] = None,
     ) -> float:
         """
-        Ensure a maximum relative change between the new and the old weights.
+        Ensure a maximum log change rate between the new and the old weights.
 
         Parameters
         ----------
@@ -112,24 +134,49 @@ class AdaptiveRegweight(RegWeightUpdateStrategy, ABC):
             New regularization weight.
         old_rw : float
             Old regularization weight.
+        gls_rel_change: float
+            Relative change of the LS gradient norm.
+            If the relative change is high, then the regularization weight cannot be
+            decreased or increased too much.
         logger: Optional[logging.Logger]
             Optional :class:`logging.Logger` instance used for event logging.
             The default is None.
         """
         # maximum relative change
-        # if increase of the regularization weight
-        if old_rw and self.n_regw_update >= 1:
-            if new_rw / old_rw > self.max_relative_change:
-                new_rw = old_rw * self.max_relative_change
+        if gls_log_cr is not None:
+            max_alrc = np.nanmin([self.max_log_cr, 1.0 / np.abs(gls_log_cr)])
+        else:
+            max_alrc = self.max_log_cr
+
+        # current relative change
+        cur_rc = self.get_log_cr(old_rw, new_rw)
+
+        if logger is not None:
+            logger.info(
+                f"max_rc = {max_alrc:.2e}, cur_rc = {cur_rc:.2e}, rel = {gls_log_cr}"
+            )
+
+        # Case one: no changes
+        if cur_rc == 0:
+            return new_rw
+
+        # Case 2: increase of the regularization weight
+        if cur_rc > 0 and self.n_regw_update >= 1:
+            if cur_rc > max_alrc:
+                new_rw = old_rw * np.exp(max_alrc)
                 if logger is not None:
-                    logger.info("Max relative change reached (increase)!")
+                    logger.info(
+                        f"Max log-relative change reached (increase = {max_alrc:.2e})!"
+                    )
 
         # if diminished regularization weight
-        elif new_rw < old_rw and self.n_regw_update >= 1:
-            if old_rw / new_rw > self.max_relative_change:
-                new_rw = old_rw / self.max_relative_change
+        elif cur_rc < 0 and self.n_regw_update >= 1:
+            if -cur_rc > max_alrc:
+                new_rw = old_rw / np.exp(max_alrc)
                 if logger is not None:
-                    logger.info("Max relative change reached (decrease)!")
+                    logger.info(
+                        f"Max log-relative change reached (decrease = {max_alrc:.2e})!"
+                    )
         return new_rw
 
     def update_reg_weight(
@@ -182,7 +229,11 @@ class AdaptiveRegweight(RegWeightUpdateStrategy, ABC):
         if has_rw_changed:
             self.n_regw_update += 1
 
-        if self.is_use_first_adjusted_weight_as_upper_bound and self.n_regw_update == 1:
+        if (
+            self.is_use_first_adjusted_weight_as_upper_bound
+            and has_rw_changed
+            and self.n_regw_update == 1
+        ):
             self.reg_weight_bounds[1] = self.reg_weight
             if logger is not None:
                 logger.info(f"Updating reg weight bounds to {self.reg_weight_bounds}.")
@@ -198,7 +249,7 @@ class AdaptiveGradientNormRegweight(AdaptiveRegweight):
         reg_weight_init: float = 1.0,
         reg_weight_bounds: Union[Tuple[float, float], NDArrayFloat] = (1e-10, 1e10),
         convergence_factor: float = 0.05,
-        max_relative_change: float = 1e10,
+        max_log_cr: float = 2,
         is_use_first_adjusted_weight_as_upper_bound: bool = True,
     ) -> None:
         """
@@ -215,9 +266,10 @@ class AdaptiveGradientNormRegweight(AdaptiveRegweight):
             Bounds for the optimization parameter, by default (1e-10, 1e10)
         convergence_factor : float, optional
             Convergence criteria for the regularization weight, by default 0.05
-        max_relative_change: float
-            Maximum relative change of the regularization in an update. It avoids
-            a sudden rise/drop. The default is 1e10.
+        max_log_cr: float
+            Maximum log change rate. It avoids a sudden rise/drop.
+            The log is used because it is symmetrical: log(0.5) = - log(2).
+            The default is 2.
         is_use_first_adjusted_weight_as_upper_bound: bool
             Whether the first weight determined by the method should become the
             upper bound. It prevents weight explosion. The default is True.
@@ -262,7 +314,7 @@ class AdaptiveGradientNormRegweight(AdaptiveRegweight):
             reg_weight_init,
             reg_weight_bounds,
             convergence_factor,
-            max_relative_change=max_relative_change,
+            max_log_cr=max_log_cr,
             is_use_first_adjusted_weight_as_upper_bound=(
                 is_use_first_adjusted_weight_as_upper_bound
             ),
@@ -358,6 +410,9 @@ class AdaptiveGradientNormRegweight(AdaptiveRegweight):
                 f"loss_reg_grad_{self.norm}_norm = " f"{self.loss_reg_grad_norms[-1]}"
             )
 
+        # default value
+        ls_log_cr: Optional[float] = None
+
         # Test the relative change of loss ls, if below the threshold, then
         # do not take the update into account
         if len(loss_ls_history) >= 2:
@@ -370,13 +425,20 @@ class AdaptiveGradientNormRegweight(AdaptiveRegweight):
                 self.reg_weight = _old
                 return False
 
+            if len(self.loss_ls_grad_norms) >= 2:
+                ls_log_cr = self.get_log_cr(
+                    self.loss_ls_grad_norms[-2], self.loss_ls_grad_norms[-1]
+                )
+
         # Test the relative change of alpha, if below the threshold, then
         # do not take the update into account
         if np.abs((self.reg_weight - _old) / _old) < self.convergence_factor:
             self.reg_weight = _old
             return False
 
-        self.reg_weight = self._ensure_max_change(self.reg_weight, _old)
+        self.reg_weight = self._ensure_max_log_rc(
+            self.reg_weight, _old, ls_log_cr, logger=logger
+        )
 
         # return if it has changed ?
         return _old != self.reg_weight
@@ -391,7 +453,7 @@ class AdaptiveUCRegweight(AdaptiveRegweight):
         reg_weight_bounds: Union[Tuple[float, float], NDArrayFloat] = (1e-10, 1e10),
         convergence_factor: float = 0.05,
         n_update_explo_phase: int = 5,
-        max_relative_change: float = 1e10,
+        max_log_cr: float = 1e10,
         is_use_first_adjusted_weight_as_upper_bound: bool = True,
     ) -> None:
         """
@@ -407,9 +469,7 @@ class AdaptiveUCRegweight(AdaptiveRegweight):
         n_update_explo_phase: int
             Number of regularization weight to perform before entering the optimization
             phase.The default is 5.
-        max_relative_change: float
-            Maximum relative change of the regularization in an update. It avoids
-            a sudden rise/drop. The default is 1e10.
+
         is_use_first_adjusted_weight_as_upper_bound: bool
             Whether the first weight determined by the method should become the
             upper bound. It prevents weight explosion. The default is True.
@@ -418,7 +478,7 @@ class AdaptiveUCRegweight(AdaptiveRegweight):
             reg_weight_init,
             reg_weight_bounds,
             convergence_factor,
-            max_relative_change=max_relative_change,
+            max_log_cr=max_log_cr,
             is_use_first_adjusted_weight_as_upper_bound=(
                 is_use_first_adjusted_weight_as_upper_bound
             ),
@@ -557,7 +617,10 @@ class AdaptiveUCRegweight(AdaptiveRegweight):
             self.reg_weight = _old
             return False
 
-        self.reg_weight = self._ensure_max_change(self.reg_weight, _old)
+        # TODO: replace the None by the weight
+        self.reg_weight = self._ensure_max_log_rc(
+            self.reg_weight, _old, None, logger=logger
+        )
 
         # return if it has changed ?
         return _old != self.reg_weight

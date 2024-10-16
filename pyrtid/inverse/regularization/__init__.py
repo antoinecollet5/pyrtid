@@ -104,7 +104,7 @@ Eigen decomposition
 .. autosummary::
    :toctree: _autosummary
 
-    get_prior_eigen_factorization
+    get_matrix_eigen_factorization
     eigen_factorize_cov_mat
 
 Stochastic partial differential equation compression (SPDE)
@@ -164,7 +164,7 @@ from pyrtid.inverse.regularization.covariances import (
     SparseInvCovarianceMatrix,
     eigen_factorize_cov_mat,
     generate_dense_matrix,
-    get_prior_eigen_factorization,
+    get_matrix_eigen_factorization,
 )
 from pyrtid.inverse.regularization.discrete import DiscreteRegularizator
 from pyrtid.inverse.regularization.geostatistical import (
@@ -212,7 +212,7 @@ __all__ = [
     "LinearDriftMatrix",
     "GeostatisticalRegularizator",
     "EnsembleRegularizator",
-    "get_prior_eigen_factorization",
+    "get_matrix_eigen_factorization",
     "eigen_factorize_cov_mat",
     "generate_dense_matrix",
     "AdaptiveUCRegweight",

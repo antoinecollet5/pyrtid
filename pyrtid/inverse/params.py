@@ -21,7 +21,6 @@ from pyrtid.inverse.preconditioner import (
     Preconditioner,
 )
 from pyrtid.inverse.regularization import (
-    AdaptiveRegweight,
     ConstantRegWeight,
     Regularizator,
     RegWeightUpdateStrategy,
@@ -347,9 +346,7 @@ class AdjustableParameter:
         """Whether an adaptive regularization strategy is used."""
         if len(self.regularizators) == 0:
             return False
-        if isinstance(self.reg_weight_update_strategy, AdaptiveRegweight):
-            return True
-        return False
+        return self.reg_weight_update_strategy.is_adaptive()
 
     def update(self, other: AdjustableParameter) -> None:
         """Update the attributes with other's."""
