@@ -645,13 +645,13 @@ class SparseInvCovarianceMatrix(CovarianceMatrix):
         return get_variance(self.inv_mat, self.inv_mat_cho_factor)
 
 
-def get_prior_eigen_factorization(
+def get_matrix_eigen_factorization(
     cov_mat: CovarianceMatrix,
     n_pc: int,
     random_state: Optional[Union[int, RandomState, Generator]] = None,
 ) -> Tuple[NDArrayFloat, NDArrayFloat]:
     """
-    Compute Eigenmodes of Prior Covariance.
+    Compute Eigenmodes of the covariance.
 
     Parameters
     ----------
@@ -743,7 +743,7 @@ def eigen_factorize_cov_mat(
     """
     if isinstance(cov_mat, EigenFactorizedCovarianceMatrix):
         return cov_mat
-    eig_vals, eig_vects = get_prior_eigen_factorization(cov_mat, n_pc, random_state)
+    eig_vals, eig_vects = get_matrix_eigen_factorization(cov_mat, n_pc, random_state)
     return EigenFactorizedCovarianceMatrix(eig_vals, eig_vects)
 
 
