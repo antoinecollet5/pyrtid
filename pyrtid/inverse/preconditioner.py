@@ -1590,14 +1590,8 @@ class SigmoidRescalerBounded(ChainedTransforms):
             3 is usually the upper acceptable limit, i.e., above this value,
             the bijection between "transform" and "backtransform" might be lost and the
             derivative might become ncorrect.
-        is_log: bool
+        is_log10: bool
             Whether to use a log10-scaling for the logit y-scale.
-        lbound : NDArrayFloat
-            Lower bound of the conditioned values. This does not really matters.
-            The default is -5.0.
-        ubound : NDArrayFloat
-            Upper bound of the conditioned values. This does not really matters.
-            The default is 5.0.
         """
         self.pcds = [
             RangeRescaler(old_lbound, old_ubound, 0.0, 1.0, is_log10),
