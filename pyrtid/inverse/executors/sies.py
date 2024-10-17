@@ -112,6 +112,9 @@ sies_solver_config_params_ds = """n_iterations : int, optional
     is_forecast_for_last_assimilation: bool, optional
         Whether to compute the predictions for the ensemble obtained at the
         last assimilation step. The default is True.
+    logger: Optional[logging.Logger]
+        Optional :class:`logging.Logger` instance used for event logging.
+        The default is logging.getLogger("SIES").
 """
 
 
@@ -133,6 +136,7 @@ class SIESSolverConfig(BaseSolverConfig):
     seed: Optional[int] = None
     steplength_strategy: Callable[[int], float] = steplength_exponential
     is_forecast_for_last_assimilation: bool = True
+    logger: Optional[logging.Logger] = logging.getLogger("SIES")
 
 
 class _SIES(SIES):
@@ -205,6 +209,11 @@ class SIESInversionExecutor(BaseInversionExecutor[SIESSolverConfig]):
         """Return the solver name."""
         return "SIES"
 
+    def loginfo(self, msg: str) -> None:
+        """Log the message."""
+        if self.solver_config.logger is not None:
+            self.solver_config.logger.info(msg)
+
     def get_display_dict(self) -> Dict[str, Any]:
         return {"": "", "Number of realizations": self.solver.n_ensemble}
 
@@ -224,7 +233,7 @@ class SIESInversionExecutor(BaseInversionExecutor[SIESSolverConfig]):
         if self.solver_config.save_ensembles_history:
             self.solver.s_history.append(_s)
         for iteration in range(1, self.solver_config.n_iterations + 1):  # type: ignore
-            logging.info(f"Iteration # {iteration}")
+            self.loginfo(f"Iteration # {iteration}")
             d_pred = self._map_forward_model(_s)
             self.solver.d_history.append(d_pred)
 
@@ -236,6 +245,11 @@ class SIESInversionExecutor(BaseInversionExecutor[SIESSolverConfig]):
             )
             if self.solver_config.save_ensembles_history:
                 self.solver.s_history.append(_s)
+
+        if self.solver_config.is_forecast_for_last_assimilation:
+            self.loginfo("Forecast for the final ensemble")
+            d_pred = self._map_forward_model(_s)
+            self.solver.d_history.append(d_pred)
         return _s
 
     @property
