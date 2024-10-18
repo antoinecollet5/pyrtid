@@ -12,6 +12,7 @@ import logging
 from typing import Callable, List, Optional, Sequence, Union
 
 import numpy as np
+import scipy as sp
 
 from pyrtid.forward import ForwardModel
 from pyrtid.inverse.obs import StateVariable, get_array_from_state_variable
@@ -284,6 +285,17 @@ class AdjustableParameter:
         """Regularization weight."""
         return self.reg_weight_update_strategy.reg_weight
 
+    @property
+    def is_scale_logarithmically(self) -> bool:
+        """Return whether the parameter scales logarithmically."""
+        if self.name in [
+            ParameterName.DIFFUSION,
+            ParameterName.STORAGE_COEFFICIENT,
+            ParameterName.PERMEABILITY,
+        ]:
+            return True
+        return False
+
     def _test_bounds_consistency(self) -> None:
         """Test that ubounds > lbounds."""
         # test that size is equal + that lbounds <= ubounds
@@ -506,6 +518,25 @@ class AdjustableParameter:
             n_obs,
             logger,
         )
+
+    def get_values_change(self, ord: float = 2) -> float:
+        """
+        Evaluate the change between the two last vectors of values.
+
+        The log of values is used for non additive properties such as permeability,
+        storage coefficients or diffusion coefficient.
+        """
+        if len(self.archived_values) < 2:
+            return 0
+
+        def _pcd(x: NDArrayFloat) -> NDArrayFloat:
+            if self.is_scale_logarithmically:
+                return np.log(x)
+            return x
+
+        return sp.linalg.norm(
+            _pcd(self.values) - _pcd(self.archived_values[-2]), ord=ord
+        ) / sp.linalg.norm(_pcd(self.archived_values[-2]), ord=ord)
 
 
 AdjustableParameters = Union[AdjustableParameter, Sequence[AdjustableParameter]]
