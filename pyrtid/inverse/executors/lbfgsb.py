@@ -214,6 +214,7 @@ class LBFGSBSolverConfig(AdjointSolverConfig):
     ftarget: Optional[float] = None
     ftol: float = 1e-5
     gtol: float = 1e-5
+    stol: float = 1e-3
     maxiter: int = 50
     maxfun: int = 100
     iprint: int = -1
@@ -521,6 +522,29 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
 
         return fun, grad_cond
 
+    def callback(self, s: NDArrayFloat, res: sp.optimize.OptimizeResult) -> bool:
+        """Experimental stop criterion based on the model change."""
+
+        # Old attempt
+        # The problème with this approach is that some parameters avec varying amplitude
+        # because of precondiitoners, ex: GD with mean.
+        s_change = sp.linalg.norm(res.hess_inv.sk[-1], ord=2) / sp.linalg.norm(
+            s + res.hess_inv.sk[-1], ord=2
+        )
+        logging.getLogger("L-BFGS-B").info(f"Callback - s_change = {s_change}\n")
+        return s_change < self.solver_config.stol
+
+    def callback_new(self, s: NDArrayFloat, res: sp.optimize.OptimizeResult) -> bool:
+        """Experimental stop criterion based on the model change."""
+
+        # New attempt: evaluation per parameter with no preconditioning.
+        # but log scaling if needed.
+        s_change = 0
+        for p in self.inv_model.parameters_to_adjust:
+            s_change += p.get_values_change(ord=2)
+        logging.getLogger("L-BFGS-B").info(f"Callback - s_change = {s_change}\n")
+        return s_change < self.solver_config.stol
+
     def run(self) -> sp.optimize.OptimizeResult:
         """
         Run the history matching.
@@ -579,4 +603,5 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
             xtol_linesearch=self.solver_config.xtol_linesearch,
             eps_SY=self.solver_config.eps_SY,
             logger=logging.getLogger("L-BFGS-B"),
+            callback=self.callback_new,
         )
