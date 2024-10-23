@@ -593,6 +593,9 @@ class EigenFactorizedCovarianceMatrix(CovarianceMatrix):
         """Return the trace of the covariance matrix."""
         return float(np.sum(self.eig_vals))
 
+    def todense(self) -> NDArrayFloat:
+        return np.dot(self.eig_vects, np.multiply(self.eig_vals, self.eig_vects.T))
+
 
 class SparseInvCovarianceMatrix(CovarianceMatrix):
     """
