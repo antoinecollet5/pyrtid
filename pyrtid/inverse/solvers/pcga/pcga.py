@@ -1610,11 +1610,7 @@ class PCGA:
                 self.istate.is_success = True
                 n_iter += 1
                 break
-            elif (
-                np.abs((obj - self.istate.objvals[-1]))
-                / max(abs(self.istate.objvals[-1]), abs(obj), 1)
-                < self.ftol
-            ):
+            elif np.abs((obj - obj_old)) / max(abs(obj_old), abs(obj), 1) < self.ftol:
                 self.istate.status = "CONVERGENCE: REL_REDUCTION_OF_F_<=_FTOL"
                 self.istate.is_success = True
                 n_iter += 1
@@ -1786,6 +1782,7 @@ class PCGA:
         # [HQ, X^{T}]
         b_all = np.vstack([np.dot(HZ, Z.T), self.drift.mat.T])
         # Use cholesky factorization to solve the system
+        # TODO: this is not correct, we should use Identity
         LA = self.build_cholesky(Psi, HX)
         return (
             self.prior_s_var
