@@ -1,9 +1,11 @@
 """Provide some derivative operators."""
 
 # pylint: disable=C0103 # doesn't conform to snake_case naming style
+import math
 from typing import Optional, Tuple, Union
 
 import numpy as np
+import scipy as sp
 from scipy.sparse import csc_array, csc_matrix
 from scipy.sparse.linalg import LinearOperator, SuperLU, spilu
 
@@ -149,3 +151,19 @@ def get_super_ilu_preconditioner(
         return op.solve(_x)
 
     return op, LinearOperator(mat.shape, super_ilu)
+
+
+def get_angle_btw_vectors_rad(v1: NDArrayFloat, v2: NDArrayFloat) -> float:
+    """Return the angle between two vectors in radians."""
+    return np.arccos(
+        np.clip(
+            v1 @ v2 / (sp.linalg.norm(v1, ord=2) * sp.linalg.norm(v2, ord=2)),
+            a_min=-1.0,
+            a_max=1.0,
+        )
+    ).item()
+
+
+def get_angle_btw_vectors_deg(v1: NDArrayFloat, v2: NDArrayFloat) -> float:
+    """Return the angle between two vectors in degrees."""
+    return math.degrees(get_angle_btw_vectors_rad(v1, v2))

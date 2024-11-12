@@ -3,11 +3,14 @@
 import numpy as np
 import pytest
 from pyrtid.utils import (
+    get_angle_btw_vectors_deg,
+    get_angle_btw_vectors_rad,
     get_super_ilu_preconditioner,
     gradient_bfd,
     gradient_ffd,
     hessian_cfd,
 )
+from pyrtid.utils.types import NDArrayFloat
 from scipy.sparse import csc_array
 from scipy.sparse.linalg import gmres
 
@@ -64,3 +67,28 @@ def test_exceptions(function) -> None:
     arr = np.ones((20, 20))
     with pytest.raises(ValueError, match="axis should be 0 or 1 !"):
         function(arr, dx=5.0, axis=2)
+
+
+@pytest.mark.parametrize(
+    "v1,v2,expected_rad,expected_deg",
+    [
+        (np.array([1.0, 1.0, 1.0]), np.array([2.0, 2.0, 2.0]), 0.0, 0.0),
+        (
+            np.array([3.0, 4.0]),
+            np.array([5.0, -2.0]),
+            1.307801595113977,
+            74.93151184050778,
+        ),
+        (
+            np.array([-1.0, 1.0, 0.0]),
+            np.array([1.0, 1.0, -1.0]),
+            1.5707963267948966,
+            90.0,
+        ),
+    ],
+)
+def test_get_angle_btw_vectors(
+    v1: NDArrayFloat, v2: NDArrayFloat, expected_rad: float, expected_deg: float
+) -> None:
+    np.testing.assert_allclose(get_angle_btw_vectors_rad(v1, v2), expected_rad)
+    np.testing.assert_allclose(get_angle_btw_vectors_deg(v1, v2), expected_deg)

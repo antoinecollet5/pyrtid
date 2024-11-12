@@ -199,6 +199,8 @@ from pyrtid.utils.means import (
     hmean_gradient,
 )
 from pyrtid.utils.operators import (
+    get_angle_btw_vectors_deg,
+    get_angle_btw_vectors_rad,
     get_super_ilu_preconditioner,
     gradient_bfd,
     gradient_ffd,
@@ -228,6 +230,8 @@ __all__ = [
     "gradient_ffd",
     "gradient_bfd",
     "hessian_cfd",
+    "get_angle_btw_vectors_deg",
+    "get_angle_btw_vectors_rad",
     "GaussianFilter",
     "StrEnum",
     "finite_gradient",
