@@ -23,7 +23,6 @@ dependencies = [
     "scikit-sparse",
     "numdifftools",
     "gstools",
-    "numba",
     "typing_extensions",
     "pyesmda@git+https://gitlab.com/antoinecollet5/pyesmda.git@features/imp_inversions",
     "stochopy",
