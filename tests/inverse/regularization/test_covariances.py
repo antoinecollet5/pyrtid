@@ -113,9 +113,13 @@ def test_negative_eigen_values() -> None:
 
     cov_mat = DenseCovarianceMatrix(mat=mat)
 
-    cov_mat_eigen = eigen_factorize_cov_mat(cov_mat, n_pc=3)
+    cov_mat_eigen = eigen_factorize_cov_mat(cov_mat, n_pc=3, random_state=2023)
     assert cov_mat_eigen.n_pc == 2
     assert cov_mat_eigen.eig_vects.size == 8
+
+    cov_mat_eigen = eigen_factorize_cov_mat(cov_mat, n_pc=3, random_state=2024)
+    assert cov_mat_eigen.n_pc == 1
+    assert cov_mat_eigen.eig_vects.size == 4
 
 
 # def test_that_man() -> None:
