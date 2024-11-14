@@ -14,6 +14,7 @@ from pyrtid.inverse.regularization import (
     MeanPriorTerm,
     NullPriorTerm,
 )
+from pyrtid.utils.grid import RectilinearGrid
 
 
 def test_null_prior() -> None:
@@ -161,3 +162,22 @@ def test_linear_drift_matrix() -> None:
     assert dmat.mat.shape == (2, 4)
 
     assert dmat.get_gradient_dot_product(np.ones(45)) == 0.0
+
+
+def test_linear_drift_matrix2() -> None:
+    nx = 100
+    ny = 100
+    grid = RectilinearGrid(
+        x0=0.0, y0=0.0, z0=0.0, dx=5.0, dy=5.0, dz=1.0, nx=nx, ny=ny, nz=1
+    )
+    # coordinates 2d
+    coords = grid.center_coords_2d.reshape(2, -1, order="F")
+
+    # Linear trend: b0 + b1 * x + b2 * y
+    trend = DriftMatrix(
+        np.concatenate([np.ones((1, nx * ny)), coords]).T,
+        beta=np.array([219, 0.1, -0.1]),
+    )
+    trend.get_values(np.ones(nx * ny))
+
+    assert trend.s_dim == nx * ny
