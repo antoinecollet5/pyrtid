@@ -1,3 +1,3 @@
-from pyrtid.inverse.solvers.pcga.pcga import PCGA, PostCovEstimation
+from pyrtid.inverse.solvers.pcga.pcga import PCGA
 
-__all__ = ["PCGA", "PostCovEstimation"]
+__all__ = ["PCGA"]

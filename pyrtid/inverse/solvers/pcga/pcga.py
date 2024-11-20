@@ -6,32 +6,53 @@ The original code has been written by Jonghyun Harry Lee.
 See: https://github.com/jonghyunharrylee/pyPCGA
 """
 
+from __future__ import annotations
+
 import copy
 import logging
 import multiprocessing
+import warnings
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from math import isnan, sqrt
 from time import time
-from typing import Callable, List, Optional, Tuple, Union
+from typing import Any, Callable, Generator, Iterator, List, Optional, Tuple, Union
 
 import numpy as np
 import scipy as sp
 from scipy._lib._util import check_random_state  # To handle random_state
-from scipy.sparse.linalg import LinearOperator, eigsh, gmres, minres, svds
+from scipy.sparse.linalg import LinearOperator, eigsh, gmres, minres
 
 from pyrtid.inverse.regularization import (
     ConstantDriftMatrix,
+    CovarianceMatrix,
     DriftMatrix,
     EigenFactorizedCovarianceMatrix,
+    eigen_factorize_cov_mat,
 )
-from pyrtid.utils import NDArrayFloat, StrEnum
+from pyrtid.utils import NDArrayBool, NDArrayFloat
 
 VERY_LARGE_NUMBER = 1.0e20
 
 
-class PostCovEstimation(StrEnum):
-    DIAGONAL = "diagonal"
-    DIRECT = "direct"
+def ensemble_dot(X1: NDArrayFloat, X2: NDArrayFloat) -> NDArrayFloat:
+    r"""
+    Return the dot products for multiple vectors.
+
+    Parameters
+    ----------
+    X1 : NDArrayFloat
+        First ensemble of vectors with shape $(N_{\mathrm{s}}, N_{\mathm{e}})$.
+    X2 : NDArrayFloat
+        First ensemble of vectors with shape $(N_{\mathrm{s}}, N_{\mathm{e}})$.
+
+    Returns
+    -------
+    NDArrayFloat
+        $N_{\mathrm{e}}$ dot products as a 1D vector.
+    """
+    # same as np.sum(X1 * X2, axis=0,keepdims=False) but faster
+    return np.einsum("ij,ij->j", X1, X2)
 
 
 class Residual:
@@ -60,21 +81,14 @@ class InternalState:
     simul_obs_best: NDArrayFloat = field(
         default_factory=lambda: np.array([], dtype=np.float64)
     )
-    iter_best: int = 0
     simul_obs_init: NDArrayFloat = field(
         default_factory=lambda: np.array([], dtype=np.float64)
     )
-    objvals: List[float] = field(default_factory=lambda: [])
-    Q2_all: NDArrayFloat = field(default_factory=lambda: np.array([], dtype=np.float64))
-    cR_all: NDArrayFloat = field(default_factory=lambda: np.array([], dtype=np.float64))
-
-    Q2_best: NDArrayFloat = field(
-        default_factory=lambda: np.array([], dtype=np.float64)
-    )
-    cR_best: NDArrayFloat = field(
-        default_factory=lambda: np.array([], dtype=np.float64)
-    )
-    i_best: int = 0
+    obj_seq: List[float] = field(default_factory=lambda: [])
+    inflation_seq: List[float] = field(default_factory=lambda: [])
+    Q2_seq: List[float] = field(default_factory=lambda: [])
+    cR_seq: List[float] = field(default_factory=lambda: [])
+    iter_best: int = 0
     status: str = "ILDE."
     is_success: bool = False
 
@@ -85,18 +99,180 @@ class InternalState:
 
         The first objective function is ignored because beta is minimized.
         """
-        if len(self.objvals) == 0:
-            return np.inf
-        return float(np.min(self.objvals))
+        return self.obj_seq[self.iter_best]
 
-    # TODO: I am not sure about this (21/09/2024)
+    @property
+    def Q2_best(self) -> float:
+        return self.Q2_seq[self.iter_best - 1]
+
+    @property
+    def cR_best(self) -> float:
+        return self.cR_seq[self.iter_best - 1]
+
     @property
     def Q2_cur(self) -> float:
-        return self.Q2_all[:, -2:-1]
+        return self.Q2_seq[-1]
 
     @property
     def cR_cur(self) -> float:
-        return self.cR_all[:, -2:-1]
+        return self.cR_seq[-1]
+
+
+class CovObs(LinearOperator):
+    # TODO: create an interface so we can handle the covariance matrix in
+    # different ways.
+    def __init__(self, cov: NDArrayFloat, n_obs: int) -> None:
+        """Initialize the instance."""
+        error = ValueError(
+            f"cov_obs must be either a 1D matrix of {n_obs} elements, or "
+            f"a 2D matrix with dimensions ({n_obs}, {n_obs})."
+        )
+        if cov.size == 1:
+            # Case of a float
+            cov = np.ones((n_obs)) * cov
+        else:
+            # Case of 1D or 2D array with more than one value
+            if cov.ndim > 2:
+                raise error
+            if cov.shape[0] != n_obs:  # type: ignore
+                raise error
+            if cov.ndim == 2:
+                if cov.shape[0] != cov.shape[1]:  # type: ignore
+                    raise error
+        # From iterative_ensemble_smoother code
+        # Only compute the covariance factorization once
+        # If it's a full matrix, we gain speedup by only computing cholesky once
+        # Note that we store the upper triangle.
+        # If it's a diagonal, we gain speedup by never having to compute cholesky
+        if cov.ndim == 2:
+            self.lcho_factor: NDArrayFloat = sp.linalg.cholesky(cov, lower=True)
+        else:
+            self.lcho_factor = np.sqrt(cov)  # type: ignore
+
+        super().__init__(shape=(n_obs, n_obs), dtype=np.float64)
+        self.mat: NDArrayFloat = cov
+
+    def _matvec(self, v: NDArrayFloat) -> NDArrayFloat:
+        """Return cov_obs @ v."""
+        if self.mat.ndim == 1:
+            return self.mat * v
+        return self.mat @ v
+
+    def _rmatvec(self, v: NDArrayFloat) -> NDArrayFloat:
+        """Return cov_obs @ v."""
+        return self._matvec(v)
+
+    def solve(self, v: NDArrayFloat) -> NDArrayFloat:
+        """Return cov_obs^{-1} @ v."""
+        if self.mat.ndim == 2:
+            # The false means we use the upper triangle which is store in
+            # self.cov_obs
+            return sp.linalg.cho_solve((self.lcho_factor, True), v)
+        # Case 1D, the inverse of cov_obs (R matrix) is a diagonal matrix
+        return sp.sparse.diags_array(1.0 / (self.lcho_factor**2)) @ v
+
+    def factor_solve(self, v: NDArrayFloat) -> NDArrayFloat:
+        """Return L^{-1} @ v for cov_obs = LL^{T}."""
+        # TODO: we can try other representation for large scale cov_obs (e.g.,)
+        # eigen decomposition
+        if self.mat.ndim == 2:
+            return sp.linalg.solve_triangular(self.lcho_factor, v, lower=True)
+        # diagonal case
+        return sp.sparse.diags_array(1.0 / self.lcho_factor) @ v
+
+    def rfactor_solve(self, v: NDArrayFloat) -> NDArrayFloat:
+        """Return L^{-1} @ v for cov_obs = LL^{T}."""
+        # TODO: we can try other representation for large scale cov_obs (e.g.,)
+        # eigen decomposition
+        if self.mat.ndim == 2:
+            return sp.linalg.solve_triangular(self.lcho_factor.T, v, lower=False)
+        # diagonal case
+        return sp.sparse.diags_array(1.0 / self.lcho_factor) @ v
+
+    def add_inflated(self, mat: NDArrayFloat, inflation: float = 1.0) -> NDArrayFloat:
+        """Add the inflated covariance matrix to the given matrix."""
+        # Add the R matrix
+        if self.mat.ndim == 2:
+            return mat + inflation * self.mat
+        # Ri is diagonal
+        np.fill_diagonal(mat, mat.diagonal() + inflation * self.mat)
+        return mat
+
+
+class InvALinOp(LinearOperator):
+    def __init__(
+        self,
+        HX: NDArrayFloat,
+        mmt_eig_vects: NDArrayFloat,
+        mmt_eig_vals: NDArrayFloat,
+        cov_obs: CovObs,
+        n_obs: int,
+        beta_dim: int,
+    ) -> None:
+        """Initialize the instance."""
+        super().__init__(dtype=np.float64, shape=(n_obs + beta_dim, n_obs + beta_dim))
+        self.inflation: float = 1.0
+        self.n_obs: int = n_obs
+        self.beta_dim: int = beta_dim
+        self.HX: NDArrayFloat = HX
+        self.mmt_eig_vects: NDArrayFloat = mmt_eig_vects
+        self.mmt_eig_vals: NDArrayFloat = mmt_eig_vals
+        self.cov_obs = cov_obs
+
+    def update_inflation_factor(self, value: float) -> None:
+        """Update the inflation factor."""
+        self.inflation = value
+
+    def inv_psi(self, v: NDArrayFloat, inflation: float) -> NDArrayFloat:
+        Dvec = sp.sparse.diags_array(
+            np.divide(
+                (1.0 / inflation * self.mmt_eig_vals**2),
+                ((1.0 / inflation) * self.mmt_eig_vals**2 + 1.0),
+            )
+        )  # (n_pc,)
+
+        return (1.0 / inflation) * (
+            self.cov_obs.solve(v)
+            - self.cov_obs.factor_solve(
+                self.mmt_eig_vects
+                @ (Dvec @ (self.mmt_eig_vects.T @ self.cov_obs.rfactor_solve(v))),
+            )
+        )
+
+    def _matvec(self, v: NDArrayFloat) -> NDArrayFloat:
+        invPsiv = self.inv_psi(v[: self.n_obs], self.inflation)
+
+        S = -np.dot(self.HX.T, self.inv_psi(self.HX, self.inflation))  # p by p matrix
+        invS = np.linalg.inv(S)
+        G = self.inv_psi(self.HX, self.inflation)  # n_obs by p matrix
+
+        # invSHXTinvPsiv = invS @ np.dot(self.HX.T, invPsiv)
+        # invPsiHXinvSHXTinvPsiv = self.inv_psi(
+        #     np.dot(self.HX, invSHXTinvPsiv), self.inflation
+        # )
+        # invPsiHXinvSv1 = self.inv_psi(
+        #     np.dot(self.HX, invS @ v[self.n_obs :]), self.inflation
+        # )
+        # invSv1 = invS @ v[self.n_obs :]
+
+        # return np.concatenate(
+        #     (
+        #         (invPsiv - invPsiHXinvSHXTinvPsiv + invPsiHXinvSv1),
+        #         (invSHXTinvPsiv - invSv1),
+        #     ),
+        #     axis=0,
+        # )
+        return np.concatenate(
+            (
+                (
+                    invPsiv
+                    + G @ invS @ G.T @ v[: self.n_obs]
+                    - G @ invS @ v[self.n_obs :]
+                ),
+                (-invS @ G.T @ v[: self.n_obs] + invS @ v[self.n_obs :]),
+            ),
+            axis=0,
+        )
 
 
 class PCGA:
@@ -105,6 +281,8 @@ class PCGA:
 
     every values are represented as 2D np array
     """
+
+    # TODO: __slots__
 
     def __init__(
         self,
@@ -119,22 +297,21 @@ class PCGA:
         is_line_search: bool = False,
         is_lm: bool = False,
         is_direct_solve: bool = False,
-        is_use_preconditioner: bool = False,
+        is_use_preconditioner: bool = True,
         random_state: Optional[
             Union[int, np.random.Generator, np.random.RandomState]
         ] = np.random.default_rng(),
-        post_cov_estimation: Optional[PostCovEstimation] = None,
         is_objfun_exact: bool = False,  # former objeval
         max_it_lm: int = multiprocessing.cpu_count(),
         alphamax_lm: float = 10.0**3.0,  # does it sound ok?
         lm_smin: Optional[float] = None,
         lm_smax: Optional[float] = None,
         max_it_ls: int = 20,
+        max_workers_lm: int = multiprocessing.cpu_count(),
         maxiter: int = 10,
         ftol: float = 1e-5,
         ftarget: Optional[float] = None,
         restol: float = 1e-2,
-        is_post_cov: bool = False,
         logger: Optional[logging.Logger] = None,
         is_save_jac: bool = False,
         # PCGA parameters (perturbation size)
@@ -160,7 +337,7 @@ class PCGA:
             measurements.
         forward_model : Callable
             Wrapper for forward model obs = f(s). See a template python file in each
-            example for more information.
+            example for more information. Return shape (n_obs, ne)
         Q : EigenFactorizedCovarianceMatrix
             _description_
         drift : Optional[DriftMatrix], optional
@@ -176,7 +353,7 @@ class PCGA:
         is_direct_solve : bool, optional
             _description_, by default False
         is_use_preconditioner : bool, optional
-            _description_, by default False
+            _description_, by default False -> This is highly recommended.
         random_state : Optional[ Union[int, np.random.Generator, np.random.RandomState]]
             Pseudorandom number generator state used to generate resamples.
             If `random_state` is ``None`` (or `np.random`), the
@@ -185,8 +362,6 @@ class PCGA:
             seeded with `random_state`.
             If `random_state` is already a ``Generator`` or ``RandomState``
             instance then that instance is used.
-        post_cov_estimation : Optional[PostCovEstimation], optional
-            _description_, by default None
         is_objfun_exact : bool, optional
             _description_, by default False
         alphamax_lm : float, optional
@@ -220,8 +395,6 @@ class PCGA:
                 \mathbf{s}_{\ell} \right\rVert^{2}}{\left\lVert
                 \mathbf{s}_{\ell} \right\rVert^{2}}
             by default 1e-2.
-        is_post_cov : bool, optional
-            _description_, by default False
         logger: Optional[Logger], optional
             Logger, by default None.
         is_save_jac : bool, optional
@@ -233,7 +406,7 @@ class PCGA:
         # Make sure the array has a second dimension of length 1.
         self.s_init = np.array(s_init).reshape(-1, 1)
         # Observations
-        self.obs = np.array(obs).reshape(-1, 1)
+        self.obs = np.array(obs).ravel()  # 1D vector
         self.cov_obs = np.asarray(cov_obs)
         # forward solver setting should be done externally as a blackbox
         # including the parallelization
@@ -243,6 +416,22 @@ class PCGA:
         self.is_line_search: bool = is_line_search
         self.is_lm: bool = is_lm
         self.is_direct_solve: bool = is_direct_solve
+
+        # Add a warning depending on the number of observations
+        if self.is_direct_solve and self.n_obs > 100:
+            mat_shape = self.n_obs + self.drift.beta_dim
+            warnings.warn(
+                "You have chosen to solve the saddle point system (Ax = b) with the "
+                "direct approach (Cholesky factorization of A) while A will be of shape"
+                f" ({mat_shape}, {mat_shape}).\n"
+                f"This is because n_obs = {self.n_obs} and "
+                f"n_beta = {self.drift.beta_dim}\n"
+                "This is practical up to A of shape (100, 100). "
+                "If you are way above this dimension"
+                " consider using iterative Krylov subspace approahces by setting "
+                "is_direct_solve to False!"
+            )
+
         self.is_use_preconditioner: bool = is_use_preconditioner
         self.is_objfun_exact: bool = is_objfun_exact
         self.max_it_lm = max_it_lm
@@ -254,19 +443,15 @@ class PCGA:
         self.ftol: float = ftol
         self.restol: float = restol
         self.ftarget: Optional[float] = ftarget
-        self.is_post_cov: bool = is_post_cov
-        self.post_cov_estimation: Optional[PostCovEstimation] = post_cov_estimation
-        # Switch to direct if direct solve:
-        # Otherwise the preconditioner is not build while it is required
-        # for the diagonal post covariance estimation
-        if self.post_cov_estimation is not None and self.is_direct_solve:
-            self.post_cov_estimation = PostCovEstimation.DIRECT
 
         # PCGA parameters (purturbation size)
         self.eps: float = eps
 
-        # TODO: parametrize
-        self.nopts_lm = 4
+        # TODO: make configurable + explain that this is not intesreting for small
+        # size problem because the time to start the processes is higher than the
+        # calculation time
+        # this is interesting when the number of observations is large.
+        self.max_workers = max_workers_lm if is_lm else 1
 
         # keep track of the internal state
         self.istate = InternalState(s_best=s_init)
@@ -290,27 +475,33 @@ class PCGA:
 
         # Internal state
         self.is_save_jac = is_save_jac
-        if self.post_cov_estimation is not None:
-            self.is_save_jac = True
 
         # Need the preconditionner if PostCovEstimation Diagonal
-        self.is_use_preconditioner = (
-            is_use_preconditioner
-            or self.post_cov_estimation == PostCovEstimation.DIAGONAL
-        )
-
+        self.is_use_preconditioner = is_use_preconditioner
+        self.cov_obs_inflation_factors = self.get_cov_obs_inflation_factors()
         self.logger: Optional[logging.Logger] = logger
 
         # TODO: see if we move these internal states
-        self.HX = None
-        self.HZ = None
-        self.Hs = None
+        self.HX: NDArrayFloat = np.array([])
+        self.HZ: NDArrayFloat = np.array([])
+        self.Hs: NDArrayFloat = np.array([])
         self.P = None
         self.Psi_U = None
         self.Psi_sigma = None
 
         ##### Optimization
         self.display_init_parameters()
+
+    @property
+    def n_internal_loops(self) -> int:
+        """
+        Return the number of internal optimization loops.
+
+        This is only relevant when using Levenberg Marquard, otherwise, returns 1.
+        """
+        if self.is_lm:
+            return self.max_it_lm
+        return 1
 
     def loginfo(self, msg: str) -> None:
         if self.logger is not None:
@@ -332,12 +523,11 @@ class PCGA:
                 np.round(self.ftarget, 3) if self.ftarget is not None else None
             ),
             "Levenberg-Marquardt (is_lm)": self.is_lm,
-            "Posterior covariance computation": self.post_cov_estimation,
         }
         if self.is_lm:
             _dict["Minimum LM solution (lm_smin)"] = self.lm_smin
             _dict["Maximum LM solution (lm_smax)"] = self.lm_smax
-            _dict["Maximum LM iterations (lm_smax)"] = self.max_it_lm
+            _dict["Maximum LM iterations (max_it_lm)"] = self.max_it_lm
 
         _dict["Line search"] = self.is_line_search
 
@@ -358,12 +548,17 @@ class PCGA:
         return self.s_init.size  # type: ignore
 
     @property
-    def d_dim(self) -> int:
-        """Return the number of forecast data."""
+    def n_obs(self) -> int:
+        """Return the number of observations/forecast data."""
         return self.obs.size
 
     @property
-    def cov_obs(self) -> NDArrayFloat:
+    def d_dim(self) -> int:
+        """Return the number of forecast data. Alias for n_obs"""
+        return self.n_obs
+
+    @property
+    def cov_obs(self) -> CovObs:
         """Get the observation errors covariance matrix."""
         return self._cov_obs
 
@@ -374,44 +569,7 @@ class PCGA:
 
         It must be a 2D array, or a 1D array if the covariance matrix is diagonal.
         """
-        error = ValueError(
-            "cov_obs must be either a 1D matrix of {self.s_dim} elements, or "
-            f"a 2D matrix with dimensions ({self.d_dim}, {self.d_dim})."
-        )
-
-        if cov.size == 1:
-            # Case of a float
-            cov = np.ones((self.d_dim)) * cov
-        else:
-            # Case of 1D or 2D array with more than one value
-            if cov.ndim > 2:
-                raise error
-            if cov.shape[0] != self.obs.size:  # type: ignore
-                raise error
-            if cov.ndim == 2:
-                if cov.shape[0] != cov.shape[1]:  # type: ignore
-                    raise error
-        # From iterative_ensemble_smoother code
-        # Only compute the covariance factorization once
-        # If it's a full matrix, we gain speedup by only computing cholesky once
-        # Note that we store the upper triangle.
-        # If it's a diagonal, we gain speedup by never having to compute cholesky
-        if cov.ndim == 2:
-            self.cov_obs_cholesky: NDArrayFloat = sp.linalg.cholesky(cov, lower=False)
-        else:
-            self.cov_obs_cholesky = np.sqrt(cov)  # type: ignore
-
-        # For now only 1D arrays are supported
-        self._cov_obs: NDArrayFloat = cov
-
-    def cov_obs_solve(self, v: NDArrayFloat) -> NDArrayFloat:
-        """Return cov_obs^{-1} @ v."""
-        if self.cov_obs.ndim == 2:
-            # The false means we use the upper triangle which is store in
-            # self.cov_obs
-            return sp.linalg.cho_solve((self.cov_obs_solve, False), v)
-        # Case 1D, the inverse of cov_obs (R matrix) is a diagonal matrix
-        return (1.0 / self.cov_obs) * v
+        self._cov_obs = CovObs(cov, self.d_dim)
 
     @property
     def prior_s_var(self) -> NDArrayFloat:
@@ -437,6 +595,22 @@ class PCGA:
             return self.random_state.uniform(size=(size,))
         else:
             return None
+
+    def get_cov_obs_inflation_factors(self) -> NDArrayFloat:
+        """
+        Inflation factors used in each internal loop.
+
+        It is a sequence only if Levenberg Marqard is on. that depends on both the
+        max number of Levenberg
+
+        Returns
+        -------
+        NDArrayFloat
+            _description_
+        """
+        if self.is_lm:
+            return 10 ** (np.linspace(0.0, np.log10(self.alphamax_lm), self.max_it_lm))
+        return np.array([1.0])
 
     def jac_vect(self, x, s, simul_obs, eps, delta=None):
         """
@@ -479,7 +653,9 @@ class PCGA:
 
                     deltas[i] = sqrt(eps)
 
-                    self.loginfo("%d-th delta: assigned as sqrt(eps) - %g", deltas[i])
+                    self.loginfo(
+                        f"{i}-th delta: assigned as sqrt(eps) - {deltas[i]:.2e}",
+                    )
                     # raise ValueError('delta is zero? - plz check your
                     # s_init is within a reasonable range')
 
@@ -514,21 +690,38 @@ class PCGA:
 
         return Jxs
 
-    def objective_function_ls(self, simul_obs) -> float:
-        """0.5(y-h(s))^TR^{-1}(y-h(s))"""
-        ymhs = (self.obs - simul_obs).ravel()
-        return 0.5 * ymhs.T.dot(self.cov_obs_solve(ymhs)).item()
+    def objective_function_ls(self, simul_obs) -> NDArrayFloat:
+        """
+
+        simul_obs with shape (n_obs, ne)
+
+        0.5(y-h(s))^TR^{-1}(y-h(s))
+
+        TODO: as vectors.
+
+        return size = Ne
+        """
+        ymhs = simul_obs.T - self.obs
+        return 0.5 * ensemble_dot(ymhs.T, self.cov_obs.solve(ymhs.T))
 
     def objective_function_reg(
         self, s_cur: NDArrayFloat, beta_cur: NDArrayFloat
-    ) -> float:
-        """0.5(s-Xb)^TC^{-1}(s-Xb)"""
-        smxb = (s_cur - np.dot(self.drift.mat, beta_cur)).ravel()
-        return float(0.5 * smxb.T.dot(self.Q.solve(smxb)).item())
+    ) -> NDArrayFloat:
+        """
+        s_cur with shape (N_s, Ne)
+        beta_cur with shape (N_b, Ne)
+        0.5(s-Xb)^TC^{-1}(s-Xb)
 
-    def objective_function(self, s_cur, beta_cur, simul_obs) -> float:
+        return size = Ne
+        """
+        smxb = s_cur - np.dot(self.drift.mat, beta_cur)
+        return 0.5 * ensemble_dot(smxb, self.Q.solve(smxb))
+
+    def objective_function(self, s_cur, beta_cur, simul_obs) -> NDArrayFloat:
         """
         0.5(y-h(s))^TR^{-1}(y-h(s)) + 0.5*(s-Xb)^TQ^{-1}(s-Xb)
+
+        Return size = Ne
         """
         return self.objective_function_ls(simul_obs) + self.objective_function_reg(
             s_cur, beta_cur
@@ -539,6 +732,7 @@ class PCGA:
         marginalized objective w.r.t. beta
         0.5(y-h(s))^TR^{-1}(y-h(s)) + 0.5*(s-Xb)^TQ^{-1}(s-Xb)
 
+        Return size = Ne
         Note: this is an alternative way, more expensive.
         """
         X = self.drift.mat
@@ -548,7 +742,7 @@ class PCGA:
             smxb = (s_cur - np.dot(X, np.atleast_2d(beta))).ravel()
             return float(0.5 * smxb.T.dot(self.Q.solve(smxb)).item())
 
-        # We solve with a newton to find the optimal alpha
+        # We solve with a newton to find the optimal beta
         def jac_wrt_beta(beta: NDArrayFloat) -> NDArrayFloat:
             """-X^TC^{-1}(s-Xb)"""
             smxb = (s_cur - np.dot(X, np.atleast_2d(beta))).ravel()
@@ -574,9 +768,10 @@ class PCGA:
         """
         marginalized objective w.r.t. beta
         0.5(y-h(s))^TR^{-1}(y-h(s)) + 0.5*(s-Xb)^TQ^{-1}(s-Xb)
+
+        return size = Ne
         """
         X = self.drift.mat
-        self.drift.beta_dim
 
         invZs = np.multiply(
             1.0 / np.sqrt(self.Q.eig_vals), np.dot(self.Q.eig_vects.T, s_cur)
@@ -593,14 +788,19 @@ class PCGA:
             (
                 self.objective_function_ls(simul_obs)
                 + 0.5 * (np.dot(invZs.T, invZs) - np.dot(XTinvQs.T, tmp))
-            ).item()
+            )
         )
 
-    def rmse(self, residuals: NDArrayFloat, is_normalized: bool) -> float:
-        """Return the root mean square error."""
+    def rmse(self, residuals: NDArrayFloat, is_normalized: bool) -> NDArrayFloat:
+        """Return the root mean square error.
+
+        residuals size = N_s x N_e
+
+        return size = Ne
+        """
         if is_normalized:
-            return np.sqrt(residuals.dot(self.cov_obs_solve(residuals)) / self.d_dim)
-        return np.linalg.norm(residuals) / np.sqrt(self.d_dim)
+            return np.sqrt(residuals.T.dot(self.cov_obs.solve(residuals)) / self.d_dim)
+        return np.linalg.norm(residuals, axis=0) / np.sqrt(self.d_dim)
 
     def jac_mat(self, s_cur, simul_obs, Z):
         m: int = self.s_dim
@@ -638,21 +838,30 @@ class PCGA:
             raise NotImplementedError
         return HX, HZ, Hs, U_data
 
-    def direct_solve(
+    def is_s_violate_lm_bounds(self, S: NDArrayFloat) -> NDArrayBool:
+        # check prescribed solution range for LM evaluations
+        out: NDArrayBool = np.zeros(self.n_internal_loops, dtype=bool)
+        if self.is_lm is False:
+            return out
+        if self.lm_smin is not None:
+            out = S.min(axis=0) <= self.lm_smin
+        if self.lm_smax is not None:
+            out = np.logical_or(out, S.max(axis=0) >= self.lm_smax)
+        return out
+
+    def linear_iteration(
         self,
         s_cur: NDArrayFloat,
         simul_obs: NDArrayFloat,
-    ):
+    ) -> Tuple[NDArrayFloat, NDArrayFloat, NDArrayFloat, float, float, float, float]:
         """
         Solve the geostatistical system using a direct solver.
         Not to be used unless the number of measurements are small O(100)
         """
-        self.loginfo("use direct solver for saddle-point (cokrigging) system")
         m = self.s_dim
         n = self.d_dim
         p = self.drift.beta_dim
-        n_pc = self.Q.n_pc
-        R = self.cov_obs
+        # n_pc = self.Q.n_pc
 
         Z = np.sqrt(self.Q.eig_vals).T * self.Q.eig_vects
         # Compute Jacobian-Matrix products
@@ -662,27 +871,223 @@ class PCGA:
         # Compute eig(P*HQHT*P) approximately by svd(P*HZ)
         start2 = time()
 
-        def mv(v):
-            # P*HZ*x = ((I-(U_data*U_data.T))*HZ)*x '''
-            tmp = np.dot(HZ, v)
-            y = tmp - np.dot(U_data, np.dot(U_data.T, tmp))
-            return y
-
-        def rmv(v):
-            return np.dot(HZ.T, v) - np.dot(HZ.T, np.dot(U_data, np.dot(U_data.T, v)))
-
-        # Matrix handle for sqrt of Generalized Data Covariance
-        sqrtGDCovfun = LinearOperator(
-            shape=(n, n_pc), matvec=mv, rmatvec=rmv, dtype="d"
+        self.loginfo(
+            f"computed Jacobian-Matrix products in : {(start2- start1):.3e} secs"
         )
-        if self.Q.n_pc <= n - p:
-            k = self.Q.n_pc - 1
-            _maxiter = n - p
+
+        b = np.zeros((n + p, 1), dtype="d")
+        # Ax = b, b = obs - h(s) + Hs
+        b[:n] = self.obs.reshape(-1, 1) - simul_obs + Hs[:]
+
+        # LM parameters
+        xi_all = np.zeros((n, self.n_internal_loops), dtype=np.float64)
+        beta_all = np.zeros((p, self.n_internal_loops), dtype=np.float64)
+        s_hat_all = np.zeros((m, self.n_internal_loops), dtype=np.float64)
+        Q2_all = np.zeros((self.n_internal_loops), dtype=np.float64)
+        cR_all = np.zeros((self.n_internal_loops), dtype=np.float64)
+
+        # approximate inverse of A used a preconditioner to solve Ax = b
+        # None by default -> updated later
+        invA_as_linop: Optional[InvALinOp] = None
+
+        # Call a different internal iteration routine to solve the linear system.
+        if self.is_direct_solve:
+            self.loginfo("Use direct solver for saddle-point (cokrigging) system")
+            # Construct HQ directly
+            HQ: NDArrayFloat = np.dot(HZ, Z.T)
+
+            def internal_iteration(
+                _inflation,
+            ) -> Tuple[NDArrayFloat, NDArrayFloat, NDArrayFloat]:
+                return self.internal_iteration_direct(HZ, HX, HQ, b, _inflation)
+
         else:
-            k = n - p
+            self.loginfo(
+                "Use Krylov subspace iterative solver "
+                "for saddle-point (cokrigging) system"
+            )
+            if self.is_use_preconditioner:
+                # update the preconditioner
+                invA_as_linop = self.get_invA_as_linop(HZ, HX)
+
+            def internal_iteration(
+                _inflation,
+            ) -> Tuple[NDArrayFloat, NDArrayFloat, NDArrayFloat]:
+                return self.internal_iteration_krylov_subspace(
+                    HZ, HX, Z, b, invA_as_linop, _inflation
+                )
+
+        # if LM_smax, LM_smin defined and solution violates them, LM_eval[i] "
+        # "becomes True
+
+        # Single worker (no multi-processing)
+        if self.max_workers == 1 or self.n_internal_loops == 1:
+            for lm_it, inflation in enumerate(self.cov_obs_inflation_factors):
+                (
+                    xi_all[:, lm_it, None],
+                    s_hat_all[:, lm_it, None],
+                    beta_all[:, lm_it, None],
+                ) = internal_iteration(inflation)
+        # Multi-processing enabled -> only relevant if LM is ON.
+        else:
+            # Function that returns a generator so we can repeat the parameters
+            # used by
+            def get_internal_loop_params(p: Any) -> Callable:
+                def _f() -> Generator[Any, None, None]:
+                    while True:
+                        yield (p)
+
+                return _f
+
+            # perform the calculations in parallel with multiprocessing
+            with ProcessPoolExecutor(max_workers=self.max_workers) as executor:
+                if self.is_direct_solve:
+                    results: Iterator[
+                        Tuple[NDArrayFloat, NDArrayFloat, NDArrayFloat]
+                    ] = executor.map(
+                        self.internal_iteration_direct,
+                        get_internal_loop_params(HZ)(),
+                        get_internal_loop_params(HX)(),
+                        get_internal_loop_params(HQ)(),
+                        get_internal_loop_params(b)(),
+                        self.cov_obs_inflation_factors,
+                    )
+                else:
+                    results = executor.map(
+                        self.internal_iteration_krylov_subspace,
+                        get_internal_loop_params(HZ)(),
+                        get_internal_loop_params(HX)(),
+                        get_internal_loop_params(Z)(),
+                        get_internal_loop_params(b)(),
+                        get_internal_loop_params(invA_as_linop)(),
+                        self.cov_obs_inflation_factors,
+                    )
+
+            # unpack the results
+            for lm_it, res in enumerate(results):
+                (
+                    xi_all[:, lm_it, None],
+                    s_hat_all[:, lm_it, None],
+                    beta_all[:, lm_it, None],
+                ) = res
+
+        # 6.67 in kitanidisIntroductionGeostatisticsApplications1997.
+        Q2_all[:] = np.dot(b[:n].T, xi_all) / (n - p)
+
+        # TODO: where is that written ?
+        # 6.68 in kitanidisIntroductionGeostatisticsApplications1997.
+        # instead of the square kriging error, 8%, its average value, o^. Because we
+        # have imposed requirement (6.67), 0% is a good measure of <$f and is also
+        # less affected by randomness. Thus, we may introduce the requirement
+        # cR_all[:, :] = Q2_all * np.exp(np.log(tmp_cR).sum(axis=1) / (n - p))
+
+        # if lm is off, this will always be True
+        is_valid_s_hat = np.invert(self.is_s_violate_lm_bounds(s_hat_all))
+
+        # TODO: what if no valid s_hat ??? -> consider the best obj-fun
+        # or maybe change the valid and use clip instead ???
+
+        # keep only valid s vectors and associated inflation factors
+        # note that this has no effects if LM is off
+        beta_hat_all = beta_all[:, is_valid_s_hat]
+        s_hat_all = s_hat_all[:, is_valid_s_hat]
+        valid_inflations = self.cov_obs_inflation_factors[is_valid_s_hat]
+
+        # evaluate solutions
+        if self.is_lm:
+            self.loginfo(
+                f"Evaluate the {np.count_nonzero(is_valid_s_hat)} LM solutions"
+            )
+        else:
+            self.loginfo("Evaluate the best solution (no LM)")
+
+        # Get the predictions. If LM is off, it is a single vector, otherwise it is
+        # and ensemble with as many vectors as there are valid inflation factors
+        # i.e., respecting the imposed bounds.
+        simul_obs_all = self.forward_model(s_hat_all)
+
+        if np.shape(simul_obs_all) != (self.obs.size, self.n_internal_loops):
+            raise ValueError("np.size(simul_obs_all,1) != n_internal_loops")
+
+        self.loginfo("%d objective value evaluations" % self.n_internal_loops)
+
+        # objective function for all vectors
+        objs: NDArrayFloat = self.objective_function(
+            s_hat_all,
+            beta_hat_all,
+            simul_obs_all,
+        )
+
+        # get the index of the smallest objective function among the potential solutions
+        best_obj_idx: int = np.argmin(objs).item()
+
+        self.loginfo(
+            f"solution obj={objs[best_obj_idx]:.2e} "
+            f"(cov_obs inflation factor={valid_inflations[best_obj_idx]:.2e})"
+        )
+
+        # return the best solution
+        return (
+            s_hat_all[:, best_obj_idx].reshape(-1, 1),  # (n x 1)
+            beta_hat_all[:, best_obj_idx].reshape(-1, 1),  # (p x 1)
+            simul_obs_all[:, best_obj_idx].reshape(-1, 1),  # (N_obs x 1)
+            valid_inflations[best_obj_idx],
+            objs[best_obj_idx],
+            Q2_all[best_obj_idx],
+            cR_all[best_obj_idx],
+        )
+
+    def get_sigma_cR_direct(
+        self,
+        HZ: NDArrayFloat,
+        U_data: NDArrayFloat,
+        n_obs: int,
+        n_pc: int,
+        p: int,
+        inflation: float,
+    ) -> NDArrayFloat:
+        # Matrix handle for sqrt of Generalized Data Covariance
+
+        # TODO: make this work for large matrices
+        # Compute eig(P*(HQHT+R)*P) approximately by svd(P*HZ)**2 + R if
+        # R is single number
+
+        class SqrtGDCovFun(LinearOperator):
+            def __init__(self) -> None:
+                """Initialize the instance."""
+                super().__init__(shape=(n_obs, n_pc), dtype=np.float64)
+
+            def _matvec(self, v: NDArrayFloat) -> NDArrayFloat:
+                # P*HZ*x = ((I-(U_data*U_data.T))*HZ)*x '''
+                tmp = np.dot(HZ, v)
+                return tmp - np.dot(U_data, np.dot(U_data.T, tmp))
+
+            def _rmatvec(self, v: NDArrayFloat) -> NDArrayFloat:
+                return np.dot(HZ.T, v) - np.dot(
+                    HZ.T, np.dot(U_data, np.dot(U_data.T, v))
+                )
+
+        # Compute eig(P*(HQHT+R)*P) approximately by svd(P*(HZ*HZ' + R)*P)
+        # need to do for each alpha[i]*R
+
+        if self.Q.n_pc <= n_obs - p:
+            k = self.Q.n_pc - 1
+            _maxiter = n_obs - p
+        else:
+            k = n_obs - p
             _maxiter = self.Q.n_pc
-        sigma_cR = svds(
-            sqrtGDCovfun,
+
+        # self.loginfo(
+        #     "eig. val. of generalized data covariance : "
+        #     "%f secs (%8.2e, %8.2e, %8.2e)"
+        #     % (time() - start2, sigma_cR[0], sigma_cR.min(), sigma_cR.max())
+        # )
+        # # of generalized data covariance : %f secs (%8.2e, %8.2e, %8.2e)"
+        # # % (start2 - start1, time()-start2,sigma_cR[0],sigma_cR.min(),
+        # # sigma_cR.max()))
+
+        return sp.sparse.linalg.svds(
+            SqrtGDCovFun(),
             k=k,
             which="LM",
             maxiter=_maxiter,
@@ -690,764 +1095,337 @@ class PCGA:
             random_state=self.random_state,
         )
 
-        self.loginfo(
-            f"computed Jacobian-Matrix products in : {(start2- start1):.3e} secs"
-        )
+    # def get_tmp_cR(
+    #     self, inflation, sigma_cR: NDArrayFloat
+    # ) -> NDArrayFloat:
+    #     n = self.d_dim
+    #     p = self.drift.beta_dim
+    #     R = self.cov_obs
 
-        # Construct HQ directly
-        HQ = np.dot(HZ, Z.T)
+    #     tmp_cR = np.zeros((n - p, 1), np.float64)
 
-        if self.is_lm:
-            self.loginfo(
-                "Solve geostatistical inversion problem (co-kriging, "
-                "saddle point systems) with Levenberg-Marquardt"
-            )
-            nopts = self.nopts_lm
-            alpha = 10 ** (np.linspace(0.0, np.log10(self.alphamax_lm), nopts))
+    #     if R.size == 1:  # single observation variance
+    #         # self.loginfo(f"alpha[{i}] = {alpha[i]}")
+    #         tmp_cR[:] = inflation * R  # scalar placed in all meshes
+    #         tmp_cR[: sigma_cR.shape[0]] = (
+    #             tmp_cR[: sigma_cR.shape[0]] + (sigma_cR[:, np.newaxis]) ** 2
+    #         )
+    #     elif R.ndim == 1:  # diagonal covariance matrix
+    #         tmp_cR = np.multiply(inflation, R[:-p])
 
-        else:
-            self.loginfo(
-                "Solve geostatistical inversion problem (co-kriging, "
-                "saddle point systems)"
-            )
-            nopts = 1
-            alpha = np.array([1.0])
+    #         # self.loginfo(f"tmp_cR.shape = {tmp_cR.shape}")
+    #         # self.loginfo(f"tmp_cR.shape = {tmp_cR.shape}")
 
-        beta_all = np.zeros((p, nopts), "d")
-        s_hat_all = np.zeros((m, nopts), "d")
-        Q2_all = np.zeros((1, nopts), "d")
-        cR_all = np.zeros((1, nopts), "d")
-        LM_eval = np.zeros(nopts, dtype=bool)
+    #         uniqueR = np.unique(R)
+    #         lenR = len(uniqueR)
+    #         lenRi = int((n - sigma_cR.shape[0]) / lenR)
+    #         strtidx = sigma_cR.shape[0]
+    #         strtidx = +0  # to remove, Antoine 22/09/2024
+    #         # self.loginfo(f"lenRi = {lenRi}")
 
-        # if LM_smax, LM_smin defined and solution violates them, LM_eval[i] "
-        # "becomes True
+    #         # # this loop works only if self.is_lm == True, otherwise, alpha is a
+    #         # scalar, there is an issue somewhere.
+    #         for iR in range(lenR):
+    #             tmp_cR[strtidx : strtidx + lenRi] = (
+    #                 alpha[min(iR, alpha.size - 1)] * uniqueR[iR]
+    #             )
+    #             strtidx = strtidx + lenRi
+    #         tmp_cR[strtidx:] = alpha[min(iR, alpha.size - 1)] * uniqueR[iR]
+    #     else:  # symmetrical square covariance matrix
+    #         pass
 
-        for i in range(nopts):  # sequential evaluation for now
-            # Construct Psi directly
-            # 1) HQH^{t}
-            Psi: NDArrayFloat = np.dot(HZ, HZ.T)
-            # 2) HQH^{t} + R
-            Ri = alpha[i] * R
-            if Ri.ndim == 1:
-                # Ri is diagonal
-                np.fill_diagonal(Psi, Psi.diagonal() + Ri)
-            else:
-                # If Ri is 2D
-                Psi += Ri
+    #     tmp_cR[tmp_cR <= 0] = 1.0e-16  # temporary fix for zero tmp_cR
 
-            b = np.zeros((n + p, 1), dtype="d")
-            # Ax = b, b = obs - h(s) + Hs
-            b[:n] = self.obs[:] - simul_obs + Hs[:]
+    #     return tmp_cR
 
-            # use cholesky factorization to solve the system
-            # this is much more efficient than direct solve
-            LA = self.build_cholesky(Psi, HX)
-            x = self.solve_cholesky(LA, b, p)
+    # def get_tmp_cR_iterative(self) -> NDArrayFloat:
 
-            # Extract components and return final solution
-            # x dimension (n+p,1)
-            xi = x[0:n, :]
-            beta_all[:, i : i + 1] = x[n : n + p, :]
-            s_hat_all[:, i : i + 1] = np.dot(
-                self.drift.mat, beta_all[:, i : i + 1]
-            ) + np.dot(HQ.T, xi)
+    #     n = self.d_dim
+    #     p = self.drift.beta_dim
+    #     R = self.cov_obs
 
-            # check prescribed solution range for LM evaluations
-            if self.lm_smin is not None:
-                if s_hat_all[:, i : i + 1].min() <= self.lm_smin:
-                    LM_eval[i] = True
-            if self.lm_smax is not None:
-                if s_hat_all[:, i : i + 1].max() >= self.lm_smax:
-                    LM_eval[i] = True
+    #     # model validation, predictive diagnostics cR/Q2
+    #     if R.shape[0] == 1:
+    #         tmp_cR = np.zeros((n - p, 1), "d")
+    #         tmp_cR[:] = np.multiply(alpha[i], R)
+    #         tmp_cR[: sigma_cR.shape[0]] = (
+    #             tmp_cR[: sigma_cR.shape[0]] + (sigma_cR[:, np.newaxis]) ** 2
+    #         )
+    #     else:
+    #         # need to find efficient way to compute cR once
+    #         # approximation
+    #         def mv(v):
+    #             # P*(HZ*HZ.T + R)*P*x = P = (I-(U_data*U_data.T))
+    #             # debug_here()
+    #             Pv = v - np.dot(U_data, np.dot(U_data.T, v))  # P * v : n by 1
+    #             RPv = np.multiply(
+    #                 alpha[i], np.multiply(R.reshape(v.shape), Pv)
+    #             )  # alpha*R*P*v : n by 1
+    #             PRPv = RPv - np.dot(U_data, np.dot(U_data.T, RPv))  # P*R*P*v : n by 1
+    #             HQHTPv = np.dot(HZ, np.dot(HZ.T, Pv))  # HQHTPv : n by 1
+    #             PHQHTPv = HQHTPv - np.dot(
+    #                 U_data, np.dot(U_data.T, HQHTPv)
+    #             )  # P*HQHT*P*v
+    #             return PHQHTPv + PRPv
 
-            # TODO: fix this (21/09/2024)
-            Q2_all[:, i : i + 1] = np.dot(b[:n].T, xi) / (n - p)
-            tmp_cR = self.get_cR(i, alpha, sigma_cR)
-            cR_all[:, i : i + 1] = Q2_all[:, i : i + 1] * np.exp(
-                np.log(tmp_cR).sum() / (n - p)
-            )
+    #         def rmv(v):
+    #             return mv(v)  # symmetric matrix
 
-        # evaluate solutions
-        if self.is_lm:
-            self.loginfo("evaluate LM solutions")
-            simul_obs_all = -10000.0 * np.ones((n, nopts), "d")
-            s_hat_all_tmp = s_hat_all[:, np.invert(LM_eval)]
-            simul_obs_all_tmp = self.forward_model(s_hat_all_tmp)
-            simul_obs_all[:, np.invert(LM_eval)] = simul_obs_all_tmp
-        else:
-            self.loginfo("evaluate the best solution")
-            simul_obs_all = self.forward_model(s_hat_all)
+    #         # Matrix handle for Generalized Data Covariance
+    #         sqrtGDCovfun = LinearOperator((n, n), matvec=mv, rmatvec=rmv, dtype="d")
 
-        if np.size(simul_obs_all, 1) != nopts:
-            raise ValueError("np.size(simul_obs_all,1) != nopts")
+    #         if n_pc < n - p:
+    #             k: int = n_pc
+    #             maxiter: int = n - p
+    #         elif n_pc == n - p:
+    #             k = n_pc - 1
+    #             maxiter = n - p
+    #         else:
+    #             k = n - p
+    #             maxiter = n_pc
 
-        obj_best = 1.0e20
-        self.loginfo("%d objective value evaluations" % nopts)
-        for i in range(nopts):
-            if LM_eval[i]:
-                obj = 1.0e20
-            else:
-                obj = self.objective_function(
-                    s_hat_all[:, i : i + 1],
-                    beta_all[:, i : i + 1],
-                    simul_obs_all[:, i : i + 1],
-                )
+    #         sigma_cR = svds(
+    #             sqrtGDCovfun,
+    #             k=k,
+    #             which="LM",
+    #             maxiter=maxiter,
+    #             return_singular_vectors=False,
+    #             random_state=self.random_state,
+    #         )
 
-            if obj < obj_best:
-                self.loginfo("%d-th solution obj %e (alpha %f)" % (i, obj, alpha[i]))
-                s_hat = s_hat_all[:, i : i + 1]
-                beta = beta_all[:, i : i + 1]
-                simul_obs_new = simul_obs_all[:, i : i + 1]
-                obj_best = obj
+    #         tmp_cR = np.zeros((n - p, 1), "d")
+    #         tmp_cR[:] = np.multiply(alpha[i], R[:-p]).reshape(
+    #             -1, 1
+    #         )  # TODO: remove the reshape
 
-        return s_hat, beta, simul_obs_new
+    #         tmp_cR[: sigma_cR.shape[0]] = sigma_cR[:, np.newaxis]
 
-    # TODO: fix this (21/09/2024)
-    def get_cR(
-        self, i: int, alpha: NDArrayFloat, sigma_cR: NDArrayFloat
-    ) -> NDArrayFloat:
-        n = self.d_dim
-        p = self.drift.beta_dim
-        R = self.cov_obs
+    #         uniqueR = np.unique(R)
+    #         lenR = len(uniqueR)
+    #         lenRi = int((n - sigma_cR.shape[0]) / lenR)
+    #         strtidx = sigma_cR.shape[0]
+    #         for iR in range(lenR):
+    #             tmp_cR[strtidx : strtidx + lenRi] = (
+    #                 alpha[min(iR, alpha.size - 1)] * uniqueR[iR]
+    #             )
+    #             strtidx = strtidx + lenRi
+    #         tmp_cR[strtidx:] = alpha[min(iR, alpha.size - 1)] * uniqueR[iR]
 
-        tmp_cR = np.zeros((n - p, 1), np.float64)
+    #     tmp_cR[tmp_cR <= 0] = 1.0e-16  # temporary fix for zero tmp_cR
 
-        if R.size == 1:  # single observation variance
-            # self.loginfo(f"alpha[{i}] = {alpha[i]}")
-            tmp_cR[:] = alpha[i] * R  # scalar placed in all meshes
-            tmp_cR[: sigma_cR.shape[0]] = (
-                tmp_cR[: sigma_cR.shape[0]] + (sigma_cR[:, np.newaxis]) ** 2
-            )
-        elif R.ndim == 1:  # diagonal covariance matrix
-            tmp_cR = np.multiply(alpha[i], R[:-p])
+    def internal_iteration_direct(
+        self,
+        HZ: NDArrayFloat,
+        HX: NDArrayFloat,
+        HQ: NDArrayFloat,
+        b: NDArrayFloat,
+        inflation: float,
+    ) -> Tuple[NDArrayFloat, NDArrayFloat, NDArrayFloat]:
+        # HQH^{t} + inflation * R
+        Psi = self.get_psi(HZ, self.cov_obs, inflation)
 
-            # self.loginfo(f"tmp_cR.shape = {tmp_cR.shape}")
-            # self.loginfo(f"tmp_cR.shape = {tmp_cR.shape}")
+        # use cholesky factorization to solve the system
+        # this is much more efficient than direct solve
+        LA = self.build_cholesky(Psi, HX)
+        x = self.solve_cholesky(LA, b, self.drift.beta_dim)
 
-            uniqueR = np.unique(R)
-            lenR = len(uniqueR)
-            lenRi = int((n - sigma_cR.shape[0]) / lenR)
-            strtidx = sigma_cR.shape[0]
-            strtidx = +0  # to remove, Antoine 22/09/2024
-            # self.loginfo(f"lenRi = {lenRi}")
+        # Extract components and return final solution
+        # x dimension (n+p,1)
+        xi, beta = x[: self.n_obs, :], x[self.n_obs :, :]
+        s_hat = (np.dot(self.drift.mat, beta) + np.dot(HQ.T, xi)).reshape(-1, 1)
 
-            # # this loop works only if self.is_lm == True, otherwise, alpha is a
-            # scalar, there is an issue somewhere.
-            for iR in range(lenR):
-                tmp_cR[strtidx : strtidx + lenRi] = (
-                    alpha[min(iR, alpha.size - 1)] * uniqueR[iR]
-                )
-                strtidx = strtidx + lenRi
-            tmp_cR[strtidx:] = alpha[min(iR, alpha.size - 1)] * uniqueR[iR]
-        else:  # symmetrical square covariance matrix
-            pass
+        # Return three column vectors
+        return xi, s_hat, beta
 
-        tmp_cR[tmp_cR <= 0] = 1.0e-16  # temporary fix for zero tmp_cR
+    def internal_iteration_krylov_subspace(  # iterative approaches
+        self,
+        HZ: NDArrayFloat,
+        HX: NDArrayFloat,
+        Z: NDArrayFloat,
+        b: NDArrayFloat,
+        invA_as_linop: Optional[InvALinOp],
+        inflation: float,
+    ) -> Tuple[NDArrayFloat, NDArrayFloat, NDArrayFloat]:
+        # get the linear operator for the matrix-vector products
+        Afun = self.get_A_as_linop(HX, HZ, inflation)
 
-        return tmp_cR
-
-    def iterative_solve(self, s_cur: NDArrayFloat, simul_obs: NDArrayFloat):
-        """
-        Iterative Solve
-        """
-        m = self.s_dim
-        n = self.d_dim
-        p = self.drift.beta_dim
-        n_pc = self.Q.n_pc
-        R = self.cov_obs
-
-        Z = np.sqrt(self.Q.eig_vals).T * self.Q.eig_vects
-
-        # Compute Jacobian-Matrix products
-        start1 = time()
-        HX, HZ, Hs, U_data = self.jac_mat(s_cur, simul_obs, Z)
-        # debug_here()
-
-        start2 = time()
-        self.loginfo("computed Jacobian-Matrix products in %f secs" % (start2 - start1))
-
-        # Compute Q2/cR for covariance model validation
-        if (
-            self.cov_obs.shape[0] == 1
-        ):  # Compute eig(P*(HQHT+R)*P) approximately by svd(P*HZ)**2 + R if
-            # R is single number
-
-            def mv(v):
-                # P*HZ*x = ((I-(U_data*U_data.T))*HZ)*x '''
-                tmp = np.dot(HZ, v)
-                y = tmp - np.dot(U_data, np.dot(U_data.T, tmp))
-                return y
-
-            def rmv(v):
-                return np.dot(HZ.T, v) - np.dot(
-                    HZ.T, np.dot(U_data, np.dot(U_data.T, v))
-                )
-
-            # Matrix handle for sqrt of Generalized Data Covariance
-            sqrtGDCovfun = LinearOperator(
-                shape=(n, n_pc), matvec=mv, rmatvec=rmv, dtype="d"
-            )
-
-            # sigma_cR = svds(sqrtGDCovfun, k= min(n-p-1,n_pc-1), which='LM',
-            # maxiter = n, return_singular_vectors=False)
-
-            if n_pc <= n - p:
-                k = n_pc - 1
-                max_iter = n
-            else:
-                k = n - p
-                max_iter = n_pc
-
-            sigma_cR = svds(
-                sqrtGDCovfun,
-                k=k,
-                which="LM",
-                maxiter=max_iter,
-                return_singular_vectors=False,
-                random_state=self.random_state,
-            )
-
-            self.loginfo(
-                "eig. val. of generalized data covariance : "
-                "%f secs (%8.2e, %8.2e, %8.2e)"
-                % (time() - start2, sigma_cR[0], sigma_cR.min(), sigma_cR.max())
-            )
-            # of generalized data covariance : %f secs (%8.2e, %8.2e, %8.2e)"
-            # % (start2 - start1, time()-start2,sigma_cR[0],sigma_cR.min(),
-            # sigma_cR.max()))
-        else:  # Compute eig(P*(HQHT+R)*P) approximately by svd(P*(HZ*HZ' + R)*P)
-            # need to do for each alpha[i]*R
-            pass
-
-        # preconditioner construction
-        # will add more description here
+        # Using a preconditioner
+        # TODO: parametrize
+        restart = 50
+        itertol = 1.0e-10
+        solver_maxiter = self.s_dim
         if self.is_use_preconditioner:
-            tStart_precond = time()
-
-            # GHEP : HQHT u = lamdba R u => u = R^{-1/2} y
-            # original implementation was sqrt of R^{-1/2} HZ n by n_pc
-            # svds cannot compute entire n_pc eigenvalues so do this for
-            # n by n matrix
-            # this leads to double the cost
-            # TODO: this is not working for 2D R matrix
-            def pmv(v):
-                return np.multiply(
-                    1 / np.sqrt(R),
-                    np.dot(HZ, (np.dot(HZ.T, np.multiply(1 / np.sqrt(R), v)))),
-                )
-                # TODO: why is it different ?
-                # return np.multiply(self.invsqrtR,np.dot(HZ,v))
-
-            def prmv(v):
-                return pmv(v)
-
-            # self.loginfo('preconditioner construction using Generalized
-            # Eigen-decomposition')
-            #    self.loginfo("n :%d & n_pc: %d" % (n,n_pc))
-
-            ## Matrix handle for sqrt of Data Covariance
-            ##sqrtDataCovfun = LinearOperator( (n,n_pc), matvec=pmv,
-            # rmatvec = prmv, dtype = 'd')
-            ##sqrtDataCovfun = LinearOperator((n, n), matvec=pmv,
-            # rmatvec=prmv, dtype='d')
-            ##[Psi_U,Psi_sigma,Psi_V] = svds(sqrtDataCovfun,
-            # k= min(n,n_pc), which='LM', maxiter = n, return_singular_vectors='u')
-
-            # Matrix handle for Data Covariance
-            DataCovfun = LinearOperator((n, n), matvec=pmv, rmatvec=prmv, dtype="d")
-
-            if n_pc < n:
-                [Psi_sigma, Psi_U] = eigsh(
-                    DataCovfun, k=n_pc, which="LM", maxiter=n, v0=self.get_v0(n)
-                )
-            elif n_pc == n:
-                [Psi_sigma, Psi_U] = eigsh(
-                    DataCovfun, k=n_pc - 1, which="LM", maxiter=n, v0=self.get_v0(n)
-                )
-            else:
-                [Psi_sigma, Psi_U] = eigsh(
-                    DataCovfun, k=n - 1, which="LM", maxiter=n_pc, v0=self.get_v0(n)
-                )
-
-            # self.loginfo("eig. val. of sqrt data covariance (%8.2e, %8.2e, %8.2e)"
-            # % (Psi_sigma[0], Psi_sigma.min(), Psi_sigma.max()))
-            # self.loginfo(Psi_sigma)
-
-            # TODO: change
-            Psi_U = np.multiply(1 / np.sqrt(R).reshape(-1, 1), Psi_U)
-            # if R.shape[0] == 1:
-            # Psi_sigma = Psi_sigma**2 # because we use svd(HZ)
-            # instead of svd(HQHT+R)
-            index_Psi_sigma = np.argsort(Psi_sigma)
-            index_Psi_sigma = index_Psi_sigma[::-1]
-            Psi_sigma = Psi_sigma[index_Psi_sigma]
-            Psi_U = Psi_U[:, index_Psi_sigma]
-            Psi_U = Psi_U[:, Psi_sigma > 0]
-            Psi_sigma = Psi_sigma[Psi_sigma > 0]
-
-            self.loginfo(
-                "time for data covarance construction : %f sec "
-                % (time() - tStart_precond)
-            )
-            self.loginfo(
-                "eig. val. of data covariance (%8.2e, %8.2e, %8.2e)"
-                % (Psi_sigma[0], Psi_sigma.min(), Psi_sigma.max())
-            )
-            if Psi_U.shape[1] != n_pc:
-                self.loginfo(
-                    "- rank of data covariance :%d for preconditioner construction"
-                    % (Psi_U.shape[1])
-                )
-
-            self.Psi_sigma = Psi_sigma
-            self.Psi_U = Psi_U
-
-        if self.is_lm:
-            self.loginfo(
-                "solve saddle point (co-kriging) systems with Levenberg-Marquardt"
-            )
-            nopts = self.nopts_lm
-            alpha = 10 ** (np.linspace(0.0, np.log10(self.alphamax_lm), nopts))
-        else:
-            self.loginfo("solve saddle point (co-kriging) system")
-            nopts = 1
-            alpha = np.array([1.0])
-
-        beta_all = np.zeros((p, nopts), "d")
-        s_hat_all = np.zeros((m, nopts), "d")
-        Q2_all = np.zeros((1, nopts), "d")
-        cR_all = np.zeros((1, nopts), "d")
-        LM_eval = np.zeros(nopts, dtype=bool)
-        # if LM_smax, LM_smin defined and solution violates them, LM_eval[i]
-        # becomes True
-        for i in range(nopts):  # this is sequential for now
-            # Create matrix context for cokriging matrix-vector multiplication
-            if R.shape[0] == 1:
-
-                def mv(v: NDArrayFloat) -> NDArrayFloat:
-                    return np.concatenate(
-                        (
-                            (
-                                np.dot(HZ, np.dot(HZ.T, v[0:n]))
-                                + np.multiply(np.multiply(alpha[i], R), v[0:n])
-                                + np.dot(HX, v[n : n + p])
-                            ),
-                            (np.dot(HX.T, v[0:n])),
-                        ),
-                        axis=0,
-                    )
-
-            else:
-
-                def mv(v: NDArrayFloat) -> NDArrayFloat:
-                    return np.concatenate(
-                        (
-                            (
-                                np.dot(HZ, np.dot(HZ.T, v[0:n]))
-                                + np.multiply(
-                                    np.multiply(alpha[i], R.reshape(v[0:n].shape)),
-                                    v[0:n],
-                                )
-                                + np.dot(HX, v[n : n + p])
-                            ),
-                            (np.dot(HX.T, v[0:n])),
-                        ),
-                        axis=0,
-                    )
-
-            # Matrix handle
-            Afun = LinearOperator(
-                shape=(n + p, n + p), matvec=mv, rmatvec=mv, dtype="d"
-            )
-
-            b = np.zeros((n + p, 1), dtype="d")
-            b[:n] = self.obs[:] - simul_obs + Hs[:]
-
+            if invA_as_linop is not None:
+                # update the inflation factor
+                invA_as_linop.update_inflation_factor(inflation)
             callback = Residual()
-
-            # Residual and maximum iterations
-            # TODO: parametrize
-            itertol = 1.0e-10
-            solver_maxiter = self.s_dim
-            # itertol = (
-            #     1.0e-10
-            #     if "iterative_tol" not in self.params
-            #     else self.params["iterative_tol"]
-            # )
-            # solver_maxiter = (
-            #     m
-            #     if "iterative_maxiter" not in self.params
-            #     else self.params["iterative_maxiter"]
-            # )
-
-            # construction preconditioner
-            if self.is_use_preconditioner:
-                #
-                # Lee et al. WRR 2016 Eq 16 - 21, Saibaba et al. NLAA 2015
-                # R_LM = alpha * R
-                # Psi_U_LM = 1./sqrt(alpha) * Psi_U
-                # Psi_sigma = Psi_sigma/alpha
-                #
-                # (R^-1 - UDvecU')*v
-
-                if R.shape[0] == 1:
-
-                    def invPsi(v):
-                        Dvec = np.divide(
-                            (1.0 / alpha[i] * Psi_sigma),
-                            ((1.0 / alpha[i]) * Psi_sigma + 1.0),
-                        )  # (n_pc,)
-                        Psi_U_i = np.multiply(
-                            (1.0 / sqrt(alpha[i])), Psi_U
-                        )  # (n, n_pc) (dim[1] can be n_pc-1, n)
-                        Psi_UTv = np.dot(
-                            Psi_U_i.T, v
-                        )  # n_pc by n * v (can be (n,) or (n,p)) = (n_pc,) or (n_pc,p)
-
-                        # TODO: remove these stupid reshapes
-                        alphainvRv = (1.0 / alpha[i]) * self.cov_obs_solve(v).reshape(
-                            -1, 1
-                        )
-
-                        if Psi_UTv.ndim == 1:
-                            PsiDPsiTv = np.dot(
-                                Psi_U_i,
-                                np.multiply(
-                                    Dvec[: Psi_U_i.shape[1]].reshape(Psi_UTv.shape),
-                                    Psi_UTv,
-                                ),
-                            )
-                        elif Psi_UTv.ndim == 2:  # for invPsi(HX)
-                            DMat = np.tile(
-                                Dvec[: Psi_U_i.shape[1]], (Psi_UTv.shape[1], 1)
-                            ).T  # n_pc by p
-                            PsiDPsiTv = np.dot(Psi_U_i, np.multiply(DMat, Psi_UTv))
-                        else:
-                            raise ValueError(
-                                "Psi_U times vector should have a dimension smaller "
-                                "than 2 - current dim = %d" % (Psi_UTv.ndim)
-                            )
-
-                        return alphainvRv - PsiDPsiTv
-
-                else:
-
-                    def invPsi(v):
-                        Dvec = np.divide(
-                            (1.0 / alpha[i] * Psi_sigma),
-                            ((1.0 / alpha[i]) * Psi_sigma + 1.0),
-                        )
-                        Psi_U_i = np.multiply((1.0 / sqrt(alpha[i])), Psi_U)
-                        Psi_UTv = np.dot(Psi_U_i.T, v)
-                        # TODO: remove these stupid reshape by using vectors
-                        # and matrices
-                        alphainvRv = (1.0 / alpha[i]) * self.cov_obs_solve(v)
-                        if Psi_UTv.ndim == 1:
-                            PsiDPsiTv = np.dot(
-                                Psi_U_i,
-                                np.multiply(
-                                    Dvec[: Psi_U_i.shape[1]].reshape(Psi_UTv.shape),
-                                    Psi_UTv,
-                                ),
-                            )
-                        elif Psi_UTv.ndim == 2:  # for invPsi(HX)
-                            alphainvRv = (
-                                (1.0 / alpha[i]) * self.cov_obs_solve(v.ravel())
-                            ).reshape(-1, 1)
-                            Dmat = np.tile(
-                                Dvec[: Psi_U_i.shape[1]], (Psi_UTv.shape[1], 1)
-                            ).T  # n_pc by p
-                            PsiDPsiTv = np.dot(Psi_U_i, np.multiply(Dmat, Psi_UTv))
-                        else:
-                            raise ValueError(
-                                "Psi_U times vector should have a dimension "
-                                "smaller than 2 - current dim = %d" % (Psi_UTv.ndim)
-                            )
-
-                        return alphainvRv - PsiDPsiTv
-
-                # Preconditioner construction Lee et al. WRR 2016 Eq (14)
-                # typo in Eq (14), (2,2) block matrix should be -S^-1 instead of -S
-                def Pmv(v):
-                    invPsiv = invPsi(v[0:n])
-                    S = np.dot(HX.T, invPsi(HX))  # p by p matrix
-                    invSHXTinvPsiv = np.linalg.solve(S, np.dot(HX.T, invPsiv))
-                    invPsiHXinvSHXTinvPsiv = invPsi(np.dot(HX, invSHXTinvPsiv))
-                    invPsiHXinvSv1 = invPsi(np.dot(HX, np.linalg.solve(S, v[n:])))
-                    invSv1 = np.linalg.solve(S, v[n:])
-                    return np.concatenate(
-                        (
-                            (invPsiv - invPsiHXinvSHXTinvPsiv + invPsiHXinvSv1),
-                            (invSHXTinvPsiv - invSv1),
-                        ),
-                        axis=0,
-                    )
-
-                P = LinearOperator(
-                    shape=(n + p, n + p), matvec=Pmv, rmatvec=Pmv, dtype="d"
+            x, info = gmres(
+                Afun,
+                b,
+                restart=restart,
+                maxiter=solver_maxiter,
+                callback=callback,
+                M=invA_as_linop,
+                atol=itertol,
+                rtol=itertol,
+                callback_type="legacy",
+            )
+            self.loginfo(
+                "-- Number of iterations for gmres %g" % (callback.itercount())
+            )
+            if info != 0:  # if not converged
+                callback = Residual()
+                x, info = minres(
+                    Afun,
+                    b,
+                    x0=x,
+                    rtol=itertol,
+                    maxiter=solver_maxiter,
+                    callback=callback,
+                    M=invA_as_linop,
                 )
-
-                # TODO: parametrize
-                restart = 50
+                self.loginfo(
+                    "-- Number of iterations for minres %g and info %d"
+                    % (callback.itercount(), info)
+                )
+        else:
+            # Without preconditioner
+            callback = Residual()
+            x, info = minres(
+                Afun, b, rtol=itertol, maxiter=solver_maxiter, callback=callback
+            )
+            self.loginfo(
+                "-- Number of iterations for minres %g" % (callback.itercount())
+            )
+            if info != 0:
+                callback = Residual()
                 x, info = gmres(
                     Afun,
                     b,
-                    restart=restart,
+                    x0=x,
+                    rtol=itertol,
                     maxiter=solver_maxiter,
                     callback=callback,
-                    M=P,
                     atol=itertol,
-                    rtol=itertol,
                     callback_type="legacy",
                 )
                 self.loginfo(
-                    "-- Number of iterations for gmres %g" % (callback.itercount())
-                )
-                if info != 0:  # if not converged
-                    callback = Residual()
-                    x, info = minres(
-                        Afun,
-                        b,
-                        x0=x,
-                        rtol=itertol,
-                        maxiter=solver_maxiter,
-                        callback=callback,
-                        M=P,
-                    )
-                    self.loginfo(
-                        "-- Number of iterations for minres %g and info %d"
-                        % (callback.itercount(), info)
-                    )
-            else:
-                x, info = minres(
-                    Afun, b, rtol=itertol, maxiter=solver_maxiter, callback=callback
-                )
-                self.loginfo(
-                    "-- Number of iterations for minres %g" % (callback.itercount())
+                    "-- Number of iterations for gmres: %g, info: %d, tol: %f"
+                    % (callback.itercount(), info, itertol)
                 )
 
-                if info != 0:
-                    x, info = gmres(
-                        Afun,
-                        b,
-                        x0=x,
-                        rtol=itertol,
-                        maxiter=solver_maxiter,
-                        callback=callback,
-                        atol=itertol,
-                        callback_type="legacy",
-                    )
-                    self.loginfo(
-                        "-- Number of iterations for gmres: %g, info: %d, tol: %f"
-                        % (callback.itercount(), info, itertol)
-                    )
+        # Extract components and return final solution
+        # x dimension (n+p,1)
+        xi, beta = x[: self.n_obs].reshape(-1, 1), x[self.n_obs :].reshape(-1, 1)
+        s_hat = (np.dot(self.drift.mat, beta) + np.dot(Z, np.dot(HZ.T, xi))).reshape(
+            -1, 1
+        )
 
-            # Extract components and postprocess
-            # x.shape = (n+p,), so need to increase the dimension (n+p,1)
-            xi = x[0:n, np.newaxis]
-            beta_all[:, i : i + 1] = x[n : n + p, np.newaxis]
+        # Return three column vectors
+        return xi, s_hat, beta
 
-            # from IPython.core.debugger import Tracer; debug_here = Tracer()
-            s_hat_all[:, i : i + 1] = np.dot(
-                self.drift.mat, beta_all[:, i : i + 1]
-            ) + np.dot(Z, np.dot(HZ.T, xi))
+    def get_invA_as_linop(self, HZ: NDArrayFloat, HX: NDArrayFloat) -> InvALinOp:
+        """
+        Return the low rank inverse of A as a linear operator.
 
-            # check prescribed solution range for LM evaluations
-            if self.lm_smin is not None:
-                if s_hat_all[:, i : i + 1].min() <= self.lm_smin:
-                    LM_eval[i] = True
-            if self.lm_smax is not None:
-                if s_hat_all[:, i : i + 1].max() >= self.lm_smax:
-                    LM_eval[i] = True
+        The output is used as a preconditioner for Krylov subspace iterative approaches
+        when solving Ax = b.
+        """
+        # t_start_precond = time()
 
-            if LM_eval[i]:
-                self.loginfo(
-                    "%d - min(s): %g, max(s) :%g - violate LM_smin or LM_smax"
-                    % (
-                        i,
-                        s_hat_all[:, i : i + 1].min(),
-                        s_hat_all[:, i : i + 1].max(),
-                    )
-                )
-            else:
-                self.loginfo(
-                    "%d - min(s): %g, max(s) :%g"
-                    % (
-                        i,
-                        s_hat_all[:, i : i + 1].min(),
-                        s_hat_all[:, i : i + 1].max(),
-                    )
-                )
+        # GHEP : HQHT u = lamdba R u => u = R^{-1/2} y
+        # original implementation was sqrt of R^{-1/2} HZ n by n_pc
+        # svds cannot compute entire n_pc eigenvalues so do this for
+        # n by n matrix
+        # this leads to double the cost
 
-            Q2_all[:, i : i + 1] = np.dot(b[:n].T, xi) / (n - p)
+        n_obs = self.n_obs
+        beta_dim = self.drift.beta_dim
 
-            # model validation, predictive diagnostics cR/Q2
-            if R.shape[0] == 1:
-                tmp_cR = np.zeros((n - p, 1), "d")
-                tmp_cR[:] = np.multiply(alpha[i], R)
-                tmp_cR[: sigma_cR.shape[0]] = (
-                    tmp_cR[: sigma_cR.shape[0]] + (sigma_cR[:, np.newaxis]) ** 2
-                )
-            else:
-                # need to find efficient way to compute cR once
-                # approximation
-                def mv(v):
-                    # P*(HZ*HZ.T + R)*P*x = P = (I-(U_data*U_data.T))
-                    # debug_here()
-                    Pv = v - np.dot(U_data, np.dot(U_data.T, v))  # P * v : n by 1
-                    RPv = np.multiply(
-                        alpha[i], np.multiply(R.reshape(v.shape), Pv)
-                    )  # alpha*R*P*v : n by 1
-                    PRPv = RPv - np.dot(
-                        U_data, np.dot(U_data.T, RPv)
-                    )  # P*R*P*v : n by 1
-                    HQHTPv = np.dot(HZ, np.dot(HZ.T, Pv))  # HQHTPv : n by 1
-                    PHQHTPv = HQHTPv - np.dot(
-                        U_data, np.dot(U_data.T, HQHTPv)
-                    )  # P*HQHT*P*v
-                    return PHQHTPv + PRPv
-
-                def rmv(v):
-                    return mv(v)  # symmetric matrix
-
-                # Matrix handle for Generalized Data Covariance
-                sqrtGDCovfun = LinearOperator((n, n), matvec=mv, rmatvec=rmv, dtype="d")
-
-                if n_pc < n - p:
-                    k: int = n_pc
-                    maxiter: int = n - p
-                elif n_pc == n - p:
-                    k = n_pc - 1
-                    maxiter = n - p
-                else:
-                    k = n - p
-                    maxiter = n_pc
-
-                sigma_cR = svds(
-                    sqrtGDCovfun,
-                    k=k,
-                    which="LM",
-                    maxiter=maxiter,
-                    return_singular_vectors=False,
-                    random_state=self.random_state,
-                )
-
-                tmp_cR = np.zeros((n - p, 1), "d")
-                tmp_cR[:] = np.multiply(alpha[i], R[:-p]).reshape(
-                    -1, 1
-                )  # TODO: remove the reshape
-
-                tmp_cR[: sigma_cR.shape[0]] = sigma_cR[:, np.newaxis]
-
-                uniqueR = np.unique(R)
-                lenR = len(uniqueR)
-                lenRi = int((n - sigma_cR.shape[0]) / lenR)
-                strtidx = sigma_cR.shape[0]
-                for iR in range(lenR):
-                    tmp_cR[strtidx : strtidx + lenRi] = (
-                        alpha[min(iR, alpha.size - 1)] * uniqueR[iR]
-                    )
-                    strtidx = strtidx + lenRi
-                tmp_cR[strtidx:] = alpha[min(iR, alpha.size - 1)] * uniqueR[iR]
-
-            tmp_cR[tmp_cR <= 0] = 1.0e-16  # temporary fix for zero tmp_cR
-            cR_all[:, i : i + 1] = Q2_all[:, i : i + 1] * np.exp(
-                np.log(tmp_cR).sum() / (n - p)
+        def matvec(v: NDArrayFloat) -> NDArrayFloat:
+            return self.cov_obs.factor_solve(
+                np.dot(HZ, (np.dot(HZ.T, self.cov_obs.factor_solve(v))))
             )
 
-        # evaluate solutions
-        if self.is_lm:
-            self.loginfo("evaluate LM solutions")
-            simul_obs_all = -10000.0 * np.ones((n, nopts), "d")
-            s_hat_all_tmp = s_hat_all[:, np.invert(LM_eval)]
-            simul_obs_all_tmp = self.forward_model(s_hat_all_tmp)
-            self.loginfo("LM solution evaluated")
-            simul_obs_all[:, np.invert(LM_eval)] = simul_obs_all_tmp
+        class MMT(LinearOperator):
+            def __init__(self) -> None:
+                """Initialize the instance."""
+                super().__init__(dtype=np.float64, shape=(n_obs, n_obs))
 
+            def _matvec(self, v: NDArrayFloat) -> NDArrayFloat:
+                return matvec(v)
+
+            def _rmatvec(self, v: NDArrayFloat) -> NDArrayFloat:
+                return self._matvec(v)
+
+        # self.loginfo('preconditioner construction using Generalized
+        # Eigen-decomposition')
+        #    self.loginfo("n :%d & n_pc: %d" % (n,n_pc))
+
+        if self.Q.n_pc < self.n_obs:
+            k = self.Q.n_pc
+            maxiter = self.n_obs
+        elif self.Q.n_pc == self.n_obs:
+            k = self.Q.n_pc - 1
+            maxiter = self.n_obs
         else:
-            self.loginfo("evaluate the best solution")
-            simul_obs_all = self.forward_model(s_hat_all)
+            k = self.n_obs - 1
+            maxiter = self.Q.n_pc
 
-        if np.size(simul_obs_all, 1) != nopts:
-            return ValueError("np.size(simul_obs_all,1) should be nopts")
+        mmt_eig_vals, mmt_eig_vects = eigsh(
+            MMT(), k=k, v0=self.get_v0(self.n_obs), which="LM", maxiter=maxiter
+        )
 
-        # evaluate objective values and select best value
-        obj_best = 1.0e20
-        if self.is_lm:
-            self.loginfo("%d objective value evaluations" % nopts)
+        # keep only positive eigen values
+        mask = mmt_eig_vals > 0
+        mmt_eig_vects = mmt_eig_vects[:, mask]
+        mmt_eig_vals = mmt_eig_vals[mask]
 
-        i_best = -1
+        # self.loginfo("eig. val. of sqrt data covariance (%8.2e, %8.2e, %8.2e)"
+        # % (Psi_sigma[0], Psi_sigma.min(), Psi_sigma.max()))
+        # self.loginfo(Psi_sigma)
 
-        for i in range(nopts):
-            if LM_eval[i]:
-                obj = 1.0e20
-            else:
-                obj = self.objective_function(
-                    s_hat_all[:, i : i + 1],
-                    beta_all[:, i : i + 1],
-                    simul_obs_all[:, i : i + 1],
-                )
+        # TODO: change
 
-            if obj < obj_best:
-                s_hat = s_hat_all[:, i : i + 1]
-                beta = beta_all[:, i : i + 1]
-                simul_obs_new = simul_obs_all[:, i : i + 1]
-                obj_best = obj
-                i_best = i
-                self.loginfo(
-                    f"{i:d}-th solution obj {obj} (alpha {alpha[i]}, beta {beta})"
-                )
+        # self.loginfo(
+        #     "time for data covarance construction : %f sec "
+        #     % (time() - t_start_precond)
+        # )
+        # self.loginfo(
+        #     "eig. val. of data covariance (%8.2e, %8.2e, %8.2e)"
+        #     % (Psi_sigma[0], Psi_sigma.min(), Psi_sigma.max())
+        # )
+        # if Psi_U.shape[1] != n_pc:
+        #     self.loginfo(
+        #         "- rank of data covariance :%d for preconditioner construction"
+        #         % (Psi_U.shape[1])
+        #     )
 
-        if i_best == -1:
-            self.loginfo("no better solution found ..")
-            s_hat = s_cur
-            simul_obs_new = simul_obs
-            beta = 0.0
-
-        if self.post_cov_estimation is not None:
-            self.HZ = HZ
-            self.HX = HX
-            self.R_LM = self.cov_obs * alpha[i_best]
-
-        self.istate.i_best = i_best  # keep track of best LM solution
-        return s_hat, beta, simul_obs_new
-
-    def linear_iteration(
-        self, s_cur: NDArrayFloat, simul_obs: NDArrayFloat, n_iter: int
-    ):
-        # Solve geostatistical system -> two ways, direct of iterative solve
-        if self.is_direct_solve:
-            s_hat, beta, simul_obs_new = self.direct_solve(s_cur, simul_obs)
-        else:
-            s_hat, beta, simul_obs_new = self.iterative_solve(s_cur, simul_obs)
-        obj: float = self.objective_function(s_hat, beta, simul_obs_new)
-
-        # Call the optional callback at the end of each linear iteration so some
-        # intermediate solver states could be saved
-        if self.callback is not None:
-            self.callback(self, s_hat=s_hat, simul_obs=simul_obs, n_iter=n_iter)
-
-        return s_hat, beta, simul_obs_new, obj
+        # # TODO: remove these two useless lines
+        self.Psi_sigma = mmt_eig_vals
+        self.Psi_U = mmt_eig_vects
+        # This inflation factor will be updated later
+        return InvALinOp(HX, mmt_eig_vects, mmt_eig_vals, self.cov_obs, n_obs, beta_dim)
 
     def line_search(self, s_cur, s_past):
-        nopts = self.nopts_lm
+        n_internal_loops = self.max_it_lm
         m = self.s_dim
 
-        s_hat_all = np.zeros((m, nopts), "d")
+        s_hat_all = np.zeros((m, n_internal_loops), "d")
         # need to remove delta = 0 and 1
-        delta = np.linspace(-0.1, 1.1, nopts)
+        delta = np.linspace(-0.1, 1.1, n_internal_loops)
 
-        for i in range(nopts):
+        for i in range(n_internal_loops):
             s_hat_all[:, i : i + 1] = delta[i] * s_past + (1.0 - delta[i]) * s_cur
 
         self.loginfo("evaluate linesearch solutions")
         simul_obs_all = self.forward_model(s_hat_all)
 
         # will change assert to valueerror
-        assert np.size(simul_obs_all, 1) == nopts
+        assert np.size(simul_obs_all, 1) == n_internal_loops
         obj_best = 1.0e20
 
-        for i in range(nopts):
+        for i in range(n_internal_loops):
             obj = self.objective_function_no_beta(
                 s_hat_all[:, i : i + 1], simul_obs_all[:, i : i + 1]
             )
@@ -1511,18 +1489,20 @@ class PCGA:
         self.istate.simul_obs_best = simul_obs_init
 
         self.simul_obs_init = simul_obs_init
-        residuals = (simul_obs_init - self.obs).ravel()
-        rmse_init: float = self.rmse(residuals, False)
-        n_rmse_init: float = self.rmse(residuals, True)
-        loss_ls_init = self.objective_function_ls(simul_obs_init)
+        residuals = (simul_obs_init.T - self.obs).T
+        # item() to convert to scalar
+        rmse_init: float = self.rmse(residuals, False).item()
+        n_rmse_init: float = self.rmse(residuals, True).item()
+        loss_ls_init: float = self.objective_function_ls(simul_obs_init).item()
 
         simul_obs_cur = np.copy(simul_obs_init)
         s_cur = np.copy(s_init)
         s_past = np.copy(s_init)
 
-        # initial objective function -> very high
         obj = self.objective_function_no_beta(s_cur, simul_obs_cur)
-        obj_old = copy.copy(obj)
+        # initial objective function -> very high to avoid early termination
+        # because objective function no beta might be too high
+        obj_old = VERY_LARGE_NUMBER
 
         self.display_objfun(
             loss_ls_init,
@@ -1534,7 +1514,7 @@ class PCGA:
         )
 
         # save the initial objective function
-        self.istate.objvals.append(float(obj))
+        self.istate.obj_seq.append(float(obj))
 
         # Save the initial state
         if self.callback is not None:
@@ -1546,12 +1526,21 @@ class PCGA:
             # TODO: make a loop for that
 
             self.loginfo(f"***** Iteration {n_iter + 1} ******")
-            s_cur, beta_cur, simul_obs_cur, obj = self.linear_iteration(
-                s_past, simul_obs_cur, n_iter
+            s_cur, beta_cur, simul_obs_cur, inflation_cur, obj, Q2, cR = (
+                self.linear_iteration(s_past, simul_obs_cur)
             )
 
-            # save the objective function
-            self.istate.objvals.append(float(obj))
+            # Call the optional callback at the end of each linear iteration so some
+            # intermediate solver states could be saved
+            # TODO: move somewhere else ???
+            if self.callback is not None:
+                self.callback(self, s_hat=s_cur, simul_obs=simul_obs_cur, n_iter=n_iter)
+
+            # save the objective function, inflation factors etc.
+            self.istate.obj_seq.append(obj)
+            self.istate.inflation_seq.append(inflation_cur)
+            self.istate.Q2_seq.append(Q2)
+            self.istate.cR_seq.append(cR)
 
             self.loginfo(
                 "- Geostat. inversion at iteration %d is %g sec"
@@ -1594,12 +1583,11 @@ class PCGA:
                     break
 
             res = float(np.linalg.norm(s_past - s_cur) / np.linalg.norm(s_past))
-            residuals = (simul_obs_cur - self.obs).ravel()
-
-            loss_ls = self.objective_function_ls(simul_obs_cur)
-            rmse = self.rmse(residuals, False)
-            n_rmse = self.rmse(residuals, True)
-            obj = self.objective_function(s_cur, beta_cur, simul_obs_cur)
+            residuals = (simul_obs_cur.T - self.obs).T
+            loss_ls = self.objective_function_ls(simul_obs_cur).item()
+            rmse = self.rmse(residuals, False).item()
+            n_rmse = self.rmse(residuals, True).item()
+            obj = self.objective_function(s_cur, beta_cur, simul_obs_cur).item()
 
             self.display_objfun(
                 loss_ls, simul_obs_init.size, rmse, n_rmse, n_iter, obj=obj, res=res
@@ -1633,23 +1621,23 @@ class PCGA:
 
             obj_old = copy.copy(obj)
 
-        if self.post_cov_estimation is not None:
+            # TODO: A posteriori estimation should match the best estimation
+
+            # need to use HZ and HX here !
             # assume linesearch result close to the current solution
             start = time()
-            if self.istate.i_best is None:
-                self.istate.i_best = 0
-            if self.post_cov_estimation == PostCovEstimation.DIRECT:
+            if self.is_direct_solve:
                 self.loginfo(
                     "start direct posterior variance computation "
                     "- this option works for O(nobs) ~ 100"
                 )
                 self.post_diagv = self.compute_posterior_diagonal_entries_direct(
-                    self.HZ, self.HX, self.istate.i_best, self.cov_obs
+                    self.HZ, self.HX, self.cov_obs, inflation_cur
                 )
             else:
                 self.loginfo("start posterior variance computation")
-                self.post_diagv = self.compute_posterior_diagonal_entries(
-                    self.HZ, self.HX, self.istate.i_best, self.cov_obs
+                self.post_diagv = self.compute_posterior_diagonal_entries_direct(
+                    self.HZ, self.HX, self.cov_obs, inflation_cur
                 )
             self.loginfo("posterior diag. computed in %f secs" % (time() - start))
             # if self.iter_save:
@@ -1664,10 +1652,10 @@ class PCGA:
             self.loginfo("** Did not found better solution than initial guess")
         else:
             self.loginfo(f"** Found solution at iteration {self.istate.iter_best}")
-        residuals = (self.istate.simul_obs_best - self.obs).ravel()
-        loss_ls_best = self.objective_function_ls(self.istate.simul_obs_best)
-        rmse_best: float = self.rmse(residuals, False)
-        n_rmse_best: float = self.rmse(residuals, True)
+        residuals = (self.istate.simul_obs_best.T - self.obs).T
+        loss_ls_best = self.objective_function_ls(self.istate.simul_obs_best).item()
+        rmse_best: float = self.rmse(residuals, False).item()
+        n_rmse_best: float = self.rmse(residuals, True).item()
 
         self.display_objfun(
             loss_ls_best,
@@ -1678,12 +1666,11 @@ class PCGA:
         )
 
         self.loginfo(
-            f"- Final predictive model checking Q2 = "
-            f"{[f'{float(Q2[0]):.3e}' for Q2 in self.istate.Q2_best]}"
+            f"- Final predictive model checking Q2 = {self.istate.Q2_best:.3e}"
+            " (should be as close to 1.0 as possible.)"
         )
-
         self.loginfo(
-            f"- Final cR = {[f'{float(cR[0]):.3e}' for cR in self.istate.cR_best]}"
+            f"- Final cR = {self.istate.cR_best:.3e} (should be as small as possible.)"
         )
 
         return (
@@ -1701,39 +1688,10 @@ class PCGA:
         return s_hat, simul_obs, post_diagv, iter_best
 
     def get_psi(
-        self, HZ: NDArrayFloat, i_best: int, cov_obs: NDArrayFloat
+        self, HZ: NDArrayFloat, cov_obs: CovObs, inflation: float
     ) -> NDArrayFloat:
-        """Get the matrix HQH^{T} + R."""
-
-        if self.is_lm:
-            # self.loginfo(
-            #     "Solve geostatistical inversion problem (co-kriging, "
-            #     "saddle point systems) with Levenberg-Marquardt"
-            # )
-            nopts = self.nopts_lm
-            alpha = 10 ** (np.linspace(0.0, np.log10(self.alphamax_lm), nopts))
-
-        else:
-            # self.loginfo(
-            #     "Solve geostatistical inversion problem (co-kriging, "
-            #     "saddle point systems)"
-            # )
-            nopts = 1
-            alpha = np.array([1.0])
-
-        # alpha = 10 ** (np.linspace(0.0, np.log10(self.alphamax_lm), self.nopts_lm))
-        Ri = np.multiply(alpha[i_best], cov_obs)
-
-        # Construct Psi directly
-        Psi: NDArrayFloat = np.dot(HZ, HZ.T)  # HQH^{t}
-        # Add the R matrix
-        if Ri.ndim == 1:
-            # Ri is diagonal
-            np.fill_diagonal(Psi, Psi.diagonal() + Ri)
-        else:
-            # If Ri is 2D
-            Psi += Ri
-        return Psi
+        """Get the matrix HQH^{T} + \alpha R."""
+        return cov_obs.add_inflated(np.dot(HZ, HZ.T), inflation)
 
     @staticmethod
     def build_cholesky(Psi: NDArrayFloat, HX: NDArrayFloat) -> NDArrayFloat:
@@ -1765,24 +1723,60 @@ class PCGA:
     def build_dense_A(Psi: NDArrayFloat, HX: NDArrayFloat) -> NDArrayFloat:
         n: int = Psi.shape[0]
         p: int = HX.shape[1]
-        A = np.zeros((n + p, n + p), dtype="d")
+        A = np.zeros((n + p, n + p), dtype=np.float64)
         A[0:n, 0:n] = np.copy(Psi)
         A[0:n, n : n + p] = np.copy(HX)
         A[n : n + p, 0:n] = np.copy(HX.T)
         return A
 
+    def get_A_as_linop(
+        self, HX: NDArrayFloat, HZ: NDArrayFloat, inflation: float
+    ) -> LinearOperator:
+        n_obs = self.n_obs
+        beta_dim = self.drift.beta_dim
+
+        def mv(v: NDArrayFloat) -> NDArrayFloat:
+            return np.concatenate(
+                (
+                    (
+                        np.dot(HZ, np.dot(HZ.T, v[: self.n_obs]))
+                        + inflation * self.cov_obs @ v[: self.n_obs]
+                        + np.dot(HX, v[self.n_obs :])
+                    ),
+                    (np.dot(HX.T, v[: self.n_obs])),
+                ),
+                axis=0,
+            )
+
+        # Matrix handle
+        class ALinOp(LinearOperator):
+            def __init__(self) -> None:
+                super().__init__(
+                    shape=(n_obs + beta_dim, n_obs + beta_dim), dtype=np.float64
+                )
+
+            def _matvec(self, v: NDArrayFloat) -> NDArrayFloat:
+                return mv(v)
+
+            def _rmatvec(self, v: NDArrayFloat) -> NDArrayFloat:
+                return mv(v)
+
+        return ALinOp()
+
     def compute_posterior_diagonal_entries_direct(
-        self, HZ, HX, i_best, cov_obs
+        self,
+        HZ: NDArrayFloat,
+        HX: NDArrayFloat,
+        cov_obs: CovObs,
+        inflation: float,
     ) -> NDArrayFloat:
         """Computing posterior diagonal entries using cholesky."""
-
-        Psi = self.get_psi(HZ, i_best, cov_obs)
+        Psi = self.get_psi(HZ, cov_obs, inflation)
         Z = np.sqrt(self.Q.eig_vals).T * self.Q.eig_vects
 
         # [HQ, X^{T}]
         b_all = np.vstack([np.dot(HZ, Z.T), self.drift.mat.T])
         # Use cholesky factorization to solve the system
-        # TODO: this is not correct, we should use Identity
         LA = self.build_cholesky(Psi, HX)
         return (
             self.prior_s_var
@@ -1791,108 +1785,193 @@ class PCGA:
             )
         ).reshape(-1, 1)
 
-    def compute_posterior_diagonal_entries(self, HZ, HX, i_best, R):
-        """
-        Computing posterior diagonal entries using iterative approach
-        """
-        m = self.s_dim
-        n = self.d_dim
+    # def compute_posterior_diagonal_entries_iterative(
+    #     self, HZ: NDArrayFloat, HX: NDArrayFloat, R: NDArrayFloat, inflation: float
+    # ):
+    #     """
+    #     Computing posterior diagonal entries using iterative approach
+    #     """
+    #     m = self.s_dim
+    #     n = self.d_dim
+    #     p = self.drift.beta_dim
+
+    #     ## Create matrix context
+    #     # if R.shape[0] == 1:
+    #     #    def mv(v):
+    #     #        return np.concatenate(((np.dot(HZ, np.dot(HZ.T, v[0:n])) +
+    #     # np.multiply(np.multiply(inflation, R),v[0:n])
+    #     # + np.dot(HX,v[n:n + p])),(np.dot(HX.T, v[0:n]))), axis=0)
+    #     # else:
+    #     #    def mv(v):
+    #     #        return np.concatenate(((np.dot(HZ, np.dot(HZ.T, v[0:n])) +
+    #     # np.multiply(np.multiply(inflation, R.reshape(v[0:n].shape)))
+    #     # + np.dot(HX, v[n:n + p])),(np.dot(HX.T, v[0:n]))), axis=0)
+
+    #     # Benzi et al. 2005, Eq 3.5
+
+    #     def invPsi(v):
+    #         Dvec = np.divide(
+    #             ((1.0 / inflation) * self.Psi_sigma),
+    #             ((1.0 / inflation) * self.Psi_sigma + 1),
+    #         )
+    #         Psi_U = np.multiply((1.0 / sqrt(inflation)), self.Psi_U)
+    #         Psi_UTv = np.dot(Psi_U.T, v)
+    #         # TODO: remove these stupid reshape by using vectors and matrices
+    #         alphainvRv = ((1.0 / inflation) * self.cov_obs.solve(v.ravel())).reshape(
+    #             -1, 1
+    #         )
+
+    #         if Psi_UTv.ndim == 1:
+    #             PsiDPsiTv = np.dot(
+    #                 Psi_U,
+    #                 np.multiply(Dvec[: Psi_U.shape[1]].reshape(Psi_UTv.shape),
+    # Psi_UTv),
+    #             )
+    #         elif Psi_UTv.ndim == 2:  # for invPsi(HX)
+    #             DMat = np.tile(
+    #                 Dvec[: Psi_U.shape[1]], (Psi_UTv.shape[1], 1)
+    #             ).T  # n_pc by p
+    #             PsiDPsiTv = np.dot(Psi_U, np.multiply(DMat, Psi_UTv))
+    #         else:
+    #             raise ValueError(
+    #                 "Psi_U times vector should have a dimension "
+    #                 "smaller than 2 - current dim = %d" % (Psi_UTv.ndim)
+    #             )
+
+    #         return alphainvRv - PsiDPsiTv
+
+    #     # Direct Inverse of cokkring matrix - Lee et al. WRR 2016 Eq (14)
+    #     # typo in Eq (14), (2,2) block matrix should be -S^-1 instead of -S
+
+    #     class P(LinearOperator):
+    #         def __init__(self) -> None:
+    #             super().__init__(shape=(n + p, n + p), dtype=np.float64)
+
+    #         def _matvec(self, v) -> NDArrayFloat:
+    #             invPsiv = invPsi(v[0:n])
+    #             S = np.dot(HX.T, invPsi(HX))  # p by p matrix
+    #             invSHXTinvPsiv = np.linalg.solve(S, np.dot(HX.T, invPsiv))
+    #             invPsiHXinvSHXTinvPsiv = invPsi(np.dot(HX, invSHXTinvPsiv))
+    #             return np.concatenate(
+    #                 ((invPsiv - invPsiHXinvSHXTinvPsiv), (invSHXTinvPsiv)), axis=0
+    #             )
+
+    #         def _rmatvec(self, v) -> NDArrayFloat:
+    #             return self._matvec(v)
+
+    #     # Preconditioner construction Lee et al. WRR 2016 Eq (14)
+    #     # typo in Eq (14), (2,2) block matrix should be -S^-1 instead of -S
+    #     def Pmv(v):
+    #         invPsiv = invPsi(v[0:n])
+    #         S = np.dot(HX.T, invPsi(HX))  # p by p matrix
+    #         invSHXTinvPsiv = np.linalg.solve(S, np.dot(HX.T, invPsiv))
+    #         invPsiHXinvSHXTinvPsiv = invPsi(np.dot(HX, invSHXTinvPsiv))
+    #         invPsiHXinvSv1 = invPsi(np.dot(HX, np.linalg.solve(S, v[n:])))
+    #         invSv1 = np.linalg.solve(S, v[n:])
+    #         return np.concatenate(
+    #             (
+    #                 (invPsiv - invPsiHXinvSHXTinvPsiv + invPsiHXinvSv1),
+    #                 (invSHXTinvPsiv - invSv1),
+    #             ),
+    #             axis=0,
+    #         )
+
+    #     P = LinearOperator(shape=(n + p, n + p), matvec=Pmv, rmatvec=Pmv, dtype="d")
+
+    #     ## Matrix handle for iterative approach without approximation
+    #     # - this should be included as an option
+    #     # n_pc = self.n_pc
+    #     # Afun = LinearOperator((n + p, n + p), matvec=mv, rmatvec=mv, dtype='d')
+    #     # callback = Residual()
+    #     ## Residual and maximum iterations
+    #     # itertol = 1.e-10 if not 'iterative_tol'
+    #     # in self.params else self.params['iterative_tol']
+    #     # solver_maxiter = m if not 'iterative_maxiter'
+    #     # in self.params else self.params['iterative_maxiter']
+
+    #     # start = time()
+    #     v = np.zeros((m), dtype="d")
+
+    #     for i in range(m):
+    #         b = np.zeros((n + p, 1), dtype="d")
+    #         b[0:n] = np.dot(
+    #             HZ,
+    #             (
+    #                 np.multiply(
+    #                     np.sqrt(self.Q.eig_vals), self.Q.eig_vects[i : i + 1, :].T
+    #                 )
+    #             ),
+    #         )
+    #         b[n : n + p] = self.drift.mat[i : i + 1, :].T
+
+    #         tmp = float(np.dot(b.T, P() @ b)[0, 0])
+    #         v[i] = self.prior_s_var[i] - tmp
+
+    #         if i % 10000 == 0 and i > 0:
+    #             self.loginfo("%d-th element evaluation done.." % (i))
+    #     v = np.where(v > self.prior_s_var, self.prior_s_var, v)
+
+    #     # self.loginfo("Pv compute variance: %f sec" % (time() - start))
+    #     # self.loginfo("norm(v-v1): %g" % (np.linalg.norm(v - v1)))
+    #     # self.loginfo("max(v-v1): %g, %g" % ((v - v1).max(),(v-v1).min()))
+
+    #     return v.reshape(-1, 1)
+
+    def get_posterior_covariance_matrix_direct(
+        self,
+        HZ: NDArrayFloat,
+        HX: NDArrayFloat,
+        cov_obs: CovObs,
+        inflation: float,
+        n_pc: int,
+        random_state,
+    ) -> EigenFactorizedCovarianceMatrix:
+        """Computing posterior diagonal entries using cholesky."""
+
+        Psi = self.get_psi(HZ, cov_obs, inflation)
+        Z = np.sqrt(self.Q.eig_vals).T * self.Q.eig_vects
+
+        # [HQ, X^{T}]
+        b_all = np.vstack([np.dot(HZ, Z.T), self.drift.mat.T])
         p = self.drift.beta_dim
+        Q = self.Q
+        # Use cholesky factorization to solve the system
+        LA = self.build_cholesky(Psi, HX)
 
-        alpha = 10 ** (np.linspace(0.0, np.log10(self.alphamax_lm), self.nopts_lm))
+        class _op(CovarianceMatrix):
+            def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
+                """Return the covariance matrix times the vector x."""
+                return Q @ x - b_all.T @ PCGA.solve_cholesky(LA, b_all @ x, p)
 
-        ## Create matrix context
-        # if R.shape[0] == 1:
-        #    def mv(v):
-        #        return np.concatenate(((np.dot(HZ, np.dot(HZ.T, v[0:n])) +
-        # np.multiply(np.multiply(alpha[i_best], R),v[0:n])
-        # + np.dot(HX,v[n:n + p])),(np.dot(HX.T, v[0:n]))), axis=0)
-        # else:
-        #    def mv(v):
-        #        return np.concatenate(((np.dot(HZ, np.dot(HZ.T, v[0:n])) +
-        # np.multiply(np.multiply(alpha[i_best], R.reshape(v[0:n].shape)))
-        # + np.dot(HX, v[n:n + p])),(np.dot(HX.T, v[0:n]))), axis=0)
+        return eigen_factorize_cov_mat(_op(Q.shape), n_pc, random_state)
 
-        # Benzi et al. 2005, Eq 3.5
+    # def get_posterior_covariance_matrix_iterative(
+    #     self,
+    #     HZ: NDArrayFloat,
+    #     HX: NDArrayFloat,
+    #     cov_obs: NDArrayFloat,
+    #     inflation: float,
+    #     n_pc: int,
+    #     random_state,
+    # ) -> EigenFactorizedCovarianceMatrix:
+    #     """Computing posterior diagonal entries using cholesky."""
 
-        def invPsi(v):
-            Dvec = np.divide(
-                ((1.0 / alpha[i_best]) * self.Psi_sigma),
-                ((1.0 / alpha[i_best]) * self.Psi_sigma + 1),
-            )
-            Psi_U = np.multiply((1.0 / sqrt(alpha[i_best])), self.Psi_U)
-            Psi_UTv = np.dot(Psi_U.T, v)
-            # TODO: remove these stupid reshape by using vectors and matrices
-            alphainvRv = (
-                (1.0 / alpha[i_best]) * self.cov_obs_solve(v.ravel())
-            ).reshape(-1, 1)
+    #     Z = np.sqrt(self.Q.eig_vals).T * self.Q.eig_vects
 
-            if Psi_UTv.ndim == 1:
-                PsiDPsiTv = np.dot(
-                    Psi_U,
-                    np.multiply(Dvec[: Psi_U.shape[1]].reshape(Psi_UTv.shape), Psi_UTv),
-                )
-            elif Psi_UTv.ndim == 2:  # for invPsi(HX)
-                DMat = np.tile(
-                    Dvec[: Psi_U.shape[1]], (Psi_UTv.shape[1], 1)
-                ).T  # n_pc by p
-                PsiDPsiTv = np.dot(Psi_U, np.multiply(DMat, Psi_UTv))
-            else:
-                raise ValueError(
-                    "Psi_U times vector should have a dimension "
-                    "smaller than 2 - current dim = %d" % (Psi_UTv.ndim)
-                )
+    #     # [HQ, X^{T}]
+    #     b_all = np.vstack([np.dot(HZ, Z.T), self.drift.mat.T])
+    #     p = self.drift.beta_dim
+    #     Q = self.Q
+    #     # Use cholesky factorization to solve the system
+    #     Afun = self.get_A_as_linop(HX, HZ, inflation)
 
-            return alphainvRv - PsiDPsiTv
+    #     # Add a solve method see 14 in Saibaba et al.
+    #     # self.internal_iteration_krylov_subspace(HZ, HX, Z, b_all @ x,
+    # invA_as_linop, inflation)
 
-        # Direct Inverse of cokkring matrix - Lee et al. WRR 2016 Eq (14)
-        # typo in Eq (14), (2,2) block matrix should be -S^-1 instead of -S
-        def Pmv(v):
-            invPsiv = invPsi(v[0:n])
-            S = np.dot(HX.T, invPsi(HX))  # p by p matrix
-            invSHXTinvPsiv = np.linalg.solve(S, np.dot(HX.T, invPsiv))
-            invPsiHXinvSHXTinvPsiv = invPsi(np.dot(HX, invSHXTinvPsiv))
-            return np.concatenate(
-                ((invPsiv - invPsiHXinvSHXTinvPsiv), (invSHXTinvPsiv)), axis=0
-            )
+    #     class _op(CovarianceMatrix):
+    #         def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
+    #             """Return the covariance matrix times the vector x."""
+    #             return Q @ x - b_all.T @ PCGA.solve_cholesky(LA, b_all @ x, p)
 
-        P = LinearOperator((n + p, n + p), matvec=Pmv, rmatvec=Pmv, dtype="d")
-
-        ## Matrix handle for iterative approach without approximation
-        # - this should be included as an option
-        # n_pc = self.n_pc
-        # Afun = LinearOperator((n + p, n + p), matvec=mv, rmatvec=mv, dtype='d')
-        # callback = Residual()
-        ## Residual and maximum iterations
-        # itertol = 1.e-10 if not 'iterative_tol'
-        # in self.params else self.params['iterative_tol']
-        # solver_maxiter = m if not 'iterative_maxiter'
-        # in self.params else self.params['iterative_maxiter']
-
-        # start = time()
-        v = np.zeros((m), dtype="d")
-
-        for i in range(m):
-            b = np.zeros((n + p, 1), dtype="d")
-            b[0:n] = np.dot(
-                HZ,
-                (
-                    np.multiply(
-                        np.sqrt(self.Q.eig_vals), self.Q.eig_vects[i : i + 1, :].T
-                    )
-                ),
-            )
-            b[n : n + p] = self.drift.mat[i : i + 1, :].T
-
-            tmp = float(np.dot(b.T, P(b))[0, 0])
-            v[i] = self.prior_s_var[i] - tmp
-
-            if i % 10000 == 0 and i > 0:
-                self.loginfo("%d-th element evaluation done.." % (i))
-        v = np.where(v > self.prior_s_var, self.prior_s_var, v)
-
-        # self.loginfo("Pv compute variance: %f sec" % (time() - start))
-        # self.loginfo("norm(v-v1): %g" % (np.linalg.norm(v - v1)))
-        # self.loginfo("max(v-v1): %g, %g" % ((v - v1).max(),(v-v1).min()))
-
-        return v.reshape(-1, 1)
+    #     return eigen_factorize_cov_mat(_op(Q.shape), n_pc, random_state)

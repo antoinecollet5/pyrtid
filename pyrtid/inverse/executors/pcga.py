@@ -63,7 +63,7 @@ from pyrtid.inverse.executors.base import (
 )
 from pyrtid.inverse.params import update_model_with_parameters_values
 from pyrtid.inverse.regularization import DriftMatrix, EigenFactorizedCovarianceMatrix
-from pyrtid.inverse.solvers import PCGA, PostCovEstimation
+from pyrtid.inverse.solvers import PCGA
 from pyrtid.utils.types import NDArrayFloat
 
 pcga_solver_config_params_ds = (
@@ -91,7 +91,6 @@ class PCGASolverConfig(BaseSolverConfig):
     is_lm: bool = False
     is_direct_solve: bool = False
     is_use_preconditioner: bool = False
-    post_cov_estimation: Optional[PostCovEstimation] = None
     is_objfun_exact: bool = False  # former objeval
     max_it_lm: int = multiprocessing.cpu_count()
     alphamax_lm: float = 10.0**3.0  # does it sound ok?
@@ -102,7 +101,6 @@ class PCGASolverConfig(BaseSolverConfig):
     ftarget: Optional[float] = None
     ftol: float = 1e-5
     restol: float = 1e-2
-    is_post_cov: bool = False
     logger: Optional[logging.Logger] = logging.getLogger("PCGA")
     is_save_jac: bool = False
     eps = 1.0e-8
@@ -133,7 +131,6 @@ class PCGAInversionExecutor(BaseInversionExecutor[PCGASolverConfig]):
                 is_direct_solve=self.solver_config.is_direct_solve,
                 is_use_preconditioner=self.solver_config.is_use_preconditioner,
                 random_state=self.solver_config.random_state,
-                post_cov_estimation=self.solver_config.post_cov_estimation,
                 is_objfun_exact=self.solver_config.is_objfun_exact,
                 max_it_lm=self.solver_config.max_it_lm,
                 alphamax_lm=self.solver_config.alphamax_lm,
@@ -144,7 +141,6 @@ class PCGAInversionExecutor(BaseInversionExecutor[PCGASolverConfig]):
                 ftarget=self.solver_config.ftarget,
                 ftol=self.solver_config.ftol,
                 restol=self.solver_config.restol,
-                is_post_cov=self.solver_config.is_post_cov,
                 logger=self.solver_config.logger,
                 is_save_jac=self.solver_config.is_save_jac,
                 eps=self.solver_config.eps,
