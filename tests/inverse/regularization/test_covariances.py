@@ -1,12 +1,17 @@
 """Some tests to refactor."""
 
 import numpy as np
+import pytest
 from pyrtid.inverse.regularization import (
     DenseCovarianceMatrix,
     EnsembleCovarianceMatrix,
     FFTCovarianceMatrix,
+    SparseInvCovarianceMatrix,
     eigen_factorize_cov_mat,
+    get_explained_var,
+    sample_from_sparse_cov_factor,
 )
+from pyrtid.utils import sparse_cholesky, spde
 from pyrtid.utils.types import NDArrayFloat
 
 
@@ -60,7 +65,7 @@ def test_fft_covariance_matrix() -> None:
     assert cov.itercount() == 0
 
 
-def test_eigen_decompose() -> None:
+def test_eigen_decompose_and_associated_functions() -> None:
     _number_grid_cells = 225
     prior_std = 2.0
 
@@ -101,12 +106,35 @@ def test_eigen_decompose() -> None:
     # The trace should be around 900 (225 * 2.0 ** 2)
     np.testing.assert_allclose(eig_mat.get_trace(), 900, rtol=0.05)
 
+    samples = sample_from_sparse_cov_factor(
+        np.ones(225) * 100.0, eig_mat.get_sparse_LLT_factor(), 20
+    )
+    assert samples.shape == (225, 20)
+    samples = sample_from_sparse_cov_factor(
+        np.ones(225) * 100.0, eig_mat.get_sparse_LLT_factor(), 10, random_state=2012
+    )
+    assert samples.shape == (225, 10)
+    assert eig_mat.todense().shape == (225, 225)
+
+    _trace = eig_mat.get_trace()
+    # both covariance matrice instance and trace
+    get_explained_var(eig_mat.eig_vals, eig_mat, _trace)
+    # no trace
+    get_explained_var(eig_mat.eig_vals, eig_mat)
+    # no matrix
+    get_explained_var(eig_mat.eig_vals, trace_cov_mat=_trace)
+    # none
+    with pytest.raises(
+        ValueError, match="You must provide a Covariance matrix instance or the trace !"
+    ):
+        get_explained_var(eig_mat.eig_vals)
+
 
 def test_negative_eigen_values() -> None:
     # we build a matrix with negative eigen values
     # matrix 4 x 4
-    U = np.arange(16).reshape((4, 4))
-    V = np.diag([5, 4, -1, -2])
+    U = np.arange(16).reshape((4, 4)).astype(np.float64)
+    V = np.diag([5.0, 4.0, -1.0, -2.0])
 
     # This is the dense matrix to decompose
     mat = U @ V @ U.T
@@ -116,6 +144,58 @@ def test_negative_eigen_values() -> None:
     cov_mat_eigen = eigen_factorize_cov_mat(cov_mat, n_pc=3, random_state=2023)
     assert cov_mat_eigen.n_pc == 2
     assert cov_mat_eigen.eig_vects.size == 8
+
+
+def test_sparse_precision_matrix() -> None:
+    nx = (
+        10  # number of voxels along the x axis + 4 * 2 for the borders (regularization)
+    )
+    ny = 10  # number of voxels along the y axis
+    nz = 1
+    dx = 5.0  # voxel dimension along the x axis
+    dy = 5.0  # voxel dimension along the y axis
+    dz = 1.0
+
+    len_scale = 20.0  # m
+    kappa = 1 / len_scale
+    alpha = 1.0
+
+    mean = 300.0  # trend of the field
+    std = 150.0  # standard deviation of the field
+
+    # Create a presison matrix
+    Q_ref = spde.get_precision_matrix(
+        nx, ny, nz, dx, dy, dz, kappa, alpha, spatial_dim=2, sigma=std
+    )
+    cholQ_ref = sparse_cholesky(Q_ref)
+
+    n_fields = 50
+    # 200 non conditional simulations
+    tmp = []
+    for i in range(n_fields):
+        _field = np.abs(
+            spde.simu_nc(cholQ_ref, random_state=i).reshape(ny, nx).T.reshape(ny, nx).T
+            + mean
+        )
+
+        tmp.append(np.where(_field < 0.0, 0.0, _field).ravel("F"))
+    X = np.array(tmp).T
+
+    assert X.shape == (nx * ny, n_fields)
+
+    cov_mat = SparseInvCovarianceMatrix(Q_ref, cholQ_ref)
+    assert (cov_mat @ np.ones(nx * ny)).size == nx * ny
+    assert cov_mat.get_diagonal().size == nx * ny
+
+
+def test_dense_covariance_matrix() -> None:
+    cov = DenseCovarianceMatrix(np.arange(1, 10).reshape(3, 3).astype(np.float64))
+    np.testing.assert_array_equal(
+        cov @ np.ones(3, dtype=np.float64), np.array([6.0, 15.0, 24.0])
+    )
+    np.testing.assert_array_equal(cov.T @ np.ones(3), np.array([12.0, 15.0, 18.0]))
+    np.testing.assert_array_equal(cov.get_diagonal(), np.array([1.0, 5.0, 9.0]))
+    assert cov.get_trace() == 15.0
 
 
 # def test_that_man() -> None:
@@ -200,4 +280,8 @@ def test_negative_eigen_values() -> None:
 #     # print(mat[0,:])
 #     # print(row)
 #     # print(res1)
+#     # print(np.linalg.norm(res1))
+#     # print(np.linalg.norm(res1))
+#     # print(np.linalg.norm(res1))
+#     # print(np.linalg.norm(res1))
 #     # print(np.linalg.norm(res1))

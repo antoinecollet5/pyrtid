@@ -77,7 +77,22 @@ To represent covariance matrices.
     SparseInvCovarianceMatrix
     HCovarianceMatrix
     SparseInvCovarianceMatrix
+
+
+Covariance functions
+^^^^^^^^^^^^^^^^^^^^
+
+To work with covariance matrices and low rank approximations.
+
+.. autosummary::
+   :toctree: _autosummary
+
+    eigen_factorize_cov_mat
     generate_dense_matrix
+    get_matrix_eigen_factorization
+    sample_from_sparse_cov_factor
+    get_explained_var
+
 
 Working with priors and trends
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -105,13 +120,6 @@ Eigen decomposition
    :toctree: _autosummary
 
     get_matrix_eigen_factorization
-    eigen_factorize_cov_mat
-
-Stochastic partial differential equation compression (SPDE)
-
-.. autosummary::
-   :toctree: _autosummary
-
     eigen_factorize_cov_mat
 
 Regularization weights selection
@@ -164,7 +172,9 @@ from pyrtid.inverse.regularization.covariances import (
     SparseInvCovarianceMatrix,
     eigen_factorize_cov_mat,
     generate_dense_matrix,
+    get_explained_var,
     get_matrix_eigen_factorization,
+    sample_from_sparse_cov_factor,
 )
 from pyrtid.inverse.regularization.discrete import DiscreteRegularizator
 from pyrtid.inverse.regularization.geostatistical import (
@@ -213,7 +223,9 @@ __all__ = [
     "GeostatisticalRegularizator",
     "EnsembleRegularizator",
     "get_matrix_eigen_factorization",
+    "get_explained_var",
     "eigen_factorize_cov_mat",
+    "sample_from_sparse_cov_factor",
     "generate_dense_matrix",
     "AdaptiveUCRegweight",
     "AdaptiveRegweight",

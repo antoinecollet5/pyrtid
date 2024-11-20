@@ -14,6 +14,7 @@ from time import time
 from typing import Callable, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
+import scipy as sp
 from numpy.random import Generator, RandomState
 from scipy._lib._util import check_random_state  # To handle random_state
 from scipy.linalg import solve
@@ -579,13 +580,30 @@ class EigenFactorizedCovarianceMatrix(CovarianceMatrix):
         )
 
     def solve(self, x: NDArrayFloat) -> NDArrayFloat:
-        """Return $Q^{-1} x = ZD^{-1}Z^{T}x$."""
+        r"""
+        Return $Q^{-1} x = ZD^{-1}Z^{T}x$.
+
+        Parameters
+        ----------
+        x: NDArrayFloat
+            Column vector with shape ($N_{\mathrm{s}}$, 1) or ensemble matrix with
+            shape ($N_{\mathrm{s}}$, $N_e$).
+
+        Returns
+        -------
+        NDAarrayFloat
+            Column vector with shape ($N_{\mathrm{s}}$, 1) or ensemble matrix with
+            shape ($N_{\mathrm{s}}$, $N_e$).
+        """
         # np.dot(invZs.T, invZs)
-        # Note: x must be a column vector
+        # Note: x must be a column vector of a matrix with size (Ns, Ne)
+        ne = 1  # case of a column vector
+        if x.ndim > 1:
+            ne = x.shape[1]
         return np.dot(
             self.eig_vects,
             np.multiply(
-                1.0 / self.eig_vals, np.dot(self.eig_vects.T, x.reshape(-1, 1))
+                1.0 / self.eig_vals, np.dot(self.eig_vects.T, x.reshape(-1, ne))
             ),
         )
 
@@ -595,6 +613,22 @@ class EigenFactorizedCovarianceMatrix(CovarianceMatrix):
 
     def todense(self) -> NDArrayFloat:
         return np.dot(self.eig_vects, np.multiply(self.eig_vals, self.eig_vects.T))
+
+    def get_sparse_LLT_factor(self) -> csc_array:
+        """
+        Return the sparse factor L of the LL^T factorization of the eigen matrix.
+
+        Return
+        ------
+        L: csc_array
+            L = U * V^{T/2}.
+        """
+        # 1) Convert U sqrt(V) to a sparse format
+        sp_mat = sp.sparse.lil_array(self.eig_vects * np.sqrt(self.eig_vals).T)
+        # 2) Resize -> we now have a square matrix and indices are preserved
+        sp_mat.resize(self.shape)
+        # 3) Convert to column format
+        return sp_mat.tocsc()
 
 
 class SparseInvCovarianceMatrix(CovarianceMatrix):
@@ -762,3 +796,47 @@ def get_explained_var(
         return eigval / cov_mat.get_trace()
     else:
         raise ValueError("You must provide a Covariance matrix instance or the trace !")
+
+
+def sample_from_sparse_cov_factor(
+    mean: NDArrayFloat,
+    factor: csc_array,
+    n_samples: int = 100,
+    random_state: Optional[
+        Union[int, np.random.Generator, np.random.RandomState]
+    ] = None,
+) -> NDArrayFloat:
+    r"""
+    Sample from the given sparse factor of the covariance matrix and the given mean.
+
+    Parameters
+    ----------
+    mean: NDArrayFloat
+        Mean of the field with shape $N_{\mathrm{s}}$.
+    factor: NDArrayFloat
+        Sparse factor of the covariance matrix from which to sample from. It has shape
+        $(N_{\mathrm{s}} \times N_{\mathrm{s}})$.
+    n_samples: int
+        The number of samples required ($N_{\mathrm{e}}$). By default 100.
+    random_state : Optional[Union[int, np.random.Generator, np.random.RandomState]]
+        Pseudorandom number generator state used to generate resamples.
+        If `random_state` is ``None`` (or `np.random`), the
+        `numpy.random.RandomState` singleton is used.
+        If `random_state` is an int, a new ``RandomState`` instance is used,
+        seeded with `random_state`.
+        If `random_state` is already a ``Generator`` or ``RandomState``
+        instance then that instance is used. The default is None
+
+    Returns
+    -------
+    NDArrayFloat
+        The ensemble of realizations with shape
+        $(N_{\mathrm{s}} \times N_{\mathrm{e}})$
+    """
+    if random_state is not None:
+        _random_state = check_random_state(random_state)
+    else:
+        _random_state = np.random.default_rng()
+    return factor @ _random_state.normal(
+        scale=1.0, size=(factor.shape[0], n_samples)
+    ) + mean.reshape(-1, 1)
