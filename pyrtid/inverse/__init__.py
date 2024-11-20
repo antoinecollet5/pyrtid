@@ -72,10 +72,10 @@ Loss functions
 .. autosummary::
    :toctree: _autosummary
 
-    eval_loss_ls,
-    eval_model_loss_function,
-    eval_model_loss_ls,
-    get_theoretical_noise_level,
+    eval_loss_ls
+    eval_model_loss_function
+    eval_model_loss_ls
+    get_theoretical_noise_level
 
 Preconditioners
 ^^^^^^^^^^^^^^^
