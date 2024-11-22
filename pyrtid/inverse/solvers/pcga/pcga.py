@@ -21,7 +21,7 @@ from typing import Any, Callable, Generator, Iterator, List, Optional, Tuple, Un
 import numpy as np
 import scipy as sp
 from scipy._lib._util import check_random_state  # To handle random_state
-from scipy.sparse.linalg import LinearOperator, eigsh, gmres, minres
+from scipy.sparse.linalg import LinearOperator, gmres, minres
 
 from pyrtid.inverse.regularization import (
     ConstantDriftMatrix,
@@ -33,6 +33,194 @@ from pyrtid.inverse.regularization import (
 from pyrtid.utils import NDArrayBool, NDArrayFloat
 
 VERY_LARGE_NUMBER = 1.0e20
+
+
+def mgs_stable(A, Z, verbose=False):
+    """
+    Returns QR decomposition of Z with Q*AQ = I.
+
+    Q and R satisfy the following relations in exact arithmetic:
+
+    1. QR    	= Z
+    2. Q^*AQ 	= I
+    3. Q^*AZ	= R
+    4. ZR^{-1}	= Q
+
+    Uses Modified Gram-Schmidt with re-orthogonalization (Rutishauser variant)
+    for computing the A-orthogonal QR factorization
+
+    Parameters
+    ----------
+    A : {sparse matrix, dense matrix, LinearOperator}
+            An array, sparse matrix, or LinearOperator representing
+            the operation ``A * x``, where A is a real or complex square matrix.
+
+    Z : ndarray
+
+    verbose : bool, optional
+              Displays information about the accuracy of the resulting QR
+              Default: False
+
+    Returns
+    -------
+
+    q : ndarray
+            The A-orthogonal vectors
+
+    Aq : ndarray
+            The A^{-1}-orthogonal vectors
+
+    r : ndarray
+            The r of the QR decomposition
+
+
+    See Also
+    --------
+    mgs : Modified Gram-Schmidt without re-orthogonalization
+    precholqr  : Based on CholQR
+
+
+    References
+    ----------
+    .. [1] A.K. Saibaba, J. Lee and P.K. Kitanidis, Randomized algorithms for
+            Generalized Hermitian Eigenvalue Problems with application to computing
+            Karhunen-Loe've expansion http://arxiv.org/abs/1307.6885
+
+    .. [2] W. Gander, Algorithms for the QR decomposition. Res. Rep, 80(02), 1980
+
+    Examples
+    --------
+
+    >>> import numpy as np
+    >>> A = np.diag(np.arange(1,101))
+    >>> Z = np.random.randn(100,10)
+    >>> q, Aq, r = mgs_stable(A, Z, verbose = True)
+
+    """
+
+    # Get sizes
+    n = np.size(Z, 1)
+
+    # Convert into linear operator
+    Aop = sp.sparse.linalg.aslinearoperator(A)
+
+    # Initialize
+    Aq = np.zeros_like(Z, dtype="d")
+    q = np.zeros_like(Z, dtype="d")
+    r = np.zeros((n, n), dtype="d")
+
+    reorth = np.zeros((n,), dtype="d")
+    eps = np.finfo(np.float64).eps
+
+    q = np.copy(Z)
+
+    for k in np.arange(n):
+        Aq[:, k] = Aop.matvec(q[:, k])
+        t = np.sqrt(np.dot(q[:, k].T, Aq[:, k]))
+
+        nach = 1
+        u = 0
+        while nach:
+            u += 1
+            for i in np.arange(k):
+                s = np.dot(Aq[:, i].T, q[:, k])
+                r[i, k] += s
+                q[:, k] -= s * q[:, i]
+
+            Aq[:, k] = Aop.matvec(q[:, k])
+            tt = np.sqrt(np.dot(q[:, k].T, Aq[:, k]))
+            if tt > t * 10.0 * eps and tt < t / 10.0:
+                nach = 1
+                t = tt
+            else:
+                nach = 0
+                if tt < 10.0 * eps * t:
+                    tt = 0.0
+
+        reorth[k] = u
+        r[k, k] = tt
+        tt = 1.0 / tt if np.abs(tt * eps) > 0.0 else 0.0
+        q[:, k] *= tt
+        Aq[:, k] *= tt
+
+    if verbose:
+        # Verify Q*R = Y
+        print("||QR-Y|| is ", np.linalg.norm(np.dot(q, r) - Z, 2))
+
+        # Verify Q'*A*Q = I
+        T = np.dot(q.T, Aq)
+        print("||Q^TAQ-I|| is ", np.linalg.norm(T - np.eye(n, dtype="d"), ord=2))
+
+        # verify Q'AY = R
+        print("||R - Q^TAY|| is ", np.linalg.norm(r - np.dot(Aq.T, Z), 2))
+
+        # Verify YR^{-1} = Q
+        val = np.inf
+        try:
+            val = np.linalg.norm(np.linalg.solve(r.T, Z.T).T - q, 2)
+        except sp.linalg.LinAlgError:
+            print("YR^{-1}-Q is singular")
+        print("||YR^{-1}-Q|| is ", val)
+
+    return q, Aq, r
+
+
+def ghep(
+    A: Union[NDArrayFloat, LinearOperator],
+    B: Union[NDArrayFloat, LinearOperator],
+    Binv: Union[NDArrayFloat, LinearOperator],
+    r: int,
+    d: int,
+    single_pass: bool = True,
+    keep_neg_eigvals: bool = False,
+) -> Tuple[NDArrayFloat, NDArrayFloat]:
+    """
+    Randomized Eigen Value Decomposition (EVD).
+
+    TODO: add ref. :cite:t:`halkoFindingStructureRandomness2010`_.
+
+    Parameters
+    ----------
+    A : NDArrayFloat
+        A ∈ RN×N
+    r : int
+        Desired rank.
+    d : int
+        Oversampling parameter. Typically, d is chosen to be less than 20 following the
+        arguments in [5, 7]. The improvement in the approximation error with increasing
+        p is verified in both theory and experiment (Sections 4 and 5)
+
+    5. Halko N, Martinsson PG, Tropp JA. Finding structure with randomness:
+    probabilistic algorithms for constructing approximate matrix decompositions.
+    SIAM Review 2011; 53(2):217–288. 6. Bui-Thanh T, Burstedde C, Ghattas O, Martin J,
+    Stadler G, Wilcox LC. Extreme-scale UQ for Bayesian inverse problems governed
+    by PDEs. In Proceedings of the International Conference on High Performance
+    Computing, Networking, Storage and Analysis. IEEE Computer Society Press:
+    Portland, OR, 2012; 3. 7. Liberty E, Woolfe F, Martinsson PG, Rokhlin V,
+    Tygert M. Randomized algorithms for the low-rank approximation of matrices.
+    Proceedings of the National Academy of Sciences 2007; 104(51):20167–20172.
+
+    Output: low-rank approximation  ̃ A of A
+    """
+    # Initiate random matrix
+    Omega = np.random.default_rng(2023).normal(0, size=(A.shape[1], r + d))
+    # Sample column space
+    Y = Binv @ A @ Omega
+    # Orthogonalize column samples alternatively msg_stable
+    Qy = mgs_stable(B, Y, verbose=False)[0]
+    # SVD of k × k compressed row sample matrix
+    if single_pass:
+        s, Z = sp.linalg.eigh(Qy.T @ Y @ sp.linalg.pinv(Qy.T @ Omega), lower=True)
+    else:
+        s, Z = sp.linalg.eigh(Qy.T @ A.T @ Qy, lower=True)
+
+    _sort = np.argsort(s)[::-1]
+
+    if not keep_neg_eigvals:
+        _sort = _sort[s[_sort] > 0.0]
+
+    # V, s, U
+    return (Qy @ Z)[:, _sort], s[_sort].reshape(-1, 1)
 
 
 def ensemble_dot(X1: NDArrayFloat, X2: NDArrayFloat) -> NDArrayFloat:
@@ -162,6 +350,9 @@ class CovObs(LinearOperator):
         """Return cov_obs @ v."""
         return self._matvec(v)
 
+    def _matmat(self, V: NDArrayFloat) -> NDArrayFloat:
+        return self._matvec(V)
+
     def solve(self, v: NDArrayFloat) -> NDArrayFloat:
         """Return cov_obs^{-1} @ v."""
         if self.mat.ndim == 2:
@@ -170,24 +361,6 @@ class CovObs(LinearOperator):
             return sp.linalg.cho_solve((self.lcho_factor, True), v)
         # Case 1D, the inverse of cov_obs (R matrix) is a diagonal matrix
         return sp.sparse.diags_array(1.0 / (self.lcho_factor**2)) @ v
-
-    def factor_solve(self, v: NDArrayFloat) -> NDArrayFloat:
-        """Return L^{-1} @ v for cov_obs = LL^{T}."""
-        # TODO: we can try other representation for large scale cov_obs (e.g.,)
-        # eigen decomposition
-        if self.mat.ndim == 2:
-            return sp.linalg.solve_triangular(self.lcho_factor, v, lower=True)
-        # diagonal case
-        return sp.sparse.diags_array(1.0 / self.lcho_factor) @ v
-
-    def rfactor_solve(self, v: NDArrayFloat) -> NDArrayFloat:
-        """Return L^{-1} @ v for cov_obs = LL^{T}."""
-        # TODO: we can try other representation for large scale cov_obs (e.g.,)
-        # eigen decomposition
-        if self.mat.ndim == 2:
-            return sp.linalg.solve_triangular(self.lcho_factor.T, v, lower=False)
-        # diagonal case
-        return sp.sparse.diags_array(1.0 / self.lcho_factor) @ v
 
     def add_inflated(self, mat: NDArrayFloat, inflation: float = 1.0) -> NDArrayFloat:
         """Add the inflated covariance matrix to the given matrix."""
@@ -198,13 +371,24 @@ class CovObs(LinearOperator):
         np.fill_diagonal(mat, mat.diagonal() + inflation * self.mat)
         return mat
 
+    def todense(self) -> NDArrayFloat:
+        if self.mat.ndim == 1:
+            return np.diag(self.mat)
+        return self.mat
+
+    def __add__(self, other: NDArrayFloat) -> NDArrayFloat:
+        return self.add_inflated(other, 1.0)
+
+    def __sub__(self, other: NDArrayFloat) -> NDArrayFloat:
+        return self.add_inflated(other, -1.0)
+
 
 class InvALinOp(LinearOperator):
     def __init__(
         self,
         HX: NDArrayFloat,
-        mmt_eig_vects: NDArrayFloat,
-        mmt_eig_vals: NDArrayFloat,
+        HZZTHT_eig_vects: NDArrayFloat,
+        HZZTHT_eig_vals: NDArrayFloat,
         cov_obs: CovObs,
         n_obs: int,
         beta_dim: int,
@@ -215,8 +399,8 @@ class InvALinOp(LinearOperator):
         self.n_obs: int = n_obs
         self.beta_dim: int = beta_dim
         self.HX: NDArrayFloat = HX
-        self.mmt_eig_vects: NDArrayFloat = mmt_eig_vects
-        self.mmt_eig_vals: NDArrayFloat = mmt_eig_vals
+        self.HZZTHT_eig_vects: NDArrayFloat = HZZTHT_eig_vects
+        self.HZZTHT_eig_vals: NDArrayFloat = HZZTHT_eig_vals
         self.cov_obs = cov_obs
 
     def update_inflation_factor(self, value: float) -> None:
@@ -226,60 +410,74 @@ class InvALinOp(LinearOperator):
     def inv_psi(self, v: NDArrayFloat, inflation: float) -> NDArrayFloat:
         Dvec = sp.sparse.diags_array(
             np.divide(
-                (1.0 / inflation * self.mmt_eig_vals**2),
-                ((1.0 / inflation) * self.mmt_eig_vals**2 + 1.0),
+                (1.0 / inflation * self.HZZTHT_eig_vals.ravel()),
+                ((1.0 / inflation) * self.HZZTHT_eig_vals.ravel() + 1.0),
             )
         )  # (n_pc,)
 
         return (1.0 / inflation) * (
             self.cov_obs.solve(v)
-            - self.cov_obs.factor_solve(
-                self.mmt_eig_vects
-                @ (Dvec @ (self.mmt_eig_vects.T @ self.cov_obs.rfactor_solve(v))),
-            )
+            - (self.HZZTHT_eig_vects @ (Dvec @ (self.HZZTHT_eig_vects.T @ v)))
         )
 
     def _matvec(self, v: NDArrayFloat) -> NDArrayFloat:
+        # See Eq. 14 in leeScalableSubsurfaceInverse2016.
+        # Warning, there is typo for the block 22 of A^{-1}.
+        # i.e., it is -S^{-1} instead of -S.
+
+        # (n_obs, 1) vector  -> First part of the multiplication with
+        # block (1, 1) of A^{-1}
         invPsiv = self.inv_psi(v[: self.n_obs], self.inflation)
 
-        S = -np.dot(self.HX.T, self.inv_psi(self.HX, self.inflation))  # p by p matrix
+        # S is a p by p matrix
+        S = np.dot(self.HX.T, self.inv_psi(self.HX, self.inflation))
+        # So we can invert it directly because p is usually between 1 and 3.
         invS = np.linalg.inv(S)
-        G = self.inv_psi(self.HX, self.inflation)  # n_obs by p matrix
 
-        # invSHXTinvPsiv = invS @ np.dot(self.HX.T, invPsiv)
-        # invPsiHXinvSHXTinvPsiv = self.inv_psi(
-        #     np.dot(self.HX, invSHXTinvPsiv), self.inflation
-        # )
-        # invPsiHXinvSv1 = self.inv_psi(
-        #     np.dot(self.HX, invS @ v[self.n_obs :]), self.inflation
-        # )
-        # invSv1 = invS @ v[self.n_obs :]
+        # multiplication with block (2,1) of A^{-1} => S^{-1} \Phi^T \Psi^{-1}
+        invSHXTinvPsiv = invS @ np.dot(self.HX.T, invPsiv)
 
-        # return np.concatenate(
-        #     (
-        #         (invPsiv - invPsiHXinvSHXTinvPsiv + invPsiHXinvSv1),
-        #         (invSHXTinvPsiv - invSv1),
-        #     ),
-        #     axis=0,
-        # )
+        # Second part of the multiplication with block (1, 1) of A^{-1}
+        invPsiHXinvSHXTinvPsiv = self.inv_psi(
+            np.dot(self.HX, invSHXTinvPsiv), self.inflation
+        )
+
+        # multiplication with block (1,2) of A^{-1} =>  \Psi^{-1} \Phi^T S^{-1}
+        invPsiHXinvSv1 = self.inv_psi(
+            np.dot(self.HX, invS @ v[self.n_obs :]), self.inflation
+        )
+
+        # multiplication with block (2, 2)
+        invSv1 = invS @ v[self.n_obs :]
+
+        # Gathering the resulting vector.
         return np.concatenate(
             (
-                (
-                    invPsiv
-                    + G @ invS @ G.T @ v[: self.n_obs]
-                    - G @ invS @ v[self.n_obs :]
-                ),
-                (-invS @ G.T @ v[: self.n_obs] + invS @ v[self.n_obs :]),
+                (invPsiv - invPsiHXinvSHXTinvPsiv + invPsiHXinvSv1),
+                (invSHXTinvPsiv - invSv1),
             ),
             axis=0,
         )
+
+    def _matmat(self, V: NDArrayFloat) -> NDArrayFloat:
+        # _matvec supports matrix multiplication.
+        return self._matvec(V)
+
+    def _rmatvec(self, v: NDArrayFloat) -> NDArrayFloat:
+        return self._matvec(v)
+
+    def _rmatmat(self, V: NDArrayFloat) -> NDArrayFloat:
+        return self._rmatvec(V)
+
+    def get_invPsi(self, inflation) -> NDArrayFloat:
+        return self.inv_psi(np.identity(self.n_obs), inflation)
 
 
 class PCGA:
     """
     Solve inverse problem with PCGA (approx to quasi-linear method)
 
-    every values are represented as 2D np array
+    Every values are represented as 2D np.array.
     """
 
     # TODO: __slots__
@@ -313,7 +511,7 @@ class PCGA:
         ftarget: Optional[float] = None,
         restol: float = 1e-2,
         logger: Optional[logging.Logger] = None,
-        is_save_jac: bool = False,
+        is_save_jac: bool = True,
         # PCGA parameters (perturbation size)
         eps=1.0e-8,
     ) -> None:
@@ -407,7 +605,8 @@ class PCGA:
         self.s_init = np.array(s_init).reshape(-1, 1)
         # Observations
         self.obs = np.array(obs).ravel()  # 1D vector
-        self.cov_obs = np.asarray(cov_obs)
+        # TODO: change
+        self.cov_obs = CovObs(np.asarray(cov_obs), self.d_dim)
         # forward solver setting should be done externally as a blackbox
         # including the parallelization
         self.forward_model = forward_model
@@ -486,8 +685,6 @@ class PCGA:
         self.HZ: NDArrayFloat = np.array([])
         self.Hs: NDArrayFloat = np.array([])
         self.P = None
-        self.Psi_U = None
-        self.Psi_sigma = None
 
         ##### Optimization
         self.display_init_parameters()
@@ -563,13 +760,13 @@ class PCGA:
         return self._cov_obs
 
     @cov_obs.setter
-    def cov_obs(self, cov: NDArrayFloat) -> None:
+    def cov_obs(self, value: CovObs) -> None:
         """
         Set the observation errors covariance matrix.
 
         It must be a 2D array, or a 1D array if the covariance matrix is diagonal.
         """
-        self._cov_obs = CovObs(cov, self.d_dim)
+        self._cov_obs = value
 
     @property
     def prior_s_var(self) -> NDArrayFloat:
@@ -802,7 +999,14 @@ class PCGA:
             return np.sqrt(residuals.T.dot(self.cov_obs.solve(residuals)) / self.d_dim)
         return np.linalg.norm(residuals, axis=0) / np.sqrt(self.d_dim)
 
-    def jac_mat(self, s_cur, simul_obs, Z):
+    def jac_mat(
+        self, s_cur: NDArrayFloat, simul_obs: NDArrayFloat, Z: NDArrayFloat
+    ) -> Tuple[
+        NDArrayFloat,
+        NDArrayFloat,
+        NDArrayFloat,
+        Tuple[NDArrayFloat, NDArrayFloat, NDArrayFloat],
+    ]:
         m: int = self.s_dim
         p: int = self.drift.beta_dim
         n_pc: int = self.Q.n_pc
@@ -831,7 +1035,7 @@ class PCGA:
         elif p > 1:
             from scipy.linalg import svd
 
-            U_data = svd(
+            U_data: Tuple[NDArrayFloat, NDArrayFloat, NDArrayFloat] = svd(
                 HX, full_matrices=False, compute_uv=True, lapack_driver="gesdd"
             )[0]
         else:  # point prior
@@ -908,7 +1112,7 @@ class PCGA:
             )
             if self.is_use_preconditioner:
                 # update the preconditioner
-                invA_as_linop = self.get_invA_as_linop(HZ, HX)
+                invA_as_linop = self.get_invA_as_linop(HZ, HX, self.cov_obs)
 
             def internal_iteration(
                 _inflation,
@@ -1324,88 +1528,90 @@ class PCGA:
         # Return three column vectors
         return xi, s_hat, beta
 
-    def get_invA_as_linop(self, HZ: NDArrayFloat, HX: NDArrayFloat) -> InvALinOp:
+    def get_invA_as_linop(
+        self, HZ: NDArrayFloat, HX: NDArrayFloat, cov_obs: CovObs
+    ) -> InvALinOp:
         """
         Return the low rank inverse of A as a linear operator.
 
         The output is used as a preconditioner for Krylov subspace iterative approaches
         when solving Ax = b.
-        """
-        # t_start_precond = time()
 
-        # GHEP : HQHT u = lamdba R u => u = R^{-1/2} y
-        # original implementation was sqrt of R^{-1/2} HZ n by n_pc
-        # svds cannot compute entire n_pc eigenvalues so do this for
-        # n by n matrix
-        # this leads to double the cost
+        See section 2.3 in :cite:t:`leeScalableSubsurfaceInverse2016`.
+        """
+        self.loginfo(
+            "Preconditioner construction using Generalized Eigen-decomposition"
+        )
+        t_start_precond = time()
+
+        # generalized Hermitian eigenvalue problem (GHEP):
+        # GHEP : HQHT u = lamdba R u
+        # We can write R = LLT (cholesky)=> L^{-1}HQHTL^{-T}L^T u = lambda L^{T} u
+        # y = L^{T} u
+        # So this is a HEP:
+        # L^{-1}HQHTL^{-T}y = lambda y
+
+        # But this is not practical for large-scale R -> cholesky factorization is
+        # needed.
+
+        # Alternative from saibabaRandomizedAlgorithmsGeneralized2016:
+        # Randomized eigenvalue decomposition (alg2). Still we must be able to
+        # compute R^{-1} x (matvects)
 
         n_obs = self.n_obs
         beta_dim = self.drift.beta_dim
 
-        def matvec(v: NDArrayFloat) -> NDArrayFloat:
-            return self.cov_obs.factor_solve(
-                np.dot(HZ, (np.dot(HZ.T, self.cov_obs.factor_solve(v))))
-            )
-
-        class MMT(LinearOperator):
-            def __init__(self) -> None:
-                """Initialize the instance."""
-                super().__init__(dtype=np.float64, shape=(n_obs, n_obs))
-
-            def _matvec(self, v: NDArrayFloat) -> NDArrayFloat:
-                return matvec(v)
-
-            def _rmatvec(self, v: NDArrayFloat) -> NDArrayFloat:
-                return self._matvec(v)
-
-        # self.loginfo('preconditioner construction using Generalized
-        # Eigen-decomposition')
-        #    self.loginfo("n :%d & n_pc: %d" % (n,n_pc))
-
         if self.Q.n_pc < self.n_obs:
             k = self.Q.n_pc
-            maxiter = self.n_obs
         elif self.Q.n_pc == self.n_obs:
             k = self.Q.n_pc - 1
-            maxiter = self.n_obs
         else:
             k = self.n_obs - 1
-            maxiter = self.Q.n_pc
 
-        mmt_eig_vals, mmt_eig_vects = eigsh(
-            MMT(), k=k, v0=self.get_v0(self.n_obs), which="LM", maxiter=maxiter
+        class InvRLinOp(LinearOperator):
+            def __init__(self) -> None:
+                super().__init__(shape=(n_obs, n_obs), dtype=np.float64)
+
+            def _matvec(self, v: NDArrayFloat) -> NDArrayFloat:
+                return cov_obs.solve(v)
+
+        class HZZTHTLinOp(LinearOperator):
+            def __init__(self) -> None:
+                super().__init__(shape=(n_obs, n_obs), dtype=np.float64)
+
+            def _matvec(self, v: NDArrayFloat) -> NDArrayFloat:
+                return HZ @ (HZ.T @ v)
+
+        HZZTHT_eig_vects, HZZTHT_eig_vals = ghep(
+            HZZTHTLinOp(),
+            cov_obs,
+            InvRLinOp(),
+            r=k,
+            d=20,
+            single_pass=False,
+            keep_neg_eigvals=False,
         )
 
-        # keep only positive eigen values
-        mask = mmt_eig_vals > 0
-        mmt_eig_vects = mmt_eig_vects[:, mask]
-        mmt_eig_vals = mmt_eig_vals[mask]
+        logging.info(
+            f"- 1st eigv : {HZZTHT_eig_vals[0].item():.2e},"
+            f"{HZZTHT_eig_vals.size}-th eigv : {HZZTHT_eig_vals[-1].item():.2e}, "
+            f"ratio: {(HZZTHT_eig_vals[-1] / HZZTHT_eig_vals[0]).item():.2e}"
+        )
 
-        # self.loginfo("eig. val. of sqrt data covariance (%8.2e, %8.2e, %8.2e)"
-        # % (Psi_sigma[0], Psi_sigma.min(), Psi_sigma.max()))
-        # self.loginfo(Psi_sigma)
+        self.loginfo(
+            "Time for data covarance construction :"
+            f"{(time() - t_start_precond):.2e} sec"
+        )
+        if HZZTHT_eig_vects.shape[1] != self.Q.n_pc:
+            self.loginfo(
+                f"- rank of data covariance :{HZZTHT_eig_vects.shape[1]} "
+                "for preconditioner construction."
+            )
 
-        # TODO: change
-
-        # self.loginfo(
-        #     "time for data covarance construction : %f sec "
-        #     % (time() - t_start_precond)
-        # )
-        # self.loginfo(
-        #     "eig. val. of data covariance (%8.2e, %8.2e, %8.2e)"
-        #     % (Psi_sigma[0], Psi_sigma.min(), Psi_sigma.max())
-        # )
-        # if Psi_U.shape[1] != n_pc:
-        #     self.loginfo(
-        #         "- rank of data covariance :%d for preconditioner construction"
-        #         % (Psi_U.shape[1])
-        #     )
-
-        # # TODO: remove these two useless lines
-        self.Psi_sigma = mmt_eig_vals
-        self.Psi_U = mmt_eig_vects
         # This inflation factor will be updated later
-        return InvALinOp(HX, mmt_eig_vects, mmt_eig_vals, self.cov_obs, n_obs, beta_dim)
+        return InvALinOp(
+            HX, HZZTHT_eig_vects, HZZTHT_eig_vals, cov_obs, n_obs, beta_dim
+        )
 
     def line_search(self, s_cur, s_past):
         n_internal_loops = self.max_it_lm
@@ -1771,6 +1977,7 @@ class PCGA:
         inflation: float,
     ) -> NDArrayFloat:
         """Computing posterior diagonal entries using cholesky."""
+        print(HZ.shape)
         Psi = self.get_psi(HZ, cov_obs, inflation)
         Z = np.sqrt(self.Q.eig_vals).T * self.Q.eig_vects
 
@@ -1955,6 +2162,9 @@ class PCGA:
     #     random_state,
     # ) -> EigenFactorizedCovarianceMatrix:
     #     """Computing posterior diagonal entries using cholesky."""
+
+    # TODO: see Appendix B: Fast Posterior Variance Computation in
+    # leeScalableSubsurfaceInverse2016.
 
     #     Z = np.sqrt(self.Q.eig_vals).T * self.Q.eig_vects
 
