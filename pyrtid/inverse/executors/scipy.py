@@ -74,6 +74,7 @@ class ScipyInversionExecutor(AdjointInversionExecutor[ScipySolverConfig]):
             self._init_adjoint_model(
                 self.solver_config.afpi_eps,
                 self.solver_config.is_adj_numerical_acceleration,
+                self.solver_config.is_use_continuous_adj,
             )
 
     def _get_solver_name(self) -> str:

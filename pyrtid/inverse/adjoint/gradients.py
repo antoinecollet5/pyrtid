@@ -7,11 +7,16 @@ from typing import List, Optional
 import numpy as np
 
 from pyrtid.forward import ForwardModel, ForwardSolver
-from pyrtid.forward.flow_solver import get_rhomean2
-from pyrtid.forward.models import GRAVITY, WATER_DENSITY, FlowRegime, VerticalAxis
+from pyrtid.forward.flow_solver import get_kmean, get_rhomean2
+from pyrtid.forward.models import (
+    GRAVITY,
+    WATER_DENSITY,
+    FlowRegime,
+    VerticalAxis,
+    get_owner_neigh_indices,
+)
 from pyrtid.inverse.adjoint import AdjointModel, AdjointSolver
 from pyrtid.inverse.adjoint.aflow_solver import (
-    get_adjoint_transport_src_terms,
     make_initial_adj_flow_matrices,
 )
 from pyrtid.inverse.adjoint.ageochem_solver import ddMdimmobprev
@@ -268,6 +273,11 @@ def _get_perm_gradient_from_diffusivity_eq_saturated(
     NDArrayFloat
         Gradient with respect to the permeability using head observations.
     """
+
+    # continuous version just for the article about discretization.
+    if adj_model.a_fl_model.is_use_continuous_adj:
+        pass
+
     shape = (fwd_model.geometry.nx, fwd_model.geometry.ny, fwd_model.time_params.nt)
     permeability = fwd_model.fl_model.permeability
 
@@ -821,7 +831,6 @@ def get_sc_adjoint_gradient(
         The forward model which contains all forward variables and parameters.
     adj_model : AdjointModel
         The adjoint model which contains all adjoint variables and parameters.
-
     Returns
     -------
     NDArrayFloat
@@ -864,6 +873,10 @@ def get_sc_adjoint_gradient_saturated(
         / np.array(fwd_model.time_params.ldt)[np.newaxis, np.newaxis, :]
         * fwd_model.geometry.mesh_volume
     )
+
+    # The continuous version slightly differs
+    if adj_model.a_fl_model.is_use_continuous_adj:
+        grad /= fwd_model.geometry.mesh_volume
 
     # We sum along the temporal axis
     return np.sum(grad, axis=-1) + adj_model.a_fl_model.a_storage_coefficient_sources[
@@ -973,48 +986,273 @@ def get_initial_head_adjoint_gradient(
     # TODO
 
     """
-    a_head = adj_model.a_fl_model.a_head[:, :, :2].reshape((-1, 2), order="F")
+    # flatten the heads
+    a_head = adj_model.a_fl_model.a_head[:, :].reshape(
+        (-1, fwd_model.time_params.nt), order="F"
+    )
+    # Initialize the gradient as a null array
     grad = np.zeros(a_head[:, 0].size, dtype=np.float64)
 
-    # TODO: Need to take the darcy velocity into account
+    # references
+    geometry = fwd_model.geometry
+    fl_model = fwd_model.fl_model
+    sc = fl_model.storage_coefficient.ravel("F")
 
-    (q_next, q_prev) = make_initial_adj_flow_matrices(
-        fwd_model.geometry,
-        fwd_model.fl_model,
-        fwd_model.tr_model,
-        adj_model.a_fl_model,
-        fwd_model.time_params,
-        is_q_prev_for_gradient=True,
-    )
+    if adj_model.a_fl_model.crank_nicolson is None:
+        fl_crank: float = fwd_model.fl_model.crank_nicolson
+    else:
+        fl_crank = adj_model.a_fl_model.crank_nicolson
 
-    # Computation w.r.t. \lambda^{1} -> explicit part
-    grad = -(
-        q_prev.dot(a_head[:, 1])
-        * fwd_model.geometry.mesh_volume
-        * fwd_model.fl_model.storage_coefficient.ravel("F")
-    )
+    # for t=0, in free grid cells only
+    if fl_model.regime != FlowRegime.STATIONARY:
+        grad[fl_model.free_head_nn] -= (
+            geometry.mesh_volume
+            * sc[fl_model.free_head_nn]
+            * a_head[fl_model.free_head_nn, 1]
+            / fwd_model.time_params.ldt[0]
+        )
 
-    # Computation w.r.t. \lambda^{0} -> implicit part
-    grad += (
-        q_next.dot(a_head[:, 0])
-        * fwd_model.geometry.mesh_volume
-        * fwd_model.fl_model.storage_coefficient.ravel("F")
-    )
+    # 1) X contribution
+    if geometry.nx >= 2:
+        kmean = get_kmean(geometry, fl_model, axis=0)
+        _tmp = geometry.gamma_ij_x / geometry.dx
+
+        # Forward
+        # 1.1.1) Forward but for free head nodes only at t=0
+        # if transient only
+        if fl_model.regime == FlowRegime.TRANSIENT:
+            idc_owner, idc_neigh = get_owner_neigh_indices(
+                geometry,
+                (slice(0, geometry.nx - 1), slice(None)),
+                (slice(1, geometry.nx), slice(None)),
+                owner_indices_to_keep=fl_model.free_head_nn,
+                neigh_indices_to_keep=None,
+            )
+            grad[idc_owner] += (
+                _tmp * kmean[idc_owner] * (1.0 - fl_crank) * a_head[idc_owner, 1]
+            )
+
+            # second term
+            idc_owner, idc_neigh = get_owner_neigh_indices(
+                geometry,
+                (slice(0, geometry.nx - 1), slice(None)),
+                (slice(1, geometry.nx), slice(None)),
+                owner_indices_to_keep=fl_model.free_head_nn,
+                neigh_indices_to_keep=fl_model.free_head_nn,
+            )
+            grad[idc_owner] -= (
+                _tmp * kmean[idc_owner] * (1.0 - fl_crank) * a_head[idc_neigh, 1]
+            )
+
+        # The following is always valid
+        # 1.1.2) Forward for cst head nodes but with free head neighbors only
+        # All times are considered
+        idc_owner, idc_neigh = get_owner_neigh_indices(
+            geometry,
+            (slice(0, geometry.nx - 1), slice(None)),
+            (slice(1, geometry.nx), slice(None)),
+            owner_indices_to_keep=fl_model.cst_head_nn,
+            neigh_indices_to_keep=fl_model.free_head_nn,
+        )
+        grad[idc_owner] -= (
+            _tmp
+            * kmean[idc_owner]
+            * (
+                fl_crank * np.sum(a_head[idc_neigh, 1:], axis=1)
+                + (1.0 - fl_crank) * np.sum(a_head[idc_neigh, 1:], axis=1)
+            )
+        )
+
+        if fl_model.regime == FlowRegime.STATIONARY:
+            grad[idc_owner] -= _tmp * kmean[idc_owner] * (a_head[idc_neigh, 0])
+
+        # Backward
+        # 1.2.1) Forward but for free head nodes only at t=0
+        if fl_model.regime == FlowRegime.TRANSIENT:
+            idc_owner, idc_neigh = get_owner_neigh_indices(
+                geometry,
+                (slice(1, geometry.nx), slice(None)),
+                (slice(0, geometry.nx - 1), slice(None)),
+                owner_indices_to_keep=fl_model.free_head_nn,
+                neigh_indices_to_keep=None,
+            )
+            grad[idc_owner] += (
+                _tmp * kmean[idc_neigh] * (1.0 - fl_crank) * a_head[idc_owner, 1]
+            )
+
+            # second term
+            idc_owner, idc_neigh = get_owner_neigh_indices(
+                geometry,
+                (slice(1, geometry.nx), slice(None)),
+                (slice(0, geometry.nx - 1), slice(None)),
+                owner_indices_to_keep=fl_model.free_head_nn,
+                neigh_indices_to_keep=fl_model.free_head_nn,
+            )
+            grad[idc_owner] -= (
+                _tmp * kmean[idc_neigh] * (1.0 - fl_crank) * a_head[idc_neigh, 1]
+            )
+
+        # 1.2.2) Backward for cst head nodes but with free head neighbors only
+        # All times are considered
+        idc_owner, idc_neigh = get_owner_neigh_indices(
+            geometry,
+            (slice(1, geometry.nx), slice(None)),
+            (slice(0, geometry.nx - 1), slice(None)),
+            owner_indices_to_keep=fl_model.cst_head_nn,
+            neigh_indices_to_keep=fl_model.free_head_nn,
+        )
+
+        grad[idc_owner] -= (
+            _tmp
+            * kmean[idc_neigh]
+            * (
+                np.sum(fl_crank * a_head[idc_neigh, 1:], axis=1)
+                + np.sum((1.0 - fl_crank) * a_head[idc_neigh, 1:], axis=1)
+            )
+        )
+
+        if fl_model.regime == FlowRegime.STATIONARY:
+            grad[idc_owner] -= _tmp * kmean[idc_neigh] * (a_head[idc_neigh, 0])
+
+    # 2) Y contribution
+    if geometry.ny >= 2:
+        kmean = get_kmean(geometry, fl_model, axis=1)
+        _tmp = geometry.gamma_ij_y / geometry.dy
+
+        # Forward
+        # 2.1.1) Forward but for free head nodes only at t=0
+        # if transient only
+        if fl_model.regime != FlowRegime.STATIONARY:
+            idc_owner, idc_neigh = get_owner_neigh_indices(
+                geometry,
+                (slice(None), slice(0, geometry.ny - 1)),
+                (slice(None), slice(1, geometry.ny)),
+                owner_indices_to_keep=fl_model.free_head_nn,
+                neigh_indices_to_keep=None,
+            )
+            grad[idc_owner] += (
+                _tmp * kmean[idc_owner] * (1.0 - fl_crank) * a_head[idc_owner, 1]
+            )
+
+            # second term
+            idc_owner, idc_neigh = get_owner_neigh_indices(
+                geometry,
+                (slice(None), slice(0, geometry.ny - 1)),
+                (slice(None), slice(1, geometry.ny)),
+                owner_indices_to_keep=fl_model.free_head_nn,
+                neigh_indices_to_keep=fl_model.free_head_nn,
+            )
+            grad[idc_owner] += (
+                _tmp * kmean[idc_owner] * (1.0 - fl_crank) * a_head[idc_neigh, 1]
+            )
+
+        # The following is always valid
+        # 2.1.2) Forward for cst head nodes but with free head neighbors only
+        # All times are considered
+        idc_owner, idc_neigh = get_owner_neigh_indices(
+            geometry,
+            (slice(None), slice(0, geometry.ny - 1)),
+            (slice(None), slice(1, geometry.ny)),
+            owner_indices_to_keep=fl_model.cst_head_nn,
+            neigh_indices_to_keep=fl_model.free_head_nn,
+        )
+        grad[idc_owner] -= (
+            _tmp
+            * kmean[idc_owner]
+            * (
+                fl_crank * np.sum(a_head[idc_neigh, 1:], axis=1)
+                + (1.0 - fl_crank) * np.sum(a_head[idc_neigh, 1:], axis=1)
+            )
+        )
+
+        if fl_model.regime == FlowRegime.STATIONARY:
+            grad[idc_owner] -= _tmp * kmean[idc_owner] * (a_head[idc_neigh, 0])
+
+        # Backward
+        # 2.2.1) Forward but for free head nodes only at t=0
+        if fl_model.regime != FlowRegime.STATIONARY:
+            idc_owner, idc_neigh = get_owner_neigh_indices(
+                geometry,
+                (slice(None), slice(1, geometry.ny)),
+                (slice(None), slice(0, geometry.ny - 1)),
+                owner_indices_to_keep=fl_model.free_head_nn,
+                neigh_indices_to_keep=None,
+            )
+            grad[idc_owner] += (
+                _tmp * kmean[idc_neigh] * (1.0 - fl_crank) * a_head[idc_owner, 1]
+            )
+
+            # second term
+            idc_owner, idc_neigh = get_owner_neigh_indices(
+                geometry,
+                (slice(None), slice(1, geometry.ny)),
+                (slice(None), slice(0, geometry.ny - 1)),
+                owner_indices_to_keep=fl_model.free_head_nn,
+                neigh_indices_to_keep=fl_model.free_head_nn,
+            )
+            grad[idc_owner] += (
+                _tmp * kmean[idc_neigh] * (1.0 - fl_crank) * a_head[idc_neigh, 1]
+            )
+
+        # 2.2.2) Backward for cst head nodes but with free head neighbors only
+        # All times are considered
+        idc_owner, idc_neigh = get_owner_neigh_indices(
+            geometry,
+            (slice(None), slice(1, geometry.ny)),
+            (slice(None), slice(0, geometry.ny - 1)),
+            owner_indices_to_keep=fl_model.cst_head_nn,
+            neigh_indices_to_keep=fl_model.free_head_nn,
+        )
+
+        grad[idc_owner] -= (
+            _tmp
+            * kmean[idc_neigh]
+            * (
+                np.sum(fl_crank * a_head[idc_neigh, 1:], axis=1)
+                + np.sum((1.0 - fl_crank) * a_head[idc_neigh, 1:], axis=1)
+            )
+        )
+
+        if fl_model.regime == FlowRegime.STATIONARY:
+            grad[idc_owner] -= _tmp * kmean[idc_neigh] * (a_head[idc_neigh, 0])
 
     # Derivative of the darcy equation
-    grad -= get_adjoint_transport_src_terms(
-        fwd_model.geometry, fwd_model.fl_model, adj_model.a_fl_model, 0, True
-    )
+    # TODO: Need to take the darcy velocity into account
+    # grad -= get_adjoint_transport_src_terms(
+    #     fwd_model.geometry, fwd_model.fl_model, adj_model.a_fl_model, 0, True
+    # )
 
-    # Add adjoint sources for t=0
-    # 1) head sources
-    grad += adj_model.a_fl_model.a_head_sources[:, [0]].todense().ravel("F")  # type: ignore
+    # Add adjoint sources for t!=0
+    # 1) head sources -> integral over all time
+    grad[fl_model.cst_head_nn] += (
+        adj_model.a_fl_model.a_head_sources[fl_model.cst_head_nn, :]
+        .sum(axis=1)
+        .ravel("F")
+    )  # type: ignore
+
     # 2) pressure sources
-    grad += (
-        adj_model.a_fl_model.a_pressure_sources[:, [0]].todense().ravel("F")
+    grad[fl_model.cst_head_nn] += (
+        adj_model.a_fl_model.a_pressure_sources[fl_model.cst_head_nn, :]
+        .sum(axis=1)
+        .ravel("F")
         * GRAVITY
         * WATER_DENSITY
     )
+
+    if fl_model.regime == FlowRegime.TRANSIENT:
+        # Add adjoint sources for t=0
+        # 1) head sources
+        grad += adj_model.a_fl_model.a_head_sources[fl_model.free_head_nn, [0]].ravel(  # type: ignore
+            "F"
+        )
+        # 2) pressure sources
+        grad += (
+            adj_model.a_fl_model.a_pressure_sources[fl_model.free_head_nn, [0]].ravel(  # type: ignore
+                "F"
+            )
+            * GRAVITY
+            * WATER_DENSITY
+        )
 
     # Add adjoint sources for time t=0
     return grad.reshape(fwd_model.fl_model.lhead[0].shape, order="F")
@@ -1034,13 +1272,13 @@ def get_initial_pressure_adjoint_gradient(
     a_pressure = adj_model.a_fl_model.a_pressure[:, :, :2].reshape((-1, 2), order="F")
     grad = np.zeros(a_pressure[:, 0].size, dtype=np.float64)
 
+    # TODO change all this
     (q_next, q_prev) = make_initial_adj_flow_matrices(
         fwd_model.geometry,
         fwd_model.fl_model,
         fwd_model.tr_model,
         adj_model.a_fl_model,
         fwd_model.time_params,
-        is_q_prev_for_gradient=True,
     )
 
     # Computation w.r.t. \lambda^{1} -> explicit part

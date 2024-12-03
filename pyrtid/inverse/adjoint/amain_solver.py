@@ -65,7 +65,6 @@ class AdjointSolver:
             self.fwd_model.tr_model,
             self.adj_model.a_fl_model,
             self.fwd_model.time_params,
-            is_q_prev_for_gradient=False,
         )
         (
             self.adj_model.a_fl_model.q_next,

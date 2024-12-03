@@ -31,7 +31,6 @@ def make_initial_adj_flow_matrices(
     tr_model: TransportModel,
     a_fl_model: AdjointFlowModel,
     time_params: TimeParameters,
-    is_q_prev_for_gradient: bool = False,
 ) -> Tuple[lil_array, lil_array]:
     """
     Make matrices for the initial time step with a potential stationary flow.
@@ -50,12 +49,6 @@ def make_initial_adj_flow_matrices(
         fl_crank = fl_model.crank_nicolson
     else:
         fl_crank = a_fl_model.crank_nicolson
-
-    # This is a trick to avoid building another matrix
-    if is_q_prev_for_gradient:
-        oitkg = None
-    else:
-        oitkg = fl_model.free_head_nn
 
     # 1) X contribution
     if geometry.nx >= 2:
@@ -86,7 +79,7 @@ def make_initial_adj_flow_matrices(
             geometry,
             (slice(0, geometry.nx - 1), slice(None)),
             (slice(1, geometry.nx), slice(None)),
-            owner_indices_to_keep=oitkg,
+            owner_indices_to_keep=fl_model.free_head_nn,
             neigh_indices_to_keep=fl_model.free_head_nn,
         )
         tmp = _tmp / sc[idc_owner] * kmean[idc_owner]
@@ -120,7 +113,7 @@ def make_initial_adj_flow_matrices(
             geometry,
             (slice(1, geometry.nx), slice(None)),
             (slice(0, geometry.nx - 1), slice(None)),
-            owner_indices_to_keep=oitkg,
+            owner_indices_to_keep=fl_model.free_head_nn,
             neigh_indices_to_keep=fl_model.free_head_nn,
         )
         tmp = _tmp / sc[idc_owner] * kmean[idc_neigh]
@@ -161,7 +154,7 @@ def make_initial_adj_flow_matrices(
             geometry,
             (slice(None), slice(0, geometry.ny - 1)),
             (slice(None), slice(1, geometry.ny)),
-            owner_indices_to_keep=oitkg,
+            owner_indices_to_keep=fl_model.free_head_nn,
             neigh_indices_to_keep=fl_model.free_head_nn,
         )
         tmp = _tmp / sc[idc_owner] * kmean[idc_owner]
@@ -196,7 +189,7 @@ def make_initial_adj_flow_matrices(
             geometry,
             (slice(None), slice(1, geometry.ny)),
             (slice(None), slice(0, geometry.ny - 1)),
-            owner_indices_to_keep=oitkg,
+            owner_indices_to_keep=fl_model.free_head_nn,
             neigh_indices_to_keep=fl_model.free_head_nn,
         )
         tmp = _tmp / sc[idc_owner] * kmean[idc_neigh]
@@ -211,19 +204,12 @@ def make_initial_adj_flow_matrices(
     # Add 1/dt for the left term contribution: only for free head
     diag = np.zeros(q_next.shape[0])
     diag[fl_model.free_head_nn] += float(1.0 / time_params.ldt[0])
-    # One for the cts head -> we must divide by storage coef and mesh volume because
-    # we divide the other terms in _q_prev and q_next (better conditionning)
-    diag[fl_model.cst_head_nn] += (
-        1.0
-        / fl_model.storage_coefficient.ravel("F")[fl_model.cst_head_nn]
-        / geometry.mesh_volume
-    )
 
     q_prev.setdiag(q_prev.diagonal() + diag)
 
     # Add 1 to the diagonal for conditionning. Note that lambda_h^0 (and lambda_p^{0})
     # is not used in the gradient at constant nodes
-    if fl_model.regime == FlowRegime.STATIONARY and not is_q_prev_for_gradient:
+    if fl_model.regime == FlowRegime.STATIONARY:
         diag = np.zeros(q_next.shape[0])
         diag[fl_model.cst_head_nn] = 1.0
         q_next.setdiag(q_next.diagonal() + diag)
@@ -477,11 +463,11 @@ def get_aflow_matrices(
     # exists
     try:
         diag[fl_model.free_head_nn] += float(1.0 / time_params.ldt[time_index])
-        diag[fl_model.cst_head_nn] += (
-            1.0
-            / fl_model.storage_coefficient.ravel("F")[fl_model.cst_head_nn]
-            / geometry.mesh_volume
-        )
+        # diag[fl_model.cst_head_nn] += (
+        #     1.0
+        #     / fl_model.storage_coefficient.ravel("F")[fl_model.cst_head_nn]
+        #     / geometry.mesh_volume
+        # )
     except IndexError:
         pass
 
