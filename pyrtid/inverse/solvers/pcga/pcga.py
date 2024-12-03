@@ -684,7 +684,10 @@ class PCGA:
         self.HX: NDArrayFloat = np.array([])
         self.HZ: NDArrayFloat = np.array([])
         self.Hs: NDArrayFloat = np.array([])
-        self.P = None
+
+        # approximate inverse of A used a preconditioner to solve Ax = b
+        # None by default -> updated later
+        self.invA_as_linop: Optional[InvALinOp] = None
 
         ##### Optimization
         self.display_init_parameters()
@@ -1090,10 +1093,6 @@ class PCGA:
         Q2_all = np.zeros((self.n_internal_loops), dtype=np.float64)
         cR_all = np.zeros((self.n_internal_loops), dtype=np.float64)
 
-        # approximate inverse of A used a preconditioner to solve Ax = b
-        # None by default -> updated later
-        invA_as_linop: Optional[InvALinOp] = None
-
         # Call a different internal iteration routine to solve the linear system.
         if self.is_direct_solve:
             self.loginfo("Use direct solver for saddle-point (cokrigging) system")
@@ -1112,13 +1111,15 @@ class PCGA:
             )
             if self.is_use_preconditioner:
                 # update the preconditioner
-                invA_as_linop = self.get_invA_as_linop(HZ, HX, self.cov_obs)
+                self.invA_as_linop = self.get_invA_as_linop(HZ, HX, self.cov_obs)
+            else:
+                self.invA_as_linop = None
 
             def internal_iteration(
                 _inflation,
             ) -> Tuple[NDArrayFloat, NDArrayFloat, NDArrayFloat]:
                 return self.internal_iteration_krylov_subspace(
-                    HZ, HX, Z, b, invA_as_linop, _inflation
+                    HZ, HX, Z, b, self.invA_as_linop, _inflation
                 )
 
         # if LM_smax, LM_smin defined and solution violates them, LM_eval[i] "
@@ -1163,7 +1164,7 @@ class PCGA:
                         get_internal_loop_params(HX)(),
                         get_internal_loop_params(Z)(),
                         get_internal_loop_params(b)(),
-                        get_internal_loop_params(invA_as_linop)(),
+                        get_internal_loop_params(self.invA_as_linop)(),
                         self.cov_obs_inflation_factors,
                     )
 
@@ -1450,73 +1451,15 @@ class PCGA:
         invA_as_linop: Optional[InvALinOp],
         inflation: float,
     ) -> Tuple[NDArrayFloat, NDArrayFloat, NDArrayFloat]:
-        # get the linear operator for the matrix-vector products
-        Afun = self.get_A_as_linop(HX, HZ, inflation)
-
-        # Using a preconditioner
-        # TODO: parametrize
-        restart = 50
-        itertol = 1.0e-10
-        solver_maxiter = self.s_dim
-        if self.is_use_preconditioner:
-            if invA_as_linop is not None:
-                # update the inflation factor
-                invA_as_linop.update_inflation_factor(inflation)
-            callback = Residual()
-            x, info = gmres(
-                Afun,
-                b,
-                restart=restart,
-                maxiter=solver_maxiter,
-                callback=callback,
-                M=invA_as_linop,
-                atol=itertol,
-                rtol=itertol,
-                callback_type="legacy",
-            )
-            self.loginfo(
-                "-- Number of iterations for gmres %g" % (callback.itercount())
-            )
-            if info != 0:  # if not converged
-                callback = Residual()
-                x, info = minres(
-                    Afun,
-                    b,
-                    x0=x,
-                    rtol=itertol,
-                    maxiter=solver_maxiter,
-                    callback=callback,
-                    M=invA_as_linop,
-                )
-                self.loginfo(
-                    "-- Number of iterations for minres %g and info %d"
-                    % (callback.itercount(), info)
-                )
-        else:
-            # Without preconditioner
-            callback = Residual()
-            x, info = minres(
-                Afun, b, rtol=itertol, maxiter=solver_maxiter, callback=callback
-            )
-            self.loginfo(
-                "-- Number of iterations for minres %g" % (callback.itercount())
-            )
-            if info != 0:
-                callback = Residual()
-                x, info = gmres(
-                    Afun,
-                    b,
-                    x0=x,
-                    rtol=itertol,
-                    maxiter=solver_maxiter,
-                    callback=callback,
-                    atol=itertol,
-                    callback_type="legacy",
-                )
-                self.loginfo(
-                    "-- Number of iterations for gmres: %g, info: %d, tol: %f"
-                    % (callback.itercount(), info, itertol)
-                )
+        x = self._solve_iterative_subspace_krylov(
+            self.get_A_as_linop(HX, HZ, inflation),  # linear op for matvec and matmat
+            b,
+            invA_as_linop,  # preconditioner
+            restart=50,
+            atol=1e-10,
+            rtol=1e-10,
+            maxiter=self.s_dim,
+        )
 
         # Extract components and return final solution
         # x dimension (n+p,1)
@@ -1527,6 +1470,72 @@ class PCGA:
 
         # Return three column vectors
         return xi, s_hat, beta
+
+    def _solve_iterative_subspace_krylov(
+        self,
+        A: LinearOperator,
+        b: NDArrayFloat,
+        invA: Optional[LinearOperator],
+        restart: int = 50,
+        atol: float = 1e-10,
+        rtol: float = 1e-10,
+        maxiter: int = 50,
+    ) -> NDArrayFloat:
+        if invA is not None:
+            callback = Residual()
+            x, info = gmres(
+                A,
+                b,
+                restart=restart,
+                maxiter=maxiter,
+                callback=callback,
+                M=invA,
+                atol=atol,
+                rtol=rtol,
+                callback_type="legacy",
+            )
+            self.loginfo(
+                "-- Number of iterations for gmres %g" % (callback.itercount())
+            )
+            if info != 0:  # if not converged
+                callback = Residual()
+                x, info = minres(
+                    A,
+                    b,
+                    x0=x,
+                    rtol=rtol,
+                    maxiter=maxiter,
+                    callback=callback,
+                    M=invA,
+                )
+                self.loginfo(
+                    "-- Number of iterations for minres %g and info %d"
+                    % (callback.itercount(), info)
+                )
+        else:
+            # Without preconditioner
+            callback = Residual()
+            x, info = minres(A, b, rtol=rtol, maxiter=maxiter, callback=callback)
+            self.loginfo(
+                "-- Number of iterations for minres %g" % (callback.itercount())
+            )
+            if info != 0:
+                callback = Residual()
+                x, info = gmres(
+                    A,
+                    b,
+                    x0=x,
+                    maxiter=maxiter,
+                    callback=callback,
+                    atol=atol,
+                    rtol=rtol,
+                    callback_type="legacy",
+                )
+                self.loginfo(
+                    "-- Number of iterations for gmres: %g, info: %d, tol: %f"
+                    % (callback.itercount(), info, atol)
+                )
+        return x
 
     def get_invA_as_linop(
         self, HZ: NDArrayFloat, HX: NDArrayFloat, cov_obs: CovObs
@@ -1837,12 +1846,12 @@ class PCGA:
                     "start direct posterior variance computation "
                     "- this option works for O(nobs) ~ 100"
                 )
-                self.post_diagv = self.compute_posterior_diagonal_entries_direct(
+                self.post_diagv = self.compute_post_cov_diag_cholesky(
                     self.HZ, self.HX, self.cov_obs, inflation_cur
                 )
             else:
                 self.loginfo("start posterior variance computation")
-                self.post_diagv = self.compute_posterior_diagonal_entries_direct(
+                self.post_diagv = self.compute_post_cov_diag_iterative_krylov_subspace(
                     self.HZ, self.HX, self.cov_obs, inflation_cur
                 )
             self.loginfo("posterior diag. computed in %f secs" % (time() - start))
@@ -1969,7 +1978,7 @@ class PCGA:
 
         return ALinOp()
 
-    def compute_posterior_diagonal_entries_direct(
+    def compute_post_cov_diag_cholesky(
         self,
         HZ: NDArrayFloat,
         HX: NDArrayFloat,
@@ -1977,7 +1986,6 @@ class PCGA:
         inflation: float,
     ) -> NDArrayFloat:
         """Computing posterior diagonal entries using cholesky."""
-        print(HZ.shape)
         Psi = self.get_psi(HZ, cov_obs, inflation)
         Z = np.sqrt(self.Q.eig_vals).T * self.Q.eig_vects
 
@@ -1992,139 +2000,24 @@ class PCGA:
             )
         ).reshape(-1, 1)
 
-    # def compute_posterior_diagonal_entries_iterative(
-    #     self, HZ: NDArrayFloat, HX: NDArrayFloat, R: NDArrayFloat, inflation: float
-    # ):
-    #     """
-    #     Computing posterior diagonal entries using iterative approach
-    #     """
-    #     m = self.s_dim
-    #     n = self.d_dim
-    #     p = self.drift.beta_dim
+    def compute_post_cov_diag_iterative_krylov_subspace(
+        self,
+        HZ: NDArrayFloat,
+        HX: NDArrayFloat,
+        cov_obs: CovObs,
+        inflation: float,
+    ) -> NDArrayFloat:
+        """Computing posterior diagonal entries using cholesky."""
+        Z = np.sqrt(self.Q.eig_vals).T * self.Q.eig_vects
+        # [HQ, X^{T}]  shape (N_s, N_obs + N_p)
+        b_all = np.vstack([np.dot(HZ, Z.T), self.drift.mat.T])
+        invA_as_linop = self.get_invA_as_linop(HZ, HX, cov_obs)
 
-    #     ## Create matrix context
-    #     # if R.shape[0] == 1:
-    #     #    def mv(v):
-    #     #        return np.concatenate(((np.dot(HZ, np.dot(HZ.T, v[0:n])) +
-    #     # np.multiply(np.multiply(inflation, R),v[0:n])
-    #     # + np.dot(HX,v[n:n + p])),(np.dot(HX.T, v[0:n]))), axis=0)
-    #     # else:
-    #     #    def mv(v):
-    #     #        return np.concatenate(((np.dot(HZ, np.dot(HZ.T, v[0:n])) +
-    #     # np.multiply(np.multiply(inflation, R.reshape(v[0:n].shape)))
-    #     # + np.dot(HX, v[n:n + p])),(np.dot(HX.T, v[0:n]))), axis=0)
+        return (
+            self.prior_s_var - np.sum(b_all * (invA_as_linop @ b_all), axis=0)
+        ).reshape(-1, 1)
 
-    #     # Benzi et al. 2005, Eq 3.5
-
-    #     def invPsi(v):
-    #         Dvec = np.divide(
-    #             ((1.0 / inflation) * self.Psi_sigma),
-    #             ((1.0 / inflation) * self.Psi_sigma + 1),
-    #         )
-    #         Psi_U = np.multiply((1.0 / sqrt(inflation)), self.Psi_U)
-    #         Psi_UTv = np.dot(Psi_U.T, v)
-    #         # TODO: remove these stupid reshape by using vectors and matrices
-    #         alphainvRv = ((1.0 / inflation) * self.cov_obs.solve(v.ravel())).reshape(
-    #             -1, 1
-    #         )
-
-    #         if Psi_UTv.ndim == 1:
-    #             PsiDPsiTv = np.dot(
-    #                 Psi_U,
-    #                 np.multiply(Dvec[: Psi_U.shape[1]].reshape(Psi_UTv.shape),
-    # Psi_UTv),
-    #             )
-    #         elif Psi_UTv.ndim == 2:  # for invPsi(HX)
-    #             DMat = np.tile(
-    #                 Dvec[: Psi_U.shape[1]], (Psi_UTv.shape[1], 1)
-    #             ).T  # n_pc by p
-    #             PsiDPsiTv = np.dot(Psi_U, np.multiply(DMat, Psi_UTv))
-    #         else:
-    #             raise ValueError(
-    #                 "Psi_U times vector should have a dimension "
-    #                 "smaller than 2 - current dim = %d" % (Psi_UTv.ndim)
-    #             )
-
-    #         return alphainvRv - PsiDPsiTv
-
-    #     # Direct Inverse of cokkring matrix - Lee et al. WRR 2016 Eq (14)
-    #     # typo in Eq (14), (2,2) block matrix should be -S^-1 instead of -S
-
-    #     class P(LinearOperator):
-    #         def __init__(self) -> None:
-    #             super().__init__(shape=(n + p, n + p), dtype=np.float64)
-
-    #         def _matvec(self, v) -> NDArrayFloat:
-    #             invPsiv = invPsi(v[0:n])
-    #             S = np.dot(HX.T, invPsi(HX))  # p by p matrix
-    #             invSHXTinvPsiv = np.linalg.solve(S, np.dot(HX.T, invPsiv))
-    #             invPsiHXinvSHXTinvPsiv = invPsi(np.dot(HX, invSHXTinvPsiv))
-    #             return np.concatenate(
-    #                 ((invPsiv - invPsiHXinvSHXTinvPsiv), (invSHXTinvPsiv)), axis=0
-    #             )
-
-    #         def _rmatvec(self, v) -> NDArrayFloat:
-    #             return self._matvec(v)
-
-    #     # Preconditioner construction Lee et al. WRR 2016 Eq (14)
-    #     # typo in Eq (14), (2,2) block matrix should be -S^-1 instead of -S
-    #     def Pmv(v):
-    #         invPsiv = invPsi(v[0:n])
-    #         S = np.dot(HX.T, invPsi(HX))  # p by p matrix
-    #         invSHXTinvPsiv = np.linalg.solve(S, np.dot(HX.T, invPsiv))
-    #         invPsiHXinvSHXTinvPsiv = invPsi(np.dot(HX, invSHXTinvPsiv))
-    #         invPsiHXinvSv1 = invPsi(np.dot(HX, np.linalg.solve(S, v[n:])))
-    #         invSv1 = np.linalg.solve(S, v[n:])
-    #         return np.concatenate(
-    #             (
-    #                 (invPsiv - invPsiHXinvSHXTinvPsiv + invPsiHXinvSv1),
-    #                 (invSHXTinvPsiv - invSv1),
-    #             ),
-    #             axis=0,
-    #         )
-
-    #     P = LinearOperator(shape=(n + p, n + p), matvec=Pmv, rmatvec=Pmv, dtype="d")
-
-    #     ## Matrix handle for iterative approach without approximation
-    #     # - this should be included as an option
-    #     # n_pc = self.n_pc
-    #     # Afun = LinearOperator((n + p, n + p), matvec=mv, rmatvec=mv, dtype='d')
-    #     # callback = Residual()
-    #     ## Residual and maximum iterations
-    #     # itertol = 1.e-10 if not 'iterative_tol'
-    #     # in self.params else self.params['iterative_tol']
-    #     # solver_maxiter = m if not 'iterative_maxiter'
-    #     # in self.params else self.params['iterative_maxiter']
-
-    #     # start = time()
-    #     v = np.zeros((m), dtype="d")
-
-    #     for i in range(m):
-    #         b = np.zeros((n + p, 1), dtype="d")
-    #         b[0:n] = np.dot(
-    #             HZ,
-    #             (
-    #                 np.multiply(
-    #                     np.sqrt(self.Q.eig_vals), self.Q.eig_vects[i : i + 1, :].T
-    #                 )
-    #             ),
-    #         )
-    #         b[n : n + p] = self.drift.mat[i : i + 1, :].T
-
-    #         tmp = float(np.dot(b.T, P() @ b)[0, 0])
-    #         v[i] = self.prior_s_var[i] - tmp
-
-    #         if i % 10000 == 0 and i > 0:
-    #             self.loginfo("%d-th element evaluation done.." % (i))
-    #     v = np.where(v > self.prior_s_var, self.prior_s_var, v)
-
-    #     # self.loginfo("Pv compute variance: %f sec" % (time() - start))
-    #     # self.loginfo("norm(v-v1): %g" % (np.linalg.norm(v - v1)))
-    #     # self.loginfo("max(v-v1): %g, %g" % ((v - v1).max(),(v-v1).min()))
-
-    #     return v.reshape(-1, 1)
-
-    def get_posterior_covariance_matrix_direct(
+    def get_eigen_post_cov_choleksy(
         self,
         HZ: NDArrayFloat,
         HX: NDArrayFloat,
@@ -2133,8 +2026,12 @@ class PCGA:
         n_pc: int,
         random_state,
     ) -> EigenFactorizedCovarianceMatrix:
-        """Computing posterior diagonal entries using cholesky."""
+        """
+        Return the posterior covariance matrix Eigen factorization.
 
+        Here the eigen factorization is build using cholesky factorization.
+        This is practical for ...
+        """
         Psi = self.get_psi(HZ, cov_obs, inflation)
         Z = np.sqrt(self.Q.eig_vals).T * self.Q.eig_vects
 
@@ -2152,36 +2049,36 @@ class PCGA:
 
         return eigen_factorize_cov_mat(_op(Q.shape), n_pc, random_state)
 
-    # def get_posterior_covariance_matrix_iterative(
-    #     self,
-    #     HZ: NDArrayFloat,
-    #     HX: NDArrayFloat,
-    #     cov_obs: NDArrayFloat,
-    #     inflation: float,
-    #     n_pc: int,
-    #     random_state,
-    # ) -> EigenFactorizedCovarianceMatrix:
-    #     """Computing posterior diagonal entries using cholesky."""
+    def get_eigen_post_cov_iterative_krylov_subspace(
+        self,
+        HZ: NDArrayFloat,
+        HX: NDArrayFloat,
+        cov_obs: CovObs,
+        inflation: float,
+        n_pc: int,
+        random_state,
+    ) -> EigenFactorizedCovarianceMatrix:
+        """
+        Return the posterior covariance matrix Eigen factorization.
 
-    # TODO: see Appendix B: Fast Posterior Variance Computation in
-    # leeScalableSubsurfaceInverse2016.
+        Here the eigen factorization is build using fast matrix-vector product allowed
+        from the iterative Krylov subspace approaches and an exact preconditioner.
 
-    #     Z = np.sqrt(self.Q.eig_vals).T * self.Q.eig_vects
+        See Appendix B: Fast Posterior Variance Computation in
+        leeScalableSubsurfaceInverse2016.
+        """
+        Z = np.sqrt(self.Q.eig_vals).T * self.Q.eig_vects
+        # [HQ, X^{T}]  shape (N_s, N_obs + N_p)
+        b_all = np.vstack([np.dot(HZ, Z.T), self.drift.mat.T])
+        Q = self.Q
+        # Use cholesky factorization to solve the system
+        _solve = self._solve_iterative_subspace_krylov
+        Afun = self.get_A_as_linop(HX, HZ, inflation)
+        invA_as_linop = self.get_invA_as_linop(HZ, HX, cov_obs)
 
-    #     # [HQ, X^{T}]
-    #     b_all = np.vstack([np.dot(HZ, Z.T), self.drift.mat.T])
-    #     p = self.drift.beta_dim
-    #     Q = self.Q
-    #     # Use cholesky factorization to solve the system
-    #     Afun = self.get_A_as_linop(HX, HZ, inflation)
+        class _op(CovarianceMatrix):
+            def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
+                """Return the covariance matrix times the vector x."""
+                return Q @ x - b_all.T @ _solve(Afun, b=b_all @ x, invA=invA_as_linop)
 
-    #     # Add a solve method see 14 in Saibaba et al.
-    #     # self.internal_iteration_krylov_subspace(HZ, HX, Z, b_all @ x,
-    # invA_as_linop, inflation)
-
-    #     class _op(CovarianceMatrix):
-    #         def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:
-    #             """Return the covariance matrix times the vector x."""
-    #             return Q @ x - b_all.T @ PCGA.solve_cholesky(LA, b_all @ x, p)
-
-    #     return eigen_factorize_cov_mat(_op(Q.shape), n_pc, random_state)
+        return eigen_factorize_cov_mat(_op(Q.shape), n_pc, random_state)
