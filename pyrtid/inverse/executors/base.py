@@ -343,7 +343,10 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         self._adj_model: Optional[AdjointModel] = adj_model
 
     def _init_adjoint_model(
-        self, afpi_eps: float, is_numerical_acceleration: bool = False
+        self,
+        afpi_eps: float,
+        is_numerical_acceleration: bool = False,
+        is_use_continuous_adj: bool = False,
     ) -> None:
         """Initialize a new adjoint model for the executor."""
         self.adj_model = AdjointModel(
@@ -353,6 +356,7 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
             self.fwd_model.tr_model.n_sp,
             afpi_eps,
             is_numerical_acceleration,
+            is_use_continuous_adj=is_use_continuous_adj,
         )
 
     @abstractmethod
@@ -705,6 +709,9 @@ adjoint_solver_config_params_ds = """is_check_gradient: bool
     is_adj_verbose: bool = False
         Whether to solve the adjoint problem displaying information.
         By default False.
+    is_use_continuous_adj: bool
+        Whether to use numerical acceleration in the adjoint state.
+        The default is False.
 
         """
 
@@ -731,6 +738,7 @@ class AdjointSolverConfig(BaseSolverConfig):
     max_nafpi: int = 50
     is_adj_numerical_acceleration: bool = False
     is_adj_verbose: bool = False
+    is_use_continuous_adj: bool = False
 
 
 _AdjointSolverConfig = TypeVar("_AdjointSolverConfig", bound=AdjointSolverConfig)
@@ -749,6 +757,7 @@ class AdjointInversionExecutor(BaseInversionExecutor, Generic[_AdjointSolverConf
             self._init_adjoint_model(
                 self.solver_config.afpi_eps,
                 self.solver_config.is_adj_numerical_acceleration,
+                self.solver_config.is_use_continuous_adj,
             )
 
     def is_adjoint_gradient_correct(
@@ -828,6 +837,7 @@ class AdjointInversionExecutor(BaseInversionExecutor, Generic[_AdjointSolverConf
             self._init_adjoint_model(
                 self.solver_config.afpi_eps,
                 self.solver_config.is_adj_numerical_acceleration,
+                self.solver_config.is_use_continuous_adj,
             )
             self.adj_model.a_fl_model.set_crank_nicolson(crank_flow)
 
@@ -949,6 +959,7 @@ class AdjointInversionExecutor(BaseInversionExecutor, Generic[_AdjointSolverConf
             self._init_adjoint_model(
                 self.solver_config.afpi_eps,
                 self.solver_config.is_adj_numerical_acceleration,
+                self.solver_config.is_use_continuous_adj,
             )
             self.adj_model.a_fl_model.set_crank_nicolson(crank_flow)
 

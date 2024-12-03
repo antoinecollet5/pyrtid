@@ -42,10 +42,30 @@ class AdjointFlowModel(ABC):
         "q_next_init",
         "crank_nicolson",
         "rtol",
+        "is_use_continuous_adj",
     ]
 
-    def __init__(self, geometry: Geometry, time_params: TimeParameters) -> None:
-        """Initialize the instance."""
+    def __init__(
+        self,
+        geometry: Geometry,
+        time_params: TimeParameters,
+        is_use_continuous_adj: bool = False,
+    ) -> None:
+        """
+        Initialize the instance.
+
+        Parameters
+        ----------
+        geometry : Geometry
+            Geometry of the problem, grid definition.
+        time_params : TimeParameters
+            Time parameters from the forward problem.
+        is_use_continuous_adj: bool
+            Whether to use the adjoint state derived using the "continuous" way,
+            aka the differentiate-then-discretize method.
+            This is only working with saturated flow. This option has been
+            added to illustrate the paper TODO: add ref. The default is False.
+        """
         self.a_head = np.zeros(
             (geometry.nx, geometry.ny, time_params.nt), dtype=np.float64
         )
@@ -86,6 +106,7 @@ class AdjointFlowModel(ABC):
         # incorrect discretization.
         self.crank_nicolson: Optional[float] = None
         self.rtol: float = 1e-8
+        self.is_use_continuous_adj: bool = is_use_continuous_adj
 
     def clear_adjoint_sources(self) -> None:
         """
@@ -115,7 +136,12 @@ class SaturatedAdjointFlowModel(AdjointFlowModel):
     Saturated Adjoint Flow Model.
     """
 
-    def __init__(self, geometry: Geometry, time_params: TimeParameters) -> None:
+    def __init__(
+        self,
+        geometry: Geometry,
+        time_params: TimeParameters,
+        is_use_continuous_adj: bool = False,
+    ) -> None:
         """
         Initialize the instance.
 
@@ -125,8 +151,14 @@ class SaturatedAdjointFlowModel(AdjointFlowModel):
             Geometry of the problem, grid definition.
         time_params : TimeParameters
             Time parameters from the forward problem.
+        is_use_continuous_adj: bool
+            Whether to use the adjoint state derived using the "continuous" way,
+            aka the differentiate-then-discretize method.
+            This is only working with saturated flow. This option has been
+            added to illustrate the paper TODO: add ref. The default is False.
+
         """
-        super().__init__(geometry, time_params)
+        super().__init__(geometry, time_params, is_use_continuous_adj)
 
 
 class DensityAdjointFlowModel(AdjointFlowModel):
@@ -134,7 +166,12 @@ class DensityAdjointFlowModel(AdjointFlowModel):
     Density Adjoint Flow Model.
     """
 
-    def __init__(self, geometry: Geometry, time_params: TimeParameters) -> None:
+    def __init__(
+        self,
+        geometry: Geometry,
+        time_params: TimeParameters,
+        is_use_continuous_adj: bool = False,
+    ) -> None:
         """
         Initialize the instance.
 
@@ -144,8 +181,16 @@ class DensityAdjointFlowModel(AdjointFlowModel):
             Geometry of the problem, grid definition.
         time_params : TimeParameters
             Time parameters from the forward problem.
+        is_use_continuous_adj: bool
+            Whether to use the adjoint state derived using the "continuous" way,
+            aka the differentiate-then-discretize method.
+            This is only working with saturated flow. This option has been
+            added to illustrate the paper TODO: add ref. The default is False.
+
         """
-        super().__init__(geometry, time_params)
+        if is_use_continuous_adj:
+            raise ValueError("Continuous adjoint not implemented for density flow!")
+        super().__init__(geometry, time_params, is_use_continuous_adj)
 
 
 class AdjointTransportModel:
@@ -307,6 +352,7 @@ class AdjointModel:
         n_sp: int,
         afpi_eps: float = 1e-5,
         is_adj_numerical_acceleration: bool = False,
+        is_use_continuous_adj: bool = False,
     ) -> None:
         """
         Initialize the instance.
@@ -322,17 +368,25 @@ class AdjointModel:
         n_sp: int
             The number of species in the system.
         afpi_eps: float
-        is_numerical_acceleration: bool
+            Epsilon for the adjoint fixed point iterations. The default is 1e-5.
+        is_adj_numerical_acceleration: bool
+            Whether to use numerical acceleration in the adjoint state.
+            The default is False.
+        is_use_continuous_adj: bool
+            Whether to use the adjoint state derived using the "continuous" way,
+            aka the differentiate-then-discretize method. This option has been
+            added to illustrate the paper TODO: add ref. The default is False.
+
         """
         self.geometry: Geometry = geometry
         self.time_params: TimeParameters = time_params
         if is_gravity:
             self.a_fl_model: AdjointFlowModel = DensityAdjointFlowModel(
-                geometry, time_params
+                geometry, time_params, is_use_continuous_adj
             )
         else:
             self.a_fl_model: AdjointFlowModel = SaturatedAdjointFlowModel(
-                geometry, time_params
+                geometry, time_params, is_use_continuous_adj
             )
         self.a_tr_model: AdjointTransportModel = AdjointTransportModel(
             geometry, time_params, n_sp, afpi_eps, is_adj_numerical_acceleration

@@ -39,12 +39,20 @@ class AdjointSolver:
         Parameters
         ----------
         fwd_model : ForwardModel
-            _description_
+            The forward model instance.
         adj_model : AdjointModel
-            _description_
+            The adjoint model instance.
         """
         self.fwd_model: ForwardModel = fwd_model
         self.adj_model: AdjointModel = adj_model
+
+        if (
+            self.adj_model.a_fl_model.is_use_continuous_adj
+            and not self.fwd_model.tr_model.is_skip_rt
+        ):
+            raise ValueError(
+                "Continuous adjoint only working if reactive transport is skipped!"
+            )
 
     def initialize_ajd_flow_matrices(self) -> None:
         """Initialize matrices to solve the adjoint flow problem."""
