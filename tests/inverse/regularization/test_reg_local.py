@@ -6,7 +6,11 @@ import pyrtid.inverse as dminv
 import pytest
 from pyrtid.inverse.regularization import (
     DiscreteRegularizator,
+    TikhonovFVMRegularizator,
+    TikhonovMatRegularizator,
     TikhonovRegularizator,
+    TVFVMRegularizator,
+    TVMatRegularizator,
     TVRegularizator,
 )
 from pyrtid.utils.types import NDArrayFloat
@@ -49,7 +53,11 @@ def test_discrete_exceptions() -> None:
     "regularizator",
     [
         TikhonovRegularizator(dmfwd.Geometry(dx=3.6, dy=7.5, nx=15, ny=26)),
+        TikhonovMatRegularizator(dmfwd.Geometry(dx=3.6, dy=7.5, nx=15, ny=26)),
+        TikhonovFVMRegularizator(dmfwd.Geometry(dx=3.6, dy=7.5, nx=15, ny=26)),
         TVRegularizator(dmfwd.Geometry(dx=3.6, dy=7.5, nx=15, ny=26)),
+        TVMatRegularizator(dmfwd.Geometry(dx=3.6, dy=7.5, nx=15, ny=26)),
+        TVFVMRegularizator(dmfwd.Geometry(dx=3.6, dy=7.5, nx=15, ny=26)),
         DiscreteRegularizator(modes=[7.0, 15.0], penalty="gaussian"),
         DiscreteRegularizator(modes=[7.0, 8.5, 2.3, 15.0], penalty="gaussian"),
         DiscreteRegularizator(

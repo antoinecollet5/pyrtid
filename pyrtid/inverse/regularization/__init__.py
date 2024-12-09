@@ -26,6 +26,7 @@ Tikhonov (for smooth spatial distribution)
 
     TikhonovRegularizator
     TikhonovMatRegularizator
+    TikhonovFVMRegularizator
 
 Total Variation (for blocky spatial distribution)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -35,6 +36,7 @@ Total Variation (for blocky spatial distribution)
 
     TVRegularizator
     TVMatRegularizator
+    TVFVMRegularizator
 
 Discrete to impose specific discrete values to the field
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -193,10 +195,15 @@ from pyrtid.inverse.regularization.priors import (
     PriorTerm,
 )
 from pyrtid.inverse.regularization.tikhonov import (
+    TikhonovFVMRegularizator,
     TikhonovMatRegularizator,
     TikhonovRegularizator,
 )
-from pyrtid.inverse.regularization.tv import TVMatRegularizator, TVRegularizator
+from pyrtid.inverse.regularization.tv import (
+    TVFVMRegularizator,
+    TVMatRegularizator,
+    TVRegularizator,
+)
 
 __all__ = [
     "RegWeightUpdateStrategy",
@@ -233,4 +240,6 @@ __all__ = [
     "DiscreteRegularizator",
     "get_l_curvature",
     "AdaptiveGradientNormRegweight",
+    "TikhonovFVMRegularizator",
+    "TVFVMRegularizator",
 ]

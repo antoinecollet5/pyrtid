@@ -4,7 +4,7 @@
 
 import logging
 from abc import ABC, abstractmethod
-from typing import List, Optional, Tuple
+from typing import List, Literal, Optional, Tuple
 
 import numpy as np
 from scipy.sparse import csc_array, lil_array
@@ -230,12 +230,10 @@ class Regularizator(ABC):
             )
 
 
-def sub_sample_lil_array(arr: lil_array, sub_selection: NDArrayInt) -> csc_array:
-    return arr.tocsr()[sub_selection, :].tocsc()[:, sub_selection]
-
-
 def make_spatial_gradient_matrices(
-    geometry: Geometry, sub_selection: Optional[NDArrayInt] = None
+    geometry: Geometry,
+    sub_selection: Optional[NDArrayInt] = None,
+    which: Literal["forward", "backward", "both"] = "both",
 ) -> Tuple[csc_array, csc_array]:
     """
     Make matrices to compute the spatial gradient along x and y axes of a field.
@@ -269,34 +267,62 @@ def make_spatial_gradient_matrices(
 
     # X contribution
     if geometry.nx >= 2:
-        tmp = geometry.gamma_ij_x / geometry.mesh_volume / 1.0
-        # Forward scheme only: see PhD manuscript, chapter 7 for the explanaition.
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(0, geometry.nx - 1), slice(None)),
-            (slice(1, geometry.nx), slice(None)),
-            owner_indices_to_keep=_sub_selection,
-            neigh_indices_to_keep=_sub_selection,
-        )
+        tmp = geometry.gamma_ij_x / geometry.mesh_volume
 
-        mat_grad_x[idc_owner, idc_neigh] -= tmp * np.ones(idc_owner.size)  # type: ignore
-        mat_grad_x[idc_owner, idc_owner] += tmp * np.ones(idc_owner.size)  # type: ignore
+        if which in ["forward", "both"]:
+            # Forward scheme only: see PhD manuscript, chapter 7 for the explanaition.
+            idc_owner, idc_neigh = get_owner_neigh_indices(
+                geometry,
+                (slice(0, geometry.nx - 1), slice(None)),
+                (slice(1, geometry.nx), slice(None)),
+                owner_indices_to_keep=_sub_selection,
+                neigh_indices_to_keep=_sub_selection,
+            )
+
+            mat_grad_x[idc_owner, idc_neigh] -= tmp * np.ones(idc_owner.size)  # type: ignore
+            mat_grad_x[idc_owner, idc_owner] += tmp * np.ones(idc_owner.size)  # type: ignore
+
+        if which in ["backward", "both"]:
+            # Forward scheme only: see PhD manuscript, chapter 7 for the explanaition.
+            idc_owner, idc_neigh = get_owner_neigh_indices(
+                geometry,
+                (slice(1, geometry.nx), slice(None)),
+                (slice(0, geometry.nx - 1), slice(None)),
+                owner_indices_to_keep=_sub_selection,
+                neigh_indices_to_keep=_sub_selection,
+            )
+
+            mat_grad_x[idc_owner, idc_neigh] -= tmp * np.ones(idc_owner.size)  # type: ignore
+            mat_grad_x[idc_owner, idc_owner] += tmp * np.ones(idc_owner.size)  # type: ignore
 
     # Y contribution
     if geometry.ny >= 2:
-        tmp = geometry.gamma_ij_y / geometry.mesh_volume / 1.0
+        tmp = geometry.gamma_ij_y / geometry.mesh_volume
 
-        # Forward scheme only: see PhD manuscript, chapter 7 for the explanaition.
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(None), slice(0, geometry.ny - 1)),
-            (slice(None), slice(1, geometry.ny)),
-            owner_indices_to_keep=_sub_selection,
-            neigh_indices_to_keep=_sub_selection,
-        )
+        if which in ["forward", "both"]:
+            # Forward scheme only: see PhD manuscript, chapter 7 for the explanaition.
+            idc_owner, idc_neigh = get_owner_neigh_indices(
+                geometry,
+                (slice(None), slice(0, geometry.ny - 1)),
+                (slice(None), slice(1, geometry.ny)),
+                owner_indices_to_keep=_sub_selection,
+                neigh_indices_to_keep=_sub_selection,
+            )
 
-        mat_grad_y[idc_owner, idc_neigh] -= tmp * np.ones(idc_owner.size)  # type: ignore
-        mat_grad_y[idc_owner, idc_owner] += tmp * np.ones(idc_owner.size)  # type: ignore
+            mat_grad_y[idc_owner, idc_neigh] -= tmp * np.ones(idc_owner.size)  # type: ignore
+            mat_grad_y[idc_owner, idc_owner] += tmp * np.ones(idc_owner.size)  # type: ignore
+
+        if which in ["backward", "both"]:
+            # Forward scheme only: see PhD manuscript, chapter 7 for the explanaition.
+            idc_owner, idc_neigh = get_owner_neigh_indices(
+                geometry,
+                (slice(None), slice(1, geometry.ny)),
+                (slice(None), slice(0, geometry.ny - 1)),
+                owner_indices_to_keep=_sub_selection,
+                neigh_indices_to_keep=_sub_selection,
+            )
+            mat_grad_y[idc_owner, idc_neigh] -= tmp * np.ones(idc_owner.size)  # type: ignore
+            mat_grad_y[idc_owner, idc_owner] += tmp * np.ones(idc_owner.size)  # type: ignore
 
     return mat_grad_x.tocsc(), mat_grad_y.tocsc()
 

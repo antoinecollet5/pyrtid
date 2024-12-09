@@ -16,6 +16,7 @@ from pyrtid.inverse.preconditioner import NoTransform, Preconditioner
 from pyrtid.inverse.regularization.base import (
     Regularizator,
     make_spatial_gradient_matrices,
+    make_spatial_permutation_matrices,
 )
 from pyrtid.utils.operators import gradient_ffd, hessian_cfd
 from pyrtid.utils.types import NDArrayFloat, NDArrayInt
@@ -122,7 +123,7 @@ class TikhonovMatRegularizator(Regularizator):
     def __post_init__(self) -> None:
         """Post initialize the object."""
         self.mat_grad_x, self.mat_grad_y = make_spatial_gradient_matrices(
-            self.geometry, self.sub_selection
+            self.geometry, self.sub_selection, which="forward"
         )
 
     def _eval_loss(self, values: NDArrayFloat) -> float:
@@ -169,4 +170,136 @@ class TikhonovMatRegularizator(Regularizator):
         grad = np.zeros(values.size)
         grad += self.mat_grad_x.T @ self.mat_grad_x @ values.ravel("F")
         grad += self.mat_grad_y.T @ self.mat_grad_y @ values.ravel("F")
+        return grad
+
+
+@dataclass
+class TikhonovFVMRegularizator(Regularizator):
+    r"""
+    Apply an Tikhonov (smoothing) regularization using the Finite Volume Method.
+
+    Attributes
+    ----------
+    geometry : Geometry
+        Geometry of the field.
+    sub_selection : Optional[NDArrayInt], optional
+        Optional sub selection of the field. Non selected elements will be
+        ignored in the gradient computation (as if non existing). If None, all
+        elements are used. By default None.
+    preconditioner: Preconditioner
+        Parameter pre-transformation operator (variable change for the solver).
+        The default is the identity function: f(x) = x, which means no change
+        is made.
+    """
+
+    geometry: Geometry
+    sub_selection: Optional[NDArrayInt] = None
+    preconditioner: Preconditioner = NoTransform()
+
+    def __post_init__(self) -> None:
+        """Post initialize the object."""
+        # These are adjacence matrices (graphs)
+        self.mat_perm_x, self.mat_perm_y = make_spatial_permutation_matrices(
+            self.geometry, self.sub_selection
+        )
+
+    def _eval_loss(self, values: NDArrayFloat) -> float:
+        r"""
+        Compute the gradient of the regularization loss function analytically.
+
+        The Tikhonov regularization is defined as:
+
+        .. math::
+
+        \mathcal{R}_{TN}(u) = \frac{1}{2} \sum_{j=1}^{M} \sum_{i=1}^{N}
+        \left( \dfrac{u_{i+1, j} - u_{i,j}}{dx} + \dfrac{u_{i, j+1} - u_{i,j}}{dy}
+        \right)^{2}
+
+        Parameters
+        ----------
+        values : NDArrayFloat
+            The parameter for which the regularization is computed.
+
+        Returns
+        -------
+        NDArrayFloat
+            The regularization gradient.
+        """
+        f = 0.0
+        v = values.ravel("F")
+        if self.geometry.nx > 2:
+            tmp: float = self.geometry.gamma_ij_x / self.geometry.mesh_volume
+            f += 0.25 * float(
+                np.sum(
+                    (
+                        tmp**2
+                        * (
+                            (
+                                self.mat_perm_x @ (self.mat_perm_x.T @ v)
+                                - self.mat_perm_x @ v
+                            )
+                            ** 2
+                            + (
+                                self.mat_perm_x.T @ (self.mat_perm_x @ v)
+                                - self.mat_perm_x.T @ v
+                            )
+                            ** 2
+                        )
+                    )
+                )
+            )
+
+        if self.geometry.ny > 2:
+            tmp = self.geometry.gamma_ij_y / self.geometry.mesh_volume
+            f += 0.25 * float(
+                np.sum(
+                    (
+                        tmp**2
+                        * (
+                            (
+                                self.mat_perm_y @ (self.mat_perm_y.T @ v)
+                                - self.mat_perm_y @ v
+                            )
+                            ** 2
+                            + (
+                                self.mat_perm_y.T @ (self.mat_perm_y @ v)
+                                - self.mat_perm_y.T @ v
+                            )
+                            ** 2
+                        )
+                    )
+                )
+            )
+
+        return f
+
+    def _eval_loss_gradient_analytical(self, v: NDArrayFloat) -> NDArrayFloat:
+        r"""
+        Compute the gradient of the regularization loss function analytically.
+
+        Parameters
+        ----------
+        values : NDArrayFloat
+            The parameter for which the regularization is computed.
+
+        Returns
+        -------
+        NDArrayFloat
+            The regularization gradient.
+        """
+        grad = np.zeros(v.size)
+        if self.geometry.nx > 2:
+            tmp: float = (self.geometry.gamma_ij_x / self.geometry.mesh_volume) ** 2
+            grad += tmp * (
+                (self.mat_perm_x @ (self.mat_perm_x.T @ v) - self.mat_perm_x @ v)
+                + (self.mat_perm_x.T @ (self.mat_perm_x @ v) - self.mat_perm_x.T @ v)
+            )
+
+        if self.geometry.ny > 2:
+            tmp = (self.geometry.gamma_ij_y / self.geometry.mesh_volume) ** 2
+            grad += tmp * (
+                (self.mat_perm_y @ (self.mat_perm_y.T @ v) - self.mat_perm_y @ v)
+                + (self.mat_perm_y.T @ (self.mat_perm_y @ v) - self.mat_perm_y.T @ v)
+            )
+
         return grad
