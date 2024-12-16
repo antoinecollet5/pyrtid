@@ -25,12 +25,10 @@ from pyrtid.utils import get_super_ilu_preconditioner, harmonic_mean
 from pyrtid.utils.types import NDArrayFloat
 
 
-def make_initial_adj_flow_matrices(
+def add_adj_stationary_flow_to_q_next(
     geometry: Geometry,
     fl_model: FlowModel,
-    tr_model: TransportModel,
-    a_fl_model: AdjointFlowModel,
-    time_params: TimeParameters,
+    q_next: lil_array,
 ) -> Tuple[lil_array, lil_array]:
     """
     Make matrices for the initial time step with a potential stationary flow.
@@ -40,20 +38,11 @@ def make_initial_adj_flow_matrices(
     Since the permeability and the storage coefficient does not vary with time,
     matrices q_prev and q_next are the same.
     """
-
-    dim = geometry.nx * geometry.ny
-    q_prev = lil_array((dim, dim), dtype=np.float64)
-    q_next = lil_array((dim, dim), dtype=np.float64)
     sc = fl_model.storage_coefficient.ravel("F")
-    if a_fl_model.crank_nicolson is None:
-        fl_crank = fl_model.crank_nicolson
-    else:
-        fl_crank = a_fl_model.crank_nicolson
 
     # 1) X contribution
     if geometry.nx >= 2:
         kmean = get_kmean(geometry, fl_model, 0)
-        rhomean = get_rhomean2(geometry, tr_model, axis=0, time_index=0)
 
         _tmp = geometry.gamma_ij_x / geometry.dx / geometry.mesh_volume
 
@@ -66,29 +55,17 @@ def make_initial_adj_flow_matrices(
             owner_indices_to_keep=fl_model.free_head_nn,
         )
         tmp = _tmp / sc[idc_owner] * kmean[idc_owner]
-
-        if fl_model.regime == FlowRegime.STATIONARY:
-            q_next[idc_owner, idc_owner] += tmp  # type: ignore
-        # Handle density flow
-        if fl_model.is_gravity:
-            tmp *= rhomean[idc_owner] / WATER_DENSITY
-        q_prev[idc_owner, idc_owner] -= (1.0 - fl_crank) * tmp
+        q_next[idc_owner, idc_owner] += tmp  # type: ignore
 
         # 1.1.2) For all nodes but with free head neighbors only
         idc_owner, idc_neigh = get_owner_neigh_indices(
             geometry,
             (slice(0, geometry.nx - 1), slice(None)),
             (slice(1, geometry.nx), slice(None)),
-            owner_indices_to_keep=fl_model.free_head_nn,
             neigh_indices_to_keep=fl_model.free_head_nn,
         )
         tmp = _tmp / sc[idc_owner] * kmean[idc_owner]
-        if fl_model.regime == FlowRegime.STATIONARY:
-            q_next[idc_owner, idc_neigh] -= tmp
-        # Handle density flow
-        if fl_model.is_gravity:
-            tmp *= rhomean[idc_owner] / WATER_DENSITY
-        q_prev[idc_owner, idc_neigh] += (1.0 - fl_crank) * tmp
+        q_next[idc_owner, idc_neigh] -= tmp
 
         # 1.2) Backward scheme
 
@@ -100,35 +77,21 @@ def make_initial_adj_flow_matrices(
             owner_indices_to_keep=fl_model.free_head_nn,
         )
         tmp = _tmp / sc[idc_owner] * kmean[idc_neigh]
-
-        if fl_model.regime == FlowRegime.STATIONARY:
-            q_next[idc_owner, idc_owner] += tmp
-        # Handle density flow
-        if fl_model.is_gravity:
-            tmp *= rhomean[idc_neigh] / WATER_DENSITY
-        q_prev[idc_owner, idc_owner] -= (1.0 - fl_crank) * tmp
+        q_next[idc_owner, idc_owner] += tmp
 
         # 1.2.2) For all nodes but with free head neighbors only
         idc_owner, idc_neigh = get_owner_neigh_indices(
             geometry,
             (slice(1, geometry.nx), slice(None)),
             (slice(0, geometry.nx - 1), slice(None)),
-            owner_indices_to_keep=fl_model.free_head_nn,
             neigh_indices_to_keep=fl_model.free_head_nn,
         )
         tmp = _tmp / sc[idc_owner] * kmean[idc_neigh]
-
-        if fl_model.regime == FlowRegime.STATIONARY:
-            q_next[idc_owner, idc_neigh] -= tmp
-        # Handle density flow
-        if fl_model.is_gravity:
-            tmp *= rhomean[idc_neigh] / WATER_DENSITY
-        q_prev[idc_owner, idc_neigh] += (1.0 - fl_crank) * tmp
+        q_next[idc_owner, idc_neigh] -= tmp
 
     # 2) Y contribution
     if geometry.ny >= 2:
         kmean = get_kmean(geometry, fl_model, 1)
-        rhomean = get_rhomean2(geometry, tr_model, axis=1, time_index=0)
 
         # 2.1) Forward scheme:
         _tmp = geometry.gamma_ij_y / geometry.dy / geometry.mesh_volume
@@ -141,30 +104,17 @@ def make_initial_adj_flow_matrices(
             owner_indices_to_keep=fl_model.free_head_nn,
         )
         tmp = _tmp / sc[idc_owner] * kmean[idc_owner]
-
-        if fl_model.regime == FlowRegime.STATIONARY:
-            q_next[idc_owner, idc_owner] += tmp
-        # Handle density flow
-        if fl_model.is_gravity:
-            tmp *= rhomean[idc_owner] / WATER_DENSITY
-        q_prev[idc_owner, idc_owner] -= (1.0 - fl_crank) * tmp
+        q_next[idc_owner, idc_owner] += tmp
 
         # 2.1.2) For all nodes but with free head neighbors only
         idc_owner, idc_neigh = get_owner_neigh_indices(
             geometry,
             (slice(None), slice(0, geometry.ny - 1)),
             (slice(None), slice(1, geometry.ny)),
-            owner_indices_to_keep=fl_model.free_head_nn,
             neigh_indices_to_keep=fl_model.free_head_nn,
         )
         tmp = _tmp / sc[idc_owner] * kmean[idc_owner]
-
-        if fl_model.regime == FlowRegime.STATIONARY:
-            q_next[idc_owner, idc_neigh] -= tmp
-        # # Handle density flow
-        if fl_model.is_gravity:
-            tmp *= rhomean[idc_owner] / WATER_DENSITY
-        q_prev[idc_owner, idc_neigh] += (1.0 - fl_crank) * tmp
+        q_next[idc_owner, idc_neigh] -= tmp
 
         # 2.2) Backward scheme
 
@@ -176,45 +126,19 @@ def make_initial_adj_flow_matrices(
             owner_indices_to_keep=fl_model.free_head_nn,
         )
         tmp = _tmp / sc[idc_owner] * kmean[idc_neigh]
-
-        if fl_model.regime == FlowRegime.STATIONARY:
-            q_next[idc_owner, idc_owner] += tmp
-        # Handle density flow
-        if fl_model.is_gravity:
-            tmp *= rhomean[idc_neigh] / WATER_DENSITY
-        q_prev[idc_owner, idc_owner] -= (1.0 - fl_crank) * tmp
+        q_next[idc_owner, idc_owner] += tmp
 
         # 2.2.2) For all nodes but with free head neighbors only
         idc_owner, idc_neigh = get_owner_neigh_indices(
             geometry,
             (slice(None), slice(1, geometry.ny)),
             (slice(None), slice(0, geometry.ny - 1)),
-            owner_indices_to_keep=fl_model.free_head_nn,
             neigh_indices_to_keep=fl_model.free_head_nn,
         )
         tmp = _tmp / sc[idc_owner] * kmean[idc_neigh]
+        q_next[idc_owner, idc_neigh] -= tmp
 
-        if fl_model.regime == FlowRegime.STATIONARY:
-            q_next[idc_owner, idc_neigh] -= tmp
-        # # Handle density flow
-        if fl_model.is_gravity:
-            tmp *= rhomean[idc_neigh] / WATER_DENSITY
-        q_prev[idc_owner, idc_neigh] += (1.0 - fl_crank) * tmp
-
-    # Add 1/dt for the left term contribution: only for free head
-    diag = np.zeros(q_next.shape[0])
-    diag[fl_model.free_head_nn] += float(1.0 / time_params.ldt[0])
-
-    q_prev.setdiag(q_prev.diagonal() + diag)
-
-    # Add 1 to the diagonal for conditionning. Note that lambda_h^0 (and lambda_p^{0})
-    # is not used in the gradient at constant nodes
-    if fl_model.regime == FlowRegime.STATIONARY:
-        diag = np.zeros(q_next.shape[0])
-        diag[fl_model.cst_head_nn] = 1.0
-        q_next.setdiag(q_next.diagonal() + diag)
-
-    return q_next, q_prev
+    return q_next
 
 
 def make_transient_adj_flow_matrices(
@@ -328,7 +252,6 @@ def make_transient_adj_flow_matrices(
             tmp_prev *= rhomean_prev[idc_neigh] / WATER_DENSITY
 
         q_next[idc_owner, idc_neigh] -= fl_crank * tmp_next  # type: ignore
-
         q_prev[idc_owner, idc_neigh] += (1.0 - fl_crank) * tmp_prev  # type: ignore
 
     # 2) Y contribution
@@ -430,11 +353,6 @@ def get_aflow_matrices(
     time_params: TimeParameters,
     time_index: int,
 ) -> Tuple[csc_matrix, csc_matrix]:
-    # In this context
-    if time_index == 0:
-        # q_next = make_stationary_flow_matrices(geometry, fl_model)
-        return a_fl_model.q_next_init.tocsc(), a_fl_model.q_prev_init.tocsc()
-
     # Since the density vary over time, it is required to rebuild the adjoint
     # matrices at each timestep.
     if fl_model.is_gravity:
@@ -446,28 +364,37 @@ def get_aflow_matrices(
         _q_next = a_fl_model.q_next.copy()
     shape = a_fl_model.a_head[:, :, -1].size
 
-    # Add 1/dt for the left term contribution: only for free head
     diag = np.zeros(shape)
-    diag[fl_model.free_head_nn] += float(1.0 / time_params.ldt[time_index - 1])
-    # One for the cts head -> we must divide by storage coef and mesh volume because
-    # we divide the other terms in _q_prev and q_next (better conditionning)
-    diag[fl_model.cst_head_nn] += (
-        1.0
-        / fl_model.storage_coefficient.ravel("F")[fl_model.cst_head_nn]
-        / geometry.mesh_volume
-    )
+    if time_index == 0:
+        _q_next = lil_array(_q_next.shape, dtype=np.float64)
+        if fl_model.regime == FlowRegime.TRANSIENT:
+            diag += 1.0 / fl_model.storage_coefficient.ravel("F") / geometry.mesh_volume
+        else:  # stationary case
+            # add the derivative of the stationary flow for initialization
+            _q_next = add_adj_stationary_flow_to_q_next(geometry, fl_model, _q_next)
+            diag[fl_model.cst_head_nn] += (
+                1.0
+                / fl_model.storage_coefficient.ravel("F")[fl_model.cst_head_nn]
+                / geometry.mesh_volume
+            )
 
+    else:
+        # Add 1/dt for the left term contribution: only for free head
+        diag[fl_model.free_head_nn] += float(1.0 / time_params.ldt[time_index - 1])
+        # One for the cts head -> we must divide by storage coef and mesh volume because
+        # we divide the other terms in _q_prev and q_next (better conditionning)
+        diag[fl_model.cst_head_nn] += (
+            1.0
+            / fl_model.storage_coefficient.ravel("F")[fl_model.cst_head_nn]
+            / geometry.mesh_volume
+        )
     _q_next.setdiag(_q_next.diagonal() + diag)
+
     diag = np.zeros(a_fl_model.a_head[:, :, -1].size)
     # Need a try - except for n = N_{ts} resolution: then \Delta t^{N_{ts}+1} does not
     # exists
     try:
         diag[fl_model.free_head_nn] += float(1.0 / time_params.ldt[time_index])
-        # diag[fl_model.cst_head_nn] += (
-        #     1.0
-        #     / fl_model.storage_coefficient.ravel("F")[fl_model.cst_head_nn]
-        #     / geometry.mesh_volume
-        # )
     except IndexError:
         pass
 
@@ -592,13 +519,6 @@ def solve_adj_flow_saturated(
         .reshape(geometry.nx, geometry.ny, order="F")
     )
 
-    # If transient, no need to solve for t=0 because the gradient
-    # does not depend on the lmanda_h^{0}
-    if time_index == 0 and fl_model.regime == FlowRegime.TRANSIENT:
-        # To avoid lambda_h^0 undefined
-        a_fl_model.a_head[:, :, 0] = a_fl_model.a_head[:, :, 1]
-        return 0
-
     # 2) Build adjoint flow matrices Q_{prev} and Q_{next}
     _q_next, _q_prev = get_aflow_matrices(
         geometry, fl_model, tr_model, a_fl_model, time_params, time_index
@@ -645,7 +565,6 @@ def solve_adj_flow_saturated(
     )
 
     # 7) Solve Ax = b with A sparse using LU preconditioner
-
     res, exit_code = lgmres(
         _q_next,
         tmp,
@@ -653,10 +572,6 @@ def solve_adj_flow_saturated(
         M=preconditioner,
         rtol=a_fl_model.rtol,
     )
-
-    # 8) Impose null adjoint head the the cst head boundaries
-    if time_index == 0:
-        res[fl_model.cst_head_nn] = 0.0
 
     # 9) Update the adjoint head field
     a_fl_model.a_head[:, :, time_index] = res.reshape(geometry.ny, geometry.nx).T

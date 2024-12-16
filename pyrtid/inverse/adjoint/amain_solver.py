@@ -8,7 +8,6 @@ from typing import Optional
 from pyrtid.forward.models import ForwardModel
 from pyrtid.inverse.adjoint.adensity_solver import solve_adj_density
 from pyrtid.inverse.adjoint.aflow_solver import (
-    make_initial_adj_flow_matrices,
     make_transient_adj_flow_matrices,
     solve_adj_flow,
     update_adjoint_u_darcy,
@@ -56,16 +55,6 @@ class AdjointSolver:
 
     def initialize_ajd_flow_matrices(self) -> None:
         """Initialize matrices to solve the adjoint flow problem."""
-        (
-            self.adj_model.a_fl_model.q_next_init,
-            self.adj_model.a_fl_model.q_prev_init,
-        ) = make_initial_adj_flow_matrices(
-            self.fwd_model.geometry,
-            self.fwd_model.fl_model,
-            self.fwd_model.tr_model,
-            self.adj_model.a_fl_model,
-            self.fwd_model.time_params,
-        )
         (
             self.adj_model.a_fl_model.q_next,
             self.adj_model.a_fl_model.q_prev,

@@ -38,8 +38,6 @@ class AdjointFlowModel(ABC):
         "a_storage_coefficient_sources",
         "q_prev",
         "q_next",
-        "q_prev_init",
-        "q_next_init",
         "crank_nicolson",
         "rtol",
         "is_use_continuous_adj",
@@ -98,8 +96,6 @@ class AdjointFlowModel(ABC):
 
         self.q_prev: lil_matrix = lil_array((geometry.nx * geometry.ny, 1))
         self.q_next: lil_matrix = lil_array((geometry.nx * geometry.ny, 1))
-        self.q_prev_init: lil_matrix = lil_array((geometry.nx * geometry.ny, 1))
-        self.q_next_init: lil_matrix = lil_array((geometry.nx * geometry.ny, 1))
 
         # crank nicolson: if None, then the crank-nicolson from the forward model
         # is used. This attribute only purpose is to test the impact of an
