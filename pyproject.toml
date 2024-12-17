@@ -32,7 +32,7 @@ dependencies = [
     "joblib",
     "gstools",
     "nested_grid_plotter",
-    "lbfgsb>=0.1.1",
+    "lbfgsb@git+https://github.com/antoinecollet5/lbfgsb",
 ]
 requires-python = ">=3.9"
 classifiers = [
