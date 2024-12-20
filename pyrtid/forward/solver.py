@@ -27,7 +27,6 @@ from .models import (
     TransportModel,
 )
 from .transport_solver import (
-    make_transport_matrices_diffusion_only,
     solve_transport_semi_implicit,
 )
 
@@ -88,20 +87,6 @@ class ForwardSolver:
                 self.model.time_params.nts,
             )
 
-    def initialize_transport_matrices(self) -> None:
-        """
-        Initialize the trabsport matrices with the diffusion term only.
-
-        The advection term needs to be included at each timestep. Only the diffusion
-        part remains constant.
-        """
-        (
-            self.model.tr_model.q_next_diffusion,
-            self.model.tr_model.q_prev_diffusion,
-        ) = make_transport_matrices_diffusion_only(
-            self.model.geometry, self.model.tr_model, self.model.time_params
-        )
-
     def solve(self, is_verbose: bool = False) -> None:
         """Solve the forward problem.
 
@@ -154,7 +139,6 @@ class ForwardSolver:
         # Update the flow matrices depending on the flow regime (not modified along
         # the timesteps because permeability and storage coefficients are constant).
         self.initialize_flow_matrices(FlowRegime.TRANSIENT)
-        self.initialize_transport_matrices()
 
         time_index = 0  # iteration on time
 

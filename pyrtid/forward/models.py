@@ -10,12 +10,12 @@ Note :
 from __future__ import annotations
 
 import warnings
-from abc import ABC
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
-from scipy.sparse import lil_array, lil_matrix
+from scipy.sparse import lil_array
 
 from pyrtid.utils import (
     StrEnum,
@@ -289,6 +289,8 @@ class TransportParameters:
     ----------
     diffusion: float, optional
         Default diffusion coefficient in the grid in [m2/s]. The default is 1e-4 m2/s.
+    dispercivity: float, optional
+        The dispersivity (kinematic and numeric) in meters. The default is 0.1 m.
     porosity: float, optional
         Default porosity in the grid Should be a number between 0 and 1.
         The default is 1.0.
@@ -322,6 +324,7 @@ class TransportParameters:
     def __init__(
         self,
         diffusion: float = 1e-4,
+        dispersivity: float = 0.1,
         porosity: float = 1.0,
         crank_nicolson_advection: float = 0.5,
         crank_nicolson_diffusion: float = 1.0,
@@ -333,6 +336,7 @@ class TransportParameters:
     ) -> None:
         """Initialize the instance."""
         self.diffusion: float = diffusion
+        self.dispersivity: float = dispersivity
         self.porosity: float = porosity
         self.crank_nicolson_advection: float = crank_nicolson_advection
         self.crank_nicolson_diffusion: float = crank_nicolson_diffusion
@@ -866,8 +870,8 @@ class FlowModel(ABC):
         tmp[1:-1, :, :] /= 2
         # for the borders we need to check if a boundary (flow) exist or not
         # this is a consequence of constant head and imposed flux
-        tmp[0, self.is_boundary_west] /= 2
-        tmp[-1, self.is_boundary_east] /= 2
+        tmp[0, self.is_boundary_west, :] /= 2
+        tmp[-1, self.is_boundary_east, :] /= 2
         return tmp
 
     @property
@@ -882,9 +886,45 @@ class FlowModel(ABC):
         # borders grid cells
         # for the borders we need to check if a boundary (flow) exist or not
         # this is a consequence of constant head and imposed flux
-        tmp[self.is_boundary_south, 0] /= 2
-        tmp[self.is_boundary_north, -1] /= 2
+        tmp[self.is_boundary_south, 0, :] /= 2
+        tmp[self.is_boundary_north, -1, :] /= 2
         return tmp
+
+    @property
+    def u_darcy_norm(self) -> NDArrayFloat:
+        """The norm of the darcy velocity estimated at the center of the mesh."""
+        return np.sqrt(self.u_darcy_x_center**2 + self.u_darcy_y_center**2)
+
+    def get_u_darcy_norm_sample(self, time_index: int) -> NDArrayFloat:
+        """The norm of the darcy velocity estimated at the center of the mesh."""
+        # for x
+        tmp_x = np.zeros((self.lhead[time_index].shape))
+        tmp_x += (
+            self.lu_darcy_x[time_index][:-1, :] + self.lu_darcy_x[time_index][1:, :]
+        )
+        # All nodes have 2 boundaries along the y axis, except for the
+        # borders grid cells
+        tmp_x[1:-1, :] /= 2
+        # for the borders we need to check if a boundary (flow) exist or not
+        # this is a consequence of constant head and imposed flux
+        tmp_x[0, self.is_boundary_west] /= 2
+        tmp_x[-1, self.is_boundary_east] /= 2
+
+        # for y
+        tmp_y = np.zeros((self.lhead[time_index].shape))
+        tmp_y += (
+            self.lu_darcy_x[time_index][:-1, :] + self.lu_darcy_x[time_index][1:, :]
+        )
+        # All nodes have 2 boundaries along the y axis, except for the
+        # borders grid cells
+        tmp_y[1:-1, :] /= 2
+        # for the borders we need to check if a boundary (flow) exist or not
+        # this is a consequence of constant head and imposed flux
+        tmp_y[0, self.is_boundary_west] /= 2
+        tmp_y[-1, self.is_boundary_east] /= 2
+
+        # norm
+        return np.sqrt(tmp_x**2 + tmp_y**2)
 
     def get_vertical_dim(self) -> int:
         """Return the number of voxel along the vertical_axis axis."""
@@ -959,6 +999,7 @@ class FlowModel(ABC):
         self.lhead[0][span] = self.pressure_to_head(self.lpressure[0])[span]
 
     @property
+    @abstractmethod
     def is_gravity(self) -> bool:
         """Return False because the gravity effect is ignored with saturated flow."""
         ...
@@ -1004,6 +1045,7 @@ class TransportModel:
         "crank_nicolson_diffusion",
         "crank_nicolson_advection",
         "diffusion",
+        "dispersivity",
         "porosity",
         "lmob",
         "limmob",
@@ -1038,6 +1080,10 @@ class TransportModel:
         self.diffusion = (
             np.ones((geometry.nx, geometry.ny), dtype=np.float64) * tr_params.diffusion
         )
+        self.dispersivity = (
+            np.ones((geometry.nx, geometry.ny), dtype=np.float64)
+            * tr_params.dispersivity
+        )
         self.porosity = (
             np.ones((geometry.nx, geometry.ny), dtype=np.float64) * tr_params.porosity
         )
@@ -1061,11 +1107,11 @@ class TransportModel:
         )
         self.boundary_conditions: List[BoundaryCondition] = []
         # q_prev is composed of q_prev_diffusion + advection term
-        self.q_prev_diffusion: lil_matrix = lil_array((geometry.nx * geometry.ny, 1))
-        self.q_next_diffusion: lil_matrix = lil_array((geometry.nx * geometry.ny, 1))
-        self.q_prev: lil_matrix = lil_array((geometry.nx * geometry.ny, 1))
-        self.q_next: lil_matrix = lil_array((geometry.nx * geometry.ny, 1))
-        self.cst_conc_nn: NDArrayInt = np.array([], dtype=np.int32)
+        self.q_prev_diffusion: lil_array = lil_array((geometry.nx * geometry.ny, 1))
+        self.q_next_diffusion: lil_array = lil_array((geometry.nx * geometry.ny, 1))
+        self.q_prev: lil_array = lil_array((geometry.nx * geometry.ny, 1))
+        self.q_next: lil_array = lil_array((geometry.nx * geometry.ny, 1))
+        self.cst_conc_nn: NDArrayInt = np.array([], dtype=np.int64)
         self.rtol: float = tr_params.rtol
         self.is_numerical_acceleration: bool = tr_params.is_numerical_acceleration
         # The numerical acceleration can be temporarily disabled

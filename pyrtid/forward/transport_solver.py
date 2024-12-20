@@ -21,28 +21,36 @@ from pyrtid.utils.operators import get_super_ilu_preconditioner
 from pyrtid.utils.types import NDArrayFloat
 
 
-def make_transport_matrices_diffusion_only(
-    geometry: Geometry, tr_model: TransportModel, time_params: TimeParameters
-) -> Tuple[lil_matrix, lil_matrix]:
+def make_transport_matrices(
+    geometry: Geometry,
+    tr_model: TransportModel,
+    fl_model: FlowModel,
+    time_index: int,
+) -> Tuple[lil_array, lil_array]:
     """
     Make matrices for the transport.
 
-    Note
-    ----
-    Since the diffusion coefficient does not vary with time,
-    matrices q_prev and q_next are the same.
+
+    Parameters
+    ----------
+    time_index: int
+        The iteration, or timestep id.
     """
 
     dim = geometry.nx * geometry.ny
     q_prev = lil_array((dim, dim), dtype=np.float64)
     q_next = lil_array((dim, dim), dtype=np.float64)
 
+    # diffusion + dispersivity
+    d = (
+        tr_model.effective_diffusion
+        + tr_model.dispersivity * fl_model.get_u_darcy_norm_sample(time_index)
+    )
+
     # X contribution
     if geometry.nx >= 2:
         dmean: NDArrayFloat = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
-        dmean[:-1, :] = harmonic_mean(
-            tr_model.effective_diffusion[:-1, :], tr_model.effective_diffusion[1:, :]
-        )
+        dmean[:-1, :] = harmonic_mean(d[:-1, :], d[1:, :])
         dmean = dmean.flatten(order="F")
 
         # Forward scheme:
@@ -107,9 +115,7 @@ def make_transport_matrices_diffusion_only(
     # Y contribution
     if geometry.ny >= 2:
         dmean: NDArrayFloat = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
-        dmean[:, :-1] = harmonic_mean(
-            tr_model.effective_diffusion[:, :-1], tr_model.effective_diffusion[:, 1:]
-        )
+        dmean[:, :-1] = harmonic_mean(d[:, :-1], d[:, 1:])
         dmean = dmean.flatten(order="F")
 
         # Forward scheme:
@@ -178,8 +184,8 @@ def _add_advection_to_transport_matrices(
     geometry: Geometry,
     fl_model: FlowModel,
     tr_model: TransportModel,
-    q_next: lil_matrix,
-    q_prev: lil_matrix,
+    q_next: lil_array,
+    q_prev: lil_array,
     time_index: int,
 ) -> None:
     crank_adv: float = tr_model.crank_nicolson_advection
@@ -484,8 +490,13 @@ def solve_transport_semi_implicit(
     # The matrix with respect to the advection only needs to be updated if the head
     # have changed.
     if nfpi == 1:
-        q_next: lil_matrix = tr_model.q_next_diffusion.copy()
-        q_prev: lil_matrix = tr_model.q_prev_diffusion.copy()
+        q_next, q_prev = make_transport_matrices(
+            geometry, tr_model, fl_model, time_index
+        )
+
+        # TODO: remove that
+        tr_model.q_next_diffusion = q_next.copy()
+        tr_model.q_prev_diffusion = q_prev.copy()
 
         # Update q_next and q_prev with the advection term (must be copied)
         # Note that this is required at the first fixed point iteration only,
