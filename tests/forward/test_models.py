@@ -24,7 +24,7 @@ from pyrtid.utils.types import NDArrayFloat
 time_params = TimeParameters(duration=240000, dt_init=600.0)
 geometry = Geometry(nx=20, ny=20, dx=4.5, dy=7.5)
 fl_params = FlowParameters(1e-5)
-tr_params = TransportParameters(1e-10, 0.23)
+tr_params = TransportParameters(diffusion=1e-10, porosity=0.23, dispersivity=0.1)
 gch_params = GeochemicalParameters(0.0, 0.0)
 
 
@@ -473,7 +473,7 @@ def test_get_sources(
     time_params = TimeParameters(duration=240000, dt_init=600.0)
     geometry = Geometry(nx=3, ny=3, dx=2.0, dy=2.0, dz=2.0)
     fl_params = FlowParameters(1e-5)
-    tr_params = TransportParameters(1e-10, 0.23)
+    tr_params = TransportParameters(diffusion=1e-10, porosity=0.23)
     gch_params = GeochemicalParameters(0.0, 0.0)
 
     model = ForwardModel(geometry, time_params, fl_params, tr_params, gch_params)
@@ -544,7 +544,7 @@ def test_cst_head(
     time_params = TimeParameters(duration=240000, dt_init=600.0)
     geometry = Geometry(nx=3, ny=3, dx=2.0, dy=2.0, dz=2.0)
     fl_params = FlowParameters(1e-5)
-    tr_params = TransportParameters(1e-10, 0.23)
+    tr_params = TransportParameters(diffusion=1e-10, porosity=0.23)
     gch_params = GeochemicalParameters(0.0, 0.0)
 
     model = ForwardModel(
