@@ -89,8 +89,11 @@ finite difference numerical approximation.
 .. autosummary::
    :toctree: _autosummary
 
+
+    finite_jacobian
     finite_gradient
     is_all_close
+    is_jacobian_correct
     is_gradient_correct
 
 
@@ -171,8 +174,10 @@ from pyrtid.utils.dataclass import default_field
 from pyrtid.utils.enum import StrEnum
 from pyrtid.utils.finite_differences import (
     finite_gradient,
+    finite_jacobian,
     is_all_close,
     is_gradient_correct,
+    is_jacobian_correct,
 )
 from pyrtid.utils.grid import (
     RectilinearGrid,
@@ -234,9 +239,11 @@ __all__ = [
     "get_angle_btw_vectors_rad",
     "GaussianFilter",
     "StrEnum",
+    "finite_jacobian",
     "finite_gradient",
-    "is_gradient_correct",
     "is_all_close",
+    "is_jacobian_correct",
+    "is_gradient_correct",
     "default_field",
     "gen_wells_coordinates",
     "get_super_ilu_preconditioner",

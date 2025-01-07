@@ -21,7 +21,6 @@ from typing import (
     Callable,
     Dict,
     Generator,
-    Iterator,
     List,
     Optional,
     Sequence,
@@ -51,6 +50,74 @@ def rosen_hessian(x):
     return np.array(
         [[1200 * x[0] ** 2 - 400 * x[1] + 2, -400 * x[0]], [-400 * x[0], 200.0]]
     )
+
+
+def is_jacobian_correct(
+    x: np.ndarray,
+    fm: Callable,
+    jac: Callable,
+    fm_args: Optional[Union[Tuple[Any], List[Any]]] = None,
+    fm_kwargs: Optional[Dict[str, Any]] = None,
+    jac_args: Optional[Tuple[Any]] = None,
+    jac_kwargs: Optional[Dict[str, Any]] = None,
+    accuracy: int = 0,
+    eps: Optional[float] = None,
+    max_workers: int = 1,
+) -> bool:
+    """
+    Check by finite difference if the Jacobian matrix is correct.
+
+    Parameters
+    ----------
+    x : np.ndarray
+        The input parameters vector.
+    fm : Callable
+        Forward model.
+    jac : Callable
+        Jacobian model.
+    fm_args: Tuple[Any]
+        Positional arguments for the forward model.
+    fm_kwargs : Dict[Any, Any]
+        Keyword arguments for the forward model.
+    grad_args: Tuple[Any]
+        Positional arguments for the gradient model.
+    grad_kwargs : Dict[Any, Any]
+        Keyword arguments for the gradient model.
+    accuracy : int, optional
+        Number of points to use for the finite difference approximation.
+        Possible values are 0 (2 points), 1 (4 points), 2 (6 points),
+        3 (4 points). The default is 0 which corresponds to the central
+        difference scheme (2 points).
+    eps: float, optional
+        The epsilon for the computation (h). The default value has been
+        taken from the C++ implementation of
+        :cite:`wieschollek2016cppoptimizationlibrary`, and should correspond
+        to the optimal h taking into account the roundoff errors due to
+        the machine precision. The default is -2.2204e-6.
+    max_workers: int
+        Number of workers used. If different from one, the calculation relies on
+        multi-processing to decrease the computation time. The default is 1.
+
+    Returns
+    -------
+    bool
+        True if the Jacobian is correct, false otherwise.
+
+    """
+    if jac_args is None:
+        _jac_args: Tuple[Any] = ()
+    else:
+        _jac_args = jac_args
+    if jac_kwargs is None:
+        jac_kwargs = {}
+    actual_jac = jac(x, *_jac_args, **jac_kwargs)
+    expected_jac = finite_jacobian(
+        x, fm, fm_args, fm_kwargs, accuracy, eps, max_workers
+    )
+    # Handle the gradient case
+    # if actual_jac.ndim != expected_jac.ndim:
+    #     expected_jac = expected_jac.reshape(*actual_jac.shape)
+    return is_all_close(actual_jac, expected_jac)
 
 
 def is_gradient_correct(
@@ -105,18 +172,18 @@ def is_gradient_correct(
         True if the gradient is correct, false otherwise.
 
     """
-    if grad_args is None:
-        _grad_args = []
-    else:
-        _grad_args = grad_args
-    if grad_kwargs is None:
-        grad_kwargs = {}
-    actual_grad = grad(x, *_grad_args, **grad_kwargs)
-    expected_grad = finite_gradient(
-        x, fm, fm_args, fm_kwargs, accuracy, eps, max_workers
+    return is_jacobian_correct(
+        x=x,
+        fm=fm,
+        jac=grad,
+        fm_args=fm_args,
+        fm_kwargs=fm_kwargs,
+        jac_args=grad_args,
+        jac_kwargs=grad_kwargs,
+        accuracy=accuracy,
+        eps=eps,
+        max_workers=max_workers,
     )
-
-    return is_all_close(actual_grad, expected_grad)
 
 
 def is_all_close(v1: np.ndarray, v2: np.ndarray, eps: float = 1e-2) -> bool:
@@ -140,17 +207,165 @@ class FDParams:
     eps: float
 
 
-def approximate_mesh_gradient(mesh_id: int, fd_params: FDParams) -> float:
-    val = 0
+def approximate_elt_jac(elt_id: int, fd_params: FDParams) -> NDArrayFloat:
+    _res = []
     for s in range(fd_params.inner_steps):
-        fd_params.x0[mesh_id] += fd_params.coeff2[fd_params.accuracy][s] * fd_params.eps
-        val += fd_params.coeff[fd_params.accuracy][s] * fd_params.fm(
-            fd_params.x0.reshape(fd_params.shape),
-            *fd_params.fm_args,
-            **fd_params.fm_kwargs,
+        fd_params.x0[elt_id] += fd_params.coeff2[fd_params.accuracy][s] * fd_params.eps
+        _res.append(
+            fd_params.coeff[fd_params.accuracy][s]
+            * fd_params.fm(
+                fd_params.x0.reshape(fd_params.shape),
+                *fd_params.fm_args,
+                **fd_params.fm_kwargs,
+            )
         )
-        fd_params.x0[mesh_id] -= fd_params.coeff2[fd_params.accuracy][s] * fd_params.eps
-    return val / fd_params.dd_val
+        fd_params.x0[elt_id] -= fd_params.coeff2[fd_params.accuracy][s] * fd_params.eps
+    return np.sum(_res, axis=0) / fd_params.dd_val
+
+
+def finite_jacobian(
+    x: np.ndarray,
+    fm: Callable,
+    fm_args: Optional[Sequence[Any]] = None,
+    fm_kwargs: Optional[Dict[str, Any]] = None,
+    accuracy: int = 0,
+    eps: Optional[float] = None,
+    max_workers: int = 1,
+) -> NDArrayFloat:
+    r"""
+    Compute the Jacobian by finite difference.
+
+    The Jacobian is computed by using Taylor Series. For instance, if
+    accurcy = 1, we use 4 points, which means that
+    we take the Taylor series of $f$ around $a = x_j$ and compute the series
+    at $x = x_{j-2}, x_{j-1}, x_{j+1}, x_{j+2}$.
+
+    .. math::
+        \begin{eqnarray*}
+        f(x_{j-2}) &=& f(x_j) - 2hf^{\prime}(x_j) + \frac{4h^2f''(x_j)}{2} -
+        \frac{8h^3f'''(x_j)}{6} + \frac{16h^4f''''(x_j)}{24}
+        - \frac{32h^5f'''''(x_j)}{120} + \cdots\\
+        f(x_{j-1}) &=& f(x_j) - hf^{\prime}(x_j) + \frac{h^2f''(x_j)}{2}
+        - \frac{h^3f'''(x_j)}{6} + \frac{h^4f''''(x_j)}{24}
+        - \frac{h^5f'''''(x_j)}{120} + \cdots\\
+        f(x_{j+1}) &=& f(x_j) + hf^{\prime}(x_j) + \frac{h^2f''(x_j)}{2}
+        + \frac{h^3f'''(x_j)}{6} + \frac{h^4f''''(x_j)}{24}
+        + \frac{h^5f'''''(x_j)}{120} + \cdots\\
+        f(x_{j+2}) &=& f(x_j) + 2hf^{\prime}(x_j) + \frac{4h^2f''(x_j)}{2}
+        + \frac{8h^3f'''(x_j)}{6} + \frac{16h^4f''''(x_j)}{24}
+        + \frac{32h^5f'''''(x_j)}{120} + \cdots
+        \end{eqnarray*}
+
+    To get the $h^2, h^3$, and $h^4$ terms to cancel out, we can compute
+
+    .. math::
+        f(x_{j-2}) - 8f(x_{j-1}) + 8f(x_{j-1}) - f(x_{j+2})
+        = 12hf^{\prime}(x_j) - \frac{48h^5f'''''(x_j)}{120}
+
+    which can be rearranged to
+
+    .. math::
+        f^{\prime}(x_j) = \frac{f(x_{j-2}) - 8f(x_{j-1})
+        + 8f(x_{j-1}) - f(x_{j+2})}{12h} + O(h^4).
+
+    This formula is a better approximation for the derivative at $x_j$
+    than the central difference formula, but requires twice as many
+    calculations.
+
+    Parameters
+    ----------
+    x : np.ndarray
+        The input parameters array.
+    fm : Callable
+        Forward model.
+    fm_args: Tuple[Any]
+        Positional arguments for the forward model.
+    fm_kwargs : Dict[Any, Any]
+        Keyword arguments for the forward model.
+    accuracy : int, optional
+        Number of points to use for the finite difference approximation.
+        Possible values are 0 (2 points), 1 (4 points), 2 (6 points),
+        3 (4 points). The default is 0 which corresponds to the central
+        difference scheme (2 points).
+    eps: float, optional
+        The epsilon for the computation (h). By default, it take 1e-6 times
+        the maximum absolute value of the input data.
+
+        .. :math:
+
+            \delta s = \begin{cases}
+            \epsilon^{1/3} min\Big(max\left(\lvert s\rvert\right),
+            1\Big) & \text{if} \; max\left(\lvert s\rvert\right) > 0\\
+            \epsilon^{1/3} & \text{otherwise}
+            \end{cases}
+
+    max_workers: int
+        Number of workers used. If different from one, the calculation relies on
+        multi-processing to decrease the computation time. The default is 1.
+
+    Returns
+    -------
+    NDArrayFloat
+        The finite difference Jacobian matrix.
+
+    """
+    x0 = np.array(x).astype(np.float64)
+    if eps is None:
+        _eps = np.power(np.finfo(float).eps, 1 / 3) * min(1, np.max(np.abs(x0)))
+        if _eps == 0:
+            _eps = np.power(np.finfo(float).eps, 1 / 3)
+    else:
+        _eps = eps
+    if accuracy not in [0, 1, 2, 3]:
+        raise ValueError("The accuracy should be 0, 1, 2 or 3!")
+    dd = np.array([2.0, 12.0, 60.0, 840.0])
+
+    fd_params = FDParams(
+        x0=x0.ravel(),
+        shape=x0.shape,
+        inner_steps=2 * (accuracy + 1),
+        coeff=[
+            [1.0, -1.0],
+            [1, -8.0, 8.0, -1.0],
+            [-1, 9, -45.0, 45.0, -9.0, 1.0],
+            [3.0, -32.0, 168.0, -672.0, 672.0, -168.0, 32.0, -3.0],
+        ],
+        coeff2=[
+            [1.0, -1.0],
+            [-2.0, -1.0, 1.0, 2.0],
+            [-3.0, -2.0, -1.0, 1.0, 2.0, 3.0],
+            [-4, -3.0, -2.0, -1.0, 1.0, 2.0, 3.0, 4.0],
+        ],
+        fm=fm,
+        fm_args=fm_args if fm_args is not None else [],
+        fm_kwargs=fm_kwargs if fm_kwargs is not None else {},
+        dd_val=dd[accuracy] * _eps,
+        accuracy=accuracy,
+        eps=_eps,
+    )
+
+    def get_fd_params() -> Generator:
+        while True:
+            yield fd_params
+
+    results: List[NDArrayFloat] = []
+    # Single worker (no multi-processing)
+    if max_workers == 1:
+        for i in range(x0.size):
+            results.append(approximate_elt_jac(i, fd_params))
+    # Multi-processing enabled
+    else:
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            results = list(
+                executor.map(
+                    approximate_elt_jac,
+                    range(x0.size),
+                    get_fd_params(),
+                )
+            )
+
+    # (*output shape, *input shape) -> we do not flatten
+    return np.stack(results, axis=-1).reshape(*results[0].shape, *fd_params.shape)
 
 
 def finite_gradient(
@@ -161,7 +376,7 @@ def finite_gradient(
     accuracy: int = 0,
     eps: Optional[float] = None,
     max_workers: int = 1,
-) -> np.ndarray:
+) -> NDArrayFloat:
     r"""
     Compute the gradient by finite difference.
 
@@ -235,61 +450,9 @@ def finite_gradient(
 
     Returns
     -------
-    np.ndarray
+    NDArrayFloat
         The finite difference gradient vector.
-
     """
-    x0 = np.array(x).astype(np.float64)
-    if eps is None:
-        eps = np.power(np.finfo(float).eps, 1 / 3) * min(1, np.max(np.abs(x0)))
-        if eps == 0:
-            eps = np.power(np.finfo(float).eps, 1 / 3)
-    if accuracy not in [0, 1, 2, 3]:
-        raise ValueError("The accuracy should be 0, 1, 2 or 3!")
-    grad = np.zeros(x0.size)
-    dd = np.array([2.0, 12.0, 60.0, 840.0])
-
-    fd_params = FDParams(
-        x0=x0.ravel(),
-        shape=x0.shape,
-        inner_steps=2 * (accuracy + 1),
-        coeff=[
-            [1.0, -1.0],
-            [1, -8.0, 8.0, -1.0],
-            [-1, 9, -45.0, 45.0, -9.0, 1.0],
-            [3.0, -32.0, 168.0, -672.0, 672.0, -168.0, 32.0, -3.0],
-        ],
-        coeff2=[
-            [1.0, -1.0],
-            [-2.0, -1.0, 1.0, 2.0],
-            [-3.0, -2.0, -1.0, 1.0, 2.0, 3.0],
-            [-4, -3.0, -2.0, -1.0, 1.0, 2.0, 3.0, 4.0],
-        ],
-        fm=fm,
-        fm_args=fm_args if fm_args is not None else [],
-        fm_kwargs=fm_kwargs if fm_kwargs is not None else {},
-        dd_val=dd[accuracy] * eps,
-        accuracy=accuracy,
-        eps=eps,
-    )
-
-    def get_fd_params() -> Generator:
-        while True:
-            yield fd_params
-
-    # Single worker (no multi-processing)
-    if max_workers == 1:
-        for i in range(x0.size):
-            grad[i] = approximate_mesh_gradient(i, fd_params)
-    # Multi-processing enabled
-    else:
-        with ProcessPoolExecutor(max_workers=max_workers) as executor:
-            results: Iterator[float] = executor.map(
-                approximate_mesh_gradient,
-                range(x0.size),
-                get_fd_params(),
-            )
-        for i, res in enumerate(results):
-            grad[i] = res
-
-    return grad.reshape(fd_params.shape)
+    return finite_jacobian(
+        x, fm, fm_args, fm_kwargs, accuracy, eps, max_workers
+    ).reshape(x.shape)
