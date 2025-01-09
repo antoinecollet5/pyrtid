@@ -477,9 +477,9 @@ def get_weights(
     _den = den.copy()
     _den[den == 0] = 1.0
 
-    weights_before = 1 - (obs_times - simu_times[before_idx]) / den
+    weights_before = 1 - (obs_times - simu_times[before_idx]) / _den
     weights_before[before_idx < 0] = 0.0  # Handle obs at time zero.
-    weights_after = 1 - (simu_times[after_idx] - obs_times) / den
+    weights_after = 1 - (simu_times[after_idx] - obs_times) / _den
 
     weights_before[den == 0] = 1.0
     weights_after[den == 0] = 0.0

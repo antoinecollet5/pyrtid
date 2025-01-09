@@ -988,7 +988,7 @@ class PCGA:
             (
                 self.objective_function_ls(simul_obs)
                 + 0.5 * (np.dot(invZs.T, invZs) - np.dot(XTinvQs.T, tmp))
-            )
+            ).item()
         )
 
     def rmse(self, residuals: NDArrayFloat, is_normalized: bool) -> NDArrayFloat:
@@ -1079,7 +1079,7 @@ class PCGA:
         start2 = time()
 
         self.loginfo(
-            f"computed Jacobian-Matrix products in : {(start2- start1):.3e} secs"
+            f"computed Jacobian-Matrix products in : {(start2 - start1):.3e} secs"
         )
 
         b = np.zeros((n + p, 1), dtype="d")
@@ -1680,7 +1680,9 @@ class PCGA:
             else:
                 dat["objective function (no beta)"] = obj
         if res is not None:
-            dat[f"relative L2-norm diff btw sol {n_iter:d} and sol {n_iter+1:d}"] = res
+            dat[f"relative L2-norm diff btw sol {n_iter:d} and sol {n_iter + 1:d}"] = (
+                res
+            )
 
         maxlen = max([len(k) for k in dat]) + 1
         for k, v in dat.items():
