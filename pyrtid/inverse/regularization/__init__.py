@@ -49,6 +49,14 @@ Discrete to impose specific discrete values to the field
 Global
 ======
 
+Fitting empirical distributions
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. autosummary::
+   :toctree: _autosummary
+
+    ProbDistFitting
+
 Geostatistic regularizator
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -179,6 +187,7 @@ from pyrtid.inverse.regularization.covariances import (
     sample_from_sparse_cov_factor,
 )
 from pyrtid.inverse.regularization.discrete import DiscreteRegularizator
+from pyrtid.inverse.regularization.distribution import ProbDistFitting
 from pyrtid.inverse.regularization.geostatistical import (
     EnsembleRegularizator,
     GeostatisticalRegularizator,
@@ -242,4 +251,5 @@ __all__ = [
     "AdaptiveGradientNormRegweight",
     "TikhonovFVMRegularizator",
     "TVFVMRegularizator",
+    "ProbDistFitting",
 ]
