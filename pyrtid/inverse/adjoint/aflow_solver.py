@@ -619,8 +619,7 @@ def solve_adj_flow_density(
     )
     if super_ilu is None:
         warnings.warn(
-            "SuperILU: q_next is singular in adjoint "
-            f"density flow at it={time_index}!"
+            f"SuperILU: q_next is singular in adjoint density flow at it={time_index}!"
         )
 
     # 4) Obtain Q_{prev} @ p^{n+1}

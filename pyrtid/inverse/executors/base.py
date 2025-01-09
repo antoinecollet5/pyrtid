@@ -376,7 +376,7 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         DISPLAY_TOP_LEN = 80
         DISPLAY_SHIFT = 50
 
-        logging.info(f"{' Inversion Parameters ' :=^{DISPLAY_TOP_LEN}}")
+        logging.info(f"{' Inversion Parameters ':=^{DISPLAY_TOP_LEN}}")
 
         # display specific to the solver
         display_dict = {
@@ -393,10 +393,10 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
             if k == "":
                 logging.info("")
             else:
-                logging.info(f"{k : <{DISPLAY_SHIFT}}: {v}")
+                logging.info(f"{k: <{DISPLAY_SHIFT}}: {v}")
 
         # End of display
-        logging.info(f"{'' :=^{DISPLAY_TOP_LEN}}")
+        logging.info(f"{'':=^{DISPLAY_TOP_LEN}}")
 
     def _run_forward_model(
         self,
@@ -574,7 +574,7 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         self.inv_model.loss_reg_unscaled = loss_reg
 
         logging.info(f"Loss (obs fit)        = {loss_ls}")
-        logging.info(f"Loss (obs fit) / Nobs = {loss_ls/d_obs.size}")
+        logging.info(f"Loss (obs fit) / Nobs = {loss_ls / d_obs.size}")
         logging.info(f"Loss (weighted reg)   = {loss_reg}")
         logging.info(f"Total loss            = {loss_total}")
         logging.info(f"Scaling factor        = {self.inv_model.scaling_factor}")

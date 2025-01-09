@@ -427,7 +427,7 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
         logging.info(f"New loss regularization   = {loss_reg}")
         logging.info(f"New loss (total)          = {loss}")
         logging.info(
-            f"New loss (total scaled)   = {loss*self.inv_model.scaling_factor}"
+            f"New loss (total scaled)   = {loss * self.inv_model.scaling_factor}"
         )
         logging.info(
             f"- Updating regularization weights # {self.inv_model.n_update_rw} over.\n"

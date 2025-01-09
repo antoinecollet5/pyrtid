@@ -85,9 +85,7 @@ class AdaptiveRegweight(RegWeightUpdateStrategy, ABC):
         self.max_log_cr: float = max_log_cr
 
         if max_log_cr <= 0:
-            raise ValueError(
-                f"The 'max_log_cr' ({max_log_cr:.2e})" " must be positive! "
-            )
+            raise ValueError(f"The 'max_log_cr' ({max_log_cr:.2e}) must be positive! ")
 
         if max_log_cr <= convergence_factor:
             raise ValueError(
@@ -404,10 +402,10 @@ class AdaptiveGradientNormRegweight(AdaptiveRegweight):
 
         if logger is not None:
             logger.info(
-                f"loss_ls_grad_{self.norm}_norm = " f"{self.loss_ls_grad_norms[-1]}"
+                f"loss_ls_grad_{self.norm}_norm = {self.loss_ls_grad_norms[-1]}"
             )
             logger.info(
-                f"loss_reg_grad_{self.norm}_norm = " f"{self.loss_reg_grad_norms[-1]}"
+                f"loss_reg_grad_{self.norm}_norm = {self.loss_reg_grad_norms[-1]}"
             )
 
         # default value
@@ -566,15 +564,14 @@ class AdaptiveUCRegweight(AdaptiveRegweight):
 
             if logger is not None:
                 logger.info(
-                    "loss_ls_grad_manhattan_norm = " f"{self.loss_ls_grad_norms[-1]}"
+                    f"loss_ls_grad_manhattan_norm = {self.loss_ls_grad_norms[-1]}"
                 )
                 logger.info(
-                    "loss_reg_grad_manhattan_norm = " f"{self.loss_reg_grad_norms[-1]}"
+                    f"loss_reg_grad_manhattan_norm = {self.loss_reg_grad_norms[-1]}"
                 )
 
                 logger.info(
-                    "loss_ls_grad_squared_norm = "
-                    f"{sp.linalg.norm(loss_ls_grad, ord=2)}"
+                    f"loss_ls_grad_squared_norm = {sp.linalg.norm(loss_ls_grad, ord=2)}"
                 )
                 logger.info(
                     "loss_reg_grad_squared_norm = "

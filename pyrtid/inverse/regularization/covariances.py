@@ -191,14 +191,14 @@ def build_preconditioner(
     tree: cKDTree = cKDTree(pts, leafsize=32)
     end: float = time()
 
-    logging.log(logging.INFO, f"Tree building time = {end-start}")
+    logging.log(logging.INFO, f"Tree building time = {end - start}")
 
     # Find the nearest neighbors of all the points
     start = time()
     _dist, ind = tree.query(pts, k=k)
     end = time()
 
-    logging.log(logging.INFO, f"Nearest neighbor computation time = {end-start}")
+    logging.log(logging.INFO, f"Nearest neighbor computation time = {end - start}")
 
     Q = np.zeros((k, k), dtype="d")
     y = np.zeros((k, 1), dtype="d")

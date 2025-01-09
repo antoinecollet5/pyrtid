@@ -23,8 +23,7 @@ def test_plot_observed_s_simulated() -> None:
     with pytest.raises(
         ValueError,
         match=(
-            'At least one for "pred_vector_initial" '
-            'or "pred_vector" should be given !'
+            'At least one for "pred_vector_initial" or "pred_vector" should be given !'
         ),
     ):
         plot_observed_vs_simulated(ax, obs, units="my unit")

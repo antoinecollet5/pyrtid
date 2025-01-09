@@ -155,7 +155,7 @@ class Observable:
             and sp is None
         ):
             raise ValueError(
-                "sp must be provided when observing " "grades or concentrations!"
+                "sp must be provided when observing grades or concentrations!"
             )
 
         # To avoid having None values for typing
@@ -219,7 +219,7 @@ class Observable:
         """Set the values perturbations (see ensemble smoothers)."""
         if self.values.size != pvals.size:
             raise ValueError(
-                "perturbations size should " "match observation values size !"
+                "perturbations size should match observation values size !"
             )
         self.perturbations = pvals
 
