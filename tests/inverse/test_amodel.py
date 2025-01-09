@@ -52,50 +52,61 @@ def test_init_adjoint_sources(max_obs_time, mean_type) -> None:
     # generate synthetic data
     # I don't understand why is does not work if we leave it to 997... ???
     model.tr_model.ldensity.append(
-        np.random.default_rng(2023).random((geometry.nx, geometry.ny)) + 2.0
+        np.abs(np.random.default_rng(2023).random((geometry.nx, geometry.ny)) + 2.0)
     )
     model.tr_model.ldensity.append(
-        np.random.default_rng(2023).random((geometry.nx, geometry.ny)) + 2.0
+        np.abs(np.random.default_rng(2023).random((geometry.nx, geometry.ny)) + 2.0)
     )
     model.tr_model.ldensity.append(
-        np.random.default_rng(2023).random((geometry.nx, geometry.ny)) + 3.0
+        np.abs(np.random.default_rng(2023).random((geometry.nx, geometry.ny)) + 3.0)
     )
     model.tr_model.lmob.append(
-        np.random.default_rng(2023).random(
-            (model.tr_model.n_sp, geometry.nx, geometry.ny)
+        np.abs(
+            np.random.default_rng(2023).random(
+                (model.tr_model.n_sp, geometry.nx, geometry.ny)
+            )
+            + 2.0
         )
-        + 2.0
     )
     model.tr_model.lmob.append(
-        np.random.default_rng(2023).random(
-            (model.tr_model.n_sp, geometry.nx, geometry.ny)
+        np.abs(
+            np.random.default_rng(2023).random(
+                (model.tr_model.n_sp, geometry.nx, geometry.ny)
+            )
+            + 3.0
         )
-        + 3.0
     )
     model.tr_model.limmob.append(
-        np.random.default_rng(2023).random(
-            (model.tr_model.n_sp, geometry.nx, geometry.ny)
+        np.abs(
+            np.random.default_rng(2023).random(
+                (model.tr_model.n_sp, geometry.nx, geometry.ny)
+            )
+            + 2.0
         )
-        + 2.0
     )
     model.tr_model.limmob.append(
-        np.random.default_rng(2023).random(
-            (model.tr_model.n_sp, geometry.nx, geometry.ny)
+        np.abs(
+            np.random.default_rng(2023).random(
+                (model.tr_model.n_sp, geometry.nx, geometry.ny)
+            )
+            + 3.0
         )
-        + 3.0
     )
     model.fl_model.lhead.append(
-        np.random.default_rng(2023).random((geometry.nx, geometry.ny)) + 2.0
+        np.abs(np.random.default_rng(2023).random((geometry.nx, geometry.ny)) + 2.0)
     )
     model.fl_model.lhead.append(
-        np.random.default_rng(2023).random((geometry.nx, geometry.ny)) + 3.0
+        np.abs(np.random.default_rng(2023).random((geometry.nx, geometry.ny)) + 3.0)
     )
+
+    for head in model.fl_model.lhead:
+        model.fl_model.lpressure.append(model.fl_model.head_to_pressure(head))
 
     model.time_params.save_dt()
     model.time_params.save_dt()
 
-    model.fl_model.permeability = np.random.default_rng(2023).random(
-        (geometry.nx, geometry.ny)
+    model.fl_model.permeability = np.abs(
+        np.random.default_rng(2023).random((geometry.nx, geometry.ny))
     )
 
     observables = [
@@ -129,8 +140,12 @@ def test_init_adjoint_sources(max_obs_time, mean_type) -> None:
 
     # Add all possible obervable instance
     for state_var in dminv.StateVariable:
-        # TODO: need to change this
-        if state_var == dminv.StateVariable.PRESSURE:
+        if mean_type != MeanType.ARITHMETIC:
+            # because pressure and head can be negative -> not compatible
+            # with geometric and hamonic means
+            if state_var in [dminv.StateVariable.HEAD, dminv.StateVariable.PRESSURE]:
+                continue
+        if state_var in [dminv.StateVariable.PRESSURE]:
             continue
         observables.append(
             dminv.Observable(

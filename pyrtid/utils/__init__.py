@@ -169,6 +169,7 @@ Other functions
 
 """
 
+from pyrtid.utils.callbacks import Callback
 from pyrtid.utils.cholesky import sparse_cholesky
 from pyrtid.utils.dataclass import default_field
 from pyrtid.utils.enum import StrEnum
@@ -277,4 +278,5 @@ __all__ = [
     "RectilinearGrid",
     "get_polygon_selection_with_dilation_2d",
     "sparse_cholesky",
+    "Callback",
 ]
