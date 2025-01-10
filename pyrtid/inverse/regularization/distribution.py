@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import Optional, Tuple, Union
 
 import numpy as np
-from numpy.typing import ArrayLike
+from numpy.typing import ArrayLike, NDArray
 from scipy.stats._stats_py import _validate_distribution
 
 from pyrtid.inverse.preconditioner import NoTransform, Preconditioner
@@ -10,12 +10,66 @@ from pyrtid.inverse.regularization.base import Regularizator
 from pyrtid.utils import NDArrayFloat, NDArrayInt
 
 
+def ffill(arr: NDArray) -> NDArray:
+    """
+    Forward fill (the NAN) in the given array.
+
+    A new array is returned.
+    """
+    prev = np.arange(np.size(arr))
+    prev[np.isnan(arr)] = 0
+    prev = np.maximum.accumulate(prev)
+    return arr[prev]
+
+
+def make_dist_values_unique(
+    dist: ArrayLike, weights: Optional[ArrayLike] = None
+) -> Tuple[ArrayLike, Union[NDArrayFloat, NDArrayInt], NDArrayInt, NDArrayInt]:
+    """
+    Make the values in the given distribution unique.
+
+    Weights are summed.
+
+    Parameters
+    ----------
+    dist : ArrayLike
+        Values of the (empirical) distribution.
+    weights : Optional[ArrayLike], optional
+        _description_, by default None
+
+    Returns
+    -------
+    Tuple[ArrayLike, Union[NDArrayFloat, NDArrayInt], NDArrayInt, NDArrayInt]
+        Arrays containing:
+        - The unique values by increasing order.
+        - The associated (aggregated) weights. If no weights were provided, it is
+        simply the count for each unique value.
+        - The indices of first occurrence in the original array.
+        - The sorter (indices) by increasing order in the original array (`dist`).
+    """
+    sorter = np.argsort(dist)
+    vals, _indices, _counts = np.unique(
+        np.asarray(dist)[sorter], return_counts=True, return_index=True
+    )
+
+    if weights is None:
+        _weights = _counts
+    else:
+        idx = np.zeros_like(dist)
+        idx[:] = np.nan
+        idx[_indices] = np.arange(np.size(vals))
+        idx = np.asarray(ffill(idx)[np.argsort(sorter)], dtype=np.int64)
+        _weights = np.bincount(idx, weights)
+    return vals, _weights, _indices, sorter
+
+
 def get_cdfs(
     u_values: ArrayLike,
     v_values: ArrayLike,
     u_weights: Optional[ArrayLike] = None,
     v_weights: Optional[ArrayLike] = None,
-) -> Tuple[NDArrayFloat, NDArrayFloat, NDArrayFloat, NDArrayInt, NDArrayInt]:
+) -> Tuple[NDArrayFloat, NDArrayFloat, NDArrayFloat, NDArrayInt]:
+    """Return the merged cumulative density functions and associated weights."""
     u_values, u_weights = _validate_distribution(u_values, u_weights)
     v_values, v_weights = _validate_distribution(v_values, v_weights)
 
@@ -47,7 +101,7 @@ def get_cdfs(
         v_sorted_cumweights = np.concatenate(([0], np.cumsum(v_weights[v_sorter])))
         v_cdf = v_sorted_cumweights[v_cdf_indices] / v_sorted_cumweights[-1]
 
-    return u_cdf, v_cdf, deltas, u_cdf_indices, all_sorter
+    return u_cdf, v_cdf, deltas, all_sorter
 
 
 def cdf_distance(
@@ -100,7 +154,12 @@ def cdf_distance(
            Gradients" (2017). :arXiv:`1705.10743`.
 
     """
-    u_cdf, v_cdf, deltas, _, _ = get_cdfs(u_values, v_values, u_weights, v_weights)
+    # First make values in the distribution unique to reduce the complexity
+    # of the algorithm
+    new_u, new_u_weights = make_dist_values_unique(u_values, u_weights)[:2]
+    new_v, new_v_weights = make_dist_values_unique(v_values, v_weights)[:2]
+
+    u_cdf, v_cdf, deltas, _ = get_cdfs(new_u, new_v, new_u_weights, new_v_weights)
 
     # Compute the value of the integral based on the CDFs.
     # If p = 1 or p = 2, we avoid using np.power, which introduces an overhead
@@ -130,11 +189,11 @@ def cdf_distance_gradient(
 
         l_p(u, v) = \left( \int_{-\infty}^{+\infty} |U-V|^p \right)^{1/p}
 
+    p is a positive parameter; p = 1 gives the Wasserstein distance, p = 2
+    gives the energy distance.
+
     Parameters
     ----------
-    p: int
-        Positive parameter; p = 1 gives the Wasserstein distance, p = 2
-        gives the energy distance.
     u_values, v_values : array_like
         Values observed in the (empirical) distribution.
     u_weights, v_weights : array_like, optional
@@ -164,8 +223,16 @@ def cdf_distance_gradient(
            Gradients" (2017). :arXiv:`1705.10743`.
 
     """
-    u_cdf, v_cdf, deltas, u_cdf_indices, all_sorter = get_cdfs(
-        u_values, v_values, u_weights, v_weights
+
+    # First make values in the distribution unique to reduce the complexity
+    # And allow the derivation with respect to repeated values (in u)
+    new_u, new_u_weights, old_u_indices, u_sorter = make_dist_values_unique(
+        u_values, u_weights
+    )
+    new_v_values, new_v_weights, _, _ = make_dist_values_unique(v_values, v_weights)
+
+    u_cdf, v_cdf, deltas, all_sorter = get_cdfs(
+        new_u, new_v_values, new_u_weights, new_v_weights
     )
 
     # Note about the derivation => the derivative of u_cdf with respect to u_values
@@ -201,14 +268,24 @@ def cdf_distance_gradient(
     # return J.tocsc().T @ _temp
 
     # Second approach strictly equivalent but faster
-    return (
+    grad = (
         -np.concatenate([_temp, [0.0]], dtype=np.float64)[np.argsort(all_sorter)][
-            : np.size(u_values)
+            : np.size(new_u)
         ]
         + np.concatenate([[0.0], _temp], dtype=np.float64)[np.argsort(all_sorter)][
-            : np.size(u_values)
+            : np.size(new_u)
         ]
     )
+
+    # This is to hanbdle duplictaed values
+    out = np.zeros_like(u_values)
+    out[:] = np.nan
+    out[old_u_indices] = grad / new_u_weights
+    out = ffill(out)[np.argsort(u_sorter)]
+    if u_weights is not None:
+        return out * np.array(u_weights, dtype=np.float64)
+    else:
+        return out
 
 
 def _get_subsel(sub_selection: Optional[NDArrayInt]) -> Union[NDArrayInt, slice]:

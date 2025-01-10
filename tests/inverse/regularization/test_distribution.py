@@ -4,6 +4,7 @@ from pyrtid.inverse.regularization import ProbDistFitting
 from pyrtid.inverse.regularization.distribution import (
     cdf_distance,
     cdf_distance_gradient,
+    get_cdfs,
 )
 from pyrtid.utils import NDArrayFloat
 from pyrtid.utils.finite_differences import is_gradient_correct
@@ -29,6 +30,18 @@ def test_prob_dist_fitting(p) -> None:
         axis=0,
     )
 
+    multimodal_dist_target = np.concatenate(
+        (
+            multimodal_dist_target,
+            multimodal_dist_target[:500],
+            multimodal_dist_target[:250],
+        )
+    )
+
+    multimodal_dist_init = np.concatenate(
+        (multimodal_dist_init, multimodal_dist_init[:50], multimodal_dist_init[:25])
+    )
+
     dist_range = (
         min(np.min(multimodal_dist_target).item(), np.min(multimodal_dist_init).item()),
         max(np.max(multimodal_dist_target).item(), np.max(multimodal_dist_init).item()),
@@ -43,6 +56,8 @@ def test_prob_dist_fitting(p) -> None:
     assert cdf_distance(p, v, v, pv, pv) < 1e-10
     assert cdf_distance(p, u, u, pu, pu) < 1e-10
     assert cdf_distance(p, u, v, pu, pv) > 0.5
+
+    get_cdfs(u, v)  # to test the absence of weights
 
     reg = ProbDistFitting(
         target_values=v,
