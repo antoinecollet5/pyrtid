@@ -20,12 +20,13 @@ from pyrtid.forward.models import (
     get_owner_neigh_indices,
 )
 from pyrtid.utils import (
+    Callback,
+    NDArrayFloat,
     arithmetic_mean,
     get_array_borders_selection,
     get_super_ilu_preconditioner,
     harmonic_mean,
 )
-from pyrtid.utils.types import NDArrayFloat
 
 
 def get_kmean(
@@ -355,6 +356,10 @@ def solve_flow_stationary(
         fl_model.cst_head_nn
     ]
 
+    # TODO: make optional
+    fl_model.l_q_next.append(fl_model.q_next)
+    fl_model.l_q_prev.append(lil_array((fl_model.q_next.shape)))
+
     # LU preconditioner
     super_ilu, preconditioner = get_super_ilu_preconditioner(
         fl_model.q_next.tocsc(), drop_tol=1e-10, fill_factor=100
@@ -367,13 +372,20 @@ def solve_flow_stationary(
     tmp += flw_sources.flatten(order="F")
 
     # Solve Ax = b with A sparse using LU preconditioner
+    callback = Callback()
     res, exit_code = gmres(
         fl_model.q_next.tocsc(),
         tmp,
         x0=super_ilu.solve(tmp) if super_ilu is not None else None,
         M=preconditioner,
+        maxiter=1000,
+        restart=20,
         rtol=fl_model.rtol,
+        callback=callback,
+        callback_type="legacy",
     )
+    # TODO = display
+    # log ... (f"Number of it for gmres {callback.itercount()}")
     # Here we don't append but we overwrite the already existing head for t0.
     fl_model.lhead[0] = res.reshape(geometry.ny, geometry.nx).T
 
@@ -767,6 +779,10 @@ def solve_flow_transient_semi_implicit(
     _q_next = _q_next.tocsc()
     _q_prev = _q_prev.tocsc()
 
+    # TODO: make optional
+    fl_model.l_q_next.append(_q_next)
+    fl_model.l_q_prev.append(_q_prev)
+
     # Get LU preconditioner
     super_ilu, preconditioner = get_super_ilu_preconditioner(
         _q_next, drop_tol=1e-10, fill_factor=100
@@ -806,13 +822,20 @@ def solve_flow_transient_semi_implicit(
         ]
 
     # Solve Ax = b with A sparse using LU preconditioner
+    callback = Callback()
     res, exit_code = gmres(
         _q_next,
         tmp,
         x0=super_ilu.solve(tmp) if super_ilu is not None else None,
         M=preconditioner,
         rtol=fl_model.rtol,
+        maxiter=1000,
+        restart=20,
+        callback=callback,
+        callback_type="legacy",
     )
+    # TODO = display
+    # log...(f"Number of it for gmres {callback.itercount()}")
 
     if fl_model.is_gravity:
         fl_model.lpressure.append(res.reshape(geometry.nx, geometry.ny, order="F"))

@@ -21,15 +21,19 @@ from pyrtid.forward.models import (  # ConstantHead,; ZeromobGradient,
     get_owner_neigh_indices,
 )
 from pyrtid.inverse.adjoint.amodels import AdjointFlowModel, AdjointTransportModel
-from pyrtid.utils import get_super_ilu_preconditioner, harmonic_mean
-from pyrtid.utils.types import NDArrayFloat
+from pyrtid.utils import (
+    NDArrayFloat,
+    assert_allclose_sparse,
+    get_super_ilu_preconditioner,
+    harmonic_mean,
+)
 
 
 def add_adj_stationary_flow_to_q_next(
     geometry: Geometry,
     fl_model: FlowModel,
     q_next: lil_array,
-) -> Tuple[lil_array, lil_array]:
+) -> lil_array:
     """
     Make matrices for the initial time step with a potential stationary flow.
 
@@ -38,8 +42,6 @@ def add_adj_stationary_flow_to_q_next(
     Since the permeability and the storage coefficient does not vary with time,
     matrices q_prev and q_next are the same.
     """
-    sc = fl_model.storage_coefficient.ravel("F")
-
     # 1) X contribution
     if geometry.nx >= 2:
         kmean = get_kmean(geometry, fl_model, 0)
@@ -54,7 +56,7 @@ def add_adj_stationary_flow_to_q_next(
             (slice(1, geometry.nx), slice(None)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
-        tmp = _tmp / sc[idc_owner] * kmean[idc_owner]
+        tmp = _tmp * kmean[idc_owner]
         q_next[idc_owner, idc_owner] += tmp  # type: ignore
 
         # 1.1.2) For all nodes but with free head neighbors only
@@ -64,7 +66,7 @@ def add_adj_stationary_flow_to_q_next(
             (slice(1, geometry.nx), slice(None)),
             neigh_indices_to_keep=fl_model.free_head_nn,
         )
-        tmp = _tmp / sc[idc_owner] * kmean[idc_owner]
+        tmp = _tmp * kmean[idc_owner]
         q_next[idc_owner, idc_neigh] -= tmp
 
         # 1.2) Backward scheme
@@ -76,7 +78,7 @@ def add_adj_stationary_flow_to_q_next(
             (slice(0, geometry.nx - 1), slice(None)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
-        tmp = _tmp / sc[idc_owner] * kmean[idc_neigh]
+        tmp = _tmp * kmean[idc_neigh]
         q_next[idc_owner, idc_owner] += tmp
 
         # 1.2.2) For all nodes but with free head neighbors only
@@ -86,7 +88,7 @@ def add_adj_stationary_flow_to_q_next(
             (slice(0, geometry.nx - 1), slice(None)),
             neigh_indices_to_keep=fl_model.free_head_nn,
         )
-        tmp = _tmp / sc[idc_owner] * kmean[idc_neigh]
+        tmp = _tmp * kmean[idc_neigh]
         q_next[idc_owner, idc_neigh] -= tmp
 
     # 2) Y contribution
@@ -103,7 +105,7 @@ def add_adj_stationary_flow_to_q_next(
             (slice(None), slice(1, geometry.ny)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
-        tmp = _tmp / sc[idc_owner] * kmean[idc_owner]
+        tmp = _tmp * kmean[idc_owner]
         q_next[idc_owner, idc_owner] += tmp
 
         # 2.1.2) For all nodes but with free head neighbors only
@@ -113,7 +115,7 @@ def add_adj_stationary_flow_to_q_next(
             (slice(None), slice(1, geometry.ny)),
             neigh_indices_to_keep=fl_model.free_head_nn,
         )
-        tmp = _tmp / sc[idc_owner] * kmean[idc_owner]
+        tmp = _tmp * kmean[idc_owner]
         q_next[idc_owner, idc_neigh] -= tmp
 
         # 2.2) Backward scheme
@@ -125,7 +127,7 @@ def add_adj_stationary_flow_to_q_next(
             (slice(None), slice(0, geometry.ny - 1)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
-        tmp = _tmp / sc[idc_owner] * kmean[idc_neigh]
+        tmp = _tmp * kmean[idc_neigh]
         q_next[idc_owner, idc_owner] += tmp
 
         # 2.2.2) For all nodes but with free head neighbors only
@@ -135,7 +137,7 @@ def add_adj_stationary_flow_to_q_next(
             (slice(None), slice(0, geometry.ny - 1)),
             neigh_indices_to_keep=fl_model.free_head_nn,
         )
-        tmp = _tmp / sc[idc_owner] * kmean[idc_neigh]
+        tmp = _tmp * kmean[idc_neigh]
         q_next[idc_owner, idc_neigh] -= tmp
 
     return q_next
@@ -368,26 +370,16 @@ def get_aflow_matrices(
     if time_index == 0:
         _q_next = lil_array(_q_next.shape, dtype=np.float64)
         if fl_model.regime == FlowRegime.TRANSIENT:
-            diag += 1.0 / fl_model.storage_coefficient.ravel("F") / geometry.mesh_volume
+            diag += 1.0
         else:  # stationary case
             # add the derivative of the stationary flow for initialization
             _q_next = add_adj_stationary_flow_to_q_next(geometry, fl_model, _q_next)
-            diag[fl_model.cst_head_nn] += (
-                1.0
-                / fl_model.storage_coefficient.ravel("F")[fl_model.cst_head_nn]
-                / geometry.mesh_volume
-            )
+            diag[fl_model.cst_head_nn] += 1.0
 
     else:
         # Add 1/dt for the left term contribution: only for free head
         diag[fl_model.free_head_nn] += float(1.0 / time_params.ldt[time_index - 1])
-        # One for the cts head -> we must divide by storage coef and mesh volume because
-        # we divide the other terms in _q_prev and q_next (better conditionning)
-        diag[fl_model.cst_head_nn] += (
-            1.0
-            / fl_model.storage_coefficient.ravel("F")[fl_model.cst_head_nn]
-            / geometry.mesh_volume
-        )
+        diag[fl_model.cst_head_nn] += 1.0
     _q_next.setdiag(_q_next.diagonal() + diag)
 
     diag = np.zeros(a_fl_model.a_head[:, :, -1].size)
@@ -399,6 +391,15 @@ def get_aflow_matrices(
         pass
 
     _q_prev.setdiag(_q_prev.diagonal() + diag)
+
+    # TODO: make optional
+    a_fl_model.l_q_next.append(_q_next)
+    a_fl_model.l_q_prev.append(_q_prev)
+
+    if time_index != time_params.nts:
+        # q_prev (aka matrice B in the rhs) does not exists for the max timestep
+        assert_allclose_sparse(_q_prev, fl_model.l_q_prev[time_index + 1].T, rtol=1e-8)
+    assert_allclose_sparse(_q_next, fl_model.l_q_next[time_index].T, rtol=1e-8)
 
     # convert to csc format for efficiency
     return _q_next.tocsc(), _q_prev.tocsc()
@@ -543,20 +544,10 @@ def solve_adj_flow_saturated(
     tmp = _q_prev.dot(prev_vector)
 
     # 5) Add the source terms: observation on the head field
-    tmp -= (
-        a_fl_model.a_head_sources[:, [time_index]].todense().ravel("F")
-        / fl_model.storage_coefficient.ravel("F")
-        / geometry.mesh_volume
-    )
+    tmp -= a_fl_model.a_head_sources[:, [time_index]].todense().ravel("F")
 
     tmp += (
-        (
-            a_fl_model.a_pressure[:, :, time_index].ravel("F")
-            / fl_model.storage_coefficient.ravel("F")
-            / geometry.mesh_volume
-        )
-        * WATER_DENSITY
-        * GRAVITY
+        (a_fl_model.a_pressure[:, :, time_index].ravel("F")) * WATER_DENSITY * GRAVITY
     )
 
     # 6) Add the source terms from mob observations (adjoint transport)
@@ -632,11 +623,7 @@ def solve_adj_flow_density(
     tmp = _q_prev.dot(prev_vector)
 
     # 5) Add the source terms: observation on the pressure field
-    tmp -= (
-        a_fl_model.a_pressure_sources[:, [time_index]].todense().ravel("F")
-        / fl_model.storage_coefficient.ravel("F")
-        / geometry.mesh_volume
-    )
+    tmp -= a_fl_model.a_pressure_sources[:, [time_index]].todense().ravel("F")
 
     # 6) Handle the density (forward variable) for n = 0 (initial system state).
     if time_index != 0:
@@ -645,13 +632,7 @@ def solve_adj_flow_density(
         density = tr_model.ldensity[time_index]  # type: ignore
 
     tmp += (
-        (
-            a_fl_model.a_head[:, :, time_index].ravel("F")
-            / fl_model.storage_coefficient.ravel("F")
-            / geometry.mesh_volume
-        )
-        / density.ravel("F")
-        / GRAVITY
+        (a_fl_model.a_head[:, :, time_index].ravel("F")) / density.ravel("F") / GRAVITY
     )
 
     # 7) Add the source terms from mob observations (adjoint transport)

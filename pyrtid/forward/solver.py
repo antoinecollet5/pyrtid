@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 
 import numpy as np
+import scipy as sp
 
 from pyrtid.utils import NDArrayFloat
 
@@ -26,9 +27,7 @@ from .models import (
     ForwardModel,
     TransportModel,
 )
-from .transport_solver import (
-    solve_transport_semi_implicit,
-)
+from .transport_solver import solve_transport_semi_implicit
 
 
 def get_max_coupling_error(current_arr, prev_arr) -> float:
@@ -135,6 +134,12 @@ class ForwardSolver:
                 np.zeros((self.model.geometry.nx, self.model.geometry.ny + 1))
             ]
             compute_u_darcy_div(self.model.fl_model, self.model.geometry, 0)
+
+            # Add the stiffness matrices A and B so that indices match between
+            # the forward and the adjoint. This is for development purposes.
+            ngc = self.model.geometry.n_grid_cells
+            self.model.fl_model.l_q_next.append(sp.sparse.identity(ngc))
+            self.model.fl_model.l_q_prev.append(sp.sparse.lil_array((ngc, ngc)))
 
         # Update the flow matrices depending on the flow regime (not modified along
         # the timesteps because permeability and storage coefficients are constant).

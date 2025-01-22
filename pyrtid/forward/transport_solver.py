@@ -6,7 +6,7 @@ import warnings
 from typing import Tuple
 
 import numpy as np
-from scipy.sparse import lil_array, lil_matrix
+from scipy.sparse import lil_array
 from scipy.sparse.linalg import gmres
 
 from pyrtid.forward.models import (
@@ -347,8 +347,8 @@ def _add_advection_to_transport_matrices(
 def _apply_transport_sink_term(
     fl_model: FlowModel,
     tr_model: TransportModel,
-    q_next: lil_matrix,
-    q_prev: lil_matrix,
+    q_next: lil_array,
+    q_prev: lil_array,
     time_index: int,
 ) -> None:
     flw = fl_model.lunitflow[time_index].flatten(order="F")
@@ -364,8 +364,8 @@ def _apply_transport_sink_term(
 def _apply_divergence_effect(
     fl_model: FlowModel,
     tr_model: TransportModel,
-    q_next: lil_matrix,
-    q_prev: lil_matrix,
+    q_next: lil_array,
+    q_prev: lil_array,
     time_index: int,
 ) -> None:
     """
@@ -388,8 +388,8 @@ def _add_transport_boundary_conditions(
     geometry: Geometry,
     fl_model: FlowModel,
     tr_model: TransportModel,
-    q_next: lil_matrix,
-    q_prev: lil_matrix,
+    q_next: lil_array,
+    q_prev: lil_array,
     time_index: int,
 ) -> None:
     """Add the boundary conditions to the matrix."""
