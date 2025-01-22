@@ -470,6 +470,11 @@ class Geometry:
         return self.nx * self.ny
 
     @property
+    def grid_cell_surface(self) -> float:
+        """Return the surface of the grid cell in the x-y plan (m2)."""
+        return self.dx * self.dy
+
+    @property
     def mesh_volume(self) -> float:
         """Return the volume of a voxel in m3."""
         return self.dx * self.dy * self.dz
@@ -662,6 +667,8 @@ class FlowModel(ABC):
         "is_boundary_west",
         "is_boundary_north",
         "is_boundary_south",
+        "l_q_next",
+        "l_q_prev",
     ]
 
     def __init__(
@@ -720,6 +727,11 @@ class FlowModel(ABC):
             * GRAVITY
             * WATER_DENSITY
         ]
+
+        # List to store the successive stiffness matrices
+        # This is mostly for development purposes.
+        self.l_q_next: List[lil_array] = []
+        self.l_q_prev: List[lil_array] = []
 
     @property
     def head(self) -> NDArrayFloat:
@@ -857,6 +869,8 @@ class FlowModel(ABC):
         self.lu_darcy_div = []
         self.lunitflow = []
         self.set_constant_head_indices()
+        self.l_q_next = []
+        self.l_q_prev = []
 
     @property
     def u_darcy_x_center(self) -> NDArrayFloat:
@@ -1065,6 +1079,8 @@ class TransportModel:
         "max_fpi",
         "molar_mass",
         "is_skip_rt",
+        "l_q_next",
+        "l_q_prev",
     ]
 
     def __init__(
@@ -1120,6 +1136,11 @@ class TransportModel:
         self.max_fpi: int = tr_params.max_fpi
         self.molar_mass: float = gch_params.Ms
         self.is_skip_rt: bool = tr_params.is_skip_rt
+
+        # List to store the successive stiffness matrices
+        # This is mostly for development purposes.
+        self.l_q_next: List[lil_array] = []
+        self.l_q_prev: List[lil_array] = []
 
     @property
     def mob(self) -> NDArrayFloat:
@@ -1296,6 +1317,8 @@ class TransportModel:
         self.ldensity.clear()
         self.lsources.clear()
         self.set_constant_conc_indices()
+        self.l_q_next = []
+        self.l_q_prev = []
 
 
 class ForwardModel:
