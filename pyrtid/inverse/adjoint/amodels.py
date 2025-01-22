@@ -7,7 +7,7 @@ from abc import ABC
 from typing import List, Optional
 
 import numpy as np
-from scipy.sparse import csc_array, lil_array, lil_matrix
+from scipy.sparse import csc_array, lil_array
 
 from pyrtid.forward.models import (  # ConstantHead,; ZeroConcGradient,
     ForwardModel,
@@ -41,6 +41,8 @@ class AdjointFlowModel(ABC):
         "crank_nicolson",
         "rtol",
         "is_use_continuous_adj",
+        "l_q_prev",
+        "l_q_next",
     ]
 
     def __init__(
@@ -94,8 +96,8 @@ class AdjointFlowModel(ABC):
             (geometry.nx * geometry.ny, 1), dtype=np.float64
         )
 
-        self.q_prev: lil_matrix = lil_array((geometry.nx * geometry.ny, 1))
-        self.q_next: lil_matrix = lil_array((geometry.nx * geometry.ny, 1))
+        self.q_prev: lil_array = lil_array((geometry.nx * geometry.ny, 1))
+        self.q_next: lil_array = lil_array((geometry.nx * geometry.ny, 1))
 
         # crank nicolson: if None, then the crank-nicolson from the forward model
         # is used. This attribute only purpose is to test the impact of an
@@ -103,6 +105,11 @@ class AdjointFlowModel(ABC):
         self.crank_nicolson: Optional[float] = None
         self.rtol: float = 1e-8
         self.is_use_continuous_adj: bool = is_use_continuous_adj
+
+        # List to store the successive stiffness matrices
+        # This is mostly for development purposes.
+        self.l_q_next: List[lil_array] = []
+        self.l_q_prev: List[lil_array] = []
 
     def clear_adjoint_sources(self) -> None:
         """
@@ -125,6 +132,8 @@ class AdjointFlowModel(ABC):
         self.a_pressure = np.zeros_like(self.a_pressure)
         self.a_u_darcy_x = np.zeros_like(self.a_u_darcy_x)
         self.a_u_darcy_y = np.zeros_like(self.a_u_darcy_y)
+        self.l_q_next = []
+        self.l_q_prev = []
 
 
 class SaturatedAdjointFlowModel(AdjointFlowModel):
@@ -231,6 +240,8 @@ class AdjointTransportModel:
         "is_adj_numerical_acceleration",
         "is_adj_num_acc_for_timestep",
         "n_sp",
+        "l_q_prev",
+        "l_q_next",
     ]
 
     def __init__(
@@ -297,10 +308,10 @@ class AdjointTransportModel:
             (n_sp, geometry.nx, geometry.ny), dtype=np.float64
         )
 
-        self.q_prev_diffusion: lil_matrix = lil_array((geometry.nx * geometry.ny, 1))
-        self.q_next_diffusion: lil_matrix = lil_array((geometry.nx * geometry.ny, 1))
-        self.q_prev: lil_matrix = lil_array((geometry.nx * geometry.ny, 1))
-        self.q_next: lil_matrix = lil_array((geometry.nx * geometry.ny, 1))
+        self.q_prev_diffusion: lil_array = lil_array((geometry.nx * geometry.ny, 1))
+        self.q_next_diffusion: lil_array = lil_array((geometry.nx * geometry.ny, 1))
+        self.q_prev: lil_array = lil_array((geometry.nx * geometry.ny, 1))
+        self.q_next: lil_array = lil_array((geometry.nx * geometry.ny, 1))
         self.afpi_eps = afpi_eps
         self.is_adj_numerical_acceleration: bool = is_adj_numerical_acceleration
         self.is_adj_num_acc_for_timestep: bool = self.is_adj_numerical_acceleration
@@ -314,6 +325,11 @@ class AdjointTransportModel:
         self.a_porosity_sources = csc_array(self.a_porosity_sources.shape)
         self.a_diffusion_sources = csc_array(self.a_diffusion_sources.shape)
         self.a_density_sources = csc_array(self.a_density_sources.shape)
+
+        # List to store the successive stiffness matrices
+        # This is mostly for development purposes.
+        self.l_q_next: List[lil_array] = []
+        self.l_q_prev: List[lil_array] = []
 
     @property
     def a_conc(self) -> NDArrayFloat:
@@ -333,6 +349,8 @@ class AdjointTransportModel:
         self.a_immob = np.zeros_like(self.a_immob)
         self.a_density = np.zeros_like(self.a_density)
         self.a_gch_src_term = np.zeros_like(self.a_gch_src_term)
+        self.l_q_next = []
+        self.l_q_prev = []
 
 
 class AdjointModel:
