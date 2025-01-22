@@ -6,7 +6,7 @@ import warnings
 from typing import Tuple
 
 import numpy as np
-from scipy.sparse import lil_array, lil_matrix
+from scipy.sparse import lil_array
 from scipy.sparse.linalg import gmres
 
 from pyrtid.forward.models import (
@@ -49,7 +49,7 @@ def get_adjoint_max_coupling_error(
 
 def make_transient_adj_transport_matrices(
     geometry: Geometry, tr_model: TransportModel, time_params: TimeParameters
-) -> Tuple[lil_matrix, lil_matrix]:
+) -> Tuple[lil_array, lil_array]:
     """
     Make matrices for the transient transport.
 
@@ -175,8 +175,8 @@ def _add_advection_to_adj_transport_matrices(
     fl_model: FlowModel,
     tr_model: TransportModel,
     a_tr_model: AdjointTransportModel,
-    q_next: lil_matrix,
-    q_prev: lil_matrix,
+    q_next: lil_array,
+    q_prev: lil_array,
     time_index: int,
 ) -> None:
     crank_adv = tr_model.crank_nicolson_advection
@@ -272,8 +272,8 @@ def _add_advection_to_adj_transport_matrices(
 def _apply_adj_transport_sink_term(
     fl_model: FlowModel,
     tr_model: TransportModel,
-    q_next: lil_matrix,
-    q_prev: lil_matrix,
+    q_next: lil_array,
+    q_prev: lil_array,
     time_index: int,
 ) -> None:
     flw = fl_model.lunitflow[time_index].flatten(order="F")
@@ -285,8 +285,8 @@ def _apply_adj_transport_sink_term(
 def _apply_adj_divergence_effect(
     fl_model: FlowModel,
     tr_model: TransportModel,
-    q_next: lil_matrix,
-    q_prev: lil_matrix,
+    q_next: lil_array,
+    q_prev: lil_array,
     time_index: int,
 ) -> None:
     """Take into account the divergence: dcdt+U.grad(c)=L(u)."""
@@ -306,8 +306,8 @@ def _add_adj_transport_boundary_conditions(
     geometry: Geometry,
     fl_model: FlowModel,
     tr_model: TransportModel,
-    q_next: lil_matrix,
-    q_prev: lil_matrix,
+    q_next: lil_array,
+    q_prev: lil_array,
     time_index: int,
 ) -> None:
     """Add the boundary conditions to the matrix."""
