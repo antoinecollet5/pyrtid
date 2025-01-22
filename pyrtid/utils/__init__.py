@@ -167,10 +167,20 @@ Other functions
     NDArrayInt
     NDArrayBool
 
+Sparse helpers
+^^^^^^^^^^^^^^
+
+Helpers to work with sparse matrices and sparse arrays.
+
+.. autosummary::
+   :toctree: _autosummary
+
+    sparse_cholesky
+    assert_allclose_sparse
+
 """
 
 from pyrtid.utils.callbacks import Callback
-from pyrtid.utils.cholesky import sparse_cholesky
 from pyrtid.utils.dataclass import default_field
 from pyrtid.utils.enum import StrEnum
 from pyrtid.utils.finite_differences import (
@@ -220,6 +230,7 @@ from pyrtid.utils.random_field import (
     get_normalized_mean_from_lognormal_params,
     get_normalized_std_from_lognormal_params,
 )
+from pyrtid.utils.sparse_helpers import assert_allclose_sparse, sparse_cholesky
 from pyrtid.utils.spatial_filters import GaussianFilter
 from pyrtid.utils.types import (
     NDArrayBool,
@@ -278,5 +289,6 @@ __all__ = [
     "RectilinearGrid",
     "get_polygon_selection_with_dilation_2d",
     "sparse_cholesky",
+    "assert_allclose_sparse",
     "Callback",
 ]
