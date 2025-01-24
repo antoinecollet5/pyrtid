@@ -46,7 +46,7 @@ def add_adj_stationary_flow_to_q_next(
     if geometry.nx >= 2:
         kmean = get_kmean(geometry, fl_model, 0)
 
-        _tmp = geometry.gamma_ij_x / geometry.dx / geometry.mesh_volume
+        _tmp = geometry.gamma_ij_x / geometry.dx / geometry.grid_cell_surface
 
         # 1.1) Forward scheme:
         # 1.1.1) For free head nodes only
@@ -96,7 +96,7 @@ def add_adj_stationary_flow_to_q_next(
         kmean = get_kmean(geometry, fl_model, 1)
 
         # 2.1) Forward scheme:
-        _tmp = geometry.gamma_ij_y / geometry.dy / geometry.mesh_volume
+        _tmp = geometry.gamma_ij_y / geometry.dy / geometry.grid_cell_surface
 
         # 2.1.1) For free head nodes only
         idc_owner, idc_neigh = get_owner_neigh_indices(
@@ -171,7 +171,7 @@ def make_transient_adj_flow_matrices(
 
     # 1) X contribution
     if geometry.nx >= 2:
-        _tmp = geometry.gamma_ij_x / geometry.dx / geometry.mesh_volume
+        _tmp = geometry.gamma_ij_x / geometry.dx / geometry.grid_cell_surface
 
         kmean = get_kmean(geometry, fl_model, 0)
         # at n - 1
@@ -267,7 +267,7 @@ def make_transient_adj_flow_matrices(
         # at n
         rhomean_prev = get_rhomean2(geometry, tr_model, axis=1, time_index=time_index)
         # 2.1) Forward scheme:
-        _tmp = geometry.gamma_ij_y / geometry.dy / geometry.mesh_volume
+        _tmp = geometry.gamma_ij_y / geometry.dy / geometry.grid_cell_surface
 
         # 2.1.1) For free head nodes only
         idc_owner, idc_neigh = get_owner_neigh_indices(
@@ -705,7 +705,7 @@ def get_adjoint_transport_src_terms(
             kmean_x
             * a_fl_model.a_u_darcy_x[1:-1, :, time_index]
             / geometry.dx
-            / geometry.mesh_volume
+            / geometry.grid_cell_surface
         ) * tmp
 
         # Backward
@@ -713,7 +713,7 @@ def get_adjoint_transport_src_terms(
             kmean_x
             * a_fl_model.a_u_darcy_x[1:-1, :, time_index]
             / geometry.dx
-            / geometry.mesh_volume
+            / geometry.grid_cell_surface
         ) * tmp
 
     # y contribution
@@ -728,7 +728,7 @@ def get_adjoint_transport_src_terms(
             kmean_y
             * a_fl_model.a_u_darcy_y[:, 1:-1, time_index]
             / geometry.dy
-            / geometry.mesh_volume
+            / geometry.grid_cell_surface
         ) * tmp
 
         # Backward
@@ -736,7 +736,7 @@ def get_adjoint_transport_src_terms(
             kmean_y
             * a_fl_model.a_u_darcy_y[:, 1:-1, time_index]
             / geometry.dy
-            / geometry.mesh_volume
+            / geometry.grid_cell_surface
         ) * tmp
 
     # Divide by the storage coefficient only if transient mode

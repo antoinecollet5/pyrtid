@@ -128,14 +128,14 @@ def test_wrong_time_params() -> None:
 def test_geometry(nx, ny, dx, dy, expected_exception) -> None:
     with expected_exception:
         geom = Geometry(nx, ny, dx, dy)
-        assert geom.mesh_volume == dx * dy
+        assert geom.grid_cell_volume == geom.grid_cell_surface == dx * dy
 
 
 def get_source_term() -> SourceTerm:
     """Get a source term."""
     return SourceTerm(
         "some_name",
-        np.array([1], dtype=np.int32),
+        np.array([1], dtype=np.int64),
         np.array([1.0], dtype=np.float64),
         np.array([1.0], dtype=np.float64),
         np.array([1.0], dtype=np.float64),
@@ -169,7 +169,7 @@ def test_add_source_term(model) -> None:
     assert len(model.source_terms) == 1
     source_term = SourceTerm(
         "some_name2",
-        np.array([1], dtype=np.int32),
+        np.array([1], dtype=np.int64),
         np.array([1.0], dtype=np.float64),
         np.array([1.0], dtype=np.float64),
         np.array([1.0], dtype=np.float64),
@@ -185,7 +185,7 @@ def test_wrong_source_term(model) -> None:
     ):
         SourceTerm(
             "some_name",
-            node_ids=np.array([1], dtype=np.int32),
+            node_ids=np.array([1], dtype=np.int64),
             times=np.array([1.0, 1.0], dtype=np.float64),
             flowrates=np.array([1.0], dtype=np.float64),
             concentrations=np.array([1.0], dtype=np.float64),
@@ -427,7 +427,7 @@ def test_model_reinit(model: ForwardModel) -> None:
     [
         (
             0.0,
-            np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, -0.75, 1.0]]),
+            np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, -1.5, 2.0]]),
             np.array(
                 [
                     [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 1.0]],
@@ -437,7 +437,7 @@ def test_model_reinit(model: ForwardModel) -> None:
         ),
         (
             0.5,
-            np.array([[0.0, 0.25, 0.0], [0.25, 0.0, 0.0], [0.0, -0.75, 1.0]]),
+            np.array([[0.0, 0.5, 0.0], [0.5, 0.0, 0.0], [0.0, -1.5, 2.0]]),
             np.array(
                 [
                     [[0.0, 0.0, 0.0], [0.25, 0.0, 0.0], [0.0, 0.0, 1.0]],
@@ -447,7 +447,7 @@ def test_model_reinit(model: ForwardModel) -> None:
         ),
         (
             50.0,
-            np.array([[0.0, 0.125, 0.0], [0.125, 0.0, 0.0], [0.0, 0.125, 0.25]]),
+            np.array([[0.0, 0.25, 0.0], [0.25, 0.0, 0.0], [0.0, 0.25, 0.5]]),
             np.array(
                 [
                     [[0.0, 0.0, 0.25], [0.25, 0.0, 0.0], [0.0, 0.25, 0.5]],
@@ -457,7 +457,7 @@ def test_model_reinit(model: ForwardModel) -> None:
         ),
         (
             500.0,
-            np.array([[0.0, 0.25, 0.0], [0.25, 0.0, 0.0], [0.0, 0.25, 0.5]]),
+            np.array([[0.0, 0.5, 0.0], [0.5, 0.0, 0.0], [0.0, 0.5, 1.0]]),
             np.array(
                 [
                     [[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 2.0]],
@@ -511,8 +511,8 @@ def test_get_sources(
         )
     )
 
-    _flw_src, _conc_src = model.get_sources(time, geometry)
-    np.testing.assert_equal(_flw_src, expected_src_flw)
+    _unitflw_src, _conc_src = model.get_sources(time, geometry)
+    np.testing.assert_equal(_unitflw_src, expected_src_flw)
     np.testing.assert_equal(_conc_src, expected_src_conc)
 
 

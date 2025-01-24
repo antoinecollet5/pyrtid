@@ -101,10 +101,10 @@ class ForwardSolver:
         # and boundary conditions
 
         # Get the flow and concentration sources
-        flw_sources, conc_sources = self.model.get_sources(
+        unitflw_sources, conc_sources = self.model.get_sources(
             self.model.time_params.time_elapsed, self.model.geometry
         )
-        self.model.fl_model.lunitflow.append(flw_sources)
+        self.model.fl_model.lunitflow.append(unitflw_sources)
         self.model.tr_model.lsources.append(conc_sources)
 
         # Update the initial density
@@ -122,7 +122,7 @@ class ForwardSolver:
                 self.model.geometry,
                 self.model.fl_model,
                 self.model.tr_model,
-                flw_sources,
+                unitflw_sources,
                 0,
             )
         else:
@@ -175,13 +175,13 @@ class ForwardSolver:
         self.model.time_params.save_dt()
 
         # Get the sources
-        flw_sources_old = self.model.fl_model.lunitflow[-1]
+        unitflw_sources_old = self.model.fl_model.lunitflow[-1]
         conc_sources_old = self.model.tr_model.lsources[-1]
-        flw_sources, conc_sources = self.model.get_sources(
+        unitflw_sources, conc_sources = self.model.get_sources(
             self.model.time_params.time_elapsed, self.model.geometry
         )
 
-        self.model.fl_model.lunitflow.append(flw_sources)
+        self.model.fl_model.lunitflow.append(unitflw_sources)
         self.model.tr_model.lsources.append(conc_sources)
 
         # Solve the flow -> no iterations with transport/chemistry since we don't have
@@ -190,8 +190,8 @@ class ForwardSolver:
             self.model.geometry,
             self.model.fl_model,
             self.model.tr_model,
-            flw_sources,
-            flw_sources_old,
+            unitflw_sources,
+            unitflw_sources_old,
             self.model.time_params,
             time_index,
         )

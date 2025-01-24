@@ -254,7 +254,7 @@ class TVFVMRegularizator(Regularizator):
         # Add epsilon to prevent undetermination when deriving
         arr = np.zeros_like(v)
         if self.geometry.nx > 2:
-            tmp: float = self.geometry.gamma_ij_x / self.geometry.mesh_volume
+            tmp: float = self.geometry.gamma_ij_x / self.geometry.grid_cell_surface
             arr += tmp**2 * (
                 (self.mat_perm_x @ (self.mat_perm_x.T @ v) - self.mat_perm_x @ v) ** 2
                 + (self.mat_perm_x.T @ (self.mat_perm_x @ v) - self.mat_perm_x.T @ v)
@@ -262,7 +262,7 @@ class TVFVMRegularizator(Regularizator):
             )
 
         if self.geometry.ny > 2:
-            tmp = self.geometry.gamma_ij_y / self.geometry.mesh_volume
+            tmp = self.geometry.gamma_ij_y / self.geometry.grid_cell_surface
             arr += tmp**2 * (
                 (self.mat_perm_y @ (self.mat_perm_y.T @ v) - self.mat_perm_y @ v) ** 2
                 + (self.mat_perm_y.T @ (self.mat_perm_y @ v) - self.mat_perm_y.T @ v)
@@ -313,7 +313,9 @@ class TVFVMRegularizator(Regularizator):
 
         grad = np.zeros(v.size)
         if self.geometry.nx > 2:
-            tmp: float = (self.geometry.gamma_ij_x / self.geometry.mesh_volume) ** 2
+            tmp: float = (
+                self.geometry.gamma_ij_x / self.geometry.grid_cell_surface
+            ) ** 2
             # term 1
             grad += (
                 tmp
@@ -340,7 +342,7 @@ class TVFVMRegularizator(Regularizator):
             grad[mask] += tmp * xbwd[mask] / denbwd[mask]
 
         if self.geometry.ny > 2:
-            tmp = (self.geometry.gamma_ij_y / self.geometry.mesh_volume) ** 2
+            tmp = (self.geometry.gamma_ij_y / self.geometry.grid_cell_surface) ** 2
             # term 1
             grad += (
                 tmp

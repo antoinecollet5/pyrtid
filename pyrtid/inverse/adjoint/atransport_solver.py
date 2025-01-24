@@ -79,7 +79,7 @@ def make_transient_adj_transport_matrices(
             owner_indices_to_keep=tr_model.free_conc_nn,
         )
 
-        tmp = geometry.gamma_ij_x / geometry.dx / geometry.mesh_volume
+        tmp = geometry.gamma_ij_x / geometry.dx / geometry.grid_cell_surface
 
         q_next[idc_owner, idc_neigh] -= (
             tr_model.crank_nicolson_diffusion * dmean[idc_owner] * tmp
@@ -131,7 +131,7 @@ def make_transient_adj_transport_matrices(
             owner_indices_to_keep=tr_model.free_conc_nn,
         )
 
-        tmp = geometry.gamma_ij_y / geometry.dy / geometry.mesh_volume
+        tmp = geometry.gamma_ij_y / geometry.dy / geometry.grid_cell_surface
 
         q_next[idc_owner, idc_neigh] -= (
             tr_model.crank_nicolson_diffusion * dmean[idc_owner] * tmp
@@ -195,7 +195,7 @@ def _add_advection_to_adj_transport_matrices(
             (slice(1, geometry.nx), slice(None)),
             owner_indices_to_keep=tr_model.free_conc_nn,
         )
-        tmp = geometry.gamma_ij_x / geometry.mesh_volume
+        tmp = geometry.gamma_ij_x / geometry.grid_cell_surface
 
         tmp_un_pos = np.where(normal * un_x > 0.0, normal * un_x, 0.0)[idc_owner]
 
@@ -234,7 +234,7 @@ def _add_advection_to_adj_transport_matrices(
             (slice(None), slice(1, geometry.ny)),
             owner_indices_to_keep=tr_model.free_conc_nn,
         )
-        tmp = geometry.gamma_ij_y / geometry.mesh_volume
+        tmp = geometry.gamma_ij_y / geometry.grid_cell_surface
 
         tmp_un_pos = np.where(normal * un_y > 0.0, normal * un_y, 0.0)[idc_owner]
 
@@ -320,7 +320,7 @@ def _add_adj_transport_boundary_conditions(
             (slice(geometry.nx - 1, geometry.nx), slice(None)),
             np.array([]),
         )
-        tmp = geometry.gamma_ij_x / geometry.mesh_volume
+        tmp = geometry.gamma_ij_x / geometry.grid_cell_surface
 
         _un = fl_model.u_darcy_x[:-1, :, time_index].ravel("F")[idc_left]
         # _un_old = fl_model.u_darcy_x[:-1, :, time_index + 1].ravel("F")[idc_left]
@@ -351,7 +351,7 @@ def _add_adj_transport_boundary_conditions(
             (slice(None), slice(geometry.ny - 1, geometry.ny)),
             np.array([]),
         )
-        tmp = geometry.gamma_ij_y / geometry.mesh_volume
+        tmp = geometry.gamma_ij_y / geometry.grid_cell_surface
 
         _un = fl_model.u_darcy_y[:, :-1, time_index].ravel("F")[idc_left]
         normal = -1.0
@@ -407,7 +407,7 @@ def solve_adj_transport_transient_semi_implicit(
         # diag[fl_model.cst_head_nn] += (
         #     1.0
         #     / fl_model.storage_coefficient.ravel("F")[fl_model.cst_head_nn]
-        #     / geometry.mesh_volume
+        #     / geometry.grid_cell_surface
         # )
 
         # _q_next.setdiag(_q_next.diagonal() + diag)
@@ -420,7 +420,7 @@ def solve_adj_transport_transient_semi_implicit(
         #     diag[fl_model.cst_head_nn] += (
         #         1.0
         #         / fl_model.storage_coefficient.ravel("F")[fl_model.cst_head_nn]
-        #         / geometry.mesh_volume
+        #         / geometry.grid_cell_surface
         #     )
         # except IndexError:
         #     pass
@@ -466,11 +466,13 @@ def solve_adj_transport_transient_semi_implicit(
         # Add the source terms
         tmp[sp, :] -= (
             a_tr_model.a_conc_sources[sp][:, [time_index]].todense().ravel()
-            / geometry.mesh_volume
+            / geometry.grid_cell_surface
         )
 
     # Add the adjoint geochem source term
-    tmp += a_tr_model.a_gch_src_term.reshape(2, -1, order="F") / geometry.mesh_volume
+    tmp += (
+        a_tr_model.a_gch_src_term.reshape(2, -1, order="F") / geometry.grid_cell_surface
+    )
 
     # Add the adjoint density source term for species 1
     tmp[0, :] += (
@@ -479,7 +481,7 @@ def solve_adj_transport_transient_semi_implicit(
         * TDS_LINEAR_COEFFICIENT
         * gch_params.Ms
         / 1000
-    ) / geometry.mesh_volume
+    ) / geometry.grid_cell_surface
 
     # Add the adjoint density source term for species 2
     tmp[1, :] += (
@@ -488,7 +490,7 @@ def solve_adj_transport_transient_semi_implicit(
         * TDS_LINEAR_COEFFICIENT
         * gch_params.Ms2
         / 1000
-    ) / geometry.mesh_volume
+    ) / geometry.grid_cell_surface
 
     # Build the LU preconditioning
     super_ilu, preconditioner = get_super_ilu_preconditioner(

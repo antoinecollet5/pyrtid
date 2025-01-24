@@ -475,7 +475,7 @@ class Geometry:
         return self.dx * self.dy
 
     @property
-    def mesh_volume(self) -> float:
+    def grid_cell_volume(self) -> float:
         """Return the volume of a voxel in m3."""
         return self.dx * self.dy * self.dz
 
@@ -1403,31 +1403,31 @@ class ForwardModel:
     ) -> Tuple[NDArrayFloat, NDArrayFloat]:
         """Get the flow sources and sink terms."""
 
-        _fl_src = np.zeros((geometry.nx, geometry.ny))
+        _unitflw_src = np.zeros((geometry.nx, geometry.ny))
         _conc_src = np.zeros((self.tr_model.n_sp, geometry.nx, geometry.ny))
 
         # iterate the source terms
         for source in self.source_terms.values():
             # identify the source term applying
-            _fl, _conc = source.get_values(time)
+            _flw, _conc = source.get_values(time)
             nids = source.get_node_indices(geometry)
 
             # Add the flowrates contribution
-            _fl_src[nids[0], nids[1]] += _fl / source.n_nodes
+            _unitflw_src[nids[0], nids[1]] += _flw / source.n_nodes
 
             # Keep only non negative flowrates (remove sink terms)
-            if _fl > 0:
+            if _flw > 0:
                 for sp in range(self.tr_model.n_sp):
                     try:
                         _conc_src[sp, nids[0], nids[1]] += (
-                            _fl * _conc[sp] / source.n_nodes
+                            _flw * _conc[sp] / source.n_nodes
                         )
                     except IndexError:
                         pass
         for condition in self.fl_model.boundary_conditions:
             if isinstance(condition, ConstantHead):
                 # Set zero where there constant head
-                _fl_src[condition.span] = 0.0
+                _unitflw_src[condition.span] = 0.0
 
         for condition in self.tr_model.boundary_conditions:
             if isinstance(condition, ConstantConcentration):
@@ -1436,8 +1436,8 @@ class ForwardModel:
                     _conc_src[sp][condition.span] = 0.0
 
         return (
-            _fl_src / self.geometry.mesh_volume,
-            _conc_src / self.geometry.mesh_volume,
+            _unitflw_src / self.geometry.grid_cell_surface,  # m/s
+            _conc_src / self.geometry.grid_cell_volume,  # mol/L
         )
 
     def add_src_term(self, source_term: SourceTerm) -> None:

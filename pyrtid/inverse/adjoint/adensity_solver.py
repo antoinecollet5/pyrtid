@@ -373,4 +373,4 @@ def _add_diffusivity_contribution(
             fl_crank * fl_model.lunitflow[time_index + 1]
             + (1.0 - fl_crank) * fl_model.lunitflow[time_index]
         )
-    ) * geometry.mesh_volume
+    ) * geometry.grid_cell_surface
