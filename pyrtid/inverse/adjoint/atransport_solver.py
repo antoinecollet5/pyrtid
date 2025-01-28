@@ -21,9 +21,12 @@ from pyrtid.forward.models import (
 )
 from pyrtid.forward.solver import get_max_coupling_error
 from pyrtid.inverse.adjoint.amodels import AdjointTransportModel
-from pyrtid.utils import harmonic_mean
-from pyrtid.utils.operators import get_super_ilu_preconditioner
-from pyrtid.utils.types import NDArrayFloat
+from pyrtid.utils import (
+    NDArrayFloat,
+    assert_allclose_sparse,
+    get_super_ilu_preconditioner,
+    harmonic_mean,
+)
 
 
 def get_adjoint_max_coupling_error(
@@ -318,7 +321,6 @@ def _add_adj_transport_boundary_conditions(
             geometry,
             (slice(0, 1), slice(None)),
             (slice(geometry.nx - 1, geometry.nx), slice(None)),
-            np.array([]),
         )
         tmp = geometry.gamma_ij_x / geometry.grid_cell_surface
 
@@ -349,7 +351,6 @@ def _add_adj_transport_boundary_conditions(
             geometry,
             (slice(None), slice(0, 1)),
             (slice(None), slice(geometry.ny - 1, geometry.ny)),
-            np.array([]),
         )
         tmp = geometry.gamma_ij_y / geometry.grid_cell_surface
 
@@ -447,6 +448,19 @@ def solve_adj_transport_transient_semi_implicit(
 
         a_tr_model.q_next = q_next
         a_tr_model.q_prev = q_prev
+
+        # TODO: make optional
+        a_tr_model.l_q_next.append(q_next)
+        a_tr_model.l_q_prev.append(q_prev)
+
+        if time_index != time_params.nts:
+            # q_prev (aka matrice B in the rhs) does not exists for the max timestep
+            assert_allclose_sparse(q_prev, tr_model.l_q_prev[time_index].T, rtol=1e-8)
+        if time_index != 0:
+            assert_allclose_sparse(
+                q_next, tr_model.l_q_next[time_index - 1].T, rtol=1e-8
+            )
+
     else:
         q_next = a_tr_model.q_next
         q_prev = a_tr_model.q_prev

@@ -519,6 +519,10 @@ def solve_transport_semi_implicit(
 
         tr_model.q_next = q_next
         tr_model.q_prev = q_prev
+
+        # TODO: make optional
+        tr_model.l_q_next.append(q_next)
+        tr_model.l_q_prev.append(q_prev)
     else:
         q_next = tr_model.q_next
         q_prev = tr_model.q_prev
