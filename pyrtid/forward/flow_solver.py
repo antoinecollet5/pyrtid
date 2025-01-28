@@ -366,7 +366,9 @@ def solve_flow_stationary(
     )
 
     if super_ilu is None:
-        warnings.warn("SuperILU: q_next is singular in stationary flow!")
+        warnings.warn(
+            f"SuperILU: q_next is singular in stationary flow at it={time_index}!"
+        )
 
     # Add the source terms
     tmp += unitflw_sources.flatten(order="F")
