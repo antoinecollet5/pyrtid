@@ -494,10 +494,6 @@ def solve_transport_semi_implicit(
             geometry, tr_model, fl_model, time_index
         )
 
-        # TODO: remove that
-        tr_model.q_next_diffusion = q_next.copy()
-        tr_model.q_prev_diffusion = q_prev.copy()
-
         # Update q_next and q_prev with the advection term (must be copied)
         # Note that this is required at the first fixed point iteration only,
         # afterwards, only the chemical source term varies.

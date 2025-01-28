@@ -210,8 +210,6 @@ class AdjointTransportModel:
     a_conc_sources: NDArrayFloat
     a_conc_2_sources: NDArrayFloat
     a_grade_sources: NDArrayFloat
-    q_prev_diffusion: lil_array
-    q_next_diffusion: lil_array
     q_prev: lil_array
     q_next: lil_array
     a_gch_src_term: NDArrayFloat
@@ -231,8 +229,6 @@ class AdjointTransportModel:
         "a_porosity_sources",
         "a_diffusion_sources",
         "a_density_sources",
-        "q_prev_diffusion",
-        "q_next_diffusion",
         "q_prev",
         "q_next",
         "a_gch_src_term",
@@ -308,8 +304,6 @@ class AdjointTransportModel:
             (n_sp, geometry.nx, geometry.ny), dtype=np.float64
         )
 
-        self.q_prev_diffusion: lil_array = lil_array((geometry.nx * geometry.ny, 1))
-        self.q_next_diffusion: lil_array = lil_array((geometry.nx * geometry.ny, 1))
         self.q_prev: lil_array = lil_array((geometry.nx * geometry.ny, 1))
         self.q_next: lil_array = lil_array((geometry.nx * geometry.ny, 1))
         self.afpi_eps = afpi_eps

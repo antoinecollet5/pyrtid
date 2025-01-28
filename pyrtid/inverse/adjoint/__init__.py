@@ -89,7 +89,6 @@ Functions to solve the adjoint flow.
    :toctree: _autosummary
 
     get_adjoint_max_coupling_error
-    make_transient_adj_transport_matrices
     solve_adj_transport_transient_semi_implicit
 
 
@@ -121,7 +120,6 @@ from pyrtid.inverse.adjoint.amodels import (
 )
 from pyrtid.inverse.adjoint.atransport_solver import (
     get_adjoint_max_coupling_error,
-    make_transient_adj_transport_matrices,
     solve_adj_transport_transient_semi_implicit,
 )
 from pyrtid.inverse.adjoint.gradients import (
@@ -144,7 +142,6 @@ __all__ = [
     "solve_adj_flow",
     "update_adjoint_u_darcy",
     "get_adjoint_max_coupling_error",
-    "make_transient_adj_transport_matrices",
     "solve_adj_transport_transient_semi_implicit",
     "solve_adj_geochem",
     "get_diffusion_adjoint_gradient",

@@ -16,7 +16,6 @@ from pyrtid.inverse.adjoint.ageochem_solver import solve_adj_geochem
 from pyrtid.inverse.adjoint.amodels import AdjointModel
 from pyrtid.inverse.adjoint.atransport_solver import (
     get_adjoint_max_coupling_error,
-    make_transient_adj_transport_matrices,
     solve_adj_transport_transient_semi_implicit,
 )
 from pyrtid.inverse.obs import Observables
@@ -67,17 +66,6 @@ class AdjointSolver:
             self.fwd_model.time_params.nts,
         )
 
-    def initialize_ajd_transport_matrices(self) -> None:
-        """Initialize matrices to solve the adjoint transport problem."""
-        (
-            self.adj_model.a_tr_model.q_next_diffusion,
-            self.adj_model.a_tr_model.q_prev_diffusion,
-        ) = make_transient_adj_transport_matrices(
-            self.fwd_model.geometry,
-            self.fwd_model.tr_model,
-            self.fwd_model.time_params,
-        )
-
     def solve(
         self,
         observables: Observables,
@@ -106,10 +94,6 @@ class AdjointSolver:
         # Construct the flow matrices (not modified along the timesteps because
         # permeability and storage coefficients are constant).
         self.initialize_ajd_flow_matrices()
-
-        # Initialize transport matrices with diffusion (advection is added on the fly)
-        # Consequently, the preconditioner is built on the fly too.
-        self.initialize_ajd_transport_matrices()
 
         for time_index in range(
             self.fwd_model.time_params.nts,

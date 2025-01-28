@@ -51,7 +51,11 @@ def get_adjoint_max_coupling_error(
 
 
 def make_transient_adj_transport_matrices(
-    geometry: Geometry, tr_model: TransportModel, time_params: TimeParameters
+    geometry: Geometry,
+    fl_model: FlowModel,
+    tr_model: TransportModel,
+    time_params: TimeParameters,
+    time_index: int,
 ) -> Tuple[lil_array, lil_array]:
     """
     Make matrices for the transient transport.
@@ -66,13 +70,35 @@ def make_transient_adj_transport_matrices(
     q_prev = lil_array((dim, dim), dtype=np.float64)
     q_next = lil_array((dim, dim), dtype=np.float64)
 
+    # diffusion + dispersivity
+    d = (
+        tr_model.effective_diffusion
+        + tr_model.dispersivity * fl_model.get_u_darcy_norm_sample(time_index)
+    )
+
+    if time_index + 1 != time_params.nt:
+        # no q_prev for n = N_ts
+        d_old = (
+            tr_model.effective_diffusion
+            + tr_model.dispersivity * fl_model.get_u_darcy_norm_sample(time_index + 1)
+        )
+    else:
+        d_old = np.zeros_like(d)
+
     # X contribution
     if geometry.nx >= 2:
         dmean: NDArrayFloat = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
-        dmean[:-1, :] = harmonic_mean(
-            tr_model.effective_diffusion[:-1, :], tr_model.effective_diffusion[1:, :]
-        )
+        dmean[:-1, :] = harmonic_mean(d[:-1, :], d[1:, :])
         dmean = dmean.flatten(order="F")
+
+        if time_index + 1 != time_params.nt:
+            dmean_old: NDArrayFloat = np.zeros(
+                (geometry.nx, geometry.ny), dtype=np.float64
+            )
+            dmean_old[:-1, :] = harmonic_mean(d_old[:-1, :], d_old[1:, :])
+            dmean_old = dmean_old.flatten(order="F")
+        else:
+            dmean_old = np.zeros_like(dmean)
 
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
@@ -91,10 +117,10 @@ def make_transient_adj_transport_matrices(
             tr_model.crank_nicolson_diffusion * dmean[idc_owner] * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_neigh] += (
-            (1.0 - tr_model.crank_nicolson_diffusion) * dmean[idc_owner] * tmp
+            (1.0 - tr_model.crank_nicolson_diffusion) * dmean_old[idc_owner] * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
-            (1.0 - tr_model.crank_nicolson_diffusion) * dmean[idc_owner] * tmp
+            (1.0 - tr_model.crank_nicolson_diffusion) * dmean_old[idc_owner] * tmp
         )  # type: ignore
 
         # Backward scheme
@@ -112,19 +138,26 @@ def make_transient_adj_transport_matrices(
             tr_model.crank_nicolson_diffusion * dmean[idc_neigh] * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_neigh] += (
-            (1.0 - tr_model.crank_nicolson_diffusion) * dmean[idc_neigh] * tmp
+            (1.0 - tr_model.crank_nicolson_diffusion) * dmean_old[idc_neigh] * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
-            (1.0 - tr_model.crank_nicolson_diffusion) * dmean[idc_neigh] * tmp
+            (1.0 - tr_model.crank_nicolson_diffusion) * dmean_old[idc_neigh] * tmp
         )  # type: ignore
 
     # Y contribution
     if geometry.ny >= 2:
         dmean: NDArrayFloat = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
-        dmean[:, :-1] = harmonic_mean(
-            tr_model.effective_diffusion[:, :-1], tr_model.effective_diffusion[:, 1:]
-        )
+        dmean[:, :-1] = harmonic_mean(d[:, :-1], d[:, 1:])
         dmean = dmean.flatten(order="F")
+
+        if time_index + 1 != time_params.nt:
+            dmean_old: NDArrayFloat = np.zeros(
+                (geometry.nx, geometry.ny), dtype=np.float64
+            )
+            dmean_old[:, :-1] = harmonic_mean(d_old[:, :-1], d_old[:, 1:])
+            dmean_old = dmean_old.flatten(order="F")
+        else:
+            dmean_old = np.zeros_like(dmean)
 
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
@@ -143,10 +176,10 @@ def make_transient_adj_transport_matrices(
             tr_model.crank_nicolson_diffusion * dmean[idc_owner] * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_neigh] += (
-            (1.0 - tr_model.crank_nicolson_diffusion) * dmean[idc_owner] * tmp
+            (1.0 - tr_model.crank_nicolson_diffusion) * dmean_old[idc_owner] * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
-            (1.0 - tr_model.crank_nicolson_diffusion) * dmean[idc_owner] * tmp
+            (1.0 - tr_model.crank_nicolson_diffusion) * dmean_old[idc_owner] * tmp
         )  # type: ignore
 
         # Backward scheme
@@ -164,10 +197,10 @@ def make_transient_adj_transport_matrices(
             tr_model.crank_nicolson_diffusion * dmean[idc_neigh] * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_neigh] += (
-            (1.0 - tr_model.crank_nicolson_diffusion) * dmean[idc_neigh] * tmp
+            (1.0 - tr_model.crank_nicolson_diffusion) * dmean_old[idc_neigh] * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
-            (1.0 - tr_model.crank_nicolson_diffusion) * dmean[idc_neigh] * tmp
+            (1.0 - tr_model.crank_nicolson_diffusion) * dmean_old[idc_neigh] * tmp
         )  # type: ignore
 
     return q_next, q_prev
@@ -389,8 +422,9 @@ def solve_adj_transport_transient_semi_implicit(
     # The matrix with respect to the advection only needs to be updated at the first
     # fix point iteration
     if nafpi == 1:
-        q_next = tr_model.q_next_diffusion.copy()
-        q_prev = tr_model.q_prev_diffusion.copy()
+        q_next, q_prev = make_transient_adj_transport_matrices(
+            geometry, fl_model, tr_model, time_params, time_index
+        )
 
         # Update q_next and q_prev with the advection term (must be copied)
         # Note that this is required at the first fixed point iteration only,
@@ -407,8 +441,6 @@ def solve_adj_transport_transient_semi_implicit(
         # # we divide the other terms in _q_prev and q_next (better conditionning)
         # diag[fl_model.cst_head_nn] += (
         #     1.0
-        #     / fl_model.storage_coefficient.ravel("F")[fl_model.cst_head_nn]
-        #     / geometry.grid_cell_surface
         # )
 
         # _q_next.setdiag(_q_next.diagonal() + diag)
@@ -420,8 +452,6 @@ def solve_adj_transport_transient_semi_implicit(
         #     diag[fl_model.free_head_nn] += float(1.0 / time_params.ldt[time_index])
         #     diag[fl_model.cst_head_nn] += (
         #         1.0
-        #         / fl_model.storage_coefficient.ravel("F")[fl_model.cst_head_nn]
-        #         / geometry.grid_cell_surface
         #     )
         # except IndexError:
         #     pass

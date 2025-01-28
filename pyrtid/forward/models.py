@@ -1068,8 +1068,6 @@ class TransportModel:
         "immob_prev",
         "boundary_conditions",
         "cst_conc_nn",
-        "q_prev_diffusion",
-        "q_next_diffusion",
         "q_prev",
         "q_next",
         "rtol",
@@ -1122,9 +1120,6 @@ class TransportModel:
             (self.n_sp, geometry.nx, geometry.ny), dtype=np.float64
         )
         self.boundary_conditions: List[BoundaryCondition] = []
-        # q_prev is composed of q_prev_diffusion + advection term
-        self.q_prev_diffusion: lil_array = lil_array((geometry.nx * geometry.ny, 1))
-        self.q_next_diffusion: lil_array = lil_array((geometry.nx * geometry.ny, 1))
         self.q_prev: lil_array = lil_array((geometry.nx * geometry.ny, 1))
         self.q_next: lil_array = lil_array((geometry.nx * geometry.ny, 1))
         self.cst_conc_nn: NDArrayInt = np.array([], dtype=np.int64)
