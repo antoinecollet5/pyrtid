@@ -365,8 +365,10 @@ def _get_perm_gradient_from_diffusivity_eq_saturated(
             dhead_fy = (head[:, 1:, :1] - head[:, :-1, :1]) * dxi_harmonic_mean(
                 permeability[:, :-1], permeability[:, 1:]
             )[:, :, np.newaxis]
-            grad_tmp_y[:, :-1, :1] += dhead_fy * (
-                ma_ahead[:, 1:, :1] - ma_ahead_sc[:, :-1, :1]
+            grad_tmp_y[:, :-1, :1] += (
+                dhead_fy
+                * (ma_ahead[:, 1:, :1] - ma_ahead_sc[:, :-1, :1])
+                / fwd_model.geometry.grid_cell_surface
             )
 
         # Bheadkward scheme
@@ -385,8 +387,10 @@ def _get_perm_gradient_from_diffusivity_eq_saturated(
             dhead_by = (head[:, :-1, :1] - head[:, 1:, :1]) * dxi_harmonic_mean(
                 permeability[:, 1:], permeability[:, :-1]
             )[:, :, np.newaxis]
-            grad_tmp_y[:, 1:, :1] += dhead_by * (
-                ma_ahead[:, :-1, :1] - ma_ahead_sc[:, 1:, :1]
+            grad_tmp_y[:, 1:, :1] += (
+                dhead_by
+                * (ma_ahead[:, :-1, :1] - ma_ahead_sc[:, 1:, :1])
+                / fwd_model.geometry.grid_cell_surface
             )
 
         # Gather the two schemes
