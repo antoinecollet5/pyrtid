@@ -35,6 +35,7 @@ class StateVariable(StrEnum):
     POROSITY = "porosity"
     PRESSURE = "pressure"
     STORAGE_COEFFICIENT = "storage_coefficient"
+    DISPERSIVITY = "dispersivity"
 
 
 class Observable:
@@ -352,6 +353,8 @@ def get_array_from_state_variable(
         return model.tr_model.porosity
     if state_variable == StateVariable.DIFFUSION:
         return model.tr_model.diffusion
+    if state_variable == StateVariable.DISPERSIVITY:
+        return model.tr_model.dispersivity
     if state_variable == StateVariable.DENSITY:
         return model.tr_model.density
     if state_variable == StateVariable.STORAGE_COEFFICIENT:

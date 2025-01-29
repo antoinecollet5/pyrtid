@@ -29,6 +29,7 @@ from pyrtid.utils.types import NDArrayFloat, object_or_object_sequence_to_list
 class DerivationVariable(StrEnum):
     POROSITY = "porosity"
     DIFFUSION = "diffusion"
+    DISPERSIVITY = "dispersivity"
 
 
 def get_diffusion_term_adjoint_gradient(
@@ -52,16 +53,22 @@ def get_diffusion_term_adjoint_gradient(
         Gradient of the objective function with respect to the diffusion.
     """
     shape = (fwd_model.geometry.nx, fwd_model.geometry.ny, fwd_model.time_params.nt)
-    eff_diffusion = fwd_model.tr_model.effective_diffusion
-    porosity = fwd_model.tr_model.porosity
 
+    # diffusion + dispersivity
+    d = (
+        fwd_model.tr_model.effective_diffusion[:, :, np.newaxis]
+        + fwd_model.tr_model.dispersivity[:, :, np.newaxis]
+        * fwd_model.fl_model.get_u_darcy_norm()[:, :, 1:]
+    )
     grad = np.zeros(shape)
 
     if deriv_var == DerivationVariable.POROSITY:
         # Note: this is the diffusion, not the effective diffusion !
-        term_in_effdiff_deriv = fwd_model.tr_model.diffusion
+        term_in_d_deriv = fwd_model.tr_model.diffusion[:, :, np.newaxis]
     elif deriv_var == DerivationVariable.DIFFUSION:
-        term_in_effdiff_deriv = porosity
+        term_in_d_deriv = fwd_model.tr_model.porosity[:, :, np.newaxis]
+    elif deriv_var == DerivationVariable.DISPERSIVITY:
+        term_in_d_deriv = fwd_model.fl_model.get_u_darcy_norm()[:, :, 1:]
 
     crank_diff = fwd_model.tr_model.crank_nicolson_diffusion
 
@@ -78,10 +85,7 @@ def get_diffusion_term_adjoint_gradient(
             dconc_fx[:-1, :, 1:] += (
                 crank_diff * (mob[1:, :, 1:] - mob[:-1, :, 1:])
                 + (1.0 - crank_diff) * (mob[1:, :, :-1] - mob[:-1, :, :-1])
-            ) * (
-                dxi_harmonic_mean(eff_diffusion[:-1, :], eff_diffusion[1:, :])
-                * term_in_effdiff_deriv[:-1, :]
-            )[:, :, np.newaxis]
+            ) * (dxi_harmonic_mean(d[:-1, :], d[1:, :]) * term_in_d_deriv[:-1, :])
 
             damob_fx = np.zeros(shape)
             damob_fx[:-1, :, :] += amob[1:, :, :] - amob[:-1, :, :]
@@ -91,10 +95,7 @@ def get_diffusion_term_adjoint_gradient(
             dconc_bx[1:, :, 1:] += (
                 crank_diff * (mob[:-1, :, 1:] - mob[1:, :, 1:])
                 + (1.0 - crank_diff) * (mob[:-1, :, :-1] - mob[1:, :, :-1])
-            ) * (
-                dxi_harmonic_mean(eff_diffusion[1:, :], eff_diffusion[:-1, :])
-                * term_in_effdiff_deriv[1:, :]
-            )[:, :, np.newaxis]
+            ) * (dxi_harmonic_mean(d[1:, :], d[:-1, :]) * term_in_d_deriv[1:, :])
 
             damob_bx = np.zeros(shape)
             damob_bx[1:, :, :] += amob[:-1, :, :] - amob[1:, :, :]
@@ -113,10 +114,7 @@ def get_diffusion_term_adjoint_gradient(
             dconc_fy[:, :-1, 1:] += (
                 crank_diff * (mob[:, 1:, 1:] - mob[:, :-1, 1:])
                 + (1.0 - crank_diff) * (mob[:, 1:, :-1] - mob[:, :-1, :-1])
-            ) * (
-                dxi_harmonic_mean(eff_diffusion[:, :-1], eff_diffusion[:, 1:])
-                * term_in_effdiff_deriv[:, :-1]
-            )[:, :, np.newaxis]
+            ) * (dxi_harmonic_mean(d[:, :-1], d[:, 1:]) * term_in_d_deriv[:, :-1])
             damob_fy = np.zeros(shape)
             damob_fy[:, :-1, :] += amob[:, 1:, :] - amob[:, :-1, :]
 
@@ -125,10 +123,7 @@ def get_diffusion_term_adjoint_gradient(
             dconc_by[:, 1:, 1:] += (
                 crank_diff * (mob[:, :-1, 1:] - mob[:, 1:, 1:])
                 + (1.0 - crank_diff) * (mob[:, :-1, :-1] - mob[:, 1:, :-1])
-            ) * (
-                dxi_harmonic_mean(eff_diffusion[:, 1:], eff_diffusion[:, :-1])
-                * term_in_effdiff_deriv[:, 1:]
-            )[:, :, np.newaxis]
+            ) * (dxi_harmonic_mean(d[:, 1:], d[:, :-1]) * term_in_d_deriv[:, 1:])
             damob_by = np.zeros(shape)
             damob_by[:, 1:, :] += amob[:, :-1, :] - amob[:, 1:, :]
 
@@ -166,6 +161,33 @@ def get_diffusion_adjoint_gradient(
     )
     # Add the adjoint sources for initial time (t0)
     return grad + adj_model.a_tr_model.a_diffusion_sources[:, [0]].todense().reshape(
+        grad.shape, order="F"
+    )
+
+
+def get_dispersivity_adjoint_gradient(
+    fwd_model: ForwardModel, adj_model: AdjointModel
+) -> NDArrayFloat:
+    """
+    Compute the gradient of the transport dispersive term with respect to a variable.
+
+    Parameters
+    ----------
+    fwd_model : ForwardModel
+        The forward model which contains all forward variables and parameters.
+    adj_model : AdjointModel
+        The adjoint model which contains all adjoint variables and parameters.
+
+    Returns
+    -------
+    NDArrayFloat
+        Gradient of the objective function with respect to the dispersivity.
+    """
+    grad = get_diffusion_term_adjoint_gradient(
+        fwd_model, adj_model, DerivationVariable.DISPERSIVITY
+    )
+    # Add the adjoint sources for initial time (t0)
+    return grad + adj_model.a_tr_model.a_dispersivity_sources[:, [0]].todense().reshape(
         grad.shape, order="F"
     )
 
@@ -577,7 +599,7 @@ def _get_perm_gradient_from_diffusivity_eq_density(
                 / fwd_model.geometry.dy
             )
 
-        # Bheadkward scheme
+        # Backward scheme
         dpressure_by = np.zeros(shape)
         dpressure_by[:, 1:, 1:] += (
             (
@@ -1122,6 +1144,8 @@ def compute_param_adjoint_loss_ls_function_gradient(
     """
     if param.name == ParameterName.DIFFUSION:
         return get_diffusion_adjoint_gradient(fwd_model, adj_model)
+    if param.name == ParameterName.DISPERSIVITY:
+        return get_dispersivity_adjoint_gradient(fwd_model, adj_model)
     if param.name == ParameterName.POROSITY:
         return get_porosity_adjoint_gradient(fwd_model, adj_model)
     if param.name == ParameterName.PERMEABILITY:

@@ -51,6 +51,7 @@ class ParameterName(StrEnum):
     POROSITY = "porosity"
     INITIAL_PRESSURE = "pressure"
     STORAGE_COEFFICIENT = "storage_coefficient"
+    DISPERSIVITY = "dispersivity"
 
 
 PARAM_TO_STATE_VAR = {
@@ -62,6 +63,7 @@ PARAM_TO_STATE_VAR = {
     ParameterName.POROSITY: StateVariable.POROSITY,
     ParameterName.INITIAL_PRESSURE: StateVariable.PRESSURE,
     ParameterName.STORAGE_COEFFICIENT: StateVariable.STORAGE_COEFFICIENT,
+    ParameterName.DISPERSIVITY: StateVariable.DISPERSIVITY,
 }
 
 
@@ -758,6 +760,8 @@ def update_model_with_param_values(
         model.tr_model.porosity = param.values
     elif param.name == ParameterName.DIFFUSION:
         model.tr_model.diffusion = param.values
+    elif param.name == ParameterName.DISPERSIVITY:
+        model.tr_model.dispersivity = param.values
     elif param.name == ParameterName.STORAGE_COEFFICIENT:
         model.fl_model.storage_coefficient = param.values
     else:

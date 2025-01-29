@@ -228,6 +228,7 @@ class AdjointTransportModel:
         "a_grade_sources",
         "a_porosity_sources",
         "a_diffusion_sources",
+        "a_dispersivity_sources",
         "a_density_sources",
         "q_prev",
         "q_next",
@@ -295,6 +296,9 @@ class AdjointTransportModel:
         self.a_diffusion_sources = csc_array(
             (geometry.nx * geometry.ny, 1), dtype=np.float64
         )
+        self.a_dispersivity_sources = csc_array(
+            (geometry.nx * geometry.ny, 1), dtype=np.float64
+        )
         self.a_density_sources: csc_array = csc_array(
             (geometry.nx * geometry.ny, time_params.nt), dtype=np.float64
         )
@@ -318,6 +322,7 @@ class AdjointTransportModel:
         self.a_grade_sources = copy.copy(self.a_conc_sources)
         self.a_porosity_sources = csc_array(self.a_porosity_sources.shape)
         self.a_diffusion_sources = csc_array(self.a_diffusion_sources.shape)
+        self.a_dispersivity_sources = csc_array(self.a_dispersivity_sources.shape)
         self.a_density_sources = csc_array(self.a_density_sources.shape)
 
         # List to store the successive stiffness matrices
@@ -449,6 +454,7 @@ class AdjointModel:
                 StateVariable.CONCENTRATION: self.a_tr_model.a_conc_sources[obs.sp],
                 StateVariable.DENSITY: self.a_tr_model.a_density_sources,
                 StateVariable.DIFFUSION: self.a_tr_model.a_diffusion_sources,
+                StateVariable.DISPERSIVITY: self.a_tr_model.a_dispersivity_sources,
                 StateVariable.HEAD: self.a_fl_model.a_head_sources,
                 StateVariable.GRADE: self.a_tr_model.a_grade_sources[obs.sp],
                 StateVariable.PERMEABILITY: self.a_fl_model.a_permeability_sources,
@@ -472,6 +478,8 @@ class AdjointModel:
                 self.a_tr_model.a_density_sources += res
             elif obs.state_variable == StateVariable.DIFFUSION:
                 self.a_tr_model.a_diffusion_sources += res
+            elif obs.state_variable == StateVariable.DISPERSIVITY:
+                self.a_tr_model.a_dispersivity_sources += res
             elif obs.state_variable == StateVariable.HEAD:
                 self.a_fl_model.a_head_sources += res
             elif obs.state_variable == StateVariable.GRADE:

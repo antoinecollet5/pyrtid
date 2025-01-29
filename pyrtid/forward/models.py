@@ -745,7 +745,7 @@ class FlowModel(ABC):
     @property
     def pressure(self) -> NDArrayFloat:
         """
-        Return pressure [Pa] as array with dimension (nx, ny, nz, nt).
+        Return pressure [Pa] as array with dimension (nx, ny, nt).
 
         This is read-only.
         """
@@ -754,7 +754,7 @@ class FlowModel(ABC):
     @property
     def u_darcy_x(self) -> NDArrayFloat:
         """
-        Return x-darcy velocities as array with dimension (nx, ny, nz, nt + 1).
+        Return x-darcy velocities as array with dimension (nx, ny, nt + 1).
 
         This is read-only.
         """
@@ -763,7 +763,7 @@ class FlowModel(ABC):
     @property
     def u_darcy_y(self) -> NDArrayFloat:
         """
-        Return y-darcy velocities as array with dimension (nx, ny, nz, nt + 1).
+        Return y-darcy velocities as array with dimension (nx, ny, nt + 1).
 
         This is read-only.
         """
@@ -772,7 +772,7 @@ class FlowModel(ABC):
     @property
     def u_darcy_div(self) -> NDArrayFloat:
         """
-        Return darcy divergence as array with dimension (nx, ny, nz, nt + 1).
+        Return darcy divergence as array with dimension (nx, ny, nt + 1).
 
         This is read-only.
         """
@@ -781,7 +781,7 @@ class FlowModel(ABC):
     @property
     def unitflow(self) -> NDArrayFloat:
         """
-        Return flow sources sources as array with dimension (nx, ny, nz, nt + 1).
+        Return flow sources sources as array with dimension (nx, ny, nt + 1).
 
         This is read-only.
         """
@@ -910,9 +910,9 @@ class FlowModel(ABC):
         return np.sqrt(self.u_darcy_x_center**2 + self.u_darcy_y_center**2)
 
     def get_u_darcy_norm_sample(self, time_index: int) -> NDArrayFloat:
-        """The norm of the darcy velocity estimated at the center of the mesh."""
+        """The norm of the darcy velocity estimated at the center of the grid cell."""
         # for x
-        tmp_x = np.zeros((self.lhead[time_index].shape))
+        tmp_x = np.zeros_like(self.lhead[time_index])
         tmp_x += (
             self.lu_darcy_x[time_index][:-1, :] + self.lu_darcy_x[time_index][1:, :]
         )
@@ -929,6 +929,33 @@ class FlowModel(ABC):
         tmp_y += (
             self.lu_darcy_x[time_index][:-1, :] + self.lu_darcy_x[time_index][1:, :]
         )
+        # All nodes have 2 boundaries along the y axis, except for the
+        # borders grid cells
+        tmp_y[1:-1, :] /= 2
+        # for the borders we need to check if a boundary (flow) exist or not
+        # this is a consequence of constant head and imposed flux
+        tmp_y[0, self.is_boundary_west] /= 2
+        tmp_y[-1, self.is_boundary_east] /= 2
+
+        # norm
+        return np.sqrt(tmp_x**2 + tmp_y**2)
+
+    def get_u_darcy_norm(self) -> NDArrayFloat:
+        """The norm of the darcy velocity estimated at the center of the grid cell."""
+        # for x
+        tmp_x = np.zeros_like(self.head)
+        tmp_x += self.u_darcy_x[:-1, :] + self.u_darcy_x[1:, :]
+        # All nodes have 2 boundaries along the y axis, except for the
+        # borders grid cells
+        tmp_x[1:-1, :] /= 2
+        # for the borders we need to check if a boundary (flow) exist or not
+        # this is a consequence of constant head and imposed flux
+        tmp_x[0, self.is_boundary_west] /= 2
+        tmp_x[-1, self.is_boundary_east] /= 2
+
+        # for y
+        tmp_y = np.zeros((self.head.shape))
+        tmp_y += self.u_darcy_x[:-1, :] + self.u_darcy_x[1:, :]
         # All nodes have 2 boundaries along the y axis, except for the
         # borders grid cells
         tmp_y[1:-1, :] /= 2
