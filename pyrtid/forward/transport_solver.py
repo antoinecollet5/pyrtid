@@ -53,6 +53,8 @@ def make_transport_matrices(
         dmean[:-1, :] = harmonic_mean(d[:-1, :], d[1:, :])
         dmean = dmean.flatten(order="F")
 
+        tmp = geometry.gamma_ij_x / geometry.dx / geometry.grid_cell_surface
+
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
             geometry,
@@ -61,21 +63,12 @@ def make_transport_matrices(
             owner_indices_to_keep=tr_model.free_conc_nn,
         )
 
-        tmp = geometry.gamma_ij_x / geometry.dx / geometry.grid_cell_surface
-
         q_next[idc_owner, idc_owner] += (
             tr_model.crank_nicolson_diffusion * dmean[idc_owner] * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
             (1.0 - tr_model.crank_nicolson_diffusion) * dmean[idc_owner] * tmp
         )  # type: ignore
-
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(0, geometry.nx - 1), slice(None)),
-            (slice(1, geometry.nx), slice(None)),
-            owner_indices_to_keep=tr_model.free_conc_nn,
-        )
         q_next[idc_owner, idc_neigh] -= (
             tr_model.crank_nicolson_diffusion * dmean[idc_owner] * tmp
         )  # type: ignore
@@ -97,19 +90,11 @@ def make_transport_matrices(
         q_prev[idc_owner, idc_owner] -= (
             (1.0 - tr_model.crank_nicolson_diffusion) * dmean[idc_neigh] * tmp
         )  # type: ignore
-
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(1, geometry.nx), slice(None)),
-            (slice(0, geometry.nx - 1), slice(None)),
-            owner_indices_to_keep=tr_model.free_conc_nn,
-        )
-
-        q_prev[idc_owner, idc_neigh] += (
-            (1.0 - tr_model.crank_nicolson_diffusion) * dmean[idc_neigh] * tmp
-        )  # type: ignore
         q_next[idc_owner, idc_neigh] -= (
             tr_model.crank_nicolson_diffusion * dmean[idc_neigh] * tmp
+        )  # type: ignore
+        q_prev[idc_owner, idc_neigh] += (
+            (1.0 - tr_model.crank_nicolson_diffusion) * dmean[idc_neigh] * tmp
         )  # type: ignore
 
     # Y contribution
@@ -118,6 +103,8 @@ def make_transport_matrices(
         dmean[:, :-1] = harmonic_mean(d[:, :-1], d[:, 1:])
         dmean = dmean.flatten(order="F")
 
+        tmp = geometry.gamma_ij_y / geometry.dy / geometry.grid_cell_surface
+
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
             geometry,
@@ -126,25 +113,15 @@ def make_transport_matrices(
             owner_indices_to_keep=tr_model.free_conc_nn,
         )
 
-        tmp = geometry.gamma_ij_y / geometry.dy / geometry.grid_cell_surface
-
         q_next[idc_owner, idc_owner] += (
             tr_model.crank_nicolson_diffusion * dmean[idc_owner] * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
             (1.0 - tr_model.crank_nicolson_diffusion) * dmean[idc_owner] * tmp
         )  # type: ignore
-
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(None), slice(0, geometry.ny - 1)),
-            (slice(None), slice(1, geometry.ny)),
-            neigh_indices_to_keep=tr_model.free_conc_nn,
-        )
         q_next[idc_owner, idc_neigh] -= (
             tr_model.crank_nicolson_diffusion * dmean[idc_owner] * tmp
         )  # type: ignore
-
         q_prev[idc_owner, idc_neigh] += (
             (1.0 - tr_model.crank_nicolson_diffusion) * dmean[idc_owner] * tmp
         )  # type: ignore
@@ -163,13 +140,6 @@ def make_transport_matrices(
         q_prev[idc_owner, idc_owner] -= (
             (1.0 - tr_model.crank_nicolson_diffusion) * dmean[idc_neigh] * tmp
         )  # type: ignore
-
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(None), slice(1, geometry.ny)),
-            (slice(None), slice(0, geometry.ny - 1)),
-            neigh_indices_to_keep=tr_model.free_conc_nn,
-        )
         q_next[idc_owner, idc_neigh] -= (
             tr_model.crank_nicolson_diffusion * dmean[idc_neigh] * tmp
         )  # type: ignore
@@ -252,12 +222,12 @@ def _add_advection_to_transport_matrices(
             * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_neigh] -= (
-            (1 - crank_adv)
+            (1.0 - crank_adv)
             * np.where(normal * un_x_old <= 0.0, normal * un_x_old, 0.0)[idc_neigh]
             * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
-            (1 - crank_adv)
+            (1.0 - crank_adv)
             * np.where(normal * un_x_old > 0.0, normal * un_x_old, 0.0)[idc_neigh]
             * tmp
         )  # type: ignore
@@ -294,12 +264,12 @@ def _add_advection_to_transport_matrices(
             * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_neigh] -= (
-            (1 - crank_adv)
+            (1.0 - crank_adv)
             * np.where(normal * un_y_old <= 0.0, normal * un_y_old, 0.0)[idc_owner]
             * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
-            (1 - crank_adv)
+            (1.0 - crank_adv)
             * np.where(normal * un_y_old > 0.0, normal * un_y_old, 0.0)[idc_owner]
             * tmp
         )  # type: ignore
@@ -324,12 +294,12 @@ def _add_advection_to_transport_matrices(
             * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_neigh] -= (
-            (1 - crank_adv)
+            (1.0 - crank_adv)
             * np.where(normal * un_y_old <= 0.0, normal * un_y_old, 0.0)[idc_neigh]
             * tmp
         )  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
-            (1 - crank_adv)
+            (1.0 - crank_adv)
             * np.where(normal * un_y_old > 0.0, normal * un_y_old, 0.0)[idc_neigh]
             * tmp
         )  # type: ignore
@@ -433,7 +403,6 @@ def _add_transport_boundary_conditions(
             geometry,
             (slice(None), slice(0, 1)),
             (slice(None), slice(geometry.ny - 1, geometry.ny)),
-            np.array([]),
         )
         tmp = geometry.gamma_ij_y / geometry.grid_cell_surface
 
