@@ -824,10 +824,10 @@ class FlowModel(ABC):
                     self.is_boundary_east[idx[1]] = True
                 non_zero_north: int = np.count_nonzero(idx[1] == 0)
                 if non_zero_north > 1 or (non_zero_north == 1 and nx == 1):
-                    self.is_boundary_north[idx[1]] = True
+                    self.is_boundary_north[idx[0]] = True
                 non_zero_south: int = np.count_nonzero(idx[1] == ny - 1)
                 if non_zero_south > 1 or (non_zero_south == 1 and nx == 1):
-                    self.is_boundary_south[idx[1]] = True
+                    self.is_boundary_south[idx[0]] = True
 
         # remove duplicates from the global list
         self.cst_head_nn: NDArrayInt = np.unique(node_numbers.flatten())
