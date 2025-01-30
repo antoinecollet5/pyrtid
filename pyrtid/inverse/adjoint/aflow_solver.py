@@ -557,9 +557,7 @@ def solve_adj_flow_saturated(
     )
 
     # 6) Add the source terms from mob observations (adjoint transport)
-    tmp += get_adjoint_transport_src_terms(
-        geometry, fl_model, a_fl_model, time_index, True
-    )
+    tmp += get_adjoint_transport_src_terms(geometry, fl_model, a_fl_model, time_index)
 
     # 7) Solve Ax = b with A sparse using LU preconditioner
     res, exit_code = lgmres(
@@ -635,9 +633,7 @@ def solve_adj_flow_density(
     )
 
     # 7) Add the source terms from mob observations (adjoint transport)
-    tmp += get_adjoint_transport_src_terms(
-        geometry, fl_model, a_fl_model, time_index, True
-    )
+    tmp += get_adjoint_transport_src_terms(geometry, fl_model, a_fl_model, time_index)
 
     # 8) Solve Ax = b with A sparse using LU preconditioner
     res, exit_code = lgmres(
@@ -659,7 +655,6 @@ def get_adjoint_transport_src_terms(
     fl_model: FlowModel,
     a_fl_model: AdjointFlowModel,
     time_index: int,
-    is_transient: bool,
 ) -> NDArrayFloat:
     """
     Add the source terms linked with the transport (mob observations).
@@ -735,6 +730,4 @@ def get_adjoint_transport_src_terms(
         ) * tmp
 
     # Divide by the storage coefficient only if transient mode
-    if is_transient:
-        return src.ravel("F") / fl_model.storage_coefficient.ravel("F")
     return src.ravel("F")

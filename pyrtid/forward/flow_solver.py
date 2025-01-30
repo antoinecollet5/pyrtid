@@ -770,12 +770,15 @@ def solve_flow_transient_semi_implicit(
 
     dh/dt = div K grad h + ...
     """
-    if fl_model.is_gravity:
+    if fl_model.is_gravity or time_index == 1:
         # If the gravity is involved, then the updated density must be used and
         # consequently, the matrix must be updated
+        # time_index = 1 => first time the matrix is built
         _q_next, _q_prev = make_transient_flow_matrices(
             geometry, fl_model, tr_model, time_index
         )
+        fl_model.q_next = _q_next.copy()
+        fl_model.q_prev = _q_prev.copy()
     else:
         # Otherwise it does not vary
         _q_next = fl_model.q_next.copy()

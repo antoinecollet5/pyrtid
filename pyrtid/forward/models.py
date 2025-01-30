@@ -692,8 +692,8 @@ class FlowModel(ABC):
         self.lunitflow: List[NDArrayFloat] = []
 
         self.boundary_conditions: List[BoundaryCondition] = []
-        self.q_prev = lil_array((geometry.nx * geometry.ny, 1))
-        self.q_next = lil_array((geometry.nx * geometry.ny, 1))
+        self.q_prev = lil_array((geometry.n_grid_cells, geometry.n_grid_cells))
+        self.q_next = lil_array((geometry.n_grid_cells, geometry.n_grid_cells))
         self.cst_head_nn: NDArrayInt = np.array([], dtype=np.int32)
         self.rtol = fl_params.rtol
         self.vertical_axis = fl_params.vertical_axis
@@ -1147,8 +1147,12 @@ class TransportModel:
             (self.n_sp, geometry.nx, geometry.ny), dtype=np.float64
         )
         self.boundary_conditions: List[BoundaryCondition] = []
-        self.q_prev: lil_array = lil_array((geometry.nx * geometry.ny, 1))
-        self.q_next: lil_array = lil_array((geometry.nx * geometry.ny, 1))
+        self.q_prev: lil_array = lil_array(
+            (geometry.n_grid_cells, geometry.n_grid_cells)
+        )
+        self.q_next: lil_array = lil_array(
+            (geometry.n_grid_cells, geometry.n_grid_cells)
+        )
         self.cst_conc_nn: NDArrayInt = np.array([], dtype=np.int64)
         self.rtol: float = tr_params.rtol
         self.is_numerical_acceleration: bool = tr_params.is_numerical_acceleration

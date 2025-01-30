@@ -501,7 +501,7 @@ def solve_adj_transport_transient_semi_implicit(
             a_tr_model.a_mob[:, :, :, time_index + 1].reshape(2, -1, order="F").T
         )
     except IndexError:
-        prev_vector = np.zeros((q_prev.shape[0], 2))
+        prev_vector = np.zeros((geometry.n_grid_cells, 2))
 
     # Multiply prev matrix by prev vector
     tmp: NDArrayFloat = q_prev.dot(prev_vector).T
