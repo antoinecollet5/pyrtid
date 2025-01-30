@@ -142,7 +142,7 @@ def make_stationary_flow_matrices(geometry: Geometry, fl_model: FlowModel) -> li
     matrices q_prev and q_next are the same.
     """
 
-    dim = geometry.nx * geometry.ny
+    dim = geometry.n_grid_cells
     q_next = lil_array((dim, dim), dtype=np.float64)
 
     # X contribution
@@ -350,15 +350,25 @@ def solve_flow_stationary(
 
     dh/dt = div K grad h + ...
     """
-    # Multiply prev matrix by prev vector
-    tmp = np.zeros(fl_model.q_next.shape[0], dtype=np.float64)
-    tmp[fl_model.cst_head_nn] = fl_model.lhead[time_index].flatten(order="F")[
+    # Make stationary matrices
+    fl_model.q_next = make_stationary_flow_matrices(geometry, fl_model)
+    fl_model.q_prev = lil_array((fl_model.q_next.shape))
+
+    # right hand side
+    rhs = np.zeros(geometry.n_grid_cells)
+    # Add the source terms
+    rhs += unitflw_sources.flatten(order="F")
+    # Constant head
+    rhs[fl_model.cst_head_nn] = fl_model.lhead[time_index].flatten(order="F")[
         fl_model.cst_head_nn
     ]
+    if fl_model.is_gravity:
+        rhs -= fl_model.q_next @ fl_model._get_mesh_center_vertical_pos().T.ravel("F")
+        fl_model.q_next /= GRAVITY * WATER_DENSITY
 
     # TODO: make optional
     fl_model.l_q_next.append(fl_model.q_next)
-    fl_model.l_q_prev.append(lil_array((fl_model.q_next.shape)))
+    fl_model.l_q_prev.append(fl_model.q_prev)
 
     # LU preconditioner
     super_ilu, preconditioner = get_super_ilu_preconditioner(
@@ -370,15 +380,12 @@ def solve_flow_stationary(
             f"SuperILU: q_next is singular in stationary flow at it={time_index}!"
         )
 
-    # Add the source terms
-    tmp += unitflw_sources.flatten(order="F")
-
     # Solve Ax = b with A sparse using LU preconditioner
     callback = Callback()
     res, exit_code = gmres(
         fl_model.q_next.tocsc(),
-        tmp,
-        x0=super_ilu.solve(tmp) if super_ilu is not None else None,
+        rhs,
+        x0=super_ilu.solve(rhs) if super_ilu is not None else None,
         M=preconditioner,
         maxiter=1000,
         restart=20,
@@ -389,16 +396,22 @@ def solve_flow_stationary(
     # TODO = display
     # log ... (f"Number of it for gmres {callback.itercount()}")
     # Here we don't append but we overwrite the already existing head for t0.
-    fl_model.lhead[0] = res.reshape(geometry.ny, geometry.nx).T
-
-    fl_model.lpressure[0] = (
-        (
-            res.reshape(geometry.ny, geometry.nx).T
-            - fl_model._get_mesh_center_vertical_pos().T
+    if fl_model.is_gravity:
+        fl_model.lpressure[0] = res.reshape(geometry.ny, geometry.nx).T
+        # update the pressure field -> here we use the water density to be consistent
+        # with HYTEC.
+        fl_model.lhead[0] = (
+            fl_model.lpressure[0] / GRAVITY / WATER_DENSITY
+        ) + fl_model._get_mesh_center_vertical_pos().T
+    else:
+        fl_model.lhead[0] = res.reshape(geometry.ny, geometry.nx).T
+        # update the pressure field -> here we use the water density to be consistent
+        # with HYTEC.
+        fl_model.lpressure[0] = (
+            (fl_model.lhead[0] - fl_model._get_mesh_center_vertical_pos().T)
+            * GRAVITY
+            * WATER_DENSITY
         )
-        * GRAVITY
-        * tr_model.ldensity[0]
-    )
 
     compute_u_darcy(fl_model, tr_model, geometry, time_index)
 
@@ -803,23 +816,23 @@ def solve_flow_transient_semi_implicit(
     # Add the density effect if needed
     if fl_model.is_gravity:
         # pressure
-        tmp = _q_prev.dot(fl_model.lpressure[time_index - 1].flatten(order="F"))
-        tmp += sources * tr_model.ldensity[time_index - 1].flatten(order="F") * GRAVITY
-        tmp += (
+        rhs = _q_prev.dot(fl_model.lpressure[time_index - 1].flatten(order="F"))
+        rhs += sources * tr_model.ldensity[time_index - 1].flatten(order="F") * GRAVITY
+        rhs += (
             get_gravity_gradient(geometry, fl_model, tr_model, time_index)
             / fl_model.storage_coefficient.ravel("F")
             / geometry.grid_cell_surface
         )
         # Handle constant head nodes
-        tmp[fl_model.cst_head_nn] = fl_model.lpressure[time_index - 1].flatten(
+        rhs[fl_model.cst_head_nn] = fl_model.lpressure[time_index - 1].flatten(
             order="F"
         )[fl_model.cst_head_nn]
     else:
         # head
-        tmp = _q_prev.dot(fl_model.lhead[time_index - 1].flatten(order="F"))
-        tmp += sources
+        rhs = _q_prev.dot(fl_model.lhead[time_index - 1].flatten(order="F"))
+        rhs += sources
         # Handle constant head nodes
-        tmp[fl_model.cst_head_nn] = fl_model.lhead[time_index - 1].flatten(order="F")[
+        rhs[fl_model.cst_head_nn] = fl_model.lhead[time_index - 1].flatten(order="F")[
             fl_model.cst_head_nn
         ]
 
@@ -827,8 +840,8 @@ def solve_flow_transient_semi_implicit(
     callback = Callback()
     res, exit_code = gmres(
         _q_next,
-        tmp,
-        x0=super_ilu.solve(tmp) if super_ilu is not None else None,
+        rhs,
+        x0=super_ilu.solve(rhs) if super_ilu is not None else None,
         M=preconditioner,
         rtol=fl_model.rtol,
         maxiter=1000,

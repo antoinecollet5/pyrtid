@@ -11,8 +11,6 @@ from pyrtid.utils import NDArrayFloat
 
 from .flow_solver import (
     compute_u_darcy_div,
-    make_stationary_flow_matrices,
-    make_transient_flow_matrices,
     solve_flow_stationary,
     solve_flow_transient_semi_implicit,
 )
@@ -67,25 +65,6 @@ class ForwardSolver:
         # The model needs to be copied
         self.model: ForwardModel = model
 
-    def initialize_flow_matrices(self, flow_regime: FlowRegime) -> None:
-        """Initialize the matrices to solve the flow problem."""
-        if flow_regime == FlowRegime.STATIONARY:
-            self.model.fl_model.q_next = make_stationary_flow_matrices(
-                self.model.geometry, self.model.fl_model
-            )
-        # no need to initialize the flow matrices if gravity is on because since the
-        # density varies with time, the matrix is recreated at each timestep.
-        if flow_regime == FlowRegime.TRANSIENT and not self.model.fl_model.is_gravity:
-            (
-                self.model.fl_model.q_next,
-                self.model.fl_model.q_prev,
-            ) = make_transient_flow_matrices(
-                self.model.geometry,
-                self.model.fl_model,
-                self.model.tr_model,
-                self.model.time_params.nts,
-            )
-
     def solve(self, is_verbose: bool = False) -> None:
         """Solve the forward problem.
 
@@ -117,7 +96,6 @@ class ForwardSolver:
         )
 
         if self.model.fl_model.regime == FlowRegime.STATIONARY:
-            self.initialize_flow_matrices(FlowRegime.STATIONARY)
             solve_flow_stationary(
                 self.model.geometry,
                 self.model.fl_model,
@@ -140,10 +118,6 @@ class ForwardSolver:
             ngc = self.model.geometry.n_grid_cells
             self.model.fl_model.l_q_next.append(sp.sparse.identity(ngc))
             self.model.fl_model.l_q_prev.append(sp.sparse.lil_array((ngc, ngc)))
-
-        # Update the flow matrices depending on the flow regime (not modified along
-        # the timesteps because permeability and storage coefficients are constant).
-        self.initialize_flow_matrices(FlowRegime.TRANSIENT)
 
         time_index = 0  # iteration on time
 

@@ -47,6 +47,8 @@ def add_adj_stationary_flow_to_q_next(
         kmean = get_kmean(geometry, fl_model, 0)
 
         _tmp = geometry.gamma_ij_x / geometry.dx / geometry.grid_cell_surface
+        if fl_model.is_gravity:
+            _tmp /= WATER_DENSITY * GRAVITY
 
         # 1.1) Forward scheme:
         # 1.1.1) For free head nodes only
@@ -97,6 +99,8 @@ def add_adj_stationary_flow_to_q_next(
 
         # 2.1) Forward scheme:
         _tmp = geometry.gamma_ij_y / geometry.dy / geometry.grid_cell_surface
+        if fl_model.is_gravity:
+            _tmp /= WATER_DENSITY * GRAVITY
 
         # 2.1.1) For free head nodes only
         idc_owner, idc_neigh = get_owner_neigh_indices(
@@ -374,8 +378,10 @@ def get_aflow_matrices(
         else:  # stationary case
             # add the derivative of the stationary flow for initialization
             _q_next = add_adj_stationary_flow_to_q_next(geometry, fl_model, _q_next)
-            diag[fl_model.cst_head_nn] += 1.0
-
+            if fl_model.is_gravity:
+                diag[fl_model.cst_head_nn] += 1.0 / (GRAVITY * WATER_DENSITY)
+            else:
+                diag[fl_model.cst_head_nn] += 1.0
     else:
         # Add 1/dt for the left term contribution: only for free head
         diag[fl_model.free_head_nn] += float(1.0 / time_params.ldt[time_index - 1])
@@ -564,7 +570,7 @@ def solve_adj_flow_saturated(
         rtol=a_fl_model.rtol,
     )
 
-    # 9) Update the adjoint head field
+    # 8) Update the adjoint head field
     a_fl_model.a_head[:, :, time_index] = res.reshape(geometry.ny, geometry.nx).T
 
     return exit_code
@@ -591,13 +597,6 @@ def solve_adj_flow_density(
         .todense()
         .reshape(geometry.nx, geometry.ny, order="F")
     )
-
-    # If transient, no need to solve for t=0 because the gradient
-    # does not depend on the lmanda_p^{0}
-    if time_index == 0 and fl_model.regime == FlowRegime.TRANSIENT:
-        # To avoid lambda_p^0 undefined
-        a_fl_model.a_pressure[:, :, 0] = a_fl_model.a_pressure[:, :, 1]
-        return 0
 
     # 2) Build adjoint flow matrices Q_{prev} and Q_{next}
     _q_next, _q_prev = get_aflow_matrices(
@@ -648,10 +647,6 @@ def solve_adj_flow_density(
         M=preconditioner,
         rtol=a_fl_model.rtol,
     )
-
-    # 9) Impose null adjoint head the the cst head boundaries
-    if time_index == 0:
-        res[fl_model.cst_head_nn] = 0.0
 
     # 10) Update the adjoint pressure field
     a_fl_model.a_pressure[:, :, time_index] = res.reshape(geometry.ny, geometry.nx).T
