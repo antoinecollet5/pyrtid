@@ -1462,7 +1462,7 @@ class ForwardModel:
                     _conc_src[sp][condition.span] = 0.0
 
         return (
-            _unitflw_src / self.geometry.grid_cell_surface,  # m/s
+            _unitflw_src / self.geometry.grid_cell_volume,  # /s
             _conc_src / self.geometry.grid_cell_volume,  # mol/L
         )
 

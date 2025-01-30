@@ -228,7 +228,7 @@ class TikhonovFVMRegularizator(Regularizator):
         f = 0.0
         v = values.ravel("F")
         if self.geometry.nx > 2:
-            tmp: float = self.geometry.gamma_ij_x / self.geometry.grid_cell_surface
+            tmp: float = self.geometry.gamma_ij_x / self.geometry.grid_cell_volume
             f += 0.25 * float(
                 np.sum(
                     (
@@ -250,7 +250,7 @@ class TikhonovFVMRegularizator(Regularizator):
             )
 
         if self.geometry.ny > 2:
-            tmp = self.geometry.gamma_ij_y / self.geometry.grid_cell_surface
+            tmp = self.geometry.gamma_ij_y / self.geometry.grid_cell_volume
             f += 0.25 * float(
                 np.sum(
                     (
@@ -290,7 +290,7 @@ class TikhonovFVMRegularizator(Regularizator):
         grad = np.zeros(v.size)
         if self.geometry.nx > 2:
             tmp: float = (
-                self.geometry.gamma_ij_x / self.geometry.grid_cell_surface
+                self.geometry.gamma_ij_x / self.geometry.grid_cell_volume
             ) ** 2
             grad += tmp * (
                 (self.mat_perm_x @ (self.mat_perm_x.T @ v) - self.mat_perm_x @ v)
@@ -298,7 +298,7 @@ class TikhonovFVMRegularizator(Regularizator):
             )
 
         if self.geometry.ny > 2:
-            tmp = (self.geometry.gamma_ij_y / self.geometry.grid_cell_surface) ** 2
+            tmp = (self.geometry.gamma_ij_y / self.geometry.grid_cell_volume) ** 2
             grad += tmp * (
                 (self.mat_perm_y @ (self.mat_perm_y.T @ v) - self.mat_perm_y @ v)
                 + (self.mat_perm_y.T @ (self.mat_perm_y @ v) - self.mat_perm_y.T @ v)

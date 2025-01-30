@@ -149,7 +149,7 @@ def make_stationary_flow_matrices(geometry: Geometry, fl_model: FlowModel) -> li
     if geometry.nx >= 2:
         kmean = get_kmean(geometry, fl_model, 0)
 
-        tmp = geometry.gamma_ij_x / geometry.dx / geometry.grid_cell_surface
+        tmp = geometry.gamma_ij_x / geometry.dx / geometry.grid_cell_volume
 
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
@@ -177,7 +177,7 @@ def make_stationary_flow_matrices(geometry: Geometry, fl_model: FlowModel) -> li
     if geometry.ny >= 2:
         kmean = get_kmean(geometry, fl_model, 1)
 
-        tmp = geometry.gamma_ij_y / geometry.dy / geometry.grid_cell_surface
+        tmp = geometry.gamma_ij_y / geometry.dy / geometry.grid_cell_volume
 
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
@@ -241,7 +241,7 @@ def make_transient_flow_matrices(
         tmp = (
             geometry.gamma_ij_x
             / geometry.dx
-            / geometry.grid_cell_surface
+            / geometry.grid_cell_volume
             / sc[idc_owner]
             * kmean[idc_owner]
         )
@@ -266,7 +266,7 @@ def make_transient_flow_matrices(
         tmp = (
             geometry.gamma_ij_x
             / geometry.dx
-            / geometry.grid_cell_surface
+            / geometry.grid_cell_volume
             / sc[idc_owner]
             * kmean[idc_neigh]
         )
@@ -296,7 +296,7 @@ def make_transient_flow_matrices(
         tmp = (
             geometry.gamma_ij_y
             / geometry.dy
-            / geometry.grid_cell_surface
+            / geometry.grid_cell_volume
             / sc[idc_owner]
             * kmean[idc_owner]
         )
@@ -321,7 +321,7 @@ def make_transient_flow_matrices(
         tmp = (
             geometry.gamma_ij_y
             / geometry.dy
-            / geometry.grid_cell_surface
+            / geometry.grid_cell_volume
             / sc[idc_owner]
             * kmean[idc_neigh]
         )
@@ -619,7 +619,7 @@ def update_unitflow_cst_head_nodes(
         fl_model.cst_head_indices[0], fl_model.cst_head_indices[1]
     ] = (
         _flow[fl_model.cst_head_indices[0], fl_model.cst_head_indices[1]]
-        / geometry.grid_cell_surface
+        / geometry.grid_cell_volume
     )
 
     # 3) Now creates an artificial flow on the domain boundaries
@@ -667,7 +667,7 @@ def compute_u_darcy_div(
     u_darcy_div += fl_model.lu_darcy_y[time_index][:, 1:] * geometry.gamma_ij_y
 
     # Take the surface into account
-    u_darcy_div /= geometry.grid_cell_surface
+    u_darcy_div /= geometry.grid_cell_volume
 
     # Constant head handling - null divergence
     cst_idx = fl_model.cst_head_indices
@@ -824,7 +824,7 @@ def solve_flow_transient_semi_implicit(
         rhs += (
             get_gravity_gradient(geometry, fl_model, tr_model, time_index)
             / fl_model.storage_coefficient.ravel("F")
-            / geometry.grid_cell_surface
+            / geometry.grid_cell_volume
         )
         # Handle constant head nodes
         rhs[fl_model.cst_head_nn] = fl_model.lpressure[time_index - 1].flatten(

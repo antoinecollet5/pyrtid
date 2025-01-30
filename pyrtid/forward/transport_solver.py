@@ -53,7 +53,7 @@ def make_transport_matrices(
         dmean[:-1, :] = harmonic_mean(d[:-1, :], d[1:, :])
         dmean = dmean.flatten(order="F")
 
-        tmp = geometry.gamma_ij_x / geometry.dx / geometry.grid_cell_surface
+        tmp = geometry.gamma_ij_x / geometry.dx / geometry.grid_cell_volume
 
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
@@ -103,7 +103,7 @@ def make_transport_matrices(
         dmean[:, :-1] = harmonic_mean(d[:, :-1], d[:, 1:])
         dmean = dmean.flatten(order="F")
 
-        tmp = geometry.gamma_ij_y / geometry.dy / geometry.grid_cell_surface
+        tmp = geometry.gamma_ij_y / geometry.dy / geometry.grid_cell_volume
 
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
@@ -170,7 +170,7 @@ def _add_advection_to_transport_matrices(
         un_x = tmp_x.flatten(order="F")
         un_x_old = tmp_x_old.flatten(order="F")
 
-        tmp = geometry.gamma_ij_x / geometry.grid_cell_surface
+        tmp = geometry.gamma_ij_x / geometry.grid_cell_volume
 
         # Forward scheme:
         normal = 1.0
@@ -251,7 +251,7 @@ def _add_advection_to_transport_matrices(
             owner_indices_to_keep=tr_model.free_conc_nn,
         )
 
-        tmp = geometry.gamma_ij_y / geometry.grid_cell_surface
+        tmp = geometry.gamma_ij_y / geometry.grid_cell_volume
 
         q_next[idc_owner, idc_neigh] += (
             crank_adv
@@ -371,7 +371,7 @@ def _add_transport_boundary_conditions(
             (slice(0, 1), slice(None)),
             (slice(geometry.nx - 1, geometry.nx), slice(None)),
         )
-        tmp = geometry.gamma_ij_x / geometry.grid_cell_surface
+        tmp = geometry.gamma_ij_x / geometry.grid_cell_volume
 
         # left border
         _un = fl_model.u_darcy_x[:-1, :, time_index].ravel("F")[idc_left_border]
@@ -404,7 +404,7 @@ def _add_transport_boundary_conditions(
             (slice(None), slice(0, 1)),
             (slice(None), slice(geometry.ny - 1, geometry.ny)),
         )
-        tmp = geometry.gamma_ij_y / geometry.grid_cell_surface
+        tmp = geometry.gamma_ij_y / geometry.grid_cell_volume
 
         _un = fl_model.u_darcy_y[:, :-1, time_index].ravel("F")[idc_left]
         _un_old = fl_model.u_darcy_y[:, :-1, time_index - 1].ravel("F")[idc_left]

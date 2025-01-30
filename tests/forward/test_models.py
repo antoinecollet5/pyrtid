@@ -128,7 +128,7 @@ def test_wrong_time_params() -> None:
 def test_geometry(nx, ny, dx, dy, expected_exception) -> None:
     with expected_exception:
         geom = Geometry(nx, ny, dx, dy)
-        assert geom.grid_cell_volume == geom.grid_cell_surface == dx * dy
+        assert geom.grid_cell_volume == geom.grid_cell_volume == dx * dy
 
 
 def get_source_term() -> SourceTerm:
@@ -427,7 +427,7 @@ def test_model_reinit(model: ForwardModel) -> None:
     [
         (
             0.0,
-            np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, -1.5, 2.0]]),
+            np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, -0.75, 1.0]]),
             np.array(
                 [
                     [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 1.0]],
@@ -437,7 +437,7 @@ def test_model_reinit(model: ForwardModel) -> None:
         ),
         (
             0.5,
-            np.array([[0.0, 0.5, 0.0], [0.5, 0.0, 0.0], [0.0, -1.5, 2.0]]),
+            np.array([[0.0, 0.25, 0.0], [0.25, 0.0, 0.0], [0.0, -0.75, 1.0]]),
             np.array(
                 [
                     [[0.0, 0.0, 0.0], [0.25, 0.0, 0.0], [0.0, 0.0, 1.0]],
@@ -447,7 +447,7 @@ def test_model_reinit(model: ForwardModel) -> None:
         ),
         (
             50.0,
-            np.array([[0.0, 0.25, 0.0], [0.25, 0.0, 0.0], [0.0, 0.25, 0.5]]),
+            np.array([[0.0, 0.125, 0.0], [0.125, 0.0, 0.0], [0.0, 0.125, 0.25]]),
             np.array(
                 [
                     [[0.0, 0.0, 0.25], [0.25, 0.0, 0.0], [0.0, 0.25, 0.5]],
@@ -457,7 +457,7 @@ def test_model_reinit(model: ForwardModel) -> None:
         ),
         (
             500.0,
-            np.array([[0.0, 0.5, 0.0], [0.5, 0.0, 0.0], [0.0, 0.5, 1.0]]),
+            np.array([[0.0, 0.25, 0.0], [0.25, 0.0, 0.0], [0.0, 0.25, 0.5]]),
             np.array(
                 [
                     [[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 2.0]],
