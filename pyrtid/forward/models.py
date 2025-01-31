@@ -1013,14 +1013,14 @@ class FlowModel(ABC):
 
         # for y
         tmp_y = np.zeros((self.head.shape))
-        tmp_y += self.u_darcy_x[:-1, :] + self.u_darcy_x[1:, :]
+        tmp_y += self.u_darcy_y[:, :-1] + self.u_darcy_y[:, 1:]
         # All nodes have 2 boundaries along the y axis, except for the
         # borders grid cells
-        tmp_y[1:-1, :] /= 2
+        tmp_y[:, 1:-1] /= 2
         # for the borders we need to check if a boundary (flow) exist or not
         # this is a consequence of constant head and imposed flux
-        tmp_y[0, self.is_boundary_west] /= 2
-        tmp_y[-1, self.is_boundary_east] /= 2
+        tmp_y[self.is_boundary_south, 0] /= 2
+        tmp_y[self.is_boundary_north, 1:-1] /= 2
 
         # norm
         return np.sqrt(tmp_x**2 + tmp_y**2)

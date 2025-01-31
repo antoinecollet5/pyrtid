@@ -80,7 +80,7 @@ def make_transient_adj_transport_matrices(
         # no q_prev for n = N_ts
         d_old = (
             tr_model.effective_diffusion
-            + tr_model.dispersivity * fl_model.get_u_darcy_norm_sample(time_index)
+            + tr_model.dispersivity * fl_model.get_u_darcy_norm_sample(time_index + 1)
         )
     else:
         d_old = np.zeros_like(d)
