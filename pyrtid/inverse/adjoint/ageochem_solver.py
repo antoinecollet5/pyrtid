@@ -87,9 +87,7 @@ def solve_adj_geochem(
         # No numerical acceleration, we use
         d_a_mob_ddt = a_mob_next / dt_next - a_mob_prev / dt_prev
 
-    a_tr_model.a_immob[:, :, :, time_index] -= (
-        d_a_mob_ddt * tr_model.porosity * geometry.grid_cell_volume
-    )
+    a_tr_model.a_immob[:, :, :, time_index] -= d_a_mob_ddt * tr_model.porosity
 
     # Up to now, the formulations were equivalent, no matter what species was treated.
     # This won't be the case in the following.

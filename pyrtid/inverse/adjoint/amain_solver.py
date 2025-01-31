@@ -190,6 +190,7 @@ class AdjointSolver:
             self.adj_model.a_tr_model,
             self.fwd_model.fl_model,
             self.adj_model.a_fl_model,
+            self.fwd_model.time_params,
             time_index,
         )
 

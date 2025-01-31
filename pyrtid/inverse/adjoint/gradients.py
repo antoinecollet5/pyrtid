@@ -105,6 +105,7 @@ def get_diffusion_term_adjoint_gradient(
                 (dconc_fx * damob_fx + dconc_bx * damob_bx)
                 * fwd_model.geometry.gamma_ij_x
                 / fwd_model.geometry.dx
+                / fwd_model.geometry.grid_cell_volume
             )
 
         # Y axis contribution
@@ -132,6 +133,7 @@ def get_diffusion_term_adjoint_gradient(
                 (dconc_fy * damob_fy + dconc_by * damob_by)
                 * fwd_model.geometry.gamma_ij_y
                 / fwd_model.geometry.dy
+                / fwd_model.geometry.grid_cell_volume
             )
 
     # We sum along the temporal axis
@@ -223,7 +225,7 @@ def get_porosity_adjoint_gradient(
             (mob[:, :, 1:] - mob[:, :, :-1] + immob[:, :, 1:] - immob[:, :, :-1])
             / fwd_model.time_params.ldt
             * amob[:, :, 1:]
-        ) * fwd_model.geometry.grid_cell_volume
+        )
 
     # We sum along the temporal axis + get the diffusion gradient
     grad = np.sum(grad, axis=-1) + get_diffusion_term_adjoint_gradient(
@@ -340,7 +342,7 @@ def _get_perm_gradient_from_diffusivity_eq_saturated(
                 / fwd_model.geometry.grid_cell_volume
             ) * tmp
 
-        # Bheadkward scheme
+        # Backward scheme
         dhead_bx = (
             crank_flow * (head[:-1, :, 1:] - head[1:, :, 1:])
             + (1.0 - crank_flow) * (head[:-1, :, :-1] - head[1:, :, :-1])
@@ -388,7 +390,7 @@ def _get_perm_gradient_from_diffusivity_eq_saturated(
                 / fwd_model.geometry.grid_cell_volume
             ) * tmp
 
-        # Bheadkward scheme
+        # Backward scheme
         dhead_by = (
             crank_flow * (head[:, :-1, 1:] - head[:, 1:, 1:])
             + (1.0 - crank_flow) * (head[:, :-1, :-1] - head[:, 1:, :-1])
@@ -512,7 +514,7 @@ def _get_perm_gradient_from_diffusivity_eq_density(
                 / fwd_model.geometry.grid_cell_volume
             )
 
-        # Bheadkward scheme
+        # Backward scheme
         dpressure_bx = (
             (
                 (
@@ -611,7 +613,7 @@ def _get_perm_gradient_from_diffusivity_eq_density(
                 / fwd_model.geometry.grid_cell_volume
             )
 
-        # Bheadkward scheme
+        # Backward scheme
         dpressure_by = (
             (
                 (

@@ -80,7 +80,7 @@ def make_transient_adj_transport_matrices(
         # no q_prev for n = N_ts
         d_old = (
             tr_model.effective_diffusion
-            + tr_model.dispersivity * fl_model.get_u_darcy_norm_sample(time_index + 1)
+            + tr_model.dispersivity * fl_model.get_u_darcy_norm_sample(time_index)
         )
     else:
         d_old = np.zeros_like(d)
@@ -485,10 +485,10 @@ def solve_adj_transport_transient_semi_implicit(
 
         if time_index != time_params.nts:
             # q_prev (aka matrice B in the rhs) does not exists for the max timestep
-            assert_allclose_sparse(q_prev, tr_model.l_q_prev[time_index].T, rtol=1e-8)
+            assert_allclose_sparse(q_prev, tr_model.l_q_prev[time_index].T, rtol=1e-10)
         if time_index != 0:
             assert_allclose_sparse(
-                q_next, tr_model.l_q_next[time_index - 1].T, rtol=1e-8
+                q_next, tr_model.l_q_next[time_index - 1].T, rtol=1e-10
             )
 
     else:
@@ -508,15 +508,10 @@ def solve_adj_transport_transient_semi_implicit(
 
     for sp in range(tmp.shape[0]):
         # Add the source terms
-        tmp[sp, :] -= (
-            a_tr_model.a_conc_sources[sp][:, [time_index]].todense().ravel()
-            / geometry.grid_cell_volume
-        )
+        tmp[sp, :] -= a_tr_model.a_conc_sources[sp][:, [time_index]].todense().ravel()
 
     # Add the adjoint geochem source term
-    tmp += (
-        a_tr_model.a_gch_src_term.reshape(2, -1, order="F") / geometry.grid_cell_volume
-    )
+    tmp += a_tr_model.a_gch_src_term.reshape(2, -1, order="F")
 
     # Add the adjoint density source term for species 1
     tmp[0, :] += (
@@ -525,7 +520,7 @@ def solve_adj_transport_transient_semi_implicit(
         * TDS_LINEAR_COEFFICIENT
         * gch_params.Ms
         / 1000
-    ) / geometry.grid_cell_volume
+    )
 
     # Add the adjoint density source term for species 2
     tmp[1, :] += (
@@ -534,7 +529,7 @@ def solve_adj_transport_transient_semi_implicit(
         * TDS_LINEAR_COEFFICIENT
         * gch_params.Ms2
         / 1000
-    ) / geometry.grid_cell_volume
+    )
 
     # Build the LU preconditioning
     super_ilu, preconditioner = get_super_ilu_preconditioner(

@@ -24,6 +24,7 @@ from pyrtid.inverse.adjoint.amodels import AdjointFlowModel, AdjointTransportMod
 from pyrtid.utils import (
     NDArrayFloat,
     assert_allclose_sparse,
+    dxi_harmonic_mean,
     get_super_ilu_preconditioner,
     harmonic_mean,
 )
@@ -417,22 +418,35 @@ def update_adjoint_u_darcy(
     a_tr_model: AdjointTransportModel,
     fl_model: FlowModel,
     a_fl_model: AdjointFlowModel,
+    time_params: TimeParameters,
     time_index: int,
 ) -> None:
     crank_adv = tr_model.crank_nicolson_advection
 
+    d = (
+        tr_model.effective_diffusion
+        + tr_model.dispersivity * fl_model.get_u_darcy_norm_sample(time_index)
+    )
+    dUfx, dUbx, dUfy, dUby = fl_model.get_du_darcy_norm_sample(time_index)
+
     # loop over the species
     for sp in range(tr_model.n_sp):
+        # time: n
         mob = tr_model.mob[sp, :, :, time_index]
-        a_mob = a_tr_model.a_mob[sp, :, :, time_index]
 
-        try:
+        if time_index != time_params.nts:
+            # time: n + 1
             a_mob_old = a_tr_model.a_mob[sp, :, :, time_index + 1]
-        except IndexError:
-            a_mob_old = np.zeros_like(a_mob)
+        else:
+            a_mob_old = np.zeros_like(mob)
 
-        if time_index == 0:
-            a_mob = np.zeros_like(a_mob)
+        if time_index != 0:
+            # time: n - 1
+            mob_next = tr_model.mob[sp, :, :, time_index - 1]
+            a_mob = a_tr_model.a_mob[sp, :, :, time_index]
+        else:
+            mob_next = np.zeros_like(mob)
+            a_mob = np.zeros_like(mob)
 
         # X contribution
         if geometry.nx > 1:
@@ -456,6 +470,40 @@ def update_adjoint_u_darcy(
                 crank_adv * (a_mob[:-1, :] * mob[:-1, :] - a_mob[1:, :] * mob[1:, :])
                 + (1.0 - crank_adv)
                 * (a_mob_old[:-1, :] * mob[:-1, :] - a_mob_old[1:, :] * mob[1:, :])
+            )
+
+            # 3) Dispersivity term
+            # forward  dUi
+            a_fl_model.a_u_darcy_x[1:-1, :, time_index] += (
+                geometry.gamma_ij_x
+                / geometry.dx
+                / geometry.grid_cell_volume
+                * (
+                    (
+                        crank_adv * (mob[1:, :] - mob[:-1, :])
+                        + (1.0 - crank_adv) * (mob_next[1:, :] - mob_next[:-1, :])
+                    )
+                    * (a_mob[:-1, :] - a_mob[1:, :])
+                )
+                * dxi_harmonic_mean(d[:-1, :], d[1:, :])
+                * tr_model.dispersivity[:-1, :]
+                * dUfx[1:-1]
+            )
+            # backward dUj
+            a_fl_model.a_u_darcy_x[1:-1, :, time_index] += (
+                geometry.gamma_ij_x
+                / geometry.dx
+                / geometry.grid_cell_volume
+                * (
+                    (
+                        crank_adv * (mob[1:, :] - mob[:-1, :])
+                        + (1.0 - crank_adv) * (mob_next[1:, :] - mob_next[:-1, :])
+                    )
+                    * (a_mob[:-1, :] - a_mob[1:, :])
+                )
+                * dxi_harmonic_mean(d[1:, :], d[:-1, :])
+                * tr_model.dispersivity[1:, :]
+                * dUbx[1:-1]
             )
 
         # Y contribution

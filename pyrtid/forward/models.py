@@ -927,18 +927,76 @@ class FlowModel(ABC):
         # for y
         tmp_y = np.zeros((self.lhead[time_index].shape))
         tmp_y += (
+            self.lu_darcy_y[time_index][:, :-1] + self.lu_darcy_y[time_index][:, 1:]
+        )
+        # All nodes have 2 boundaries along the y axis, except for the
+        # borders grid cells
+        tmp_y[:, 1:-1] /= 2
+        # for the borders we need to check if a boundary (flow) exist or not
+        # this is a consequence of constant head and imposed flux
+        tmp_y[self.is_boundary_south, 0] /= 2
+        tmp_y[self.is_boundary_north, -1] /= 2
+
+        # norm
+        return np.sqrt(tmp_x**2 + tmp_y**2)
+
+    def get_du_darcy_norm_sample(
+        self, time_index: int
+    ) -> Tuple[NDArrayFloat, NDArrayFloat, NDArrayFloat, NDArrayFloat]:
+        """The norm of the darcy velocity estimated at the center of the grid cell."""
+        # for x
+        tmp_x = np.zeros_like(self.lhead[time_index])
+        tmp_x += (
             self.lu_darcy_x[time_index][:-1, :] + self.lu_darcy_x[time_index][1:, :]
         )
         # All nodes have 2 boundaries along the y axis, except for the
         # borders grid cells
-        tmp_y[1:-1, :] /= 2
+        divx = np.ones_like(tmp_x)
+        divx[1:-1, :] /= 2
         # for the borders we need to check if a boundary (flow) exist or not
         # this is a consequence of constant head and imposed flux
-        tmp_y[0, self.is_boundary_west] /= 2
-        tmp_y[-1, self.is_boundary_east] /= 2
+        divx[0, self.is_boundary_west] /= 2
+        divx[-1, self.is_boundary_east] /= 2
+
+        tmp_x *= divx
+
+        # for y
+        tmp_y = np.zeros((self.lhead[time_index].shape))
+        tmp_y += (
+            self.lu_darcy_y[time_index][:, :-1] + self.lu_darcy_y[time_index][:, 1:]
+        )
+        # All nodes have 2 boundaries along the y axis, except for the
+        # borders grid cells
+        divy = np.ones_like(tmp_y)
+        divy[:, 1:-1] /= 2
+
+        # for the borders we need to check if a boundary (flow) exist or not
+        # this is a consequence of constant head and imposed flux
+        divy[self.is_boundary_south, 0] /= 2
+        divy[self.is_boundary_north, -1] /= 2
+
+        tmp_y *= divy
 
         # norm
-        return np.sqrt(tmp_x**2 + tmp_y**2)
+        norm = np.sqrt(tmp_x**2 + tmp_y**2)
+
+        # inverse of the norm -> avoid division by zero
+        inv_norm = np.zeros_like(norm)
+        mask = norm > 0.0
+        inv_norm[mask] = 1.0 / norm[mask]
+
+        # x - forward
+        dUfx = np.zeros_like(self.lu_darcy_x[time_index])
+        dUfx[:-1, :] = inv_norm * tmp_x * divx
+        dUbx = np.zeros_like(self.lu_darcy_x[time_index])
+        dUbx[1:, :] = inv_norm * tmp_x * divx
+        dUfy = np.zeros_like(self.lu_darcy_y[time_index])
+        dUfy[:, :-1] = inv_norm * tmp_y * divy
+        dUby = np.zeros_like(self.lu_darcy_y[time_index])
+        dUby[:, 1:] = inv_norm * tmp_y * divy
+
+        # return (d|U|/dUx , d|U|/dUy)
+        return dUfx, dUbx, dUfy, dUby
 
     def get_u_darcy_norm(self) -> NDArrayFloat:
         """The norm of the darcy velocity estimated at the center of the grid cell."""
