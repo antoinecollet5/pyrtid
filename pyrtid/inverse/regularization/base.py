@@ -267,7 +267,7 @@ def make_spatial_gradient_matrices(
 
     # X contribution
     if geometry.nx >= 2:
-        tmp = geometry.gamma_ij_x / geometry.grid_cell_surface
+        tmp = geometry.gamma_ij_x / geometry.grid_cell_volume
 
         if which in ["forward", "both"]:
             # Forward scheme only: see PhD manuscript, chapter 7 for the explanaition.
@@ -297,7 +297,7 @@ def make_spatial_gradient_matrices(
 
     # Y contribution
     if geometry.ny >= 2:
-        tmp = geometry.gamma_ij_y / geometry.grid_cell_surface
+        tmp = geometry.gamma_ij_y / geometry.grid_cell_volume
 
         if which in ["forward", "both"]:
             # Forward scheme only: see PhD manuscript, chapter 7 for the explanaition.

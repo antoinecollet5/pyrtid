@@ -223,7 +223,7 @@ def get_porosity_adjoint_gradient(
             (mob[:, :, 1:] - mob[:, :, :-1] + immob[:, :, 1:] - immob[:, :, :-1])
             / fwd_model.time_params.ldt
             * amob[:, :, 1:]
-        ) * fwd_model.geometry.grid_cell_surface
+        ) * fwd_model.geometry.grid_cell_volume
 
     # We sum along the temporal axis + get the diffusion gradient
     grad = np.sum(grad, axis=-1) + get_diffusion_term_adjoint_gradient(
@@ -309,7 +309,7 @@ def _get_perm_gradient_from_diffusivity_eq_saturated(
     # add the storgae coefficient tp ma_ahead_sc
     ma_ahead_sc = ma_ahead / (
         fwd_model.fl_model.storage_coefficient[:, :, np.newaxis]
-        * fwd_model.geometry.grid_cell_surface
+        * fwd_model.geometry.grid_cell_volume
     )
     grad = np.zeros(shape)
 
@@ -337,7 +337,7 @@ def _get_perm_gradient_from_diffusivity_eq_saturated(
             grad[:-1, :, :1] += (
                 dhead_fx
                 * (ma_ahead[1:, :, :1] - ma_ahead[:-1, :, :1])
-                / fwd_model.geometry.grid_cell_surface
+                / fwd_model.geometry.grid_cell_volume
             ) * tmp
 
         # Bheadkward scheme
@@ -359,7 +359,7 @@ def _get_perm_gradient_from_diffusivity_eq_saturated(
             grad[1:, :, :1] += (
                 dhead_bx
                 * (ma_ahead[:-1, :, :1] - ma_ahead[1:, :, :1])
-                / fwd_model.geometry.grid_cell_surface
+                / fwd_model.geometry.grid_cell_volume
             ) * tmp
 
     # Consider the y axis for 2D cases
@@ -385,7 +385,7 @@ def _get_perm_gradient_from_diffusivity_eq_saturated(
             grad[:, :-1, :1] += (
                 dhead_fy
                 * (ma_ahead[:, 1:, :1] - ma_ahead[:, :-1, :1])
-                / fwd_model.geometry.grid_cell_surface
+                / fwd_model.geometry.grid_cell_volume
             ) * tmp
 
         # Bheadkward scheme
@@ -407,7 +407,7 @@ def _get_perm_gradient_from_diffusivity_eq_saturated(
             grad[:, 1:, :1] += (
                 dhead_by
                 * (ma_ahead[:, :-1, :1] - ma_ahead[:, 1:, :1])
-                / fwd_model.geometry.grid_cell_surface
+                / fwd_model.geometry.grid_cell_volume
             ) * tmp
 
     # We sum along the temporal axis
@@ -450,7 +450,7 @@ def _get_perm_gradient_from_diffusivity_eq_density(
     # add the storgae coefficient to ma_apressure
     ma_apressure_sc = ma_apressure / (
         fwd_model.fl_model.storage_coefficient[:, :, np.newaxis]
-        * fwd_model.geometry.grid_cell_surface
+        * fwd_model.geometry.grid_cell_volume
     )
     grad = np.zeros(shape)
 
@@ -509,7 +509,7 @@ def _get_perm_gradient_from_diffusivity_eq_density(
                 * fwd_model.geometry.gamma_ij_x
                 / fwd_model.geometry.dx
                 * (apressure[1:, :, :1] - ma_apressure[:-1, :, :1])
-                / fwd_model.geometry.grid_cell_surface
+                / fwd_model.geometry.grid_cell_volume
             )
 
         # Bheadkward scheme
@@ -552,7 +552,7 @@ def _get_perm_gradient_from_diffusivity_eq_density(
                 * fwd_model.geometry.gamma_ij_x
                 / fwd_model.geometry.dx
                 * (apressure[:-1, :, :1] - ma_apressure[1:, :, :1])
-                / fwd_model.geometry.grid_cell_surface
+                / fwd_model.geometry.grid_cell_volume
             )
 
     # Consider the y axis for 2D cases
@@ -608,7 +608,7 @@ def _get_perm_gradient_from_diffusivity_eq_density(
                 * fwd_model.geometry.gamma_ij_y
                 / fwd_model.geometry.dy
                 * (apressure[:, 1:, :1] - ma_apressure[:, :-1, :1])
-                / fwd_model.geometry.grid_cell_surface
+                / fwd_model.geometry.grid_cell_volume
             )
 
         # Bheadkward scheme
@@ -651,7 +651,7 @@ def _get_perm_gradient_from_diffusivity_eq_density(
                 * fwd_model.geometry.gamma_ij_y
                 / fwd_model.geometry.dy
                 * (apressure[:, :-1, :1] - ma_apressure[:, 1:, :1])
-                / fwd_model.geometry.grid_cell_surface
+                / fwd_model.geometry.grid_cell_volume
             )
 
     # We sum along the temporal axis
@@ -989,7 +989,7 @@ def get_initial_grade_adjoint_gradient(
             adj_model.a_tr_model.a_mob[sp, :, :, 1]
             / fwd_model.time_params.ldt[0]
             * fwd_model.tr_model.porosity
-            * fwd_model.geometry.grid_cell_surface
+            * fwd_model.geometry.grid_cell_volume
         )
         - adj_model.a_tr_model.a_immob[sp, :, :, 1]
     )
@@ -1093,7 +1093,7 @@ def get_initial_conc_adjoint_gradient(
 
     grad = (
         adj_model.a_tr_model.a_mob[sp, :, :, 1]
-        * fwd_model.geometry.grid_cell_surface
+        * fwd_model.geometry.grid_cell_volume
         * fwd_model.tr_model.porosity
         / fwd_model.time_params.ldt[0]
     )

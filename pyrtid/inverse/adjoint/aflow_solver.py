@@ -692,18 +692,12 @@ def get_adjoint_transport_src_terms(
 
         # Forward
         src[:-1, :] += (
-            kmean_x
-            * a_fl_model.a_u_darcy_x[1:-1, :, time_index]
-            / geometry.dx
-            / geometry.grid_cell_volume
+            kmean_x * a_fl_model.a_u_darcy_x[1:-1, :, time_index] / geometry.dx
         ) * tmp
 
         # Backward
         src[1:, :] -= (
-            kmean_x
-            * a_fl_model.a_u_darcy_x[1:-1, :, time_index]
-            / geometry.dx
-            / geometry.grid_cell_volume
+            kmean_x * a_fl_model.a_u_darcy_x[1:-1, :, time_index] / geometry.dx
         ) * tmp
 
     # y contribution
@@ -715,18 +709,12 @@ def get_adjoint_transport_src_terms(
 
         # Forward
         src[:, :-1] += (
-            kmean_y
-            * a_fl_model.a_u_darcy_y[:, 1:-1, time_index]
-            / geometry.dy
-            / geometry.grid_cell_volume
+            kmean_y * a_fl_model.a_u_darcy_y[:, 1:-1, time_index] / geometry.dy
         ) * tmp
 
         # Backward
         src[:, 1:] -= (
-            kmean_y
-            * a_fl_model.a_u_darcy_y[:, 1:-1, time_index]
-            / geometry.dy
-            / geometry.grid_cell_volume
+            kmean_y * a_fl_model.a_u_darcy_y[:, 1:-1, time_index] / geometry.dy
         ) * tmp
 
     return src.ravel("F")
