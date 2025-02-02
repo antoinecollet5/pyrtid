@@ -991,7 +991,6 @@ def get_initial_grade_adjoint_gradient(
             adj_model.a_tr_model.a_mob[sp, :, :, 1]
             / fwd_model.time_params.ldt[0]
             * fwd_model.tr_model.porosity
-            * fwd_model.geometry.grid_cell_volume
         )
         - adj_model.a_tr_model.a_immob[sp, :, :, 1]
     )
@@ -1095,7 +1094,6 @@ def get_initial_conc_adjoint_gradient(
 
     grad = (
         adj_model.a_tr_model.a_mob[sp, :, :, 1]
-        * fwd_model.geometry.grid_cell_volume
         * fwd_model.tr_model.porosity
         / fwd_model.time_params.ldt[0]
     )

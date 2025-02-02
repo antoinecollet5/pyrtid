@@ -458,18 +458,27 @@ def update_adjoint_u_darcy(
             mob_ij_x[un_x == 0] = 0
 
             # 1) advective term
-            a_fl_model.a_u_darcy_x[1:-1, :, time_index] += geometry.gamma_ij_x * (
-                (
-                    crank_adv * (a_mob[1:, :] - a_mob[:-1, :])
-                    + (1.0 - crank_adv) * (a_mob_old[1:, :] - a_mob_old[:-1, :])
+            a_fl_model.a_u_darcy_x[1:-1, :, time_index] += (
+                geometry.gamma_ij_x
+                * (
+                    (
+                        crank_adv * (a_mob[1:, :] - a_mob[:-1, :])
+                        + (1.0 - crank_adv) * (a_mob_old[1:, :] - a_mob_old[:-1, :])
+                    )
+                    * mob_ij_x
                 )
-                * mob_ij_x
+                / geometry.grid_cell_volume
             )
             # 2) U divergence term
-            a_fl_model.a_u_darcy_x[1:-1, :, time_index] += geometry.gamma_ij_x * (
-                crank_adv * (a_mob[:-1, :] * mob[:-1, :] - a_mob[1:, :] * mob[1:, :])
-                + (1.0 - crank_adv)
-                * (a_mob_old[:-1, :] * mob[:-1, :] - a_mob_old[1:, :] * mob[1:, :])
+            a_fl_model.a_u_darcy_x[1:-1, :, time_index] += (
+                geometry.gamma_ij_x
+                * (
+                    crank_adv
+                    * (a_mob[:-1, :] * mob[:-1, :] - a_mob[1:, :] * mob[1:, :])
+                    + (1.0 - crank_adv)
+                    * (a_mob_old[:-1, :] * mob[:-1, :] - a_mob_old[1:, :] * mob[1:, :])
+                )
+                / geometry.grid_cell_volume
             )
 
             # 3) Dispersivity term
@@ -515,18 +524,61 @@ def update_adjoint_u_darcy(
             mob_ij_y[un_y == 0] = 0
 
             # 1) advective term
-            a_fl_model.a_u_darcy_y[:, 1:-1, time_index] += geometry.gamma_ij_y * (
-                (
-                    crank_adv * (a_mob[:, 1:] - a_mob[:, :-1])
-                    + (1.0 - crank_adv) * (a_mob_old[:, 1:] - a_mob_old[:, :-1])
+            a_fl_model.a_u_darcy_y[:, 1:-1, time_index] += (
+                geometry.gamma_ij_y
+                * (
+                    (
+                        crank_adv * (a_mob[:, 1:] - a_mob[:, :-1])
+                        + (1.0 - crank_adv) * (a_mob_old[:, 1:] - a_mob_old[:, :-1])
+                    )
+                    * mob_ij_y
                 )
-                * mob_ij_y
+                / geometry.grid_cell_volume
             )
             # 2) U divergence term
-            a_fl_model.a_u_darcy_y[:, 1:-1, time_index] += geometry.gamma_ij_y * (
-                crank_adv * (a_mob[:, :-1] * mob[:, :-1] - a_mob[:, 1:] * mob[:, 1:])
-                + (1.0 - crank_adv)
-                * (a_mob_old[:, :-1] * mob[:, :-1] - a_mob_old[:, 1:] * mob[:, 1:])
+            a_fl_model.a_u_darcy_y[:, 1:-1, time_index] += (
+                geometry.gamma_ij_y
+                * (
+                    crank_adv
+                    * (a_mob[:, :-1] * mob[:, :-1] - a_mob[:, 1:] * mob[:, 1:])
+                    + (1.0 - crank_adv)
+                    * (a_mob_old[:, :-1] * mob[:, :-1] - a_mob_old[:, 1:] * mob[:, 1:])
+                )
+                / geometry.grid_cell_volume
+            )
+
+            # 3) Dispersivity term
+            # forward  dUi
+            a_fl_model.a_u_darcy_y[:, 1:-1, time_index] += (
+                geometry.gamma_ij_y
+                / geometry.dy
+                / geometry.grid_cell_volume
+                * (
+                    (
+                        crank_adv * (mob[:, 1:] - mob[:, :-1])
+                        + (1.0 - crank_adv) * (mob_next[:, 1:] - mob_next[:, :-1])
+                    )
+                    * (a_mob[:, :-1] - a_mob[:, 1:])
+                )
+                * dxi_harmonic_mean(d[:, :-1], d[:, 1:])
+                * tr_model.dispersivity[:, :-1]
+                * dUfy[1:-1]
+            )
+            # backward dUj
+            a_fl_model.a_u_darcy_y[:, 1:-1, time_index] += (
+                geometry.gamma_ij_y
+                / geometry.dy
+                / geometry.grid_cell_volume
+                * (
+                    (
+                        crank_adv * (mob[:, 1:] - mob[:, :-1])
+                        + (1.0 - crank_adv) * (mob_next[:, 1:] - mob_next[:, :-1])
+                    )
+                    * (a_mob[:, :-1] - a_mob[:, 1:])
+                )
+                * dxi_harmonic_mean(d[:, 1:], d[:, :-1])
+                * tr_model.dispersivity[:, 1:]
+                * dUby[1:-1]
             )
 
 
