@@ -7,7 +7,7 @@ from typing import List, Optional
 import numpy as np
 
 from pyrtid.forward import ForwardModel, ForwardSolver
-from pyrtid.forward.flow_solver import get_rhomean2
+from pyrtid.forward.flow_solver import get_rhomean, get_rhomean2
 from pyrtid.forward.models import GRAVITY, WATER_DENSITY, FlowRegime, VerticalAxis
 from pyrtid.inverse.adjoint import AdjointModel, AdjointSolver
 from pyrtid.inverse.adjoint.ageochem_solver import ddMdimmobprev
@@ -468,8 +468,8 @@ def _get_perm_gradient_from_diffusivity_eq_density(
             is_flatten=False,
         )[:-1]
         tmp = 0.0
-        if fwd_model.fl_model.vertical_axis == VerticalAxis.X:
-            tmp = rhomean_x**2 * GRAVITY
+        # if fwd_model.fl_model.vertical_axis == VerticalAxis.X:
+        #     tmp = rhomean_x**2 * GRAVITY
 
         # Forward scheme
         dpressure_fx = (
@@ -567,8 +567,8 @@ def _get_perm_gradient_from_diffusivity_eq_density(
             is_flatten=False,
         )[:, :-1]
         tmp = 0.0
-        if fwd_model.fl_model.vertical_axis == VerticalAxis.Y:
-            tmp = rhomean_y**2 * GRAVITY
+        # if fwd_model.fl_model.vertical_axis == VerticalAxis.Y:
+        #     tmp = rhomean_y**2 * GRAVITY
 
         # Forward scheme
         dpressure_fy = (
@@ -763,54 +763,60 @@ def _get_perm_gradient_from_darcy_eq_density(
     NDArrayFloat
         Gradient with respect to the permeability using mob observations.
     """
-    shape = (fwd_model.geometry.nx, fwd_model.geometry.ny, fwd_model.time_params.nt)
     permeability = fwd_model.fl_model.permeability
 
-    pressure = fwd_model.fl_model.pressure
+    time_slice = slice(1, None)
+    shape = (fwd_model.geometry.nx, fwd_model.geometry.ny, fwd_model.time_params.nt - 1)
+    if fwd_model.fl_model.regime == FlowRegime.STATIONARY:
+        time_slice = slice(None)
+        shape = (fwd_model.geometry.nx, fwd_model.geometry.ny, fwd_model.time_params.nt)
+
+    pressure = fwd_model.fl_model.pressure[:, :, time_slice]
     grad = np.zeros_like(pressure)
 
     if fwd_model.geometry.nx > 1:
-        a_u_darcy_x = adj_model.a_fl_model.a_u_darcy_x[1:-1, :, :]
+        a_u_darcy_x = adj_model.a_fl_model.a_u_darcy_x[1:-1, :, time_slice]
 
         if fwd_model.fl_model.vertical_axis == VerticalAxis.X:
             rho_ij_g_x = (
-                get_rhomean2(
+                get_rhomean(
                     fwd_model.geometry,
                     fwd_model.tr_model,
                     axis=0,
-                    time_index=slice(0, -1),
+                    time_index=slice(None),
                     is_flatten=False,
-                )[:-1]
+                )[:-1, :]
                 * GRAVITY
             )
+
+            # shift
+            if fwd_model.fl_model.regime == FlowRegime.STATIONARY:
+                rho_ij_g_x[:, :, 1:] = rho_ij_g_x[:, :, :-1]
+                rho_ij_g_x[:, :, :1] = rho_ij_g_x[:, :, 1:2]
+            else:
+                rho_ij_g_x = rho_ij_g_x[:, :, :-1]
         else:
             rho_ij_g_x = 0.0
 
         # Consider the x axis
         # Forward scheme
         dpressure_fx = np.zeros(shape)
-        dpressure_fx[:-1, :, 1:] += (
-            (
-                (pressure[1:, :, 1:] - pressure[:-1, :, 1:]) / fwd_model.geometry.dx
-                + rho_ij_g_x
-            )
+        dpressure_fx[:-1, :] += (
+            ((pressure[1:, :] - pressure[:-1, :]) / fwd_model.geometry.dx + rho_ij_g_x)
             * dxi_harmonic_mean(permeability[:-1, :], permeability[1:, :])[
                 :, :, np.newaxis
             ]
-            * a_u_darcy_x[:, :, 1:]
+            * a_u_darcy_x[:, :]
         )
 
         # Bconckward scheme
         dpressure_bx = np.zeros(shape)
-        dpressure_bx[1:, :, 1:] -= (
-            (
-                (pressure[:-1, :, 1:] - pressure[1:, :, 1:]) / fwd_model.geometry.dx
-                - rho_ij_g_x
-            )
+        dpressure_bx[1:, :] -= (
+            ((pressure[:-1, :] - pressure[1:, :]) / fwd_model.geometry.dx + rho_ij_g_x)
             * dxi_harmonic_mean(permeability[1:, :], permeability[:-1, :])[
                 :, :, np.newaxis
             ]
-            * a_u_darcy_x[:, :, 1:]
+            * a_u_darcy_x[:, :]
         )
 
         # Gather the two schemes
@@ -818,46 +824,47 @@ def _get_perm_gradient_from_darcy_eq_density(
 
     # Consider the y axis for 2D cases
     if fwd_model.geometry.ny > 1:
-        a_u_darcy_y = adj_model.a_fl_model.a_u_darcy_y[:, 1:-1, :]
+        a_u_darcy_y = adj_model.a_fl_model.a_u_darcy_y[:, 1:-1, time_slice]
 
         if fwd_model.fl_model.vertical_axis == VerticalAxis.Y:
             rho_ij_g_y = (
-                get_rhomean2(
+                get_rhomean(
                     fwd_model.geometry,
                     fwd_model.tr_model,
                     axis=1,
-                    time_index=slice(0, -1),
+                    time_index=slice(None),
                     is_flatten=False,
                 )[:, :-1]
                 * GRAVITY
             )
+
+            # shift
+            if fwd_model.fl_model.regime == FlowRegime.STATIONARY:
+                rho_ij_g_y[:, :, 1:] = rho_ij_g_y[:, :, :-1]
+                rho_ij_g_y[:, :, :1] = rho_ij_g_y[:, :, 1:2]
+            else:
+                rho_ij_g_y = rho_ij_g_y[:, :, :-1]
         else:
             rho_ij_g_y = 0.0
 
         # Forward scheme
         dpressure_fy = np.zeros(shape)
-        dpressure_fy[:, :-1, 1:] += (
-            (
-                (pressure[:, 1:, 1:] - pressure[:, :-1, 1:]) / fwd_model.geometry.dy
-                + rho_ij_g_y
-            )
+        dpressure_fy[:, :-1] += (
+            ((pressure[:, 1:] - pressure[:, :-1]) / fwd_model.geometry.dy + rho_ij_g_y)
             * dxi_harmonic_mean(permeability[:, :-1], permeability[:, 1:])[
                 :, :, np.newaxis
             ]
-            * a_u_darcy_y[:, :, 1:]
+            * a_u_darcy_y[:, :]
         )
 
-        # Bconckward scheme
+        # Backward scheme
         dpressure_by = np.zeros(shape)
-        dpressure_by[:, 1:, 1:] -= (
-            (
-                (pressure[:, :-1, 1:] - pressure[:, 1:, 1:]) / fwd_model.geometry.dy
-                - rho_ij_g_y
-            )
+        dpressure_by[:, 1:] -= (
+            ((pressure[:, :-1] - pressure[:, 1:]) / fwd_model.geometry.dy - rho_ij_g_y)
             * dxi_harmonic_mean(permeability[:, 1:], permeability[:, :-1])[
                 :, :, np.newaxis
             ]
-            * a_u_darcy_y[:, :, 1:]
+            * a_u_darcy_y[:, :]
         )
         # Gather the two schemes
         grad += (dpressure_fy + dpressure_by) / GRAVITY / WATER_DENSITY

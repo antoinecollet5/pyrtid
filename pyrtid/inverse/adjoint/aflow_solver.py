@@ -496,7 +496,7 @@ def update_adjoint_u_darcy(
                 )
                 * dxi_harmonic_mean(d[:-1, :], d[1:, :])
                 * tr_model.dispersivity[:-1, :]
-                * dUfx[1:-1]
+                * dUfx[1:-1, :]
             )
             # backward dUj
             a_fl_model.a_u_darcy_x[1:-1, :, time_index] += (
@@ -512,7 +512,7 @@ def update_adjoint_u_darcy(
                 )
                 * dxi_harmonic_mean(d[1:, :], d[:-1, :])
                 * tr_model.dispersivity[1:, :]
-                * dUbx[1:-1]
+                * dUbx[1:-1, :]
             )
 
         # Y contribution
@@ -562,7 +562,7 @@ def update_adjoint_u_darcy(
                 )
                 * dxi_harmonic_mean(d[:, :-1], d[:, 1:])
                 * tr_model.dispersivity[:, :-1]
-                * dUfy[1:-1]
+                * dUfy[:, 1:-1]
             )
             # backward dUj
             a_fl_model.a_u_darcy_y[:, 1:-1, time_index] += (
@@ -578,7 +578,7 @@ def update_adjoint_u_darcy(
                 )
                 * dxi_harmonic_mean(d[:, 1:], d[:, :-1])
                 * tr_model.dispersivity[:, 1:]
-                * dUby[1:-1]
+                * dUby[:, 1:-1]
             )
 
 

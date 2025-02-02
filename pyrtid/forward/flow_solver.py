@@ -93,43 +93,42 @@ def get_rhomean2(
     time_index: Union[int, slice],
     is_flatten: bool = True,
 ) -> NDArrayFloat:
-    return get_rhomean(geometry, tr_model, axis, time_index, is_flatten)
-    # density = np.ones_like(np.array(tr_model.ldensity[time_index])) * WATER_DENSITY
-    # idx = np.arange(tr_model.ldensity[0].size).reshape(geometry.shape)
-    # if density.ndim == 3:
-    #     idx = np.transpose(
-    #         np.repeat(idx[:, :, np.newaxis],
-    # density.shape[0], axis=-1), axes=(2, 0, 1)
-    #     )
+    # return get_rhomean(geometry, tr_model, axis, time_index, is_flatten)
+    density = np.ones_like(np.array(tr_model.ldensity[time_index])) * WATER_DENSITY
+    idx = np.arange(tr_model.ldensity[0].size).reshape(geometry.shape)
+    if density.ndim == 3:
+        idx = np.transpose(
+            np.repeat(idx[:, :, np.newaxis], density.shape[0], axis=-1), axes=(2, 0, 1)
+        )
 
-    #     for t in np.arange(len(tr_model.ldensity))[time_index]:
-    #         idx[t] *= t
-    # else:
-    #     idx *= np.arange(len(tr_model.ldensity))[time_index]
+        for t in np.arange(len(tr_model.ldensity))[time_index]:
+            idx[t] *= t
+    else:
+        idx *= np.arange(len(tr_model.ldensity))[time_index]
 
-    # density += idx * 1e-3
+    density += idx * 1e-3
 
-    # if density.ndim == 2:
-    #     rhomean: NDArrayFloat = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
-    #     if axis == 0:
-    #         rhomean[:-1, :] = arithmetic_mean(density[:-1, :], density[1:, :])
-    #     else:
-    #         rhomean[:, :-1] = arithmetic_mean(density[:, :-1], density[:, 1:])
-    # else:
-    #     rhomean: NDArrayFloat = np.zeros(
-    #         (geometry.nx, geometry.ny, density.shape[0]), dtype=np.float64
-    #     )
-    #     if axis == 0:
-    #         rhomean[:-1, :, :] = np.transpose(
-    #             arithmetic_mean(density[:, :-1, :], density[:, 1:, :]), axes=(1, 2, 0)
-    #         )
-    #     else:
-    #         rhomean[:, :-1, :] = np.transpose(
-    #             arithmetic_mean(density[:, :, :-1], density[:, :, 1:]), axes=(1, 2, 0)
-    #         )
-    # if is_flatten:
-    #     return rhomean.flatten(order="F")
-    # return rhomean
+    if density.ndim == 2:
+        rhomean: NDArrayFloat = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
+        if axis == 0:
+            rhomean[:-1, :] = arithmetic_mean(density[:-1, :], density[1:, :])
+        else:
+            rhomean[:, :-1] = arithmetic_mean(density[:, :-1], density[:, 1:])
+    else:
+        rhomean: NDArrayFloat = np.zeros(
+            (geometry.nx, geometry.ny, density.shape[0]), dtype=np.float64
+        )
+        if axis == 0:
+            rhomean[:-1, :, :] = np.transpose(
+                arithmetic_mean(density[:, :-1, :], density[:, 1:, :]), axes=(1, 2, 0)
+            )
+        else:
+            rhomean[:, :-1, :] = np.transpose(
+                arithmetic_mean(density[:, :, :-1], density[:, :, 1:]), axes=(1, 2, 0)
+            )
+    if is_flatten:
+        return rhomean.flatten(order="F")
+    return rhomean
 
 
 def make_stationary_flow_matrices(geometry: Geometry, fl_model: FlowModel) -> lil_array:
@@ -491,13 +490,13 @@ def find_ux_boundary_density(
     out = np.zeros((geometry.nx + 1, geometry.ny))
     pressure = fl_model.lpressure[time_index]
     kmean = harmonic_mean(fl_model.permeability[:-1, :], fl_model.permeability[1:, :])
-    rhomean = get_rhomean2(
+    rhomean = get_rhomean(
         geometry, tr_model, axis=0, time_index=time_index - 1, is_flatten=False
     )[:-1, :]
     if fl_model.vertical_axis == VerticalAxis.X:
         rho_ij_g = rhomean * GRAVITY
     else:
-        rho_ij_g = 0.0
+        rho_ij_g = np.zeros_like(rhomean)
 
     out[1:-1, :] = (
         -kmean
@@ -529,14 +528,14 @@ def find_uy_boundary_density(
     out = np.zeros((geometry.nx, geometry.ny + 1))
     pressure = fl_model.lpressure[time_index]
     kmean = harmonic_mean(fl_model.permeability[:, :-1], fl_model.permeability[:, 1:])
-    rhomean = get_rhomean2(
+    rhomean = get_rhomean(
         geometry, tr_model, axis=1, time_index=time_index - 1, is_flatten=False
     )[:, :-1]
 
     if fl_model.vertical_axis == VerticalAxis.Y:
         rho_ij_g = rhomean * GRAVITY
     else:
-        rho_ij_g = 0.0
+        rho_ij_g = np.zeros_like(rhomean)
 
     out[:, 1:-1] = (
         -kmean
@@ -821,11 +820,11 @@ def solve_flow_transient_semi_implicit(
         # pressure
         rhs = _q_prev.dot(fl_model.lpressure[time_index - 1].flatten(order="F"))
         rhs += sources * tr_model.ldensity[time_index - 1].flatten(order="F") * GRAVITY
-        rhs += (
-            get_gravity_gradient(geometry, fl_model, tr_model, time_index)
-            / fl_model.storage_coefficient.ravel("F")
-            / geometry.grid_cell_volume
-        )
+        # rhs += (
+        #     get_gravity_gradient(geometry, fl_model, tr_model, time_index)
+        #     / fl_model.storage_coefficient.ravel("F")
+        #     / geometry.grid_cell_volume
+        # )
         # Handle constant head nodes
         rhs[fl_model.cst_head_nn] = fl_model.lpressure[time_index - 1].flatten(
             order="F"
