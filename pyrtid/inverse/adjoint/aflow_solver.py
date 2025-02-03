@@ -9,7 +9,7 @@ import numpy as np
 from scipy.sparse import csc_matrix, lil_array
 from scipy.sparse.linalg import lgmres
 
-from pyrtid.forward.flow_solver import get_kmean, get_rhomean2
+from pyrtid.forward.flow_solver import get_kmean, get_rhomean
 from pyrtid.forward.models import (  # ConstantHead,; ZeromobGradient,
     GRAVITY,
     WATER_DENSITY,
@@ -180,11 +180,11 @@ def make_transient_adj_flow_matrices(
 
         kmean = get_kmean(geometry, fl_model, 0)
         # at n - 1
-        rhomean_next = get_rhomean2(
+        rhomean_next = get_rhomean(
             geometry, tr_model, axis=0, time_index=time_index - 1
         )
         # at n
-        rhomean_prev = get_rhomean2(geometry, tr_model, axis=0, time_index=time_index)
+        rhomean_prev = get_rhomean(geometry, tr_model, axis=0, time_index=time_index)
         # 1.1) Forward scheme:
 
         # 1.1.1) For free head nodes only
@@ -266,11 +266,11 @@ def make_transient_adj_flow_matrices(
         kmean = get_kmean(geometry, fl_model, 1)
 
         # at n - 1
-        rhomean_next = get_rhomean2(
+        rhomean_next = get_rhomean(
             geometry, tr_model, axis=1, time_index=time_index - 1
         )
         # at n
-        rhomean_prev = get_rhomean2(geometry, tr_model, axis=1, time_index=time_index)
+        rhomean_prev = get_rhomean(geometry, tr_model, axis=1, time_index=time_index)
         # 2.1) Forward scheme:
         _tmp = geometry.gamma_ij_y / geometry.dy / geometry.grid_cell_volume
 
@@ -469,6 +469,7 @@ def update_adjoint_u_darcy(
                 )
                 / geometry.grid_cell_volume
             )
+
             # 2) U divergence term
             a_fl_model.a_u_darcy_x[1:-1, :, time_index] += (
                 geometry.gamma_ij_x

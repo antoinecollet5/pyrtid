@@ -7,7 +7,7 @@ from typing import List, Optional
 import numpy as np
 
 from pyrtid.forward import ForwardModel, ForwardSolver
-from pyrtid.forward.flow_solver import get_rhomean, get_rhomean2
+from pyrtid.forward.flow_solver import get_rhomean
 from pyrtid.forward.models import GRAVITY, WATER_DENSITY, FlowRegime, VerticalAxis
 from pyrtid.inverse.adjoint import AdjointModel, AdjointSolver
 from pyrtid.inverse.adjoint.ageochem_solver import ddMdimmobprev
@@ -460,7 +460,7 @@ def _get_perm_gradient_from_diffusivity_eq_density(
 
     # Consider the x axis
     if fwd_model.geometry.nx > 1:
-        rhomean_x = get_rhomean2(
+        rhomean_x = get_rhomean(
             fwd_model.geometry,
             fwd_model.tr_model,
             axis=0,
@@ -559,7 +559,7 @@ def _get_perm_gradient_from_diffusivity_eq_density(
 
     # Consider the y axis for 2D cases
     if fwd_model.geometry.ny > 1:
-        rhomean_y = get_rhomean2(
+        rhomean_y = get_rhomean(
             fwd_model.geometry,
             fwd_model.tr_model,
             axis=1,
@@ -812,7 +812,7 @@ def _get_perm_gradient_from_darcy_eq_density(
         # Bconckward scheme
         dpressure_bx = np.zeros(shape)
         dpressure_bx[1:, :] -= (
-            ((pressure[:-1, :] - pressure[1:, :]) / fwd_model.geometry.dx + rho_ij_g_x)
+            ((pressure[:-1, :] - pressure[1:, :]) / fwd_model.geometry.dx - rho_ij_g_x)
             * dxi_harmonic_mean(permeability[1:, :], permeability[:-1, :])[
                 :, :, np.newaxis
             ]

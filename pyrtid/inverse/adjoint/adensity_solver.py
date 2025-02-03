@@ -16,7 +16,7 @@ from pyrtid.forward.models import (  # ConstantHead,; ZeroConcGradient,
     VerticalAxis,
 )
 from pyrtid.inverse.adjoint.amodels import AdjointFlowModel, AdjointTransportModel
-from pyrtid.utils import dxi_arithmetic_mean
+from pyrtid.utils import dxi_arithmetic_mean, harmonic_mean
 from pyrtid.utils.types import NDArrayFloat
 
 
@@ -40,16 +40,6 @@ def get_drhomean(
     if is_flatten:
         return drhomean.flatten(order="F")
     return drhomean
-
-
-def get_drhomean2(
-    geometry: Geometry,
-    tr_model: TransportModel,
-    axis: int,
-    time_index: int,
-    is_flatten: bool = True,
-) -> NDArrayFloat:
-    return get_drhomean(geometry, tr_model, axis, time_index, is_flatten) * 0.0
 
 
 def solve_adj_density(
@@ -174,200 +164,182 @@ def _add_diffusivity_contribution(
     else:
         fl_crank = a_fl_model.crank_nicolson
 
+    if a_fl_model.crank_nicolson is None:
+        crank_flow: float = fl_model.crank_nicolson
+    else:
+        crank_flow = a_fl_model.crank_nicolson
+
+    shape = (geometry.nx, geometry.ny)
+    permeability = fl_model.permeability
+    free_head_indices = fl_model.free_head_indices
+
     # Mask the adjoint pressure for the constant head nodes
     ap_prev = a_fl_model.a_pressure[:, :, time_index + 1]
     ap_prev_fhi = np.zeros(ap_prev.shape)
-    free_head_indices = fl_model.free_head_indices
     ap_prev_fhi[free_head_indices[0], free_head_indices[1]] = ap_prev[
         free_head_indices[0], free_head_indices[1]
     ]
+    # add the storgae coefficient to ma_apressure
+    ap_prev_fhi_sc = ap_prev_fhi / (
+        fl_model.storage_coefficient * geometry.grid_cell_volume
+    )
 
-    # a_prev = a_fl_model.a_pressure[:, :, time_index + 1].ravel("F")
-    # p_prev = fl_model.lpressure[time_index + 1].ravel(order="F")
-    # p_next = fl_model.lpressure[time_index].ravel(order="F")
+    pprev = fl_model.pressure[:, :, time_index + 1]
+    pnext = fl_model.pressure[:, :, time_index]
 
-    # contrib = np.zeros(ap_prev.size)
-    # # 1) X contribution
-    # if geometry.nx >= 2:
-    #     _tmp = geometry.gamma_ij_x / geometry.dx
-    #     kmean = get_kmean(geometry, fl_model, 0)
-    #     drhomean = get_drhomean2(
-    #         geometry, tr_model, axis=0, time_index=time_index, is_flatten=False
-    #     ).ravel("F")
+    contrib = np.zeros(shape)
 
-    #     # 1.1.1) For free head nodes only
-    #     idc_owner, idc_neigh = get_owner_neigh_indices(
-    #         geometry,
-    #         (slice(0, geometry.nx - 1), slice(None)),
-    #         (slice(1, geometry.nx), slice(None)),
-    #         owner_indices_to_keep=fl_model.free_head_nn,
-    #     )
-    #     # Add the storage coefficient with respect to the owner mesh
-    #     tmp = _tmp * kmean[idc_owner] / WATER_DENSITY
+    # vp = fl_model._get_mesh_center_vertical_pos().T
 
-    #     contrib[idc_owner] += (
-    #         drhomean[idc_owner]
-    #         * (
-    #             fl_crank * (p_prev[idc_neigh] - p_prev[idc_owner])
-    #             + (1.0 - fl_crank) * (p_next[idc_neigh] - p_next[idc_owner])
-    #         )
-    #         * tmp
-    #         * a_prev[idc_owner]
-    #     )  # type: ignore
+    # Consider the y axis for 2D cases
+    if geometry.nx > 1:
+        drhomean_x = get_drhomean(
+            geometry,
+            tr_model,
+            axis=0,
+            time_index=time_index - 1,
+            is_flatten=False,
+        )[:-1, :]
+        tmp = 0.0
+        # if fl_model.vertical_axis == VerticalAxis.X:
+        #     tmp = rhomean_x**2 * GRAVITY
 
-    #     # 1.1.2) For all nodes but with free head neighbors only
-    #     idc_owner, idc_neigh = get_owner_neigh_indices(
-    #         geometry,
-    #         (slice(0, geometry.nx - 1), slice(None)),
-    #         (slice(1, geometry.nx), slice(None)),
-    #         neigh_indices_to_keep=fl_model.free_head_nn,
-    #     )
-    #     # Add the storage coefficient with respect to the owner mesh
-    #     tmp = _tmp * kmean[idc_owner] / WATER_DENSITY
+        # Forward scheme
+        dpressure_fx = (
+            (
+                (
+                    crank_flow * (pprev[1:, :] - pprev[:-1, :])
+                    + (1.0 - crank_flow) * (pnext[1:, :] - pnext[:-1, :])
+                )
+                / geometry.dx
+                * drhomean_x
+                # + tmp
+            )
+            * harmonic_mean(permeability[:-1, :], permeability[1:, :])
+            / WATER_DENSITY
+        )
 
-    #     contrib[idc_owner] -= (
-    #         drhomean[idc_owner]
-    #         * (
-    #             fl_crank * (p_prev[idc_neigh] - p_prev[idc_owner])
-    #             + (1.0 - fl_crank) * (p_next[idc_neigh] - p_next[idc_owner])
-    #         )
-    #         * tmp
-    #         * a_prev[idc_neigh]
-    #     )
+        contrib[:-1, :] += (
+            dpressure_fx
+            * (ap_prev_fhi_sc[:-1, :] - ap_prev_fhi_sc[1:, :])
+            * geometry.gamma_ij_x
+        )
 
-    #     # 1.2) Backward scheme
+        # Backward scheme
+        dpressure_bx = (
+            (
+                (
+                    crank_flow * (pprev[:-1, :] - pprev[1:, :])
+                    + (1.0 - crank_flow) * (pnext[:-1, :] - pnext[1:, :])
+                )
+                / geometry.dx
+                * drhomean_x
+                - tmp
+            )
+            * harmonic_mean(permeability[1:, :], permeability[:-1, :])
+            / WATER_DENSITY
+        )
 
-    #     # 1.2.1) For free head nodes only
-    #     idc_owner, idc_neigh = get_owner_neigh_indices(
-    #         geometry,
-    #         (slice(1, geometry.nx), slice(None)),
-    #         (slice(0, geometry.nx - 1), slice(None)),
-    #         owner_indices_to_keep=fl_model.free_head_nn,
-    #     )
-    #     # Add the storage coefficient with respect to the owner mesh
-    #     tmp = _tmp * kmean[idc_neigh] / WATER_DENSITY
+        contrib[1:, :] += (
+            dpressure_bx
+            * (ap_prev_fhi_sc[1:, :] - ap_prev_fhi_sc[:-1, :])
+            * geometry.gamma_ij_x
+        )
 
-    #     contrib[idc_owner] -= (
-    #         drhomean[idc_owner]
-    #         * (
-    #             fl_crank * (p_prev[idc_neigh] - p_prev[idc_owner])
-    #             + (1.0 - fl_crank) * (p_next[idc_neigh] - p_next[idc_owner])
-    #         )
-    #         * tmp
-    #         * a_prev[idc_owner]
-    #     )
+    # Consider the y axis for 2D cases
+    if geometry.ny > 1:
+        drhomean_y = get_drhomean(
+            geometry,
+            tr_model,
+            axis=1,
+            time_index=time_index - 1,
+            is_flatten=False,
+        )[:, :-1]
+        tmp = 0.0
+        # if fl_model.vertical_axis == VerticalAxis.Y:
+        #     tmp = rhomean_y**2 * GRAVITY
 
-    #     # 1.2.2) For all nodes but with free head neighbors only
-    #     idc_owner, idc_neigh = get_owner_neigh_indices(
-    #         geometry,
-    #         (slice(1, geometry.nx), slice(None)),
-    #         (slice(0, geometry.nx - 1), slice(None)),
-    #         neigh_indices_to_keep=fl_model.free_head_nn,
-    #     )
-    #     # Add the storage coefficient with respect to the owner mesh
-    #     tmp = _tmp * kmean[idc_neigh] / WATER_DENSITY
+        # Forward scheme
+        dpressure_fy = (
+            (
+                (
+                    crank_flow * (pprev[:, 1:] - pprev[:, :-1])
+                    + (1.0 - crank_flow) * (pnext[:, 1:] - pnext[:, :-1])
+                )
+                / geometry.dy
+                * drhomean_y
+                # + tmp
+            )
+            * harmonic_mean(permeability[:, :-1], permeability[:, 1:])
+            / WATER_DENSITY
+        )
 
-    #     contrib[idc_owner] += (
-    #         drhomean[idc_owner]
-    #         * (
-    #             fl_crank * (p_prev[idc_neigh] - p_prev[idc_owner])
-    #             + (1.0 - fl_crank) * (p_next[idc_neigh] - p_next[idc_owner])
-    #         )
-    #         * tmp
-    #         * a_prev[idc_neigh]
-    #     )
+        contrib[:, :-1] += (
+            dpressure_fy
+            * (ap_prev_fhi_sc[:, :-1] - ap_prev_fhi_sc[:, 1:])
+            * geometry.gamma_ij_y
+        )
 
-    # # 2) Y contribution
-    # if geometry.ny >= 2:
-    #     kmean = get_kmean(geometry, fl_model, 1)
-    #     _tmp = geometry.gamma_ij_y / geometry.dy
-    #     drhomean = get_drhomean2(
-    #         geometry, tr_model, axis=1, time_index=time_index, is_flatten=False
-    #     ).ravel("F")
-    #     # 2.1.1) For free head nodes only
-    #     idc_owner, idc_neigh = get_owner_neigh_indices(
-    #         geometry,
-    #         (slice(None), slice(0, geometry.ny - 1)),
-    #         (slice(None), slice(1, geometry.ny)),
-    #         owner_indices_to_keep=fl_model.free_head_nn,
-    #     )
-    #     # Add the storage coefficient with respect to the owner mesh
-    #     tmp = _tmp * kmean[idc_owner] / WATER_DENSITY
+        # # Handle the stationary case
+        # if fl_model.regime == FlowRegime.STATIONARY:
+        #     grad[:, :-1, :1] += (
+        #         (
+        #             (pressure[:, 1:, :1] - pressure[:, :-1, :1])
+        #             / WATER_DENSITY
+        #             / GRAVITY
+        #             + vp[:, 1:, np.newaxis]
+        #             - vp[:, :-1, np.newaxis]
+        #         )
+        #         * harmonic_mean(permeability[:, :-1], permeability[:, 1:])[
+        #             :, :, np.newaxis
+        #         ]
+        #         * geometry.gamma_ij_y
+        #         / geometry.dy
+        #         * (apressure[:, 1:, :1] - ma_apressure[:, :-1, :1])
+        #         / geometry.grid_cell_volume
+        #     )
 
-    #     contrib[idc_owner] += (
-    #         drhomean[idc_owner]
-    #         * (
-    #             fl_crank * (p_prev[idc_neigh] - p_prev[idc_owner])
-    #             + (1.0 - fl_crank) * (p_next[idc_neigh] - p_next[idc_owner])
-    #         )
-    #         * tmp
-    #         * a_prev[idc_owner]
-    #     )
+        # Backward scheme
+        dpressure_by = (
+            (
+                (
+                    crank_flow * (pprev[:, :-1] - pprev[:, 1:])
+                    + (1.0 - crank_flow) * (pnext[:, :-1] - pnext[:, 1:])
+                )
+                / geometry.dy
+                * drhomean_y
+                - tmp
+            )
+            * harmonic_mean(permeability[:, 1:], permeability[:, :-1])
+            / WATER_DENSITY
+        )
 
-    #     # 2.1.2) For all nodes but with free head neighbors only
-    #     idc_owner, idc_neigh = get_owner_neigh_indices(
-    #         geometry,
-    #         (slice(None), slice(0, geometry.ny - 1)),
-    #         (slice(None), slice(1, geometry.ny)),
-    #         neigh_indices_to_keep=fl_model.free_head_nn,
-    #     )
-    #     # Add the storage coefficient with respect to the owner mesh
-    #     tmp = _tmp * kmean[idc_owner] / WATER_DENSITY
+        contrib[:, 1:] += (
+            dpressure_by
+            * (ap_prev_fhi_sc[:, 1:] - ap_prev_fhi_sc[:, :-1])
+            * geometry.gamma_ij_y
+        )
 
-    #     contrib[idc_owner] -= (
-    #         drhomean[idc_owner]
-    #         * (
-    #             fl_crank * (p_prev[idc_neigh] - p_prev[idc_owner])
-    #             + (1.0 - fl_crank) * (p_next[idc_neigh] - p_next[idc_owner])
-    #         )
-    #         * tmp
-    #         * a_prev[idc_neigh]
-    #     )
+        # # Handle the stationary case
+        # if fl_model.regime == FlowRegime.STATIONARY:
+        #     grad[:, 1:, :1] += (
+        #         (
+        #             (pressure[:, :-1, :1] - pressure[:, 1:, :1])
+        #             / WATER_DENSITY
+        #             / GRAVITY
+        #             + vp[:, :-1, np.newaxis]
+        #             - vp[:, 1:, np.newaxis]
+        #         )
+        #         * dxi_harmonic_mean(permeability[:, 1:], permeability[:, :-1])[
+        #             :, :, np.newaxis
+        #         ]
+        #         * geometry.gamma_ij_y
+        #         / geometry.dy
+        #         * (apressure[:, :-1, :1] - ma_apressure[:, 1:, :1])
+        #         / geometry.grid_cell_volume
+        #     )
 
-    #     # 2.2) Backward scheme
-
-    #     # 2.2.1) For free head nodes only
-    #     idc_owner, idc_neigh = get_owner_neigh_indices(
-    #         geometry,
-    #         (slice(None), slice(1, geometry.ny)),
-    #         (slice(None), slice(0, geometry.ny - 1)),
-    #         owner_indices_to_keep=fl_model.free_head_nn,
-    #     )
-    #     # Add the storage coefficient with respect to the owner mesh
-    #     tmp = _tmp * kmean[idc_neigh] / WATER_DENSITY
-
-    #     contrib[idc_owner] -= (
-    #         drhomean[idc_owner]
-    #         * (
-    #             fl_crank * (p_prev[idc_neigh] - p_prev[idc_owner])
-    #             + (1.0 - fl_crank) * (p_next[idc_neigh] - p_next[idc_owner])
-    #         )
-    #         * tmp
-    #         * a_prev[idc_owner]
-    #     )
-
-    #     # 2.2.2) For all nodes but with free head neighbors only
-    #     idc_owner, idc_neigh = get_owner_neigh_indices(
-    #         geometry,
-    #         (slice(None), slice(1, geometry.ny)),
-    #         (slice(None), slice(0, geometry.ny - 1)),
-    #         neigh_indices_to_keep=fl_model.free_head_nn,
-    #     )
-    #     # Add the storage coefficient with respect to the owner mesh
-    #     tmp = _tmp * kmean[idc_neigh] / WATER_DENSITY
-
-    #     contrib[idc_owner] += (
-    #         drhomean[idc_owner]
-    #         * (
-    #             fl_crank * (p_prev[idc_neigh] - p_prev[idc_owner])
-    #             + (1.0 - fl_crank) * (p_next[idc_neigh] - p_next[idc_owner])
-    #         )
-    #         * tmp
-    #         * a_prev[idc_neigh]
-    #     )
-
-    # a_tr_model.a_density[:, :, time_index] += contrib.reshape(
-    # geometry.shape, order="F")
+    a_tr_model.a_density[:, :, time_index] += contrib.reshape(geometry.shape, order="F")
 
     # 3) Add unitflow: only for free head nodes
     a_tr_model.a_density[:, :, time_index] += (
