@@ -227,7 +227,7 @@ def make_transient_flow_matrices(
     # X contribution
     if geometry.nx > 1:
         kmean = get_kmean(geometry, fl_model, 0)
-        rhomean = get_rhomean(geometry, tr_model, axis=0, time_index=time_index - 1)
+        rhomean = get_rhomean2(geometry, tr_model, axis=0, time_index=time_index - 1)
 
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
@@ -682,7 +682,7 @@ def get_gravity_gradient(
 
     if fl_model.vertical_axis == VerticalAxis.X:
         kmean = get_kmean(geometry, fl_model, axis=0)
-        rhomean = get_rhomean2(geometry, tr_model, axis=0, time_index=time_index - 1)
+        rhomean = get_rhomean(geometry, tr_model, axis=0, time_index=time_index - 1)
 
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
@@ -718,7 +718,7 @@ def get_gravity_gradient(
 
     elif fl_model.vertical_axis == VerticalAxis.Y:
         kmean = get_kmean(geometry, fl_model, axis=1)
-        rhomean = get_rhomean2(geometry, tr_model, axis=1, time_index=time_index - 1)
+        rhomean = get_rhomean(geometry, tr_model, axis=1, time_index=time_index - 1)
 
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
