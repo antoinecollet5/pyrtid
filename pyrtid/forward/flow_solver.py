@@ -56,19 +56,15 @@ def get_rhomean(
 ) -> NDArrayFloat:
     # get the density -> 2D or 3D array
     density = np.array(tr_model.ldensity[time_index])
-    # rhomean = density
-    # if density.ndim == 3:
-    #     rhomean = np.transpose(density, axes=(1, 2, 0))
-    # if is_flatten:
-    #     return rhomean.flatten(order="F")
-    # return rhomean
 
     if density.ndim == 2:
         rhomean: NDArrayFloat = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
         if axis == 0:
             rhomean[:-1, :] = arithmetic_mean(density[:-1, :], density[1:, :])
-        else:
+        elif axis == 1:
             rhomean[:, :-1] = arithmetic_mean(density[:, :-1], density[:, 1:])
+        else:
+            raise NotImplementedError("axis should be 0 or 1")
     else:
         rhomean: NDArrayFloat = np.zeros(
             (geometry.nx, geometry.ny, density.shape[0]), dtype=np.float64
@@ -77,55 +73,12 @@ def get_rhomean(
             rhomean[:-1, :, :] = np.transpose(
                 arithmetic_mean(density[:, :-1, :], density[:, 1:, :]), axes=(1, 2, 0)
             )
-        else:
+        elif axis == 1:
             rhomean[:, :-1, :] = np.transpose(
                 arithmetic_mean(density[:, :, :-1], density[:, :, 1:]), axes=(1, 2, 0)
             )
-    if is_flatten:
-        return rhomean.flatten(order="F")
-    return rhomean
-
-
-def get_rhomean2(
-    geometry: Geometry,
-    tr_model: TransportModel,
-    axis: int,
-    time_index: Union[int, slice],
-    is_flatten: bool = True,
-) -> NDArrayFloat:
-    # return get_rhomean(geometry, tr_model, axis, time_index, is_flatten)
-    density = np.ones_like(np.array(tr_model.ldensity[time_index])) * WATER_DENSITY
-    idx = np.arange(tr_model.ldensity[0].size).reshape(geometry.shape)
-    if density.ndim == 3:
-        idx = np.transpose(
-            np.repeat(idx[:, :, np.newaxis], density.shape[0], axis=-1), axes=(2, 0, 1)
-        )
-
-        for t in np.arange(len(tr_model.ldensity))[time_index]:
-            idx[t] *= t
-    else:
-        idx *= np.arange(len(tr_model.ldensity))[time_index]
-
-    density += idx * 1e-3
-
-    if density.ndim == 2:
-        rhomean: NDArrayFloat = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
-        if axis == 0:
-            rhomean[:-1, :] = arithmetic_mean(density[:-1, :], density[1:, :])
         else:
-            rhomean[:, :-1] = arithmetic_mean(density[:, :-1], density[:, 1:])
-    else:
-        rhomean: NDArrayFloat = np.zeros(
-            (geometry.nx, geometry.ny, density.shape[0]), dtype=np.float64
-        )
-        if axis == 0:
-            rhomean[:-1, :, :] = np.transpose(
-                arithmetic_mean(density[:, :-1, :], density[:, 1:, :]), axes=(1, 2, 0)
-            )
-        else:
-            rhomean[:, :-1, :] = np.transpose(
-                arithmetic_mean(density[:, :, :-1], density[:, :, 1:]), axes=(1, 2, 0)
-            )
+            raise NotImplementedError("axis should be 0 or 1")
     if is_flatten:
         return rhomean.flatten(order="F")
     return rhomean
@@ -227,7 +180,7 @@ def make_transient_flow_matrices(
     # X contribution
     if geometry.nx > 1:
         kmean = get_kmean(geometry, fl_model, 0)
-        rhomean = get_rhomean2(geometry, tr_model, axis=0, time_index=time_index - 1)
+        rhomean = get_rhomean(geometry, tr_model, axis=0, time_index=time_index - 1)
 
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(

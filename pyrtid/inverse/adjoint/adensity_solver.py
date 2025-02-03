@@ -189,60 +189,67 @@ def _add_diffusivity_contribution(
 
     contrib = np.zeros(shape)
 
-    # # Consider the y axis for 2D cases
-    # if geometry.nx > 1:
-    #     drhomean_x = get_drhomean(
-    #         geometry,
-    #         tr_model,
-    #         axis=0,
-    #         time_index=time_index,
-    #         is_flatten=False,
-    #     )[:-1, :]
-    #     tmp = 0.0
-    #     # if fl_model.vertical_axis == VerticalAxis.X:
-    #     #     tmp = 2 * rhomean_x**2 * GRAVITY
+    # Consider the y axis for 2D cases
+    if geometry.nx > 1:
+        drhomean_x = get_drhomean(
+            geometry,
+            tr_model,
+            axis=0,
+            time_index=time_index,
+            is_flatten=False,
+        )[:-1, :]
+        tmp = 0.0
+        if fl_model.vertical_axis == VerticalAxis.X:
+            rhomean_x = get_rhomean(
+                geometry,
+                tr_model,
+                axis=0,
+                time_index=time_index,
+                is_flatten=False,
+            )[:-1, :]
+            tmp = 2 * drhomean_x * rhomean_x * GRAVITY
 
-    #     # Forward scheme
-    #     dpressure_fx = (
-    #         (
-    #             (
-    #                 crank_flow * (pprev[1:, :] - pprev[:-1, :])
-    #                 + (1.0 - crank_flow) * (pnext[1:, :] - pnext[:-1, :])
-    #             )
-    #             / geometry.dx
-    #             * drhomean_x
-    #             + tmp
-    #         )
-    #         * harmonic_mean(permeability[:-1, :], permeability[1:, :])
-    #         / WATER_DENSITY
-    #     )
+        # Forward scheme
+        dpressure_fx = (
+            (
+                (
+                    crank_flow * (pprev[1:, :] - pprev[:-1, :])
+                    + (1.0 - crank_flow) * (pnext[1:, :] - pnext[:-1, :])
+                )
+                / geometry.dx
+                * drhomean_x
+                + tmp
+            )
+            * harmonic_mean(permeability[:-1, :], permeability[1:, :])
+            / WATER_DENSITY
+        )
 
-    #     contrib[:-1, :] += (
-    #         dpressure_fx
-    #         * (ap_prev_fhi_sc[:-1, :] - ap_prev_fhi_sc[1:, :])
-    #         * geometry.gamma_ij_x
-    #     )
+        contrib[:-1, :] += (
+            dpressure_fx
+            * (ap_prev_fhi_sc[:-1, :] - ap_prev_fhi_sc[1:, :])
+            * geometry.gamma_ij_x
+        )
 
-    #     # Backward scheme
-    #     dpressure_bx = (
-    #         (
-    #             (
-    #                 crank_flow * (pprev[:-1, :] - pprev[1:, :])
-    #                 + (1.0 - crank_flow) * (pnext[:-1, :] - pnext[1:, :])
-    #             )
-    #             / geometry.dx
-    #             * drhomean_x
-    #             - tmp
-    #         )
-    #         * harmonic_mean(permeability[1:, :], permeability[:-1, :])
-    #         / WATER_DENSITY
-    #     )
+        # Backward scheme
+        dpressure_bx = (
+            (
+                (
+                    crank_flow * (pprev[:-1, :] - pprev[1:, :])
+                    + (1.0 - crank_flow) * (pnext[:-1, :] - pnext[1:, :])
+                )
+                / geometry.dx
+                * drhomean_x
+                - tmp
+            )
+            * harmonic_mean(permeability[1:, :], permeability[:-1, :])
+            / WATER_DENSITY
+        )
 
-    #     contrib[1:, :] += (
-    #         dpressure_bx
-    #         * (ap_prev_fhi_sc[1:, :] - ap_prev_fhi_sc[:-1, :])
-    #         * geometry.gamma_ij_x
-    #     )
+        contrib[1:, :] += (
+            dpressure_bx
+            * (ap_prev_fhi_sc[1:, :] - ap_prev_fhi_sc[:-1, :])
+            * geometry.gamma_ij_x
+        )
 
     # Consider the y axis for 2D cases
     if geometry.ny > 1:

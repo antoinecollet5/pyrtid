@@ -7,7 +7,7 @@ from typing import List, Optional
 import numpy as np
 
 from pyrtid.forward import ForwardModel, ForwardSolver
-from pyrtid.forward.flow_solver import get_rhomean, get_rhomean2
+from pyrtid.forward.flow_solver import get_rhomean
 from pyrtid.forward.models import GRAVITY, WATER_DENSITY, FlowRegime, VerticalAxis
 from pyrtid.inverse.adjoint import AdjointModel, AdjointSolver
 from pyrtid.inverse.adjoint.ageochem_solver import ddMdimmobprev
@@ -460,7 +460,7 @@ def _get_perm_gradient_from_diffusivity_eq_density(
 
     # Consider the x axis
     if fwd_model.geometry.nx > 1:
-        rhomean_x = get_rhomean2(
+        rhomean_x = get_rhomean(
             fwd_model.geometry,
             fwd_model.tr_model,
             axis=0,
@@ -468,8 +468,8 @@ def _get_perm_gradient_from_diffusivity_eq_density(
             is_flatten=False,
         )[:-1]
         tmp = 0.0
-        # if fwd_model.fl_model.vertical_axis == VerticalAxis.X:
-        #     tmp = rhomean_x**2 * GRAVITY
+        if fwd_model.fl_model.vertical_axis == VerticalAxis.X:
+            tmp = rhomean_x**2 * GRAVITY
 
         # Forward scheme
         dpressure_fx = (
@@ -567,8 +567,8 @@ def _get_perm_gradient_from_diffusivity_eq_density(
             is_flatten=False,
         )[:, :-1]
         tmp = 0.0
-        # if fwd_model.fl_model.vertical_axis == VerticalAxis.Y:
-        #     tmp = rhomean_y**2 * GRAVITY
+        if fwd_model.fl_model.vertical_axis == VerticalAxis.Y:
+            tmp = rhomean_y**2 * GRAVITY
 
         # Forward scheme
         dpressure_fy = (
