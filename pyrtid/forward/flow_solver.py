@@ -820,11 +820,11 @@ def solve_flow_transient_semi_implicit(
         # pressure
         rhs = _q_prev.dot(fl_model.lpressure[time_index - 1].flatten(order="F"))
         rhs += sources * tr_model.ldensity[time_index - 1].flatten(order="F") * GRAVITY
-        # rhs += (
-        #     get_gravity_gradient(geometry, fl_model, tr_model, time_index)
-        #     / fl_model.storage_coefficient.ravel("F")
-        #     / geometry.grid_cell_volume
-        # )
+        rhs += (
+            get_gravity_gradient(geometry, fl_model, tr_model, time_index)
+            / fl_model.storage_coefficient.ravel("F")
+            / geometry.grid_cell_volume
+        )
         # Handle constant head nodes
         rhs[fl_model.cst_head_nn] = fl_model.lpressure[time_index - 1].flatten(
             order="F"

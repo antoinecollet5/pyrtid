@@ -76,10 +76,6 @@ def solve_adj_density(
                 fl_model, tr_model, a_fl_model, a_tr_model, time_index, geometry
             )
 
-            # _add_vertical_gradient_contribution(
-            #     fl_model, tr_model, a_fl_model, a_tr_model, time_index, geometry
-            # )
-
             # 3) Contribution from the diffusivity equation
             _add_diffusivity_contribution(
                 fl_model, tr_model, a_fl_model, a_tr_model, time_index, geometry
@@ -193,8 +189,6 @@ def _add_diffusivity_contribution(
 
     contrib = np.zeros(shape)
 
-    # vp = fl_model._get_mesh_center_vertical_pos().T
-
     # # Consider the y axis for 2D cases
     # if geometry.nx > 1:
     #     drhomean_x = get_drhomean(
@@ -260,15 +254,15 @@ def _add_diffusivity_contribution(
             is_flatten=False,
         )[:, :-1]
         tmp = 0.0
-        # if fl_model.vertical_axis == VerticalAxis.Y:
-        #     rhomean_y = get_rhomean(
-        #         geometry,
-        #         tr_model,
-        #         axis=1,
-        #         time_index=time_index - 1,
-        #         is_flatten=False,
-        #     )[:, :-1]
-        #     tmp = 2 * rhomean_y * drhomean_y * GRAVITY
+        if fl_model.vertical_axis == VerticalAxis.Y:
+            rhomean_y = get_rhomean(
+                geometry,
+                tr_model,
+                axis=1,
+                time_index=time_index,
+                is_flatten=False,
+            )[:, :-1]
+            tmp = 2 * rhomean_y * drhomean_y * GRAVITY
 
         # Forward scheme
         dpressure_fy = (
@@ -342,80 +336,3 @@ def _add_diffusivity_contribution(
             + (1.0 - fl_crank) * fl_model.lunitflow[time_index]
         )
     ) / fl_model.storage_coefficient
-
-
-def _add_vertical_gradient_contribution(
-    fl_model: FlowModel,
-    tr_model: TransportModel,
-    a_fl_model: AdjointFlowModel,
-    a_tr_model: AdjointTransportModel,
-    time_index: int,
-    geometry: Geometry,
-) -> None:
-    """Return the contribution from the derivative of the diffusivity equation."""
-    shape = (geometry.nx, geometry.ny)
-    permeability = fl_model.permeability
-    free_head_indices = fl_model.free_head_indices
-
-    # Mask the adjoint pressure for the constant head nodes
-    ap_prev = a_fl_model.a_pressure[:, :, time_index + 1]
-    ap_prev_fhi = np.zeros(ap_prev.shape)
-    ap_prev_fhi[free_head_indices[0], free_head_indices[1]] = ap_prev[
-        free_head_indices[0], free_head_indices[1]
-    ]
-    # add the storgae coefficient to ma_apressure
-    ap_prev_fhi_sc = ap_prev_fhi / (
-        fl_model.storage_coefficient * geometry.grid_cell_volume
-    )
-
-    contrib = np.zeros(shape)
-
-    # vp = fl_model._get_mesh_center_vertical_pos().T
-
-    # Consider the y axis for 2D cases
-    if geometry.ny > 1:
-        drhomean_y = get_drhomean(
-            geometry,
-            tr_model,
-            axis=1,
-            time_index=time_index,
-            is_flatten=False,
-        )[:, :-1]
-        tmp = 0.0
-        if fl_model.vertical_axis == VerticalAxis.Y:
-            rhomean_y = get_rhomean(
-                geometry,
-                tr_model,
-                axis=1,
-                time_index=time_index,
-                is_flatten=False,
-            )[:, :-1]
-            tmp = 2 * rhomean_y * drhomean_y * GRAVITY
-
-        # Forward scheme
-        dpressure_fy = (
-            (+tmp)
-            * harmonic_mean(permeability[:, :-1], permeability[:, 1:])
-            / WATER_DENSITY
-        )
-
-        contrib[:, :-1] += (
-            dpressure_fy
-            * (ap_prev_fhi_sc[:, :-1] - ap_prev_fhi_sc[:, 1:])
-            * geometry.gamma_ij_y
-        )
-
-        # Backward scheme
-        dpressure_by = (
-            (-tmp)
-            * harmonic_mean(permeability[:, 1:], permeability[:, :-1])
-            / WATER_DENSITY
-        )
-
-        contrib[:, 1:] += (
-            dpressure_by
-            * (ap_prev_fhi_sc[:, 1:] - ap_prev_fhi_sc[:, :-1])
-            * geometry.gamma_ij_y
-        )
-
-    a_tr_model.a_density[:, :, time_index] += contrib

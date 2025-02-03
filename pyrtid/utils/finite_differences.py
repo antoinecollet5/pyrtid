@@ -14,6 +14,7 @@ Chapitre très intéressant:
 @author: acollet
 """
 
+import logging
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from typing import (
@@ -316,6 +317,7 @@ def finite_jacobian(
             _eps = np.power(np.finfo(float).eps, 1 / 3)
     else:
         _eps = eps
+    logging.getLogger("Finite differences").info(f"eps = {_eps:.2e}")
     if accuracy not in [0, 1, 2, 3]:
         raise ValueError("The accuracy should be 0, 1, 2 or 3!")
     dd = np.array([2.0, 12.0, 60.0, 840.0])
