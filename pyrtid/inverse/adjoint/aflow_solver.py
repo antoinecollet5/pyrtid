@@ -422,12 +422,14 @@ def update_adjoint_u_darcy(
     time_index: int,
 ) -> None:
     crank_adv = tr_model.crank_nicolson_advection
-
+    crank_diff = tr_model.crank_nicolson_diffusion
+    # for the dispersion derivation
     d = (
         tr_model.effective_diffusion
         + tr_model.dispersivity * fl_model.get_u_darcy_norm_sample(time_index)
     )
-    dUfx, dUbx, dUfy, dUby = fl_model.get_du_darcy_norm_sample(time_index)
+    dUx, dUy = fl_model.get_du_darcy_norm_sample(time_index)
+    lhs = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
 
     # loop over the species
     for sp in range(tr_model.n_sp):
@@ -482,38 +484,34 @@ def update_adjoint_u_darcy(
                 / geometry.grid_cell_volume
             )
 
-            # 3) Dispersivity term
-            # forward  dUi
-            a_fl_model.a_u_darcy_x[1:-1, :, time_index] += (
+            # 3) Dispersivity term -> \lmabda *
+            # forward in space
+            lhs[:-1, :] += (
                 geometry.gamma_ij_x
                 / geometry.dx
                 / geometry.grid_cell_volume
                 * (
                     (
-                        crank_adv * (mob[1:, :] - mob[:-1, :])
-                        + (1.0 - crank_adv) * (mob_next[1:, :] - mob_next[:-1, :])
+                        crank_diff * (mob[1:, :] - mob[:-1, :])
+                        + (1.0 - crank_diff) * (mob_next[1:, :] - mob_next[:-1, :])
                     )
                     * (a_mob[:-1, :] - a_mob[1:, :])
                 )
                 * dxi_harmonic_mean(d[:-1, :], d[1:, :])
-                * tr_model.dispersivity[:-1, :]
-                * dUfx[1:-1, :]
             )
-            # backward dUj
-            a_fl_model.a_u_darcy_x[1:-1, :, time_index] += (
+            # backward in space
+            lhs[1:, :] += (
                 geometry.gamma_ij_x
                 / geometry.dx
                 / geometry.grid_cell_volume
                 * (
                     (
-                        crank_adv * (mob[1:, :] - mob[:-1, :])
-                        + (1.0 - crank_adv) * (mob_next[1:, :] - mob_next[:-1, :])
+                        crank_diff * (mob[:-1, :] - mob[1:, :])
+                        + (1.0 - crank_diff) * (mob_next[:-1, :] - mob_next[1:, :])
                     )
-                    * (a_mob[:-1, :] - a_mob[1:, :])
+                    * (a_mob[1:, :] - a_mob[:-1, :])
                 )
                 * dxi_harmonic_mean(d[1:, :], d[:-1, :])
-                * tr_model.dispersivity[1:, :]
-                * dUbx[1:-1, :]
             )
 
         # Y contribution
@@ -549,38 +547,40 @@ def update_adjoint_u_darcy(
             )
 
             # 3) Dispersivity term
-            # forward  dUi
-            a_fl_model.a_u_darcy_y[:, 1:-1, time_index] += (
+            # forward in space
+            lhs[:, :-1] += (
                 geometry.gamma_ij_y
                 / geometry.dy
                 / geometry.grid_cell_volume
                 * (
                     (
-                        crank_adv * (mob[:, 1:] - mob[:, :-1])
-                        + (1.0 - crank_adv) * (mob_next[:, 1:] - mob_next[:, :-1])
+                        crank_diff * (mob[:, 1:] - mob[:, :-1])
+                        + (1.0 - crank_diff) * (mob_next[:, 1:] - mob_next[:, :-1])
                     )
                     * (a_mob[:, :-1] - a_mob[:, 1:])
                 )
                 * dxi_harmonic_mean(d[:, :-1], d[:, 1:])
-                * tr_model.dispersivity[:, :-1]
-                * dUfy[:, 1:-1]
             )
-            # backward dUj
-            a_fl_model.a_u_darcy_y[:, 1:-1, time_index] += (
+            # backward in space
+            lhs[:, 1:] += (
                 geometry.gamma_ij_y
                 / geometry.dy
                 / geometry.grid_cell_volume
                 * (
                     (
-                        crank_adv * (mob[:, 1:] - mob[:, :-1])
-                        + (1.0 - crank_adv) * (mob_next[:, 1:] - mob_next[:, :-1])
+                        crank_diff * (mob[:, :-1] - mob[:, 1:])
+                        + (1.0 - crank_diff) * (mob_next[:, :-1] - mob_next[:, 1:])
                     )
-                    * (a_mob[:, :-1] - a_mob[:, 1:])
+                    * (a_mob[:, 1:] - a_mob[:, :-1])
                 )
                 * dxi_harmonic_mean(d[:, 1:], d[:, :-1])
-                * tr_model.dispersivity[:, 1:]
-                * dUby[:, 1:-1]
             )
+
+    # End dispersivity term
+    a_fl_model.a_u_darcy_x[:-1, :, time_index] += dUx * lhs * tr_model.dispersivity
+    a_fl_model.a_u_darcy_x[1:, :, time_index] += dUx * lhs * tr_model.dispersivity
+    a_fl_model.a_u_darcy_y[:, :-1, time_index] += dUy * lhs * tr_model.dispersivity
+    a_fl_model.a_u_darcy_y[:, 1:, time_index] += dUy * lhs * tr_model.dispersivity
 
 
 def solve_adj_flow(

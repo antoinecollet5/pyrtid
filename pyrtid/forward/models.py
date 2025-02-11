@@ -942,7 +942,7 @@ class FlowModel(ABC):
 
     def get_du_darcy_norm_sample(
         self, time_index: int
-    ) -> Tuple[NDArrayFloat, NDArrayFloat, NDArrayFloat, NDArrayFloat]:
+    ) -> Tuple[NDArrayFloat, NDArrayFloat]:
         """The norm of the darcy velocity estimated at the center of the grid cell."""
         # for x
         tmp_x = np.zeros_like(self.lhead[time_index])
@@ -985,18 +985,8 @@ class FlowModel(ABC):
         mask = norm > 0.0
         inv_norm[mask] = 1.0 / norm[mask]
 
-        # x - forward
-        dUfx = np.zeros_like(self.lu_darcy_x[time_index])
-        dUfx[:-1, :] = inv_norm * tmp_x * divx
-        dUbx = np.zeros_like(self.lu_darcy_x[time_index])
-        dUbx[1:, :] = inv_norm * tmp_x * divx
-        dUfy = np.zeros_like(self.lu_darcy_y[time_index])
-        dUfy[:, :-1] = inv_norm * tmp_y * divy
-        dUby = np.zeros_like(self.lu_darcy_y[time_index])
-        dUby[:, 1:] = inv_norm * tmp_y * divy
-
         # return (d|U|/dUx , d|U|/dUy)
-        return dUfx, dUbx, dUfy, dUby
+        return inv_norm * tmp_x * divx, inv_norm * tmp_y * divy
 
     def get_u_darcy_norm(self) -> NDArrayFloat:
         """The norm of the darcy velocity estimated at the center of the grid cell."""
