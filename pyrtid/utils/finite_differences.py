@@ -87,7 +87,7 @@ def is_jacobian_correct(
     accuracy : int, optional
         Number of points to use for the finite difference approximation.
         Possible values are 0 (2 points), 1 (4 points), 2 (6 points),
-        3 (4 points). The default is 0 which corresponds to the central
+        3 (8 points). The default is 0 which corresponds to the central
         difference scheme (2 points).
     eps: float, optional
         The epsilon for the computation (h). The default value has been
@@ -286,7 +286,7 @@ def finite_jacobian(
     accuracy : int, optional
         Number of points to use for the finite difference approximation.
         Possible values are 0 (2 points), 1 (4 points), 2 (6 points),
-        3 (4 points). The default is 0 which corresponds to the central
+        3 (8 points). The default is 0 which corresponds to the central
         difference scheme (2 points).
     eps: float, optional
         The epsilon for the computation (h). By default, it take 1e-6 times

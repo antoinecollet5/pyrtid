@@ -763,6 +763,7 @@ class AdjointInversionExecutor(BaseInversionExecutor, Generic[_AdjointSolverConf
     def is_adjoint_gradient_correct(
         self,
         eps: Optional[float] = None,
+        accuracy: int = 0,
         max_workers: int = 1,
         is_verbose: bool = False,
         max_nafpi: int = 30,
@@ -782,6 +783,11 @@ class AdjointInversionExecutor(BaseInversionExecutor, Generic[_AdjointSolverConf
         eps: float, optional
             The epsilon for the computation of the approximated gradient by finite
             difference. If None, it is automatically inferred. The default is None.
+        accuracy : int, optional
+            Number of points to use for the finite difference approximation.
+            Possible values are 0 (2 points), 1 (4 points), 2 (6 points),
+            3 (8 points). The default is 0 which corresponds to the central
+            difference scheme (2 points).
         max_workers: int
             Number of workers used for the gradient approximation by finite
             differences. If different from one, the calculation relies on
@@ -798,6 +804,7 @@ class AdjointInversionExecutor(BaseInversionExecutor, Generic[_AdjointSolverConf
             self.inv_model.parameters_to_adjust,
             self.inv_model.observables,
             eps=eps,
+            accuracy=accuracy,
             max_workers=max_workers,
             hm_end_time=self.solver_config.hm_end_time,
             is_verbose=is_verbose,

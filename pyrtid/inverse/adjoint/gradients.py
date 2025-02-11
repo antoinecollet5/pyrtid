@@ -1279,6 +1279,7 @@ def compute_fd_gradient(
     observables: Observables,
     parameters_to_adjust: AdjustableParameters,
     eps: Optional[float] = None,
+    accuracy: int = 0,
     max_workers: int = 1,
     max_obs_time: Optional[float] = None,
     is_save_state: bool = True,
@@ -1296,6 +1297,11 @@ def compute_fd_gradient(
     eps: float, optional
         The epsilon for the computation of the approximated gradient by finite
         difference. If None, it is automatically inferred. The default is None.
+    accuracy : int, optional
+        Number of points to use for the finite difference approximation.
+        Possible values are 0 (2 points), 1 (4 points), 2 (6 points),
+        3 (8 points). The default is 0 which corresponds to the central
+        difference scheme (2 points).
     max_workers: int
         Number of workers used  if the gradient is approximated by finite
         differences. If different from one, the calculation relies on
@@ -1338,6 +1344,7 @@ def compute_fd_gradient(
                 max_obs_time,
             ),
             eps=eps,
+            accuracy=accuracy,
             max_workers=max_workers,
         )
 
@@ -1358,6 +1365,7 @@ def is_adjoint_gradient_correct(
     parameters_to_adjust: AdjustableParameters,
     observables: Observables,
     eps: Optional[float] = None,
+    accuracy: int = 0,
     max_workers: int = 1,
     hm_end_time: Optional[float] = None,
     is_verbose: bool = False,
@@ -1380,6 +1388,11 @@ def is_adjoint_gradient_correct(
     eps: float, optional
         The epsilon for the computation of the approximated gradient by finite
         difference. If None, it is automatically inferred. The default is None.
+    accuracy : int, optional
+        Number of points to use for the finite difference approximation.
+        Possible values are 0 (2 points), 1 (4 points), 2 (6 points),
+        3 (8 points). The default is 0 which corresponds to the central
+        difference scheme (2 points).
     max_workers: int
         Number of workers used  if the gradient is approximated by finite
         differences. If different from one, the calculation relies on
@@ -1416,6 +1429,7 @@ def is_adjoint_gradient_correct(
         observables,
         parameters_to_adjust,
         eps=eps,
+        accuracy=accuracy,
         max_workers=max_workers,
         is_save_state=is_save_state,
     )
