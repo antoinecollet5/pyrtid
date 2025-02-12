@@ -103,6 +103,9 @@ def make_stationary_flow_matrices(geometry: Geometry, fl_model: FlowModel) -> li
 
         tmp = geometry.gamma_ij_x / geometry.dx / geometry.grid_cell_volume
 
+        if fl_model.is_gravity:
+            tmp /= GRAVITY * WATER_DENSITY
+
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
             geometry,
@@ -130,6 +133,9 @@ def make_stationary_flow_matrices(geometry: Geometry, fl_model: FlowModel) -> li
         kmean = get_kmean(geometry, fl_model, 1)
 
         tmp = geometry.gamma_ij_y / geometry.dy / geometry.grid_cell_volume
+
+        if fl_model.is_gravity:
+            tmp /= GRAVITY * WATER_DENSITY
 
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
@@ -290,6 +296,72 @@ def make_transient_flow_matrices(
     return q_next, q_prev
 
 
+def get_zj_zi_rhs(geometry: Geometry, fl_model: FlowModel) -> NDArrayFloat:
+    rhs_z = np.zeros((geometry.n_grid_cells), dtype=np.float64)
+    z = fl_model._get_mesh_center_vertical_pos().T.ravel("F")
+
+    rhs_z = np.zeros((geometry.n_grid_cells), dtype=np.float64)
+    z = fl_model._get_mesh_center_vertical_pos().T.ravel("F")
+
+    # X contribution
+    if geometry.nx >= 2 and fl_model.vertical_axis == VerticalAxis.X:
+        kmean = get_kmean(geometry, fl_model, 0)
+
+        tmp = geometry.gamma_ij_x / geometry.dx / geometry.grid_cell_volume
+
+        # Forward scheme:
+        idc_owner, idc_neigh = get_owner_neigh_indices(
+            geometry,
+            (slice(0, geometry.nx - 1), slice(None)),
+            (slice(1, geometry.nx), slice(None)),
+            owner_indices_to_keep=fl_model.free_head_nn,
+        )
+
+        rhs_z[idc_owner] += kmean[idc_owner] * tmp * z[idc_neigh]  # type: ignore
+        rhs_z[idc_owner] -= kmean[idc_owner] * tmp * z[idc_owner]  # type: ignore
+
+        # Backward scheme
+        idc_owner, idc_neigh = get_owner_neigh_indices(
+            geometry,
+            (slice(1, geometry.nx), slice(None)),
+            (slice(0, geometry.nx - 1), slice(None)),
+            owner_indices_to_keep=fl_model.free_head_nn,
+        )
+
+        rhs_z[idc_owner] += kmean[idc_neigh] * tmp * z[idc_neigh]  # type: ignore
+        rhs_z[idc_owner] -= kmean[idc_neigh] * tmp * z[idc_owner]  # type: ignore
+
+    # Y contribution
+    if geometry.ny >= 2 and fl_model.vertical_axis == VerticalAxis.Y:
+        kmean = get_kmean(geometry, fl_model, 1)
+
+        tmp = geometry.gamma_ij_y / geometry.dy / geometry.grid_cell_volume
+
+        # Forward scheme:
+        idc_owner, idc_neigh = get_owner_neigh_indices(
+            geometry,
+            (slice(None), slice(0, geometry.ny - 1)),
+            (slice(None), slice(1, geometry.ny)),
+            owner_indices_to_keep=fl_model.free_head_nn,
+        )
+
+        rhs_z[idc_owner] += kmean[idc_owner] * tmp * z[idc_neigh]  # type: ignore
+        rhs_z[idc_owner] -= kmean[idc_owner] * tmp * z[idc_owner]  # type: ignore
+
+        # Backward scheme
+        idc_owner, idc_neigh = get_owner_neigh_indices(
+            geometry,
+            (slice(None), slice(1, geometry.ny)),
+            (slice(None), slice(0, geometry.ny - 1)),
+            owner_indices_to_keep=fl_model.free_head_nn,
+        )
+
+        rhs_z[idc_owner] += kmean[idc_neigh] * tmp * z[idc_neigh]  # type: ignore
+        rhs_z[idc_owner] -= kmean[idc_neigh] * tmp * z[idc_owner]  # type: ignore
+
+    return rhs_z
+
+
 def solve_flow_stationary(
     geometry: Geometry,
     fl_model: FlowModel,
@@ -310,13 +382,18 @@ def solve_flow_stationary(
     rhs = np.zeros(geometry.n_grid_cells)
     # Add the source terms
     rhs += unitflw_sources.flatten(order="F")
-    # Constant head
-    rhs[fl_model.cst_head_nn] = fl_model.lhead[time_index].flatten(order="F")[
-        fl_model.cst_head_nn
-    ]
     if fl_model.is_gravity:
-        rhs -= fl_model.q_next @ fl_model._get_mesh_center_vertical_pos().T.ravel("F")
-        fl_model.q_next /= GRAVITY * WATER_DENSITY
+        # Constant head
+        rhs[fl_model.cst_head_nn] = fl_model.lpressure[time_index].flatten(order="F")[
+            fl_model.cst_head_nn
+        ]
+        # Non constant head only
+        rhs += get_zj_zi_rhs(geometry, fl_model)
+    else:
+        # Constant head
+        rhs[fl_model.cst_head_nn] = fl_model.lhead[time_index].flatten(order="F")[
+            fl_model.cst_head_nn
+        ]
 
     # TODO: make optional
     fl_model.l_q_next.append(fl_model.q_next)
@@ -392,7 +469,7 @@ def find_ux_boundary(
     """
     out = np.zeros((geometry.nx + 1, geometry.ny))
     head = fl_model.lhead[time_index]
-    kmean = harmonic_mean(fl_model.permeability[:-1, :], fl_model.permeability[1:, :])
+    kmean = get_kmean(geometry, fl_model, axis=0, is_flatten=False)[:-1, :]
     out[1:-1, :] = -kmean * (head[1:, :] - head[:-1, :]) / geometry.dx
     return out
 
@@ -417,7 +494,7 @@ def find_uy_boundary(
     """
     out = np.zeros((geometry.nx, geometry.ny + 1))
     head = fl_model.lhead[time_index]
-    kmean = harmonic_mean(fl_model.permeability[:, :-1], fl_model.permeability[:, 1:])
+    kmean = get_kmean(geometry, fl_model, axis=1, is_flatten=False)[:, :-1]
     out[:, 1:-1] = -kmean * (head[:, 1:] - head[:, :-1]) / geometry.dy
     return out
 
@@ -442,12 +519,14 @@ def find_ux_boundary_density(
     """
     out = np.zeros((geometry.nx + 1, geometry.ny))
     pressure = fl_model.lpressure[time_index]
-    kmean = harmonic_mean(fl_model.permeability[:-1, :], fl_model.permeability[1:, :])
+    kmean = get_kmean(geometry, fl_model, axis=0, is_flatten=False)[:-1, :]
     rhomean = get_rhomean(
         geometry, tr_model, axis=0, time_index=time_index - 1, is_flatten=False
     )[:-1, :]
     if fl_model.vertical_axis == VerticalAxis.X:
         rho_ij_g = rhomean * GRAVITY
+        if time_index == 0:
+            rho_ij_g[:, :] = WATER_DENSITY * GRAVITY
     else:
         rho_ij_g = np.zeros_like(rhomean)
 
@@ -480,13 +559,15 @@ def find_uy_boundary_density(
     """
     out = np.zeros((geometry.nx, geometry.ny + 1))
     pressure = fl_model.lpressure[time_index]
-    kmean = harmonic_mean(fl_model.permeability[:, :-1], fl_model.permeability[:, 1:])
+    kmean = get_kmean(geometry, fl_model, axis=1, is_flatten=False)[:, :-1]
     rhomean = get_rhomean(
         geometry, tr_model, axis=1, time_index=time_index - 1, is_flatten=False
     )[:, :-1]
 
     if fl_model.vertical_axis == VerticalAxis.Y:
         rho_ij_g = rhomean * GRAVITY
+        if time_index == 0:
+            rho_ij_g[:, :] = WATER_DENSITY * GRAVITY
     else:
         rho_ij_g = np.zeros_like(rhomean)
 
@@ -632,6 +713,7 @@ def get_gravity_gradient(
     geometry: Geometry, fl_model: FlowModel, tr_model: TransportModel, time_index: int
 ) -> NDArrayFloat:
     tmp = np.zeros(geometry.nx * geometry.ny)
+    sc = fl_model.storage_coefficient.ravel("F")
 
     if fl_model.vertical_axis == VerticalAxis.X:
         kmean = get_kmean(geometry, fl_model, axis=0)
@@ -651,6 +733,8 @@ def get_gravity_gradient(
             * GRAVITY
             / WATER_DENSITY
             * kmean[idc_owner]
+            / geometry.grid_cell_volume
+            / sc[idc_owner]
         )
 
         # Backward scheme
@@ -667,6 +751,8 @@ def get_gravity_gradient(
             * GRAVITY
             / WATER_DENSITY
             * kmean[idc_neigh]
+            / sc[idc_owner]
+            / geometry.grid_cell_volume
         )
 
     elif fl_model.vertical_axis == VerticalAxis.Y:
@@ -687,6 +773,8 @@ def get_gravity_gradient(
             * GRAVITY
             / WATER_DENSITY
             * kmean[idc_owner]
+            / sc[idc_owner]
+            / geometry.grid_cell_volume
         )
 
         # Backward scheme
@@ -703,6 +791,8 @@ def get_gravity_gradient(
             * GRAVITY
             / WATER_DENSITY
             * kmean[idc_neigh]
+            / sc[idc_owner]
+            / geometry.grid_cell_volume
         )
 
     return tmp
@@ -773,11 +863,8 @@ def solve_flow_transient_semi_implicit(
         # pressure
         rhs = _q_prev.dot(fl_model.lpressure[time_index - 1].flatten(order="F"))
         rhs += sources * tr_model.ldensity[time_index - 1].flatten(order="F") * GRAVITY
-        rhs += (
-            get_gravity_gradient(geometry, fl_model, tr_model, time_index)
-            / fl_model.storage_coefficient.ravel("F")
-            / geometry.grid_cell_volume
-        )
+        rhs += get_gravity_gradient(geometry, fl_model, tr_model, time_index)
+
         # Handle constant head nodes
         rhs[fl_model.cst_head_nn] = fl_model.lpressure[time_index - 1].flatten(
             order="F"

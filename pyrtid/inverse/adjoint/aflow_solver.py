@@ -379,10 +379,7 @@ def get_aflow_matrices(
         else:  # stationary case
             # add the derivative of the stationary flow for initialization
             _q_next = add_adj_stationary_flow_to_q_next(geometry, fl_model, _q_next)
-            if fl_model.is_gravity:
-                diag[fl_model.cst_head_nn] += 1.0 / (GRAVITY * WATER_DENSITY)
-            else:
-                diag[fl_model.cst_head_nn] += 1.0
+            diag[fl_model.cst_head_nn] += 1.0
     else:
         # Add 1/dt for the left term contribution: only for free head
         diag[fl_model.free_head_nn] += float(1.0 / time_params.ldt[time_index - 1])

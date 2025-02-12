@@ -466,10 +466,10 @@ def _get_perm_gradient_from_diffusivity_eq_density(
             axis=0,
             time_index=slice(0, -1),
             is_flatten=False,
-        )[:-1]
+        )[:-1, :]
         tmp = 0.0
         if fwd_model.fl_model.vertical_axis == VerticalAxis.X:
-            tmp = rhomean_x**2 * GRAVITY
+            tmp = GRAVITY * rhomean_x**2
 
         # Forward scheme
         dpressure_fx = (
@@ -510,7 +510,7 @@ def _get_perm_gradient_from_diffusivity_eq_density(
                 ]
                 * fwd_model.geometry.gamma_ij_x
                 / fwd_model.geometry.dx
-                * (apressure[1:, :, :1] - ma_apressure[:-1, :, :1])
+                * (ma_apressure[1:, :, :1] - ma_apressure[:-1, :, :1])
                 / fwd_model.geometry.grid_cell_volume
             )
 
@@ -553,7 +553,7 @@ def _get_perm_gradient_from_diffusivity_eq_density(
                 ]
                 * fwd_model.geometry.gamma_ij_x
                 / fwd_model.geometry.dx
-                * (apressure[:-1, :, :1] - ma_apressure[1:, :, :1])
+                * (ma_apressure[:-1, :, :1] - ma_apressure[1:, :, :1])
                 / fwd_model.geometry.grid_cell_volume
             )
 
@@ -767,9 +767,6 @@ def _get_perm_gradient_from_darcy_eq_density(
 
     time_slice = slice(1, None)
     shape = (fwd_model.geometry.nx, fwd_model.geometry.ny, fwd_model.time_params.nt - 1)
-    if fwd_model.fl_model.regime == FlowRegime.STATIONARY:
-        time_slice = slice(None)
-        shape = (fwd_model.geometry.nx, fwd_model.geometry.ny, fwd_model.time_params.nt)
 
     pressure = fwd_model.fl_model.pressure[:, :, time_slice]
     grad = np.zeros_like(pressure)
@@ -790,11 +787,7 @@ def _get_perm_gradient_from_darcy_eq_density(
             )
 
             # shift
-            if fwd_model.fl_model.regime == FlowRegime.STATIONARY:
-                rho_ij_g_x[:, :, 1:] = rho_ij_g_x[:, :, :-1]
-                rho_ij_g_x[:, :, :1] = rho_ij_g_x[:, :, 1:2]
-            else:
-                rho_ij_g_x = rho_ij_g_x[:, :, :-1]
+            rho_ij_g_x = rho_ij_g_x[:, :, :-1]
         else:
             rho_ij_g_x = 0.0
 
@@ -806,7 +799,7 @@ def _get_perm_gradient_from_darcy_eq_density(
             * dxi_harmonic_mean(permeability[:-1, :], permeability[1:, :])[
                 :, :, np.newaxis
             ]
-            * a_u_darcy_x[:, :]
+            * a_u_darcy_x
         )
 
         # Bconckward scheme
@@ -816,7 +809,7 @@ def _get_perm_gradient_from_darcy_eq_density(
             * dxi_harmonic_mean(permeability[1:, :], permeability[:-1, :])[
                 :, :, np.newaxis
             ]
-            * a_u_darcy_x[:, :]
+            * a_u_darcy_x
         )
 
         # Gather the two schemes
@@ -837,13 +830,8 @@ def _get_perm_gradient_from_darcy_eq_density(
                 )[:, :-1]
                 * GRAVITY
             )
-
             # shift
-            if fwd_model.fl_model.regime == FlowRegime.STATIONARY:
-                rho_ij_g_y[:, :, 1:] = rho_ij_g_y[:, :, :-1]
-                rho_ij_g_y[:, :, :1] = rho_ij_g_y[:, :, 1:2]
-            else:
-                rho_ij_g_y = rho_ij_g_y[:, :, :-1]
+            rho_ij_g_y = rho_ij_g_y[:, :, :-1]
         else:
             rho_ij_g_y = 0.0
 
@@ -854,7 +842,7 @@ def _get_perm_gradient_from_darcy_eq_density(
             * dxi_harmonic_mean(permeability[:, :-1], permeability[:, 1:])[
                 :, :, np.newaxis
             ]
-            * a_u_darcy_y[:, :]
+            * a_u_darcy_y
         )
 
         # Backward scheme
@@ -864,7 +852,7 @@ def _get_perm_gradient_from_darcy_eq_density(
             * dxi_harmonic_mean(permeability[:, 1:], permeability[:, :-1])[
                 :, :, np.newaxis
             ]
-            * a_u_darcy_y[:, :]
+            * a_u_darcy_y
         )
         # Gather the two schemes
         grad += (dpressure_fy + dpressure_by) / GRAVITY / WATER_DENSITY
@@ -1067,9 +1055,7 @@ def get_initial_pressure_adjoint_gradient(
     fl_model = fwd_model.fl_model
 
     # Here we consider that the Dirichlet conditions are not varying
-    grad[fl_model.cst_head_nn] -= np.sum(
-        a_pressure[fl_model.cst_head_nn, 1:], axis=-1
-    ) + a_pressure[fl_model.cst_head_nn, 0] / (GRAVITY * WATER_DENSITY)
+    grad[fl_model.cst_head_nn] -= np.sum(a_pressure[fl_model.cst_head_nn, :], axis=-1)
 
     # Stationary case
     if fl_model.regime != FlowRegime.STATIONARY:
