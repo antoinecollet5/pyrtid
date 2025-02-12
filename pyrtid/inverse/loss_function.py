@@ -90,10 +90,12 @@ def eval_model_loss_function(
 
     Parameters
     ----------
-    fwd_model : ForwardModel
+    model : ForwardModel
         Forward model.
     parameters_to_adjust : AdjustableParameters
-        Adjusted parameters.
+        Sequence of adjusted parameter instances.
+    observables : Observables
+        Sequence of observable instances.
     max_obs_time : Optional[float], optional
         Maximum time for which to consider an observation value, by default None
 

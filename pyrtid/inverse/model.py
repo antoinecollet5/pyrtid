@@ -80,9 +80,9 @@ class InverseModel:
         Parameters
         ----------
         parameters_to_adjust : AdjustableParameters
-            _description_
+            Sequence of adjusted parameter instances.
         observables : Observables
-            _description_
+            Sequence of observable instances.
 
         Raises
         ------
@@ -204,7 +204,16 @@ class InverseModel:
         parameters_to_adjust: AdjustableParameters,
         model: ForwardModel,
     ) -> None:
-        """Set the parameters to adjust during the inversion."""
+        """
+        Set the parameters to adjust during the inversion.
+
+        Parameters
+        ----------
+        parameters_to_adjust : AdjustableParameters
+            Sequence of adjusted parameter instances.
+        model : ForwardModel
+            Forward model.
+        """
         if isinstance(parameters_to_adjust, list):
             self.parameters_to_adjust = parameters_to_adjust
         elif isinstance(parameters_to_adjust, AdjustableParameter):

@@ -33,6 +33,7 @@ from pyrtid.inverse.adjoint.gradients import (
     compute_adjoint_gradient,
     compute_fd_gradient,
     is_adjoint_gradient_correct,
+    is_fsm_jacvec_correct,
 )
 from pyrtid.inverse.loss_function import eval_loss_ls
 from pyrtid.inverse.model import InverseModel
@@ -1057,3 +1058,139 @@ class AdjointInversionExecutor(BaseInversionExecutor, Generic[_AdjointSolverConf
         self._check_nans_in_predictions(d_pred, run_n)
 
         return losses_array, d_pred, gradients
+
+
+@register_params_ds(base_solver_config_params_ds)
+@dataclass
+class FSMSolverConfig(BaseSolverConfig):
+    r"""
+    Configuration for solvers using the adjoint state model to compute the gradient.
+
+    Note
+    ----
+    This configuration is strictly identical to the one implemented with Scipy. The
+    only difference is that there is not solver name to provide.
+
+    Parameters
+    ----------
+    """
+
+    is_check_jacvec: bool = False
+    is_use_fsm: bool = True
+
+
+_FSMSolverConfig = TypeVar("_FSMSolverConfig", bound=FSMSolverConfig)
+
+
+class FSMInversionExecutor(BaseInversionExecutor, Generic[_FSMSolverConfig]):
+    """Represent a inversion executor instance using the L-BFGS-B from PyRTID."""
+
+    def _init_solver(self, s_init: NDArrayFloat) -> None:
+        """Careful, s_init is supposed to be preconditioned."""
+        super()._init_solver(s_init)
+
+        if self.solver_config.is_use_fsm:
+            # self._init_fsm_model()
+            # register_params_ds()
+            pass
+
+    def is_fsm_jacobian_correct(
+        self,
+        eps: Optional[float] = None,
+        accuracy: int = 0,
+        max_workers: int = 1,
+        is_verbose: bool = False,
+    ) -> bool:
+        """
+        Return whether the adjoint gradient is correct or not.
+
+        Note
+        ----
+        The numerical gradient by finite difference is computed only on the
+        optimized area (sliced parameter values) while the adjoint gradient is
+        computed everywhere. This allows to check the gradient on small portions
+        of big models.
+
+        Parameters
+        ----------
+        vecs: NDArrayFloat
+            Ensemble of vectors to multiply with the Jacobian matrix.
+            It must have shape ($N_s \times N_e$), $N_s$ being the number of values
+            optimized and $N_e$ the number of vectors.
+        eps: float, optional
+            The epsilon for the computation of the approximated gradient by finite
+            difference. If None, it is automatically inferred. The default is None.
+        accuracy : int, optional
+            Number of points to use for the finite difference approximation.
+            Possible values are 0 (2 points), 1 (4 points), 2 (6 points),
+            3 (8 points). The default is 0 which corresponds to the central
+            difference scheme (2 points).
+        max_workers: int
+            Number of workers used for the gradient approximation by finite
+            differences. If different from one, the calculation relies on
+            multi-processing to decrease the computation time. The default is 1.
+        is_verbose : bool, optional
+            Whether to display computation infrmation, by default False
+        """
+        return is_fsm_jacvec_correct(
+            self.fwd_model,
+            self.inv_model.parameters_to_adjust,
+            self.inv_model.observables,
+            np.eye(N=self.data_model.s_dim),  # identity matrix
+            eps=eps,
+            accuracy=accuracy,
+            max_workers=max_workers,
+            hm_end_time=self.solver_config.hm_end_time,
+            is_verbose=is_verbose,
+        )
+
+    def is_fsm_jacvec_correct(
+        self,
+        vecs: NDArrayFloat,
+        eps: Optional[float] = None,
+        accuracy: int = 0,
+        max_workers: int = 1,
+        is_verbose: bool = False,
+    ) -> bool:
+        """
+        Return whether the adjoint gradient is correct or not.
+
+        Note
+        ----
+        The numerical gradient by finite difference is computed only on the
+        optimized area (sliced parameter values) while the adjoint gradient is
+        computed everywhere. This allows to check the gradient on small portions
+        of big models.
+
+        Parameters
+        ----------
+        vecs: NDArrayFloat
+            Ensemble of vectors to multiply with the Jacobian matrix.
+            It must have shape ($N_s \times N_e$), $N_s$ being the number of values
+            optimized and $N_e$ the number of vectors.
+        eps: float, optional
+            The epsilon for the computation of the approximated gradient by finite
+            difference. If None, it is automatically inferred. The default is None.
+        accuracy : int, optional
+            Number of points to use for the finite difference approximation.
+            Possible values are 0 (2 points), 1 (4 points), 2 (6 points),
+            3 (8 points). The default is 0 which corresponds to the central
+            difference scheme (2 points).
+        max_workers: int
+            Number of workers used for the gradient approximation by finite
+            differences. If different from one, the calculation relies on
+            multi-processing to decrease the computation time. The default is 1.
+        is_verbose : bool, optional
+            Whether to display computation infrmation, by default False
+        """
+        return is_fsm_jacvec_correct(
+            self.fwd_model,
+            self.inv_model.parameters_to_adjust,
+            self.inv_model.observables,
+            vecs,
+            eps=eps,
+            accuracy=accuracy,
+            max_workers=max_workers,
+            hm_end_time=self.solver_config.hm_end_time,
+            is_verbose=is_verbose,
+        )

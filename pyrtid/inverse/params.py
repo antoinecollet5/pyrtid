@@ -94,13 +94,23 @@ class AdjustableParameter:
     filters : List[Filter]
         List of filters to apply to the gradient.
     grad_adj_history: List[NDArrayFloat]
-        List of successive adjoint gradients (w.r.t preconditioned parameters)
+        List of successive adjoint gradients (w.r.t preconditioned parameter values)
         computed while optimizing.
     grad_adj_raw_history: List[NDArrayFloat]
-        List of successive adjoint gradients (w.r.t non-preconditioned (raw) parameters)
-        computed while optimizing.
+        List of successive adjoint gradients (w.r.t non-preconditioned (raw) parameter
+        values) computed while optimizing.
     grad_fd_history: List[NDArrayFloat]
         List of successive finite difference gradients computed while optimizing.
+    jacvec_fsm_history: List[NDArrayFloat]
+        List of successive jacobian dot vectors obtained with the forward sensitivity
+        method (w.r.t preconditioned parameter values) computed while optimizing.
+    jacvec_fsm_raw_history: List[NDArrayFloat]
+        List of successive jacobian dot vectors obtained with the forward sensitivity
+        method (w.r.t non-preconditioned (raw) parameter values) computed while
+        optimizing.
+    jacvec_fd_history: List[NDArrayFloat]
+        List of successive finite difference jacobian dot vectors computed
+        while optimizing.
     sp: Optional[int]
         Index of the species.
     reg_weight: float
@@ -126,6 +136,9 @@ class AdjustableParameter:
         "grad_adj_history",
         "grad_adj_raw_history",
         "grad_fd_history",
+        "jacvec_fsm_history",
+        "jacvec_fsm_raw_history",
+        "jacvec_fd_history",
         "reg_weight_update_strategy",
         "reg_weight_history",
         "loss_reg_history",
@@ -231,6 +244,9 @@ class AdjustableParameter:
         self.grad_adj_history: List[NDArrayFloat] = []  # preconditioned
         self.grad_adj_raw_history: List[NDArrayFloat] = []  # non-preconditioned
         self.grad_fd_history: List[NDArrayFloat] = []
+        self.jacvec_fsm_history: List[NDArrayFloat] = []  # preconditioned
+        self.jacvec_fsm_raw_history: List[NDArrayFloat] = []  # non-preconditioned
+        self.jacvec_fd_history: List[NDArrayFloat] = []
         self.reg_weight_history: List[float] = []
         self.loss_reg_history: List[float] = []
 
@@ -585,7 +601,16 @@ def update_parameters_from_model(
     model: ForwardModel,
     parameters_to_adjust: AdjustableParameters,
 ) -> None:
-    """Update adjusted parameters from model."""
+    """
+    Update adjusted parameters from model.
+
+    Parameters
+    ----------
+    model: ForwardModel
+        The forward model instance.
+    parameters_to_adjust : AdjustableParameters
+        Sequence of adjusted parameter instances.
+    """
     for param in object_or_object_sequence_to_list(parameters_to_adjust):
         # check if the values are empty
         if param.values.size == 0:

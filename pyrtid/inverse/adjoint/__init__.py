@@ -130,6 +130,7 @@ from pyrtid.inverse.adjoint.gradients import (
     get_porosity_adjoint_gradient,
     is_adjoint_gradient_correct,
 )
+from pyrtid.inverse.adjoint.sensitivity import ForwardSensitivitySolver
 
 __all__ = [
     "AdjointSolver",
@@ -150,4 +151,5 @@ __all__ = [
     "get_permeability_adjoint_gradient",
     "get_porosity_adjoint_gradient",
     "is_adjoint_gradient_correct",
+    "ForwardSensitivitySolver",
 ]
