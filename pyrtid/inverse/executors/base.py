@@ -35,6 +35,7 @@ from pyrtid.inverse.adjoint.gradients import (
     is_adjoint_gradient_correct,
     is_fsm_jacvec_correct,
 )
+from pyrtid.inverse.adjoint.sensitivity import ForwardSensitivitySolver
 from pyrtid.inverse.loss_function import eval_loss_ls
 from pyrtid.inverse.model import InverseModel
 from pyrtid.inverse.obs import (
@@ -210,7 +211,7 @@ class DataModel:
 
 class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
     """
-    Base class Executor for automated inversion.
+    Base class Executor for assisted inversion.
 
     This is an abstract class.
     """
@@ -724,11 +725,6 @@ class AdjointSolverConfig(BaseSolverConfig):
     r"""
     Configuration for solvers using the adjoint state model to compute the gradient.
 
-    Note
-    ----
-    This configuration is strictly identical to the one implemented with Scipy. The
-    only difference is that there is not solver name to provide.
-
     Parameters
     ----------
     """
@@ -746,11 +742,11 @@ _AdjointSolverConfig = TypeVar("_AdjointSolverConfig", bound=AdjointSolverConfig
 
 
 class AdjointInversionExecutor(BaseInversionExecutor, Generic[_AdjointSolverConfig]):
-    """Represent a inversion executor instance using the L-BFGS-B from PyRTID."""
+    """Represent a inversion executor instance using the adjoint state from PyRTID."""
 
     def _init_solver(self, s_init: NDArrayFloat) -> None:
         """Careful, s_init is supposed to be preconditioned."""
-        super()._init_solver(s_init)
+        # super()._init_solver(s_init)
 
         # Create an adjoint model only if needed
         self.adj_model = None
@@ -1060,16 +1056,22 @@ class AdjointInversionExecutor(BaseInversionExecutor, Generic[_AdjointSolverConf
         return losses_array, d_pred, gradients
 
 
+fsm_solver_config_params_ds = """is_check_jacvec: bool
+        Whether the products between the jacobian and the rhs vectors computed by the
+        FSM are checked by finite difference. The default is False.
+    is_use_fsm: bool
+        Whether to use the the FSM for the jacobian dot products with the rhs vectors.
+        The default is True.
+
+        """
+
+
+@register_params_ds(fsm_solver_config_params_ds)
 @register_params_ds(base_solver_config_params_ds)
 @dataclass
 class FSMSolverConfig(BaseSolverConfig):
     r"""
-    Configuration for solvers using the adjoint state model to compute the gradient.
-
-    Note
-    ----
-    This configuration is strictly identical to the one implemented with Scipy. The
-    only difference is that there is not solver name to provide.
+    Configuration for solvers using the forward sensitivity method.
 
     Parameters
     ----------
@@ -1083,16 +1085,82 @@ _FSMSolverConfig = TypeVar("_FSMSolverConfig", bound=FSMSolverConfig)
 
 
 class FSMInversionExecutor(BaseInversionExecutor, Generic[_FSMSolverConfig]):
-    """Represent a inversion executor instance using the L-BFGS-B from PyRTID."""
+    """Represent a inversion executor instance using the Forward Sensitivity Method."""
 
-    def _init_solver(self, s_init: NDArrayFloat) -> None:
-        """Careful, s_init is supposed to be preconditioned."""
-        super()._init_solver(s_init)
+    def run_fsm(
+        self,
+        s_cond: NDArrayFloat,
+        vecs: NDArrayFloat,
+        run_n: int,
+        is_save_state: bool = True,
+        is_verbose: bool = False,
+    ) -> Tuple[NDArrayFloat, NDArrayFloat]:
+        """
+        Run the forward model and returns the prediction vector.
 
-        if self.solver_config.is_use_fsm:
-            # self._init_fsm_model()
-            # register_params_ds()
-            pass
+        Parameters
+        ----------
+        s_cond : np.array
+            Conditioned parameter values as a 1D vector.
+        vecs: NDArrayFloat
+            Ensemble of vectors to multiply with the Jacobian matrix.
+            It must have shape ($N_s \times N_e$), $N_s$ being the number of values
+            optimized and $N_e$ the number of vectors.
+        run_n: int
+            Run number.
+        is_save_state: bool
+            Whether the parameter values must be stored or not.
+            The default is True.
+        is_verbose: bool
+            Whether to display info. The default is False.
+
+        Returns
+        -------
+        d_pred: np.array
+            Vector of results matching the observations.
+        jacvecs: np.array
+            Products between the Jacobian matrix ($N_{obs} \times N_s$) and the
+            ensemble of vectors vecs.
+
+        """
+        logging.info("- Running the FSM # %s", run_n)
+
+        # Assert that the size of vecs is correct
+        assert vecs.shape[0] == self.data_model.s_dim
+
+        # Update the model with the new values of x (preconditioned)
+        update_model_with_parameters_values(
+            self.fwd_model,
+            s_cond,
+            self.inv_model.parameters_to_adjust,
+            is_preconditioned=True,
+            is_to_save=is_save_state,  # This is not finite differences
+        )
+
+        # Apply user transformation is needed:
+        if self.pre_run_transformation is not None:
+            self.pre_run_transformation(self.fwd_model)
+
+        # Solve the forward model with the new parameters and evaluate on the fly
+        # the product between the Jacobian matrix (N_obs, N_s) and the given vectors.
+        d_pred, jacvecs = ForwardSensitivitySolver(self.fwd_model).solve(
+            observables=self.inv_model.observables,
+            vecs=vecs,
+            hm_end_time=self.solver_config.hm_end_time,
+            is_verbose=is_verbose or self.solver_config.is_fwd_verbose,
+        )
+
+        # Save the predictions
+        if is_save_state:
+            self.inv_model.list_d_pred.append(d_pred)
+
+        self._check_nans_in_predictions(d_pred, run_n)
+
+        # Read the results at the observation well
+        # Update the prediction vector for the parameters m(j)
+        logging.info("- FSM run # %s over", run_n)
+
+        return d_pred, jacvecs
 
     def is_fsm_jacobian_correct(
         self,
@@ -1132,15 +1200,11 @@ class FSMInversionExecutor(BaseInversionExecutor, Generic[_FSMSolverConfig]):
         is_verbose : bool, optional
             Whether to display computation infrmation, by default False
         """
-        return is_fsm_jacvec_correct(
-            self.fwd_model,
-            self.inv_model.parameters_to_adjust,
-            self.inv_model.observables,
+        return self.is_fsm_jacvec_correct(
             np.eye(N=self.data_model.s_dim),  # identity matrix
             eps=eps,
             accuracy=accuracy,
             max_workers=max_workers,
-            hm_end_time=self.solver_config.hm_end_time,
             is_verbose=is_verbose,
         )
 
@@ -1183,6 +1247,9 @@ class FSMInversionExecutor(BaseInversionExecutor, Generic[_FSMSolverConfig]):
         is_verbose : bool, optional
             Whether to display computation infrmation, by default False
         """
+        # Assert that the size of vecs is correct
+        assert vecs.shape[0] == self.data_model.s_dim
+
         return is_fsm_jacvec_correct(
             self.fwd_model,
             self.inv_model.parameters_to_adjust,

@@ -56,9 +56,10 @@ from dataclasses import astuple, dataclass
 from typing import Callable, Optional, Tuple, Union
 
 from pyrtid.inverse.executors.base import (
-    BaseInversionExecutor,
-    BaseSolverConfig,
+    FSMInversionExecutor,
+    FSMSolverConfig,
     base_solver_config_params_ds,
+    fsm_solver_config_params_ds,
     register_params_ds,
 )
 from pyrtid.inverse.params import update_model_with_parameters_values
@@ -73,9 +74,10 @@ pcga_solver_config_params_ds = (
 
 
 @register_params_ds(pcga_solver_config_params_ds)
+@register_params_ds(fsm_solver_config_params_ds)
 @register_params_ds(base_solver_config_params_ds)
 @dataclass
-class PCGASolverConfig(BaseSolverConfig):
+class PCGASolverConfig(FSMSolverConfig):
     """
     Principal Component Geostatistical Approach Inversion Configuration.
 
@@ -109,7 +111,7 @@ class PCGASolverConfig(BaseSolverConfig):
         return iter(astuple(self))
 
 
-class PCGAInversionExecutor(BaseInversionExecutor[PCGASolverConfig]):
+class PCGAInversionExecutor(FSMInversionExecutor[PCGASolverConfig]):
     """Principal Component Geostatistical Approach Inversion Executor."""
 
     def _init_solver(self, s_init: Optional[NDArrayFloat] = None) -> None:

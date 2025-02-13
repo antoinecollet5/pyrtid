@@ -30,9 +30,10 @@ from pyesmda import ESMDA, ESMDA_DMC, ESMDA_RS, ESMDAInversionType
 from pyesmda.localization import LocalizationStrategy, NoLocalization
 
 from pyrtid.inverse.executors.base import (
-    BaseInversionExecutor,
-    BaseSolverConfig,
+    FSMInversionExecutor,
+    FSMSolverConfig,
     base_solver_config_params_ds,
+    fsm_solver_config_params_ds,
     register_params_ds,
 )
 from pyrtid.inverse.params import (
@@ -104,9 +105,10 @@ esmda_solver_config_params_ds_common = r"""inversion_type: ESMDAInversionType
 
 @register_params_ds(esmda_solver_config_params_ds_common)
 @register_params_ds(esmda_base_solver_config_params_ds)
+@register_params_ds(fsm_solver_config_params_ds)
 @register_params_ds(base_solver_config_params_ds)
 @dataclass
-class ESMDASolverConfig(BaseSolverConfig):
+class ESMDASolverConfig(FSMSolverConfig):
     r"""
     Ensemble Smoother with Multiple Data Assimilation Inversion Configuration.
 
@@ -128,7 +130,7 @@ class ESMDASolverConfig(BaseSolverConfig):
     logger: Optional[logging.Logger] = logging.getLogger("ESMDA")
 
 
-class ESMDAInversionExecutor(BaseInversionExecutor[ESMDASolverConfig]):
+class ESMDAInversionExecutor(FSMInversionExecutor[ESMDASolverConfig]):
     """Ensemble Smoother with Multiple Data Assimilation Inversion Executor."""
 
     def _init_solver(self, s_init: NDArrayFloat) -> None:
@@ -205,7 +207,7 @@ esmda_rs_solver_config_params_ds = r"""std_s_prior: Optional[npt.NDArray[np.floa
 @register_params_ds(esmda_rs_solver_config_params_ds)
 @register_params_ds(base_solver_config_params_ds)
 @dataclass
-class ESMDARSSolverConfig(BaseSolverConfig):
+class ESMDARSSolverConfig(FSMSolverConfig):
     r"""
     Restricted Step Ensemble Smoother with Multiple Data Assimilation Configuration.
 
@@ -230,7 +232,7 @@ class ESMDARSSolverConfig(BaseSolverConfig):
     logger: Optional[logging.Logger] = logging.getLogger("ESMDA-RS")
 
 
-class ESMDARSInversionExecutor(BaseInversionExecutor[ESMDARSSolverConfig]):
+class ESMDARSInversionExecutor(FSMInversionExecutor[ESMDARSSolverConfig]):
     """Restricted Step Ensemble Smoother with Multiple Data Assimilation Executor."""
 
     def _init_solver(self, s_init: NDArrayFloat) -> None:
@@ -292,7 +294,7 @@ class ESMDARSInversionExecutor(BaseInversionExecutor[ESMDARSSolverConfig]):
 @register_params_ds(esmda_solver_config_params_ds_common)
 @register_params_ds(base_solver_config_params_ds)
 @dataclass
-class ESMDADMCSolverConfig(BaseSolverConfig):
+class ESMDADMCSolverConfig(FSMSolverConfig):
     r"""
     Data Misfit Controller Ensemble Smoother with Multiple Data Assimilation Config.
 
@@ -316,7 +318,7 @@ class ESMDADMCSolverConfig(BaseSolverConfig):
     logger: Optional[logging.Logger] = logging.getLogger("ESMDA-DMC")
 
 
-class ESMDADMCInversionExecutor(BaseInversionExecutor[ESMDADMCSolverConfig]):
+class ESMDADMCInversionExecutor(FSMInversionExecutor[ESMDADMCSolverConfig]):
     """Data Misfit Controller ESMDA Executor."""
 
     def _init_solver(self, s_init: NDArrayFloat) -> None:

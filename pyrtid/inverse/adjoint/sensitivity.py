@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import Optional, Tuple
 
 import numpy as np
 
@@ -15,17 +15,18 @@ from pyrtid.forward.flow_solver import (
     solve_flow_transient_semi_implicit,
 )
 from pyrtid.forward.geochem_solver import solve_geochem
-from pyrtid.forward.models import (
-    FlowRegime,
-    ForwardModel,
-)
+from pyrtid.forward.models import FlowRegime, ForwardModel
 from pyrtid.forward.solver import (
     ForwardSolver,
     get_density,
     get_max_coupling_error_forward,
 )
 from pyrtid.forward.transport_solver import solve_transport_semi_implicit
-from pyrtid.inverse.obs import Observables, get_observables_values_as_1d_vector
+from pyrtid.inverse.obs import (
+    Observables,
+    get_observables_values_as_1d_vector,
+    get_predictions_matching_observations,
+)
 from pyrtid.utils import NDArrayFloat
 
 
@@ -59,10 +60,10 @@ class ForwardSensitivitySolver:
     def solve(
         self,
         observables: Observables,
-        jac_prod_rhs: NDArrayFloat,
+        vecs: NDArrayFloat,
         hm_end_time: Optional[float] = None,
         is_verbose: bool = False,
-    ) -> NDArrayFloat:
+    ) -> Tuple[NDArrayFloat, NDArrayFloat]:
         """
         Solve the forward problem and apply the forward sensitivity method.
 
@@ -70,7 +71,7 @@ class ForwardSensitivitySolver:
         ----------
         observables:
 
-        jac_prod_rhs: NDArrayFloat
+        vecs: NDArrayFloat
             Vectors to multiply with the Jacobian matrix, i.e., derivatives of the
             simulated values matching the observations with respect to the parameters
             of interest.
@@ -88,13 +89,16 @@ class ForwardSensitivitySolver:
         # Reinit all
         self.model.reinit()
 
+        # number of observations
+        n_obs = get_observables_values_as_1d_vector(observables, hm_end_time).size
+        # number of adjusted values and number of rhs vectors to be multiplied with the
+        # Jacobian matrix.
+        ns, ne = vecs.shape
+
         # Array in which the Ne products with the Jacobian matrix are stored.
         # This matrix has shape (N_obs, Ne)
-        jac_prod: NDArrayFloat = np.zeros(
-            (
-                get_observables_values_as_1d_vector(observables, hm_end_time).size,
-                jac_prod_rhs.shape[0],
-            ),
+        jacvecs: NDArrayFloat = np.zeros(
+            (n_obs, ne),
         )
 
         # If stationary -> equilibrate the initial heads with sources
@@ -158,7 +162,12 @@ class ForwardSensitivitySolver:
             )
             self._solve_system_for_timestep(time_index, is_verbose)
 
-        return jac_prod
+        # get the predictions
+        d_pred = get_predictions_matching_observations(
+            self.model, observables, hm_end_time
+        )
+
+        return d_pred, jacvecs
 
     def _solve_system_for_timestep(
         self, time_index: int, is_verbose: bool = False
