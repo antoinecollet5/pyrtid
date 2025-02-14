@@ -479,18 +479,19 @@ def solve_adj_transport_transient_semi_implicit(
         a_tr_model.q_next = q_next
         a_tr_model.q_prev = q_prev
 
-        # TODO: make optional
-        a_tr_model.l_q_next.append(q_next)
-        a_tr_model.l_q_prev.append(q_prev)
+        if tr_model.is_save_spmats:
+            a_tr_model.l_q_next.append(q_next)
+            a_tr_model.l_q_prev.append(q_prev)
 
-        if time_index != time_params.nts:
-            # q_prev (aka matrice B in the rhs) does not exists for the max timestep
-            assert_allclose_sparse(q_prev, tr_model.l_q_prev[time_index].T, rtol=1e-10)
-        if time_index != 0:
-            assert_allclose_sparse(
-                q_next, tr_model.l_q_next[time_index - 1].T, rtol=1e-10
-            )
-
+            if time_index != time_params.nts:
+                # q_prev (aka matrice B in the rhs) does not exists for the max timestep
+                assert_allclose_sparse(
+                    q_prev, tr_model.l_q_prev[time_index].T, rtol=1e-10
+                )
+            if time_index != 0:
+                assert_allclose_sparse(
+                    q_next, tr_model.l_q_next[time_index - 1].T, rtol=1e-10
+                )
     else:
         q_next = a_tr_model.q_next
         q_prev = a_tr_model.q_prev

@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import warnings
-from typing import Tuple, Union
+from typing import Optional, Tuple, Union
 
 import numpy as np
 from scipy.sparse import lil_array
-from scipy.sparse.linalg import gmres
+from scipy.sparse.linalg import LinearOperator, SuperLU, gmres
 
 from pyrtid.forward.models import (
     GRAVITY,
@@ -395,14 +395,20 @@ def solve_flow_stationary(
             fl_model.cst_head_nn
         ]
 
-    # TODO: make optional
-    fl_model.l_q_next.append(fl_model.q_next)
-    fl_model.l_q_prev.append(fl_model.q_prev)
+    # only useful to store for dev and to check the adjoint state correctness
+    if fl_model.is_save_spmats:
+        fl_model.l_q_next.append(fl_model.q_next)
+        fl_model.l_q_prev.append(fl_model.q_prev)
 
     # LU preconditioner
     super_ilu, preconditioner = get_super_ilu_preconditioner(
         fl_model.q_next.tocsc(), drop_tol=1e-10, fill_factor=100
     )
+
+    # only useful when using the FSM
+    if fl_model.is_save_spilu:
+        fl_model.super_ilu = super_ilu
+        fl_model.preconditioner = preconditioner
 
     if super_ilu is None:
         warnings.warn(
@@ -410,20 +416,8 @@ def solve_flow_stationary(
         )
 
     # Solve Ax = b with A sparse using LU preconditioner
-    callback = Callback()
-    res, exit_code = gmres(
-        fl_model.q_next.tocsc(),
-        rhs,
-        x0=super_ilu.solve(rhs) if super_ilu is not None else None,
-        M=preconditioner,
-        maxiter=1000,
-        restart=20,
-        rtol=fl_model.rtol,
-        callback=callback,
-        callback_type="legacy",
-    )
-    # TODO = display
-    # log ... (f"Number of it for gmres {callback.itercount()}")
+    res, exit_code = solve_fl_gmres(fl_model, rhs, super_ilu, preconditioner)
+
     # Here we don't append but we overwrite the already existing head for t0.
     if fl_model.is_gravity:
         fl_model.lpressure[0] = res.reshape(geometry.ny, geometry.nx).T
@@ -816,37 +810,45 @@ def solve_flow_transient_semi_implicit(
         # If the gravity is involved, then the updated density must be used and
         # consequently, the matrix must be updated
         # time_index = 1 => first time the matrix is built
-        _q_next, _q_prev = make_transient_flow_matrices(
+        fl_model.q_next, fl_model.q_prev = make_transient_flow_matrices(
             geometry, fl_model, tr_model, time_index
         )
-        fl_model.q_next = _q_next.copy()
-        fl_model.q_prev = _q_prev.copy()
+        if not fl_model.is_gravity:  # store for the saturated case only
+            fl_model.q_next_no_dt = fl_model.q_next.copy()
+            fl_model.q_prev_no_dt = fl_model.q_prev.copy()
     else:
         # Otherwise it does not vary
-        _q_next = fl_model.q_next.copy()
-        _q_prev = fl_model.q_prev.copy()
+        fl_model.q_next = fl_model.q_next_no_dt.copy()
+        fl_model.q_prev = fl_model.q_prev_no_dt.copy()
 
     # Add 1/dt for the left term contribution (note: the timestep is variable)
     # Only for free head
-    _q_next.setdiag(_q_next.diagonal() + 1 / time_params.dt)
-    _q_prev.setdiag(_q_prev.diagonal() + 1 / time_params.dt)
+    fl_model.q_next.setdiag(fl_model.q_next.diagonal() + 1 / time_params.dt)
+    fl_model.q_prev.setdiag(fl_model.q_prev.diagonal() + 1 / time_params.dt)
 
     # Take constant head into account
-    _q_next[fl_model.cst_head_nn, fl_model.cst_head_nn] = 1.0
-    _q_prev[fl_model.cst_head_nn, fl_model.cst_head_nn] = 0.0
+    fl_model.q_next[fl_model.cst_head_nn, fl_model.cst_head_nn] = 1.0
+    fl_model.q_prev[fl_model.cst_head_nn, fl_model.cst_head_nn] = 0.0
 
     # csc format for efficiency
-    _q_next = _q_next.tocsc()
-    _q_prev = _q_prev.tocsc()
+    fl_model.q_next = fl_model.q_next.tocsc()
+    fl_model.q_prev = fl_model.q_prev.tocsc()
 
-    # TODO: make optional
-    fl_model.l_q_next.append(_q_next)
-    fl_model.l_q_prev.append(_q_prev)
+    # only useful to store for dev and to check the adjoint state correctness
+    if fl_model.is_save_spmats:
+        fl_model.l_q_next.append(fl_model.q_next)
+        fl_model.l_q_prev.append(fl_model.q_prev)
 
-    # Get LU preconditioner
+    # LU preconditioner
     super_ilu, preconditioner = get_super_ilu_preconditioner(
-        _q_next, drop_tol=1e-10, fill_factor=100
+        fl_model.q_next.tocsc(), drop_tol=1e-10, fill_factor=100
     )
+
+    # only useful when using the FSM
+    if fl_model.is_save_spilu:
+        fl_model.super_ilu = super_ilu
+        fl_model.preconditioner = preconditioner
+
     if super_ilu is None:
         warnings.warn(
             f"SuperILU: q_next is singular in transient flow at it={time_index}!"
@@ -861,7 +863,7 @@ def solve_flow_transient_semi_implicit(
     # Add the density effect if needed
     if fl_model.is_gravity:
         # pressure
-        rhs = _q_prev.dot(fl_model.lpressure[time_index - 1].flatten(order="F"))
+        rhs = fl_model.q_prev.dot(fl_model.lpressure[time_index - 1].flatten(order="F"))
         rhs += sources * tr_model.ldensity[time_index - 1].flatten(order="F") * GRAVITY
         rhs += get_gravity_gradient(geometry, fl_model, tr_model, time_index)
 
@@ -871,28 +873,14 @@ def solve_flow_transient_semi_implicit(
         )[fl_model.cst_head_nn]
     else:
         # head
-        rhs = _q_prev.dot(fl_model.lhead[time_index - 1].flatten(order="F"))
+        rhs = fl_model.q_prev.dot(fl_model.lhead[time_index - 1].flatten(order="F"))
         rhs += sources
         # Handle constant head nodes
         rhs[fl_model.cst_head_nn] = fl_model.lhead[time_index - 1].flatten(order="F")[
             fl_model.cst_head_nn
         ]
 
-    # Solve Ax = b with A sparse using LU preconditioner
-    callback = Callback()
-    res, exit_code = gmres(
-        _q_next,
-        rhs,
-        x0=super_ilu.solve(rhs) if super_ilu is not None else None,
-        M=preconditioner,
-        rtol=fl_model.rtol,
-        maxiter=1000,
-        restart=20,
-        callback=callback,
-        callback_type="legacy",
-    )
-    # TODO = display
-    # log...(f"Number of it for gmres {callback.itercount()}")
+    res, exit_code = solve_fl_gmres(fl_model, rhs, super_ilu, preconditioner)
 
     if fl_model.is_gravity:
         fl_model.lpressure.append(res.reshape(geometry.nx, geometry.ny, order="F"))
@@ -916,3 +904,27 @@ def solve_flow_transient_semi_implicit(
     compute_u_darcy_div(fl_model, geometry, time_index)
 
     return exit_code
+
+
+def solve_fl_gmres(
+    fl_model: FlowModel,
+    rhs: NDArrayFloat,
+    super_ilu: Optional[SuperLU] = None,
+    preconditioner: Optional[LinearOperator] = None,
+) -> Tuple[NDArrayFloat, int]:
+    # Solve Ax = b with A sparse using LU preconditioner
+    callback = Callback()
+    res, exit_code = gmres(
+        fl_model.q_next,
+        rhs,
+        x0=super_ilu.solve(rhs) if super_ilu is not None else None,
+        M=preconditioner,
+        rtol=fl_model.rtol,
+        maxiter=1000,
+        restart=20,
+        callback=callback,
+        callback_type="legacy",
+    )
+    # TODO = display
+    # log...(f"Number of it for gmres {callback.itercount()}")
+    return res, exit_code

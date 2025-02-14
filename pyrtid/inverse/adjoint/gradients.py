@@ -1326,6 +1326,9 @@ def compute_fd_gradient(
     """
     _model = copy.deepcopy(model)
 
+    # clean the model to remove non pickeable objects
+    _model.reinit()
+
     grad = np.array([], dtype=np.float64)
     for param in object_or_object_sequence_to_list(parameters_to_adjust):
         # FD approximation -> only on the adjusted values. This is convenient to

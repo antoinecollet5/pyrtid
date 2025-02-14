@@ -65,13 +65,11 @@ class ForwardSolver:
         # The model needs to be copied
         self.model: ForwardModel = model
 
-    def solve(self, is_verbose: bool = False) -> None:
-        """Solve the forward problem.
+    def initialize(self) -> None:
+        """
+        Initialize the system (t=0).
 
-        Parameters
-        ----------
-        is_verbose: bool
-            Whether to display info. The default is False.
+        It includes the stationary flow resolution.
         """
         # Reinit all
         self.model.reinit()
@@ -116,9 +114,22 @@ class ForwardSolver:
             # Add the stiffness matrices A and B so that indices match between
             # the forward and the adjoint. This is for development purposes.
             ngc = self.model.geometry.n_grid_cells
-            self.model.fl_model.l_q_next.append(sp.sparse.identity(ngc))
-            self.model.fl_model.l_q_prev.append(sp.sparse.lil_array((ngc, ngc)))
 
+            # only useful for devs or to check the adjoint state correctness
+            if self.model.fl_model.is_save_spmats:
+                self.model.fl_model.l_q_next.append(sp.sparse.identity(ngc))
+                self.model.fl_model.l_q_prev.append(sp.sparse.lil_array((ngc, ngc)))
+
+    def solve(self, is_verbose: bool = False) -> None:
+        """Solve the forward problem.
+
+        Parameters
+        ----------
+        is_verbose: bool
+            Whether to display info. The default is False.
+        """
+
+        self.initialize()
         time_index = 0  # iteration on time
 
         # Sequential iterative approach with operator splitting

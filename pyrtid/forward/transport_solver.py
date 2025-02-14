@@ -485,12 +485,26 @@ def solve_transport_semi_implicit(
         tr_model.q_next = q_next
         tr_model.q_prev = q_prev
 
-        # TODO: make optional
-        tr_model.l_q_next.append(q_next)
-        tr_model.l_q_prev.append(q_prev)
+        if tr_model.is_save_spmats:
+            tr_model.l_q_next.append(q_next)
+            tr_model.l_q_prev.append(q_prev)
+
+        # Build the LU preconditioning -> to do only once.
+        super_ilu, preconditioner = get_super_ilu_preconditioner(
+            q_next.tocsc(), drop_tol=1e-10, fill_factor=100
+        )
+        tr_model.super_ilu = super_ilu
+        tr_model.preconditioner = preconditioner
+
+        if super_ilu is None:
+            warnings.warn(
+                f"SuperILU: q_next is singular in transport at it={time_index}!"
+            )
     else:
         q_next = tr_model.q_next
         q_prev = tr_model.q_prev
+        super_ilu = tr_model.super_ilu
+        preconditioner = tr_model.preconditioner
 
     # Multiply prev matrix by prev vector
     tmp = tr_model.q_prev.dot(
@@ -519,13 +533,6 @@ def solve_transport_semi_implicit(
     ) + (1.0 - tr_model.crank_nicolson_advection) * conc_sources_old.reshape(
         2, -1, order="F"
     )
-
-    # Build the LU preconditioning
-    super_ilu, preconditioner = get_super_ilu_preconditioner(
-        q_next.tocsc(), drop_tol=1e-10, fill_factor=100
-    )
-    if super_ilu is None:
-        warnings.warn(f"SuperILU: q_next is singular in transport at it={time_index}!")
 
     # Solve Ax = b with A sparse using LU preconditioner
     for sp in range(tmp.shape[0]):

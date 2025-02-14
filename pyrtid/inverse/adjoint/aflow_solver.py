@@ -396,14 +396,16 @@ def get_aflow_matrices(
 
     _q_prev.setdiag(_q_prev.diagonal() + diag)
 
-    # TODO: make optional
-    a_fl_model.l_q_next.append(_q_next)
-    a_fl_model.l_q_prev.append(_q_prev)
+    if fl_model.is_save_spmats:
+        a_fl_model.l_q_next.append(_q_next)
+        a_fl_model.l_q_prev.append(_q_prev)
 
-    if time_index != time_params.nts:
-        # q_prev (aka matrice B in the rhs) does not exists for the max timestep
-        assert_allclose_sparse(_q_prev, fl_model.l_q_prev[time_index + 1].T, rtol=1e-8)
-    assert_allclose_sparse(_q_next, fl_model.l_q_next[time_index].T, rtol=1e-8)
+        if time_index != time_params.nts:
+            # q_prev (aka matrice B in the rhs) does not exists for the max timestep
+            assert_allclose_sparse(
+                _q_prev, fl_model.l_q_prev[time_index + 1].T, rtol=1e-8
+            )
+        assert_allclose_sparse(_q_next, fl_model.l_q_next[time_index].T, rtol=1e-8)
 
     # convert to csc format for efficiency
     return _q_next.tocsc(), _q_prev.tocsc()

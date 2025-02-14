@@ -93,9 +93,13 @@ base_solver_config_params_ds = """
         seeded with `random_state`.
         If `random_state` is already a ``Generator`` or ``RandomState``
         instance then that instance is used.
-    is_fwd_verbose: bool = False
+    is_fwd_verbose: bool
         Whether to solve the forward problem displaying all information.
         By default False.
+    is_save_sp_mats: bool
+        Whether to save all the stiffness matrices from flow and transport.
+        This is mostly useful to check the adjoint state correctness and devs.
+        The default is False.
         """
 
 
@@ -116,6 +120,7 @@ class BaseSolverConfig:
         np.random.default_rng(198873)
     )
     is_fwd_verbose: bool = False
+    is_save_spmats: bool = False
 
 
 _BaseSolverConfig = TypeVar("_BaseSolverConfig", bound=BaseSolverConfig)
@@ -442,6 +447,9 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         # Apply user transformation is needed:
         if self.pre_run_transformation is not None:
             self.pre_run_transformation(self.fwd_model)
+
+        self.fwd_model.fl_model.is_save_spmats = self.solver_config.is_save_spmats
+        self.fwd_model.tr_model.is_save_spmats = self.solver_config.is_save_spmats
 
         # Solve the forward model with the new parameters
         ForwardSolver(self.fwd_model).solve(

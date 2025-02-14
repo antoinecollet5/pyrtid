@@ -9,6 +9,8 @@ Note :
 
 from __future__ import annotations
 
+import copy
+import types
 import warnings
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -16,6 +18,7 @@ from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 from scipy.sparse import lil_array
+from scipy.sparse.linalg import LinearOperator, SuperLU
 
 from pyrtid.utils import (
     StrEnum,
@@ -660,6 +663,8 @@ class FlowModel(ABC):
         "boundary_conditions",
         "cst_head_nn",
         "regime",
+        "q_prev_no_dt",
+        "q_next_no_dt",
         "q_prev",
         "q_next",
         "rtol",
@@ -667,8 +672,12 @@ class FlowModel(ABC):
         "is_boundary_west",
         "is_boundary_north",
         "is_boundary_south",
+        "is_save_spmats",
         "l_q_next",
         "l_q_prev",
+        "is_save_spilu",
+        "super_ilu",
+        "preconditioner",
     ]
 
     def __init__(
@@ -692,6 +701,8 @@ class FlowModel(ABC):
         self.lunitflow: List[NDArrayFloat] = []
 
         self.boundary_conditions: List[BoundaryCondition] = []
+        self.q_prev_no_dt = lil_array((geometry.n_grid_cells, geometry.n_grid_cells))
+        self.q_next_no_dt = lil_array((geometry.n_grid_cells, geometry.n_grid_cells))
         self.q_prev = lil_array((geometry.n_grid_cells, geometry.n_grid_cells))
         self.q_next = lil_array((geometry.n_grid_cells, geometry.n_grid_cells))
         self.cst_head_nn: NDArrayInt = np.array([], dtype=np.int32)
@@ -730,8 +741,16 @@ class FlowModel(ABC):
 
         # List to store the successive stiffness matrices
         # This is mostly for development purposes.
+        # only activated with the adjoint state or specific devs.
+        self.is_save_spmats: bool = False
         self.l_q_next: List[lil_array] = []
         self.l_q_prev: List[lil_array] = []
+
+        # preconditioner (LU) for q_next, only useful to store with the forward
+        # sensivitiy approach.
+        self.is_save_spilu: bool = False
+        self.super_ilu: Optional[SuperLU] = None
+        self.preconditioner: Optional[LinearOperator] = None
 
     @property
     def head(self) -> NDArrayFloat:
@@ -871,6 +890,8 @@ class FlowModel(ABC):
         self.set_constant_head_indices()
         self.l_q_next = []
         self.l_q_prev = []
+        self.super_ilu = None
+        self.preconditioner = None
 
     @property
     def u_darcy_x_center(self) -> NDArrayFloat:
@@ -1152,8 +1173,12 @@ class TransportModel:
         "max_fpi",
         "molar_mass",
         "is_skip_rt",
+        "is_save_spmats",
         "l_q_next",
         "l_q_prev",
+        "is_save_spilu",
+        "super_ilu",
+        "preconditioner",
     ]
 
     def __init__(
@@ -1213,8 +1238,16 @@ class TransportModel:
 
         # List to store the successive stiffness matrices
         # This is mostly for development purposes.
+        # only activated with the adjoint state or specific devs.
+        self.is_save_spmats: bool = False
         self.l_q_next: List[lil_array] = []
         self.l_q_prev: List[lil_array] = []
+
+        # preconditioner (LU) for q_next, only useful to store with the forward
+        # sensivitiy approach.
+        self.is_save_spilu: bool = False
+        self.super_ilu: Optional[SuperLU] = None
+        self.preconditioner: Optional[LinearOperator] = None
 
     @property
     def mob(self) -> NDArrayFloat:
@@ -1393,6 +1426,8 @@ class TransportModel:
         self.set_constant_conc_indices()
         self.l_q_next = []
         self.l_q_prev = []
+        self.super_ilu = None
+        self.preconditioner = None
 
 
 class ForwardModel:
@@ -1557,6 +1592,36 @@ class ForwardModel:
         # VERY_SMALL_NUMBER to avoid division by zero.
         den = np.where(den < VERY_SMALL_NUMBER, VERY_SMALL_NUMBER, den)
         return num / den
+
+    def __deepcopy__(self, memo):
+        deepcopy_method = self.__deepcopy__
+        self.__deepcopy__ = None
+
+        # Handle non pickebeable objects
+        tmp_fl_spilu = self.fl_model.super_ilu
+        self.fl_model.super_ilu = None
+        tmp_fl_pcd = self.fl_model.preconditioner
+        self.fl_model.preconditioner = None
+
+        tmp_tr_spilu = self.tr_model.super_ilu
+        self.tr_model.super_ilu = None
+        tmp_tr_pcd = self.tr_model.preconditioner
+        self.tr_model.preconditioner = None
+
+        cp = copy.deepcopy(self, memo)
+        self.__deepcopy__ = deepcopy_method
+
+        # Bind to cp by types.MethodType
+        cp.__deepcopy__ = types.MethodType(deepcopy_method.__func__, cp)
+
+        # custom treatments
+        # restore the attributes
+        cp.fl_model.super_ilu = tmp_fl_spilu
+        cp.fl_model.preconditioner = tmp_fl_pcd
+        cp.tr_model.super_ilu = tmp_tr_spilu
+        cp.tr_model.preconditioner = tmp_tr_pcd
+
+        return cp
 
 
 def remove_cst_bound_indices(
