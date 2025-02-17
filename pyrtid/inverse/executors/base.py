@@ -28,14 +28,14 @@ from typing import (
 import numpy as np
 
 from pyrtid.forward import ForwardModel, ForwardSolver
-from pyrtid.inverse.adjoint import AdjointModel, AdjointSolver
-from pyrtid.inverse.adjoint.gradients import (
+from pyrtid.inverse.asm import AdjointModel, AdjointSolver
+from pyrtid.inverse.asm.gradients import (
     compute_adjoint_gradient,
     compute_fd_gradient,
     is_adjoint_gradient_correct,
     is_fsm_jacvec_correct,
 )
-from pyrtid.inverse.adjoint.sensitivity import ForwardSensitivitySolver
+from pyrtid.inverse.fsm import FSMSolver
 from pyrtid.inverse.loss_function import eval_loss_ls
 from pyrtid.inverse.model import InverseModel
 from pyrtid.inverse.obs import (
@@ -1151,7 +1151,7 @@ class FSMInversionExecutor(BaseInversionExecutor, Generic[_FSMSolverConfig]):
 
         # Solve the forward model with the new parameters and evaluate on the fly
         # the product between the Jacobian matrix (N_obs, N_s) and the given vectors.
-        d_pred, jacvecs = ForwardSensitivitySolver(self.fwd_model).solve(
+        d_pred, jacvecs = FSMSolver(self.fwd_model).solve(
             observables=self.inv_model.observables,
             vecs=vecs,
             hm_end_time=self.solver_config.hm_end_time,

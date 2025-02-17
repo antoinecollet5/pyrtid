@@ -19,8 +19,8 @@ def test_aca() -> None:
     pts[int(N / 2) :, 0] += 2.0
     pts[int(N / 2) :, 1] += 2.0
 
-    indx = np.arange(N / 2, dtype=np.int32)
-    indy = np.setdiff1d(np.arange(N), indx).astype(np.int32)
+    ind_x = np.arange(N / 2, dtype=np.int32)
+    ind_y = np.setdiff1d(np.arange(N), ind_x).astype(np.int32)
 
     # Kernel
     def kernel(R):
@@ -31,14 +31,14 @@ def test_aca() -> None:
     logging.info(f"rkmax={rkmax}, eps = {eps}")
 
     start = time()
-    mat = GenerateDenseMatrix(pts, indx, indy, kernel)
+    mat = GenerateDenseMatrix(pts, ind_x, ind_y, kernel)
     logging.info(f"Time for full construction is {(time() - start)}")
 
     start = time()
-    A, B = ACApp(pts, indx, indy, kernel, rkmax, eps)
+    A, B = ACApp(pts, ind_x, ind_y, kernel, rkmax, eps)
     logging.info("Time for ACA construction is %g" % (time() - start))
 
-    A2, B2 = ACA(pts, indx, indy, kernel, rkmax, eps)
+    A2, B2 = ACA(pts, ind_x, ind_y, kernel, rkmax, eps)
 
     s = svd(mat)
     s = s / s[0]

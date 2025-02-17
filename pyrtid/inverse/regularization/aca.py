@@ -5,7 +5,7 @@ import numpy as np
 __all__ = ["GenerateDenseMatrix", "ACA", "ACApp"]
 
 
-def GenerateDenseMatrix(pts, indx, indy, kernel):
+def GenerateDenseMatrix(pts, ind_x, ind_y, kernel):
     """_summary_
 
     # Compute O(N^2) interactions
@@ -14,9 +14,9 @@ def GenerateDenseMatrix(pts, indx, indy, kernel):
     ----------
     pts : _type_
         _description_
-    indx : _type_
+    ind_x : _type_
         _description_
-    indy : _type_
+    ind_y : _type_
         _description_
     kernel : _type_
         _description_
@@ -26,11 +26,11 @@ def GenerateDenseMatrix(pts, indx, indy, kernel):
     _type_
         _description_
     """
-    nx = indx.size
-    ny = indy.size
+    nx = ind_x.size
+    ny = ind_y.size
 
-    ptsx = pts[indx, :]
-    ptsy = pts[indy, :]
+    ptsx = pts[ind_x, :]
+    ptsy = pts[ind_y, :]
 
     if nx == 1:
         ptsx = ptsx[np.newaxis, :]
@@ -48,7 +48,7 @@ def GenerateDenseMatrix(pts, indx, indy, kernel):
 
 
 # This is the expensive version, only for debugging purposes
-def ACA(pts, indx, indy, kernel, rkmax, eps):
+def ACA(pts, ind_x, ind_y, kernel, rkmax, eps):
     """
     Adaptive Cross Approximation
 
@@ -57,10 +57,10 @@ def ACA(pts, indx, indy, kernel, rkmax, eps):
     pts:    (n,dim) ndarray
         all the points
 
-    indx:    (nx,) ndarray
+    ind_x:    (nx,) ndarray
         indices of the points
 
-    indy:    (ny,) ndarray
+    ind_y:    (ny,) ndarray
         indices of the points
 
     kernel:    Kernel object
@@ -87,13 +87,13 @@ def ACA(pts, indx, indy, kernel, rkmax, eps):
     """
 
     # Generate matrix
-    R = GenerateDenseMatrix(pts, indx, indy, kernel)
+    R = GenerateDenseMatrix(pts, ind_x, ind_y, kernel)
 
     # lod
     normR = np.linalg.norm(R, "fro")
 
-    nx = indx.size
-    ny = indy.size
+    nx = ind_x.size
+    ny = ind_y.size
 
     A = np.zeros((nx, rkmax), "d")
     B = np.zeros((ny, rkmax), "d")
@@ -122,7 +122,7 @@ def ACA(pts, indx, indy, kernel, rkmax, eps):
 
 
 # Implementation of the partially pivoted Adaptive Cross Approximation
-def ACApp(pts, indx, indy, kernel, rkmax, eps):
+def ACApp(pts, ind_x, ind_y, kernel, rkmax, eps):
     """
     Partially pivoted Adaptive Cross Approximation.
 
@@ -131,10 +131,10 @@ def ACApp(pts, indx, indy, kernel, rkmax, eps):
     pts:    (n,dim) ndarray
             all the points
 
-    indx:   (nx,) ndarray
+    ind_x:   (nx,) ndarray
             indices of the points
 
-    indy:   (ny,) ndarray
+    ind_y:   (ny,) ndarray
             indices of the points
 
     kernel: Kernel object
@@ -159,8 +159,8 @@ def ACApp(pts, indx, indy, kernel, rkmax, eps):
     to engineering. Springer 2007, New York.
 
     """
-    nx = np.size(indx)
-    ny = np.size(indy)
+    nx = np.size(ind_x)
+    ny = np.size(ind_y)
 
     A = np.zeros((nx, rkmax), "d")
     B = np.zeros((ny, rkmax), "d")
@@ -178,7 +178,7 @@ def ACApp(pts, indx, indy, kernel, rkmax, eps):
 
     for k in np.arange(rkmax):
         # generate row
-        b = GenerateDenseMatrix(pts, indx[row], indy, kernel)
+        b = GenerateDenseMatrix(pts, ind_x[row], ind_y, kernel)
         B[:, k] = np.copy(b.ravel())
         for nu in np.arange(k):
             B[:, k] -= A[row, nu] * B[:, nu]
@@ -195,7 +195,7 @@ def ACApp(pts, indx, indy, kernel, rkmax, eps):
         B[:, k] /= delta
 
         # Generate column
-        a = GenerateDenseMatrix(pts, indx, indy[col], kernel)
+        a = GenerateDenseMatrix(pts, ind_x, ind_y[col], kernel)
 
         A[:, k] = np.copy(a.ravel())
 

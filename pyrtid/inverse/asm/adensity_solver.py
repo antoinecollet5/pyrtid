@@ -14,7 +14,7 @@ from pyrtid.forward.models import (  # ConstantHead,; ZeroConcGradient,
     TransportModel,
     VerticalAxis,
 )
-from pyrtid.inverse.adjoint.amodels import AdjointFlowModel, AdjointTransportModel
+from pyrtid.inverse.asm.amodels import AdjointFlowModel, AdjointTransportModel
 from pyrtid.utils import dxi_arithmetic_mean, harmonic_mean
 from pyrtid.utils.types import NDArrayFloat
 

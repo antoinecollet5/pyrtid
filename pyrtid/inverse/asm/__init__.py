@@ -3,12 +3,12 @@ PyRTID invsere sub module providing an adjoint operator.
 
 The following functionalities are directly provided on module-level.
 
-.. currentmodule:: pyrtid.inverse.adjoint
+.. currentmodule:: pyrtid.inverse.asm
 
 Models
 ======
 
-.. currentmodule:: pyrtid.inverse.adjoint.amodels
+.. currentmodule:: pyrtid.inverse.asm.amodels
 
 Classes holding the adjoint variables.
 
@@ -25,7 +25,7 @@ Gradients of cost function with respect to control parameters
 =============================================================
 Functions to derive and check the gradients form the forward and adjoint models.
 
-.. currentmodule:: pyrtid.inverse.adjoint.gradients
+.. currentmodule:: pyrtid.inverse.asm.gradients
 
 Computing gradients
 ^^^^^^^^^^^^^^^^^^^
@@ -54,7 +54,7 @@ Solvers
 Full adjoint
 ^^^^^^^^^^^^
 
-.. currentmodule:: pyrtid.inverse.adjoint.amain_solver
+.. currentmodule:: pyrtid.inverse.asm.amain_solver
 
 Class from which to derive regularizator implementations.
 
@@ -67,7 +67,7 @@ Class from which to derive regularizator implementations.
 Adjoint flow
 ^^^^^^^^^^^^
 
-.. currentmodule:: pyrtid.inverse.adjoint.aflow_solver
+.. currentmodule:: pyrtid.inverse.asm.aflow_solver
 
 Functions to solve the adjoint flow.
 
@@ -81,7 +81,7 @@ Functions to solve the adjoint flow.
 Adjoint transport
 ^^^^^^^^^^^^^^^^^
 
-.. currentmodule:: pyrtid.inverse.adjoint.atransport_solver
+.. currentmodule:: pyrtid.inverse.asm.atransport_solver
 
 Functions to solve the adjoint flow.
 
@@ -95,7 +95,7 @@ Functions to solve the adjoint flow.
 Adjoint chemistry
 ^^^^^^^^^^^^^^^^^
 
-.. currentmodule:: pyrtid.inverse.adjoint.ageochem_solver
+.. currentmodule:: pyrtid.inverse.asm.ageochem_solver
 
 .. autosummary::
    :toctree: _autosummary
@@ -104,25 +104,25 @@ Adjoint chemistry
 
 """
 
-from pyrtid.inverse.adjoint.aflow_solver import (
+from pyrtid.inverse.asm.aflow_solver import (
     make_transient_adj_flow_matrices,
     solve_adj_flow,
     update_adjoint_u_darcy,
 )
-from pyrtid.inverse.adjoint.ageochem_solver import solve_adj_geochem
-from pyrtid.inverse.adjoint.amain_solver import AdjointSolver
-from pyrtid.inverse.adjoint.amodels import (
+from pyrtid.inverse.asm.ageochem_solver import solve_adj_geochem
+from pyrtid.inverse.asm.amain_solver import AdjointSolver
+from pyrtid.inverse.asm.amodels import (
     AdjointFlowModel,
     AdjointModel,
     AdjointTransportModel,
     DensityAdjointFlowModel,
     SaturatedAdjointFlowModel,
 )
-from pyrtid.inverse.adjoint.atransport_solver import (
+from pyrtid.inverse.asm.atransport_solver import (
     get_adjoint_max_coupling_error,
     solve_adj_transport_transient_semi_implicit,
 )
-from pyrtid.inverse.adjoint.gradients import (
+from pyrtid.inverse.asm.gradients import (
     get_diffusion_adjoint_gradient,
     get_initial_conc_adjoint_gradient,
     get_initial_grade_adjoint_gradient,
@@ -130,7 +130,6 @@ from pyrtid.inverse.adjoint.gradients import (
     get_porosity_adjoint_gradient,
     is_adjoint_gradient_correct,
 )
-from pyrtid.inverse.adjoint.sensitivity import ForwardSensitivitySolver
 
 __all__ = [
     "AdjointSolver",
@@ -151,5 +150,4 @@ __all__ = [
     "get_permeability_adjoint_gradient",
     "get_porosity_adjoint_gradient",
     "is_adjoint_gradient_correct",
-    "ForwardSensitivitySolver",
 ]

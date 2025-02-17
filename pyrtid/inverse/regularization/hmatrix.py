@@ -15,9 +15,9 @@ class Hmatrix:
         all the points
     kernel: Kernel object
         see covariance/kernel.py for more details
-    indx: (nx,) ndarray
+    ind_x: (nx,) ndarray
         indices of the points
-    indy: (ny,) ndarray, optional.
+    ind_y: (ny,) ndarray, optional.
         indices of the points
     rkmax: int. default = 32.
         Maximum rank of the low rank approximation
@@ -53,11 +53,11 @@ class Hmatrix:
     """
 
     def __init__(
-        self, pts, kernel, indx, indy=None, rkmax=32, eps=1.0e-9, verbose=False
+        self, pts, kernel, ind_x, ind_y=None, rkmax=32, eps=1.0e-9, verbose=False
     ):
         self.pts = pts
-        self.indx = indx
-        self.indy = indy
+        self.ind_x = ind_x
+        self.ind_y = ind_y
         self.kernel = kernel
         self.verbose = verbose
 
@@ -67,16 +67,16 @@ class Hmatrix:
         dim = np.size(pts, 1)
         self.ctreex = Cluster(dim=dim, level=0)
         start = time()
-        self.ctreex.assign_points_bisection(pts, self.indx)
+        self.ctreex.assign_points_bisection(pts, self.ind_x)
         if verbose:
             print("Time to construct cluster tree is %g " % (time() - start))
 
-        if indy is None:
+        if ind_y is None:
             self.ctreey = self.ctreex
         else:
             self.ctreey = Cluster(dim=dim, level=0)
             start = time()
-            self.ctreey.assign_points_bisection(pts, self.indy)
+            self.ctreey.assign_points_bisection(pts, self.ind_y)
             if verbose:
                 print("Time to construct cluster tree is %g " % (time() - start))
 

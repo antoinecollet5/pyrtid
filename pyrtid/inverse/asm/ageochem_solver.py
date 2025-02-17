@@ -13,7 +13,7 @@ from pyrtid.forward.models import (  # ConstantHead,; ZeroConcGradient,
     TimeParameters,
     TransportModel,
 )
-from pyrtid.inverse.adjoint.amodels import AdjointTransportModel
+from pyrtid.inverse.asm.amodels import AdjointTransportModel
 from pyrtid.utils import NDArrayFloat
 
 

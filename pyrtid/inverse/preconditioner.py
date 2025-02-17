@@ -548,7 +548,7 @@ class Preconditioner(ABC):
 
 
 class ChainedTransforms(Preconditioner):
-    """Combinaison of multiple preconditioners."""
+    """Combinaition of multiple preconditioners."""
 
     def __init__(self, pcds: Sequence[Preconditioner]) -> None:
         """
@@ -2038,7 +2038,7 @@ class GDPNCS(Preconditioner):
     Apply a Gradual Deformation parametrization associated with the SPDE approach.
 
     The Gradual Deformation parametrization is used to generate a white noise
-    reduced and centered as a linear combinaison of Ne white noises while adjusting
+    reduced and centered as a linear Combinaition of Ne white noises while adjusting
     Ne-1 parameters. The obtained white noise is used in the SPDE approach to
     generate a field with the required geostatistical parameters.
 
@@ -2234,7 +2234,7 @@ class GDPCS(GDPNCS):
     Apply a Gradual Deformation parametrization associated with the SPDE approach.
 
     The Gradual Deformation parametrization is used to generate a white noise
-    reduced and centered as a linear combinaison of Ne white noises while adjusting
+    reduced and centered as a linear Combinaition of Ne white noises while adjusting
     Ne-1 parameters. The obtained white noise is used in the SPDE approach to
     generate a field with the required geostatistical parameters.
 

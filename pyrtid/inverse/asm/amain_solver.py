@@ -6,15 +6,15 @@ import logging
 from typing import Optional
 
 from pyrtid.forward.models import ForwardModel
-from pyrtid.inverse.adjoint.adensity_solver import solve_adj_density
-from pyrtid.inverse.adjoint.aflow_solver import (
+from pyrtid.inverse.asm.adensity_solver import solve_adj_density
+from pyrtid.inverse.asm.aflow_solver import (
     make_transient_adj_flow_matrices,
     solve_adj_flow,
     update_adjoint_u_darcy,
 )
-from pyrtid.inverse.adjoint.ageochem_solver import solve_adj_geochem
-from pyrtid.inverse.adjoint.amodels import AdjointModel
-from pyrtid.inverse.adjoint.atransport_solver import (
+from pyrtid.inverse.asm.ageochem_solver import solve_adj_geochem
+from pyrtid.inverse.asm.amodels import AdjointModel
+from pyrtid.inverse.asm.atransport_solver import (
     get_adjoint_max_coupling_error,
     solve_adj_transport_transient_semi_implicit,
 )

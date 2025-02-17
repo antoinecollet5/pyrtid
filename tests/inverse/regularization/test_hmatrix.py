@@ -7,20 +7,20 @@ def test_hmatrix() -> None:
     N = 300
 
     pts = np.random.rand(N, 2)
-    indx = np.arange(N)
+    ind_x = np.arange(N)
 
     def kernel(R):
         return np.exp(-R)
 
-    indy = None  # np.arange(N/10)
-    Q = Hmatrix(pts, kernel, indx=indx, indy=indy, verbose=True)
+    ind_y = None  # np.arange(N/10)
+    Q = Hmatrix(pts, kernel, ind_x=ind_x, ind_y=ind_y, verbose=True)
 
     x = np.random.rand(
-        np.size(indx),
+        np.size(ind_x),
     )
 
-    yd = np.zeros((np.size(indx),), dtype="d")
-    yh = np.zeros((np.size(indx),), dtype="d")
+    yd = np.zeros((np.size(ind_x),), dtype="d")
+    yh = np.zeros((np.size(ind_x),), dtype="d")
 
     print("Memory usage in MB %g" % (Q._memoryusage()))
     Q.mult(x, yh)

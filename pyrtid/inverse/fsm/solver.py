@@ -17,7 +17,7 @@ from pyrtid.inverse.obs import (
 from pyrtid.utils import NDArrayFloat, dxi_harmonic_mean
 
 
-class ForwardSensitivitySolver:
+class FSMSolver:
     """Class solving the reactive transport forward systems."""
 
     def __init__(self, model: ForwardModel) -> None:
@@ -118,12 +118,13 @@ class ForwardSensitivitySolver:
         rhs -= self.model.fl_model.q_prev @ z_tmp
 
         # Solve A^n z^n = rhs
-        z_tmp, exit_code = solve_fl_gmres(
-            self.model.fl_model,
-            rhs,
-            self.model.fl_model.super_ilu,
-            self.model.fl_model.preconditioner,
-        )
+        for i in range(z_tmp.shape[1]):
+            z_tmp[:, i], exit_code = solve_fl_gmres(
+                self.model.fl_model,
+                rhs[:, i],
+                self.model.fl_model.super_ilu,
+                self.model.fl_model.preconditioner,
+            )
 
         return z_tmp
 
@@ -153,7 +154,7 @@ def dFhdKv(
     NDArrayFloat
         Gradient with respect to the permeability using head observations.
     """
-    shape = (fwd_model.geometry.nx, fwd_model.geometry.ny)
+    shape = vecs.shape
     permeability = fwd_model.fl_model.permeability
     crank_flow: float = fwd_model.fl_model.crank_nicolson
 
@@ -170,9 +171,14 @@ def dFhdKv(
     # Consider the x axis
     if shape[0] > 1:
         dKijdKxv = (
-            dxi_harmonic_mean(permeability[1:, :], permeability[:-1, :]) * vecs[1:, :]
-            + dxi_harmonic_mean(permeability[:-1, :], permeability[1:, :])
-            * vecs[:-1, :]
+            dxi_harmonic_mean(permeability[1:, :], permeability[:-1, :])[
+                :, :, np.newaxis
+            ]
+            * vecs[1:, :, :]
+            + dxi_harmonic_mean(permeability[:-1, :], permeability[1:, :])[
+                :, :, np.newaxis
+            ]
+            * vecs[:-1, :, :]
         )
         tmp = fwd_model.geometry.gamma_ij_x / fwd_model.geometry.dx
 
@@ -187,33 +193,38 @@ def dFhdKv(
                 / fwd_model.geometry.grid_cell_volume
             )
             # Forward
-            grad[:-1, :] -= (
-                lhs / fwd_model.fl_model.storage_coefficient[:-1, :] * dKijdKxv
-            )
+            grad[:-1, :, :] -= (lhs / fwd_model.fl_model.storage_coefficient[:-1, :])[
+                :, :, np.newaxis
+            ] * dKijdKxv
             # Backward scheme
-            grad[1:, :] += (
-                lhs / fwd_model.fl_model.storage_coefficient[1:, :] * dKijdKxv
-            )
+            grad[1:, :, :] += (lhs / fwd_model.fl_model.storage_coefficient[1:, :])[
+                :, :, np.newaxis
+            ] * dKijdKxv
 
         # Handle the stationary case for n == 0
         elif fwd_model.fl_model.regime == FlowRegime.STATIONARY:
             # Forward
             lhs = (
-                (head[1:, :] - head[:-1, :])
+                (head[1:, :] - head[:-1, :])[:, :, np.newaxis]
                 * tmp
                 / fwd_model.geometry.grid_cell_volume
                 * dKijdKxv
             )
-            grad[:-1, :] -= lhs
-            grad[1:, :] += lhs
+            grad[:-1, :, :] -= lhs
+            grad[1:, :, :] += lhs
 
     # Consider the y axis for 2D cases
     # Consider the x axis
     if shape[1] > 1:
         dKijdKyv = (
-            dxi_harmonic_mean(permeability[:, 1:], permeability[:, :-1]) * vecs[:, 1:]
-            + dxi_harmonic_mean(permeability[:, :-1], permeability[:, 1:])
-            * vecs[:, :-1]
+            dxi_harmonic_mean(permeability[:, 1:], permeability[:, :-1])[
+                :, :, np.newaxis
+            ]
+            * vecs[:, 1:, :]
+            + dxi_harmonic_mean(permeability[:, :-1], permeability[:, 1:])[
+                :, :, np.newaxis
+            ]
+            * vecs[:, :-1, :]
         )
         tmp = fwd_model.geometry.gamma_ij_y / fwd_model.geometry.dy
 
@@ -228,28 +239,48 @@ def dFhdKv(
                 / fwd_model.geometry.grid_cell_volume
             )
             # Forward
-            grad[:, :-1] -= (
-                lhs / fwd_model.fl_model.storage_coefficient[:, :-1] * dKijdKyv
-            )
+            grad[:, :-1, :] -= (lhs / fwd_model.fl_model.storage_coefficient[:, :-1])[
+                :, :, np.newaxis
+            ] * dKijdKyv
             # Backward scheme
-            grad[:, 1:] += (
-                lhs / fwd_model.fl_model.storage_coefficient[:, 1:] * dKijdKyv
-            )
+            grad[:, 1:, :] += (lhs / fwd_model.fl_model.storage_coefficient[:, 1:])[
+                :, :, np.newaxis
+            ] * dKijdKyv
 
         # Handle the stationary case for n == 0
         elif fwd_model.fl_model.regime == FlowRegime.STATIONARY:
             # Forward
             lhs = (
-                (head[:, 1:] - head[:, :-1])
+                (head[:, 1:] - head[:, :-1])[:, :, np.newaxis]
                 * tmp
                 / fwd_model.geometry.grid_cell_volume
                 * dKijdKyv
             )
-            grad[:, :-1] -= lhs
-            grad[:, 1:] += lhs
+            grad[:, :-1, :] -= lhs
+            grad[:, 1:, :] += lhs
 
     grad[
         fwd_model.fl_model.cst_head_indices[0], fwd_model.fl_model.cst_head_indices[1]
     ] = 0
 
     return grad
+
+
+def dFhdSsv(
+    fwd_model: ForwardModel, time_index: int, vecs: NDArrayFloat
+) -> NDArrayFloat:
+    return vecs
+
+
+def dFpdKv(
+    fwd_model: ForwardModel, time_index: int, vecs: NDArrayFloat
+) -> NDArrayFloat:
+    # TODO
+    return vecs
+
+
+def dFpdSsv(
+    fwd_model: ForwardModel, time_index: int, vecs: NDArrayFloat
+) -> NDArrayFloat:
+    # TODO
+    return vecs

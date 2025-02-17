@@ -20,7 +20,7 @@ from pyrtid.forward.models import (
     get_owner_neigh_indices,
 )
 from pyrtid.forward.solver import get_max_coupling_error
-from pyrtid.inverse.adjoint.amodels import AdjointTransportModel
+from pyrtid.inverse.asm.amodels import AdjointTransportModel
 from pyrtid.utils import (
     NDArrayFloat,
     assert_allclose_sparse,

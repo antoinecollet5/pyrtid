@@ -20,7 +20,7 @@ from pyrtid.forward.models import (  # ConstantHead,; ZeromobGradient,
     TransportModel,
     get_owner_neigh_indices,
 )
-from pyrtid.inverse.adjoint.amodels import AdjointFlowModel, AdjointTransportModel
+from pyrtid.inverse.asm.amodels import AdjointFlowModel, AdjointTransportModel
 from pyrtid.utils import (
     NDArrayFloat,
     assert_allclose_sparse,

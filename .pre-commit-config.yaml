@@ -17,7 +17,7 @@ repos:
     language: python
     types: [python]
     args: [
-      "lbfgsb docs tests",
+      "pyrtid docs tests",
       "*.py *.rst *.md",
     ]
     exclude: >
