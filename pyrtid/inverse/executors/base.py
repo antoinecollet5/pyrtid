@@ -33,9 +33,8 @@ from pyrtid.inverse.asm.gradients import (
     compute_adjoint_gradient,
     compute_fd_gradient,
     is_adjoint_gradient_correct,
-    is_fsm_jacvec_correct,
 )
-from pyrtid.inverse.fsm import FSMSolver
+from pyrtid.inverse.fsm import FSMSolver, is_fsm_jacvec_correct
 from pyrtid.inverse.loss_function import eval_loss_ls
 from pyrtid.inverse.model import InverseModel
 from pyrtid.inverse.obs import (
