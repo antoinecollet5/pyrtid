@@ -219,6 +219,12 @@ def dFhdSsv(
             # Backward scheme
             grad[:, 1:, :] += lhs[:, :, np.newaxis] * dinvSsV[:, 1:, :]
 
+    grad -= (
+        fwd_model.fl_model.crank_nicolson * fwd_model.fl_model.lunitflow[time_index]
+        + (1.0 - fwd_model.fl_model.crank_nicolson)
+        * fwd_model.fl_model.lunitflow[time_index - 1]
+    )[:, :, np.newaxis] * dinvSsV
+
     grad[
         fwd_model.fl_model.cst_head_indices[0], fwd_model.fl_model.cst_head_indices[1]
     ] = 0
@@ -500,6 +506,16 @@ def dFpdSsv(
             grad[:, :-1, :] -= lhs[:, :, np.newaxis] * dinvSsV[:, :-1, :]
             # Backward scheme
             grad[:, 1:, :] += lhs[:, :, np.newaxis] * dinvSsV[:, 1:, :]
+
+    grad -= (
+        (
+            fwd_model.fl_model.crank_nicolson * fwd_model.fl_model.lunitflow[time_index]
+            + (1.0 - fwd_model.fl_model.crank_nicolson)
+            * fwd_model.fl_model.lunitflow[time_index - 1]
+        )
+        * fwd_model.tr_model.ldensity[time_index - 1]
+        * GRAVITY
+    )[:, :, np.newaxis] * dinvSsV
 
     grad[
         fwd_model.fl_model.cst_head_indices[0], fwd_model.fl_model.cst_head_indices[1]
