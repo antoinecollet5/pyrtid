@@ -300,9 +300,6 @@ def get_zj_zi_rhs(geometry: Geometry, fl_model: FlowModel) -> NDArrayFloat:
     rhs_z = np.zeros((geometry.n_grid_cells), dtype=np.float64)
     z = fl_model._get_mesh_center_vertical_pos().T.ravel("F")
 
-    rhs_z = np.zeros((geometry.n_grid_cells), dtype=np.float64)
-    z = fl_model._get_mesh_center_vertical_pos().T.ravel("F")
-
     # X contribution
     if geometry.nx >= 2 and fl_model.vertical_axis == VerticalAxis.X:
         kmean = get_kmean(geometry, fl_model, 0)
