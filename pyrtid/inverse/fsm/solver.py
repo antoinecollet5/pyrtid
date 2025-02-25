@@ -19,11 +19,11 @@ from pyrtid.inverse.fsm.dFds import (
     dFDdwv,
     dFhdhimp,
     dFhdKv,
-    dFhdpimp,
     dFhdSsv,
     dFmdcimp,
     dFmdmimp,
     dFpdKv,
+    dFpdpimp,
     dFpdSsv,
     dFUxdKv,
     dFUydKv,
@@ -34,10 +34,7 @@ from pyrtid.inverse.obs import (
     get_predictions_matching_observations,
 )
 from pyrtid.inverse.params import AdjustableParameters, ParameterName
-from pyrtid.utils import (
-    NDArrayFloat,
-    object_or_object_sequence_to_list,
-)
+from pyrtid.utils import NDArrayFloat, object_or_object_sequence_to_list
 
 
 class FSMVects:
@@ -271,7 +268,7 @@ def update_dFdsv(
         if param.name == ParameterName.INITIAL_HEAD:
             fsm_vecs.dFhdsv += dFhdhimp(model, time_index, fsm_vecs.vecs)
         if param.name == ParameterName.INITIAL_PRESSURE:
-            fsm_vecs.dFpdsv += dFhdpimp(model, time_index, fsm_vecs.vecs)
+            fsm_vecs.dFpdsv += dFpdpimp(model, time_index, fsm_vecs.vecs)
         if param.name == ParameterName.POROSITY:
             fsm_vecs.dFDdsv += dFDdwv(model, time_index, fsm_vecs.vecs)
             fsm_vecs.dFcdsv += dFcdwv(model, time_index, fsm_vecs.vecs)

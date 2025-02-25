@@ -527,35 +527,133 @@ def dFpdSsv(
 def dFUxdKv(
     fwd_model: ForwardModel, time_index: int, vecs: NDArrayFloat
 ) -> NDArrayFloat:
-    # Here: impact of the gravity in both cases.
+    permeability = fwd_model.fl_model.permeability
+    out = np.zeros(
+        (fwd_model.geometry.nx + 1, fwd_model.geometry.ny, vecs.shape[-1]),
+        dtype=np.float64,
+    )
+    dKijdKxv = (
+        dxi_harmonic_mean(permeability[1:, :], permeability[:-1, :])[:, :, np.newaxis]
+        * vecs[1:, :, :]
+        + dxi_harmonic_mean(permeability[:-1, :], permeability[1:, :])[:, :, np.newaxis]
+        * vecs[:-1, :, :]
+    )
 
-    if not fwd_model.fl_model.is_gravity:
-        return np.zeros_like(fwd_model.fl_model.lpressure[0])
-    # Case two = density flow = impact of density
+    if fwd_model.fl_model.is_gravity:
+        rhomean = get_rhomean(
+            fwd_model.geometry,
+            fwd_model.tr_model,
+            axis=0,
+            time_index=time_index - 1,
+            is_flatten=False,
+        )[:, :-1]
+        if fwd_model.fl_model.vertical_axis == VerticalAxis.X:
+            rho_ij_g = rhomean * GRAVITY
+            if time_index == 0:
+                rho_ij_g[:, :] = WATER_DENSITY * GRAVITY
+        else:
+            rho_ij_g = np.zeros_like(rhomean)
 
-    return vecs
+        pressure = fwd_model.fl_model.lpressure[time_index]
+        out[1:-1, :, :] += (
+            dKijdKxv
+            * (
+                (
+                    (pressure[1:, :] - pressure[:-1, :]) / fwd_model.geometry.dx
+                    + rho_ij_g
+                )
+                / WATER_DENSITY
+                / GRAVITY
+            )[:, :, np.newaxis]
+        )
+    else:
+        head = fwd_model.fl_model.lhead[time_index]
+        out[1:-1, :, :] += (
+            dKijdKxv
+            * ((head[1:, :] - head[:-1, :]) / fwd_model.geometry.dx)[:, :, np.newaxis]
+        )
+    return out
 
 
 def dFUydKv(
     fwd_model: ForwardModel, time_index: int, vecs: NDArrayFloat
 ) -> NDArrayFloat:
-    # Here: impact of the gravity in both cases.
+    permeability = fwd_model.fl_model.permeability
+    out = np.zeros(
+        (fwd_model.geometry.nx, fwd_model.geometry.ny + 1, vecs.shape[-1]),
+        dtype=np.float64,
+    )
+    dKijdKyv = (
+        dxi_harmonic_mean(permeability[:, 1:], permeability[:, :-1])[:, :, np.newaxis]
+        * vecs[:, 1:, :]
+        + dxi_harmonic_mean(permeability[:, :-1], permeability[:, 1:])[:, :, np.newaxis]
+        * vecs[:, :-1, :]
+    )
 
-    if not fwd_model.fl_model.is_gravity:
-        return np.zeros_like(fwd_model.fl_model.lpressure[0])
-    # Case two = density flow = impact of density
+    if fwd_model.fl_model.is_gravity:
+        rhomean = get_rhomean(
+            fwd_model.geometry,
+            fwd_model.tr_model,
+            axis=1,
+            time_index=time_index - 1,
+            is_flatten=False,
+        )[:-1, :]
+        if fwd_model.fl_model.vertical_axis == VerticalAxis.X:
+            rho_ij_g = rhomean * GRAVITY
+            if time_index == 0:
+                rho_ij_g[:, :] = WATER_DENSITY * GRAVITY
+        else:
+            rho_ij_g = np.zeros_like(rhomean)
 
-    return vecs
+        pressure = fwd_model.fl_model.lpressure[time_index]
+        out[:, 1:-1, :] += (
+            dKijdKyv
+            * (
+                (
+                    (pressure[:, 1:] - pressure[:, :-1]) / fwd_model.geometry.dy
+                    + rho_ij_g
+                )
+                / WATER_DENSITY
+                / GRAVITY
+            )[:, :, np.newaxis]
+        )
+    else:
+        head = fwd_model.fl_model.lhead[time_index]
+        out[:, 1:-1, :] += (
+            dKijdKyv
+            * ((head[:, 1:] - head[:, :-1]) / fwd_model.geometry.dy)[:, :, np.newaxis]
+        )
+    return out
 
 
 def dFhdhimp(
     fwd_model: ForwardModel, time_index: int, vecs: NDArrayFloat
-) -> NDArrayFloat: ...
+) -> NDArrayFloat:
+    # no impact in the density case
+    if fwd_model.fl_model.is_gravity:
+        return np.zeros(
+            (fwd_model.fl_model.lhead[0].size, vecs.shape[-1]), dtype=np.float64
+        )
+    # otherwise, we must take the stationary case into account
+    masked_vecs = vecs.copy().reshape(-1, vecs.shape[-1], order="F")
+    if not (fwd_model.fl_model.regime == FlowRegime.TRANSIENT and time_index == 0):
+        masked_vecs[fwd_model.fl_model.free_head_nn, :] = 0.0
+    return fwd_model.fl_model.q_next @ masked_vecs
 
 
-def dFhdpimp(
+def dFpdpimp(
     fwd_model: ForwardModel, time_index: int, vecs: NDArrayFloat
-) -> NDArrayFloat: ...
+) -> NDArrayFloat:
+    # no impact in the density case
+    if not fwd_model.fl_model.is_gravity:
+        return np.zeros(
+            (fwd_model.fl_model.lpressure[0].size, vecs.shape[-1]), dtype=np.float64
+        )
+    # otherwise, we must take the stationary case into account
+    masked_vecs = vecs.copy().reshape(-1, vecs.shape[-1], order="F")
+    if not (fwd_model.fl_model.regime == FlowRegime.TRANSIENT and time_index == 0):
+        masked_vecs[fwd_model.fl_model.free_head_nn, :] = 0.0
+    return fwd_model.fl_model.q_next @ masked_vecs
 
 
 def dFDdwv(
