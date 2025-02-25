@@ -48,7 +48,7 @@ def dFhdKv(
         # it won't be used anyway
         head_prev = head
 
-    grad = np.zeros(shape)
+    out = np.zeros(shape)
 
     # Consider the x axis
     if shape[0] > 1:
@@ -75,11 +75,11 @@ def dFhdKv(
                 / fwd_model.geometry.grid_cell_volume
             )
             # Forward
-            grad[:-1, :, :] -= (lhs / fwd_model.fl_model.storage_coefficient[:-1, :])[
+            out[:-1, :, :] -= (lhs / fwd_model.fl_model.storage_coefficient[:-1, :])[
                 :, :, np.newaxis
             ] * dKijdKxv
             # Backward scheme
-            grad[1:, :, :] += (lhs / fwd_model.fl_model.storage_coefficient[1:, :])[
+            out[1:, :, :] += (lhs / fwd_model.fl_model.storage_coefficient[1:, :])[
                 :, :, np.newaxis
             ] * dKijdKxv
 
@@ -92,8 +92,8 @@ def dFhdKv(
                 / fwd_model.geometry.grid_cell_volume
                 * dKijdKxv
             )
-            grad[:-1, :, :] -= lhs
-            grad[1:, :, :] += lhs
+            out[:-1, :, :] -= lhs
+            out[1:, :, :] += lhs
 
     # Consider the y axis for 2D cases
     # Consider the x axis
@@ -121,11 +121,11 @@ def dFhdKv(
                 / fwd_model.geometry.grid_cell_volume
             )
             # Forward
-            grad[:, :-1, :] -= (lhs / fwd_model.fl_model.storage_coefficient[:, :-1])[
+            out[:, :-1, :] -= (lhs / fwd_model.fl_model.storage_coefficient[:, :-1])[
                 :, :, np.newaxis
             ] * dKijdKyv
             # Backward scheme
-            grad[:, 1:, :] += (lhs / fwd_model.fl_model.storage_coefficient[:, 1:])[
+            out[:, 1:, :] += (lhs / fwd_model.fl_model.storage_coefficient[:, 1:])[
                 :, :, np.newaxis
             ] * dKijdKyv
 
@@ -138,14 +138,14 @@ def dFhdKv(
                 / fwd_model.geometry.grid_cell_volume
                 * dKijdKyv
             )
-            grad[:, :-1, :] -= lhs
-            grad[:, 1:, :] += lhs
+            out[:, :-1, :] -= lhs
+            out[:, 1:, :] += lhs
 
-    grad[
+    out[
         fwd_model.fl_model.cst_head_indices[0], fwd_model.fl_model.cst_head_indices[1]
     ] = 0
 
-    return grad
+    return out
 
 
 def dFhdSsv(
@@ -170,7 +170,7 @@ def dFhdSsv(
         # it won't be used anyway
         head_prev = head
 
-    grad = np.zeros(shape)
+    out = np.zeros(shape)
 
     dinvSsV = (
         -1.0 / (fwd_model.fl_model.storage_coefficient**2)[:, :, np.newaxis] * vecs
@@ -193,9 +193,9 @@ def dFhdSsv(
                 / fwd_model.geometry.grid_cell_volume
             )
             # Forward
-            grad[:-1, :, :] -= lhs[:, :, np.newaxis] * dinvSsV[:-1, :, :]
+            out[:-1, :, :] -= lhs[:, :, np.newaxis] * dinvSsV[:-1, :, :]
             # Backward scheme
-            grad[1:, :, :] += lhs[:, :, np.newaxis] * dinvSsV[1:, :, :]
+            out[1:, :, :] += lhs[:, :, np.newaxis] * dinvSsV[1:, :, :]
 
     # Consider the y axis for 2D cases
     # Consider the x axis
@@ -215,21 +215,21 @@ def dFhdSsv(
                 / fwd_model.geometry.grid_cell_volume
             )
             # Forward
-            grad[:, :-1, :] -= lhs[:, :, np.newaxis] * dinvSsV[:, :-1, :]
+            out[:, :-1, :] -= lhs[:, :, np.newaxis] * dinvSsV[:, :-1, :]
             # Backward scheme
-            grad[:, 1:, :] += lhs[:, :, np.newaxis] * dinvSsV[:, 1:, :]
+            out[:, 1:, :] += lhs[:, :, np.newaxis] * dinvSsV[:, 1:, :]
 
-    grad -= (
+    out -= (
         fwd_model.fl_model.crank_nicolson * fwd_model.fl_model.lunitflow[time_index]
         + (1.0 - fwd_model.fl_model.crank_nicolson)
         * fwd_model.fl_model.lunitflow[time_index - 1]
     )[:, :, np.newaxis] * dinvSsV
 
-    grad[
+    out[
         fwd_model.fl_model.cst_head_indices[0], fwd_model.fl_model.cst_head_indices[1]
     ] = 0
 
-    return grad
+    return out
 
 
 def dFpdKv(
@@ -253,7 +253,7 @@ def dFpdKv(
         # it won't be used anyway
         pressure_prev = pressure
 
-    grad = np.zeros(shape)
+    out = np.zeros(shape)
 
     # Consider the x axis
     if shape[0] > 1:
@@ -297,11 +297,11 @@ def dFpdKv(
                 / fwd_model.geometry.grid_cell_volume
             )
             # Forward
-            grad[:-1, :, :] -= (lhs / fwd_model.fl_model.storage_coefficient[:-1, :])[
+            out[:-1, :, :] -= (lhs / fwd_model.fl_model.storage_coefficient[:-1, :])[
                 :, :, np.newaxis
             ] * dKijdKxv
             # Backward scheme
-            grad[1:, :, :] += (lhs / fwd_model.fl_model.storage_coefficient[1:, :])[
+            out[1:, :, :] += (lhs / fwd_model.fl_model.storage_coefficient[1:, :])[
                 :, :, np.newaxis
             ] * dKijdKxv
 
@@ -321,8 +321,8 @@ def dFpdKv(
                 / fwd_model.geometry.grid_cell_volume
             ) * dKijdKxv
 
-            grad[:-1, :, :] -= lhs
-            grad[1:, :, :] += lhs
+            out[:-1, :, :] -= lhs
+            out[1:, :, :] += lhs
 
     # Consider the y axis for 2D cases
     # Consider the x axis
@@ -369,11 +369,11 @@ def dFpdKv(
                 / fwd_model.geometry.grid_cell_volume
             )
             # Forward
-            grad[:, :-1, :] -= (lhs / fwd_model.fl_model.storage_coefficient[:, :-1])[
+            out[:, :-1, :] -= (lhs / fwd_model.fl_model.storage_coefficient[:, :-1])[
                 :, :, np.newaxis
             ] * dKijdKyv
             # Backward scheme
-            grad[:, 1:, :] += (lhs / fwd_model.fl_model.storage_coefficient[:, 1:])[
+            out[:, 1:, :] += (lhs / fwd_model.fl_model.storage_coefficient[:, 1:])[
                 :, :, np.newaxis
             ] * dKijdKyv
 
@@ -393,14 +393,14 @@ def dFpdKv(
                 / fwd_model.geometry.grid_cell_volume
             ) * dKijdKyv
 
-            grad[:, :-1, :] -= lhs
-            grad[:, 1:, :] += lhs
+            out[:, :-1, :] -= lhs
+            out[:, 1:, :] += lhs
 
-    grad[
+    out[
         fwd_model.fl_model.cst_head_indices[0], fwd_model.fl_model.cst_head_indices[1]
     ] = 0
 
-    return grad
+    return out
 
 
 def dFpdSsv(
@@ -424,7 +424,7 @@ def dFpdSsv(
         # it won't be used anyway
         pressure_prev = pressure
 
-    grad = np.zeros(shape)
+    out = np.zeros(shape)
 
     dinvSsV = (
         -1.0 / (fwd_model.fl_model.storage_coefficient**2)[:, :, np.newaxis] * vecs
@@ -454,21 +454,20 @@ def dFpdSsv(
                         * (pressure_prev[1:, :] - pressure_prev[:-1, :])
                     )
                     / fwd_model.geometry.dx
-                    + rhoijg
+                    # + rhoijg
                 )
-                * fwd_model.geometry.gamma_ij_y
+                * fwd_model.geometry.gamma_ij_x
                 * rhoij
                 * Kij
                 / WATER_DENSITY
                 / fwd_model.geometry.grid_cell_volume
             )
             # Forward
-            grad[:-1, :, :] -= lhs[:, :, np.newaxis] * dinvSsV[:-1, :, :]
+            out[:-1, :, :] -= lhs[:, :, np.newaxis] * dinvSsV[:-1, :, :]
             # Backward scheme
-            grad[1:, :, :] += lhs[:, :, np.newaxis] * dinvSsV[1:, :, :]
+            out[1:, :, :] += lhs[:, :, np.newaxis] * dinvSsV[1:, :, :]
 
     # Consider the y axis for 2D cases
-    # Consider the x axis
     if shape[1] > 1:
         Kij = harmonic_mean(permeability[:, 1:], permeability[:, :-1])
         rhoij = get_rhomean(
@@ -503,11 +502,11 @@ def dFpdSsv(
                 / fwd_model.geometry.grid_cell_volume
             )
             # Forward
-            grad[:, :-1, :] -= lhs[:, :, np.newaxis] * dinvSsV[:, :-1, :]
+            out[:, :-1, :] -= lhs[:, :, np.newaxis] * dinvSsV[:, :-1, :]
             # Backward scheme
-            grad[:, 1:, :] += lhs[:, :, np.newaxis] * dinvSsV[:, 1:, :]
+            out[:, 1:, :] += lhs[:, :, np.newaxis] * dinvSsV[:, 1:, :]
 
-    grad -= (
+    out -= (
         (
             fwd_model.fl_model.crank_nicolson * fwd_model.fl_model.lunitflow[time_index]
             + (1.0 - fwd_model.fl_model.crank_nicolson)
@@ -517,11 +516,11 @@ def dFpdSsv(
         * GRAVITY
     )[:, :, np.newaxis] * dinvSsV
 
-    grad[
+    out[
         fwd_model.fl_model.cst_head_indices[0], fwd_model.fl_model.cst_head_indices[1]
     ] = 0
 
-    return grad
+    return out
 
 
 def dFUxdKv(
