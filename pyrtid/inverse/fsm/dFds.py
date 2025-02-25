@@ -454,7 +454,7 @@ def dFpdSsv(
                         * (pressure_prev[1:, :] - pressure_prev[:-1, :])
                     )
                     / fwd_model.geometry.dx
-                    # + rhoijg
+                    + rhoijg
                 )
                 * fwd_model.geometry.gamma_ij_x
                 * rhoij
@@ -677,19 +677,17 @@ def dFDdav(
 
 def dFcdcimp(
     fwd_model: ForwardModel, time_index: int, vecs: NDArrayFloat
-) -> NDArrayFloat: ...
-
-
-def dFmdcimp(
-    fwd_model: ForwardModel, time_index: int, vecs: NDArrayFloat
-) -> NDArrayFloat: ...
-
-
-def dFcdmimp(
-    fwd_model: ForwardModel, time_index: int, vecs: NDArrayFloat
-) -> NDArrayFloat: ...
+) -> NDArrayFloat:
+    if time_index == 0:
+        return -vecs
+    masked_vecs = vecs.copy().reshape(-1, vecs.shape[-1], order="F")
+    masked_vecs[fwd_model.tr_model.free_conc_nn, :] = 0.0
+    return fwd_model.tr_model.q_next @ masked_vecs
 
 
 def dFmdmimp(
     fwd_model: ForwardModel, time_index: int, vecs: NDArrayFloat
-) -> NDArrayFloat: ...
+) -> NDArrayFloat:
+    if time_index == 0:
+        return -vecs
+    return np.zeros_like(vecs)

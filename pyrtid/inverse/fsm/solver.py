@@ -12,7 +12,6 @@ from pyrtid.forward.models import ForwardModel, Geometry
 from pyrtid.forward.solver import ForwardSolver
 from pyrtid.inverse.fsm.dFds import (
     dFcdcimp,
-    dFcdmimp,
     dFcdwv,
     dFDdav,
     dFDdDv,
@@ -20,7 +19,6 @@ from pyrtid.inverse.fsm.dFds import (
     dFhdhimp,
     dFhdKv,
     dFhdSsv,
-    dFmdcimp,
     dFmdmimp,
     dFpdKv,
     dFpdpimp,
@@ -278,7 +276,5 @@ def update_dFdsv(
             fsm_vecs.dFDdsv += dFDdav(model, time_index, fsm_vecs.vecs)
         if param.name == ParameterName.INITIAL_CONCENTRATION:
             fsm_vecs.dFcdsv += dFcdcimp(model, time_index, fsm_vecs.vecs)
-            fsm_vecs.dFmdsv += dFmdcimp(model, time_index, fsm_vecs.vecs)
         if param.name == ParameterName.INITIAL_GRADE:
-            fsm_vecs.dFcdsv += dFcdmimp(model, time_index, fsm_vecs.vecs)
             fsm_vecs.dFmdsv += dFmdmimp(model, time_index, fsm_vecs.vecs)
