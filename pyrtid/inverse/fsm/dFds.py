@@ -10,7 +10,7 @@ import numpy as np
 
 from pyrtid.forward.flow_solver import GRAVITY, WATER_DENSITY, get_rhomean
 from pyrtid.forward.models import FlowRegime, ForwardModel, VerticalAxis
-from pyrtid.utils import NDArrayFloat, dxi_harmonic_mean, harmonic_mean
+from pyrtid.utils import NDArrayFloat, dxi_harmonic_mean, harmonic_mean, np_cache
 
 
 def dFhdKv(
@@ -655,24 +655,33 @@ def dFpdpimp(
     return fwd_model.fl_model.q_next @ masked_vecs
 
 
-def dFDdwv(
+@np_cache(pos=1)
+def dFDdwv(fwd_model: ForwardModel, vecs: NDArrayFloat) -> NDArrayFloat:
+    return fwd_model.tr_model.diffusion[:, :, np.newaxis] * vecs
+
+
+@np_cache(pos=1)
+def dFDdDv(fwd_model: ForwardModel, vecs: NDArrayFloat) -> NDArrayFloat:
+    return fwd_model.tr_model.porosity[:, :, np.newaxis] * vecs
+
+
+def dFDddispv(
     fwd_model: ForwardModel, time_index: int, vecs: NDArrayFloat
-) -> NDArrayFloat: ...
+) -> NDArrayFloat:
+    return (
+        fwd_model.fl_model.get_u_darcy_norm_sample(time_index)[:, :, np.newaxis] * vecs
+    )
 
 
 def dFcdwv(
     fwd_model: ForwardModel, time_index: int, vecs: NDArrayFloat
-) -> NDArrayFloat: ...
-
-
-def dFDdDv(
-    fwd_model: ForwardModel, time_index: int, vecs: NDArrayFloat
-) -> NDArrayFloat: ...
-
-
-def dFDdav(
-    fwd_model: ForwardModel, time_index: int, vecs: NDArrayFloat
-) -> NDArrayFloat: ...
+) -> NDArrayFloat:
+    # no need to take constant conc into account because conc(n+1) - conc(n) is null in
+    # such case
+    return (
+        (fwd_model.tr_model.lmob[time_index] - fwd_model.tr_model.lmob[time_index - 1])
+        / fwd_model.time_params.dt
+    )[:, :, :, np.newaxis] * vecs[np.newaxis, :, :, :]
 
 
 def dFcdcimp(

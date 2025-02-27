@@ -13,7 +13,7 @@ from pyrtid.forward.solver import ForwardSolver
 from pyrtid.inverse.fsm.dFds import (
     dFcdcimp,
     dFcdwv,
-    dFDdav,
+    dFDddispv,
     dFDdDv,
     dFDdwv,
     dFhdhimp,
@@ -268,12 +268,12 @@ def update_dFdsv(
         if param.name == ParameterName.INITIAL_PRESSURE:
             fsm_vecs.dFpdsv += dFpdpimp(model, time_index, fsm_vecs.vecs)
         if param.name == ParameterName.POROSITY:
-            fsm_vecs.dFDdsv += dFDdwv(model, time_index, fsm_vecs.vecs)
+            fsm_vecs.dFDdsv += dFDdwv(model, fsm_vecs.vecs)
             fsm_vecs.dFcdsv += dFcdwv(model, time_index, fsm_vecs.vecs)
         if param.name == ParameterName.DIFFUSION:
-            fsm_vecs.dFDdsv += dFDdDv(model, time_index, fsm_vecs.vecs)
+            fsm_vecs.dFDdsv += dFDdDv(model, fsm_vecs.vecs)
         if param.name == ParameterName.DISPERSIVITY:
-            fsm_vecs.dFDdsv += dFDdav(model, time_index, fsm_vecs.vecs)
+            fsm_vecs.dFDdsv += dFDddispv(model, time_index, fsm_vecs.vecs)
         if param.name == ParameterName.INITIAL_CONCENTRATION:
             fsm_vecs.dFcdsv += dFcdcimp(model, time_index, fsm_vecs.vecs)
         if param.name == ParameterName.INITIAL_GRADE:
