@@ -214,6 +214,7 @@ from pyrtid.utils.means import (
     harmonic_mean,
     hmean_gradient,
 )
+from pyrtid.utils.numpy_helpers import np_cache
 from pyrtid.utils.operators import (
     get_angle_btw_vectors_deg,
     get_angle_btw_vectors_rad,
@@ -291,4 +292,5 @@ __all__ = [
     "sparse_cholesky",
     "assert_allclose_sparse",
     "Callback",
+    "np_cache",
 ]
