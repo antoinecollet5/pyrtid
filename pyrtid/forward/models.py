@@ -78,7 +78,7 @@ class TimeParameters:
     nts: int
         Number of timesteps in the simulation.
     nt: int
-        Number of times in the simulation (nt + 1).
+        Number of times in the simulation (nts + 1).
     nfpi: int
         Number of fixed point iterations used in the last time iteration.
     lnfpi:
@@ -582,7 +582,7 @@ class SourceTerm:
 
         # This is matching the "modify" process behavior of HYTEC
         for time_index, _time in enumerate(self.times):
-            if _time >= time:
+            if _time > time:
                 if time_index > 0:
                     time_index -= 1
                 break

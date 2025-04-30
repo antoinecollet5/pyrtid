@@ -162,8 +162,9 @@ class ForwardSolver:
         # Get the sources
         unitflw_sources_old = self.model.fl_model.lunitflow[-1]
         conc_sources_old = self.model.tr_model.lsources[-1]
+        # Careful, we need to consider the time at the beginning of the timestep
         unitflw_sources, conc_sources = self.model.get_sources(
-            self.model.time_params.time_elapsed, self.model.geometry
+            np.sum(self.model.time_params.ldt[:-1]), self.model.geometry
         )
 
         self.model.fl_model.lunitflow.append(unitflw_sources)

@@ -199,6 +199,8 @@ class Preconditioner(ABC):
           k = 1/100 --> the gradient dJ[s]/ds is a 100 times weaker than dJ2/ds2.
         - Example 2: we defined s2 = log(s)
           -> dJ/ds = ds2[s]/ds dJ2[s2]/ds2 = 1/s * dJ2[s2]/ds2
+          -> dJ/ds * s = dJ2[s2]/ds2
+
 
         Often, it is more efficient to compute (ds2/ds * dJ2/ds2) directly
         than to return ds2/ds, espectially if ds2/ds is a matrix of large dimension.
