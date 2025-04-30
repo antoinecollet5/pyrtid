@@ -54,8 +54,8 @@ clean-test: ## remove test and coverage artifacts
 	rm -rf coverage.xml
 
 clean-lint: ## remove test and coverage artifacts
-	rm -rf .ruff_cache
-	rm -rf .mypy_cache
+	find . -name '.ruff_cache' -exec rm -fr {} +
+	find . -name '.mypy_cache' -exec rm -fr {} +
 
 lint: ## check style with flake8
 	ruff check pyrtid tests
