@@ -306,6 +306,11 @@ class RectilinearGrid:
     psi: float = 0.0
 
     @property
+    def shape(self) -> Tuple[int, int, int]:
+        """Return the shape of the grid."""
+        return (self.nx, self.ny, self.nz)
+
+    @property
     def voxel_volume_m3(self) -> float:
         """Return the volume of one voxel in m3."""
         return self.dx * self.dy * self.dz
