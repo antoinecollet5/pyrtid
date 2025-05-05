@@ -20,13 +20,13 @@ from pyrtid.utils.types import NDArrayFloat
 
 
 def get_drhomean(
-    geometry: Geometry,
+    grid: Geometry,
     tr_model: TransportModel,
     axis: int,
     time_index: int,
     is_flatten: bool = True,
 ) -> NDArrayFloat:
-    drhomean: NDArrayFloat = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
+    drhomean: NDArrayFloat = np.zeros((grid.nx, grid.ny), dtype=np.float64)
     if axis == 0:
         drhomean[:-1, :] = dxi_arithmetic_mean(
             tr_model.ldensity[time_index][:-1, :], tr_model.ldensity[time_index][1:, :]
@@ -48,7 +48,7 @@ def solve_adj_density(
     a_tr_model: AdjointTransportModel,
     time_index: int,
     time_params: TimeParameters,
-    geometry: Geometry,
+    grid: Geometry,
     mw: float,
 ) -> None:
     shape = tr_model.ldensity[0].shape
@@ -72,12 +72,12 @@ def solve_adj_density(
 
             # 2) Contribution from the darcy equation
             _add_darcy_contribution(
-                fl_model, tr_model, a_fl_model, a_tr_model, time_index, geometry
+                fl_model, tr_model, a_fl_model, a_tr_model, time_index, grid
             )
 
             # 3) Contribution from the diffusivity equation
             _add_diffusivity_contribution(
-                fl_model, tr_model, a_fl_model, a_tr_model, time_index, geometry
+                fl_model, tr_model, a_fl_model, a_tr_model, time_index, grid
             )
 
 
@@ -102,16 +102,16 @@ def _add_darcy_contribution(
     a_fl_model: AdjointFlowModel,
     a_tr_model: AdjointTransportModel,
     time_index: int,
-    geometry: Geometry,
+    grid: Geometry,
 ) -> None:
     # X contribution
     if fl_model.vertical_axis == VerticalAxis.X:
-        kij = get_kmean(geometry, fl_model, axis=0, is_flatten=False)[:-1, :]
+        kij = get_kmean(grid, fl_model, axis=0, is_flatten=False)[:-1, :]
         a_u_darcy_x_old = (
             a_fl_model.a_u_darcy_x[1:-1, :, time_index + 1] * kij / WATER_DENSITY
         )
         drhomean = get_drhomean(
-            geometry, tr_model, axis=0, time_index=time_index, is_flatten=False
+            grid, tr_model, axis=0, time_index=time_index, is_flatten=False
         )[:-1, :]
         # Left
         a_tr_model.a_density[:-1, :, time_index] -= a_u_darcy_x_old * drhomean
@@ -119,12 +119,12 @@ def _add_darcy_contribution(
         a_tr_model.a_density[1:, :, time_index] -= a_u_darcy_x_old * drhomean
     # Y Contribution
     elif fl_model.vertical_axis == VerticalAxis.Y:
-        kij = get_kmean(geometry, fl_model, axis=1, is_flatten=False)[:, :-1]
+        kij = get_kmean(grid, fl_model, axis=1, is_flatten=False)[:, :-1]
         a_u_darcy_y_old = (
             a_fl_model.a_u_darcy_y[:, 1:-1, time_index + 1] * kij / WATER_DENSITY
         )
         drhomean = get_drhomean(
-            geometry, tr_model, axis=1, time_index=time_index, is_flatten=False
+            grid, tr_model, axis=1, time_index=time_index, is_flatten=False
         )[:, :-1]
         # Up
         a_tr_model.a_density[:, :-1, time_index] -= a_u_darcy_y_old * drhomean
@@ -138,7 +138,7 @@ def _add_diffusivity_contribution(
     a_fl_model: AdjointFlowModel,
     a_tr_model: AdjointTransportModel,
     time_index: int,
-    geometry: Geometry,
+    grid: Geometry,
 ) -> None:
     """Return the contribution from the derivative of the diffusivity equation."""
     if a_fl_model.crank_nicolson is None:
@@ -151,7 +151,7 @@ def _add_diffusivity_contribution(
     else:
         crank_flow = a_fl_model.crank_nicolson
 
-    shape = (geometry.nx, geometry.ny)
+    shape = (grid.nx, grid.ny)
     permeability = fl_model.permeability
     free_head_indices = fl_model.free_head_indices
 
@@ -165,7 +165,7 @@ def _add_diffusivity_contribution(
     ]
     # add the storgae coefficient to ma_apressure
     ma_apressure_sc = ma_apressure / (
-        fl_model.storage_coefficient[:, :] * geometry.grid_cell_volume
+        fl_model.storage_coefficient[:, :] * grid.grid_cell_volume
     )
 
     pprev = fl_model.pressure[:, :, time_index + 1]
@@ -174,9 +174,9 @@ def _add_diffusivity_contribution(
     contrib = np.zeros(shape)
 
     # Consider the y axis for 2D cases
-    if geometry.nx > 1:
+    if grid.nx > 1:
         drhomean_x = get_drhomean(
-            geometry,
+            grid,
             tr_model,
             axis=0,
             time_index=time_index,
@@ -185,7 +185,7 @@ def _add_diffusivity_contribution(
         tmp = np.zeros_like(drhomean_x)
         if fl_model.vertical_axis == VerticalAxis.X:
             rhomean_x = get_rhomean(
-                geometry,
+                grid,
                 tr_model,
                 axis=0,
                 time_index=time_index,
@@ -200,7 +200,7 @@ def _add_diffusivity_contribution(
                     crank_flow * (pprev[1:, :] - pprev[:-1, :])
                     + (1.0 - crank_flow) * (pnext[1:, :] - pnext[:-1, :])
                 )
-                / geometry.dx
+                / grid.dx
                 * drhomean_x
                 + tmp
             )
@@ -211,7 +211,7 @@ def _add_diffusivity_contribution(
         contrib[:-1, :] += (
             dpressure_fx
             * (ma_apressure_sc[:-1, :] - ma_apressure_sc[1:, :])
-            * geometry.gamma_ij_x
+            * grid.gamma_ij_x
         )
 
         # Backward scheme
@@ -221,7 +221,7 @@ def _add_diffusivity_contribution(
                     crank_flow * (pprev[:-1, :] - pprev[1:, :])
                     + (1.0 - crank_flow) * (pnext[:-1, :] - pnext[1:, :])
                 )
-                / geometry.dx
+                / grid.dx
                 * drhomean_x
                 - tmp
             )
@@ -232,13 +232,13 @@ def _add_diffusivity_contribution(
         contrib[1:, :] += (
             dpressure_bx
             * (ma_apressure_sc[1:, :] - ma_apressure_sc[:-1, :])
-            * geometry.gamma_ij_x
+            * grid.gamma_ij_x
         )
 
     # Consider the y axis for 2D cases
-    if geometry.ny > 1:
+    if grid.ny > 1:
         drhomean_y = get_drhomean(
-            geometry,
+            grid,
             tr_model,
             axis=1,
             time_index=time_index,
@@ -247,7 +247,7 @@ def _add_diffusivity_contribution(
         tmp = np.zeros_like(drhomean_y)
         if fl_model.vertical_axis == VerticalAxis.Y:
             rhomean_y = get_rhomean(
-                geometry,
+                grid,
                 tr_model,
                 axis=1,
                 time_index=time_index,
@@ -262,7 +262,7 @@ def _add_diffusivity_contribution(
                     crank_flow * (pprev[:, 1:] - pprev[:, :-1])
                     + (1.0 - crank_flow) * (pnext[:, 1:] - pnext[:, :-1])
                 )
-                / geometry.dy
+                / grid.dy
                 * drhomean_y
                 + tmp
             )
@@ -273,7 +273,7 @@ def _add_diffusivity_contribution(
         contrib[:, :-1] += (
             dpressure_fy
             * (ma_apressure_sc[:, :-1] - ma_apressure_sc[:, 1:])
-            * geometry.gamma_ij_y
+            * grid.gamma_ij_y
         )
 
         # Backward scheme
@@ -283,7 +283,7 @@ def _add_diffusivity_contribution(
                     crank_flow * (pprev[:, :-1] - pprev[:, 1:])
                     + (1.0 - crank_flow) * (pnext[:, :-1] - pnext[:, 1:])
                 )
-                / geometry.dy
+                / grid.dy
                 * drhomean_y
                 - tmp
             )
@@ -294,10 +294,10 @@ def _add_diffusivity_contribution(
         contrib[:, 1:] += (
             dpressure_by
             * (ma_apressure_sc[:, 1:] - ma_apressure_sc[:, :-1])
-            * geometry.gamma_ij_y
+            * grid.gamma_ij_y
         )
 
-    a_tr_model.a_density[:, :, time_index] += contrib.reshape(geometry.shape, order="F")
+    a_tr_model.a_density[:, :, time_index] += contrib.reshape(grid.shape, order="F")
 
     # 3) Add unitflow: only for free head nodes
     a_tr_model.a_density[:, :, time_index] += (

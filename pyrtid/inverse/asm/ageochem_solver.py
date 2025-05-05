@@ -21,7 +21,7 @@ def solve_adj_geochem(
     tr_model: TransportModel,
     a_tr_model: AdjointTransportModel,
     gch_params: GeochemicalParameters,
-    geometry: Geometry,
+    grid: Geometry,
     time_params: TimeParameters,
     time_index: int,
     nafpi: int,
@@ -66,7 +66,7 @@ def solve_adj_geochem(
     for sp in range(tr_model.n_sp):
         a_tr_model.a_immob[sp, :, :, time_index] -= a_tr_model.a_grade_sources[sp][
             :, [time_index]
-        ].reshape(geometry.nx, geometry.ny, order="F")
+        ].reshape(grid.nx, grid.ny, order="F")
 
     # 2.3) Add the contributions from the transport equation
     # + deal with the adjoint numerical acceleration

@@ -31,7 +31,7 @@ from pyrtid.utils import (
 
 
 def add_adj_stationary_flow_to_q_next(
-    geometry: Geometry,
+    grid: Geometry,
     fl_model: FlowModel,
     q_next: lil_array,
 ) -> lil_array:
@@ -44,19 +44,19 @@ def add_adj_stationary_flow_to_q_next(
     matrices q_prev and q_next are the same.
     """
     # 1) X contribution
-    if geometry.nx >= 2:
-        kmean = get_kmean(geometry, fl_model, 0)
+    if grid.nx >= 2:
+        kmean = get_kmean(grid, fl_model, 0)
 
-        _tmp = geometry.gamma_ij_x / geometry.dx / geometry.grid_cell_volume
+        _tmp = grid.gamma_ij_x / grid.dx / grid.grid_cell_volume
         if fl_model.is_gravity:
             _tmp /= WATER_DENSITY * GRAVITY
 
         # 1.1) Forward scheme:
         # 1.1.1) For free head nodes only
         idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(0, geometry.nx - 1), slice(None)),
-            (slice(1, geometry.nx), slice(None)),
+            grid,
+            (slice(0, grid.nx - 1), slice(None)),
+            (slice(1, grid.nx), slice(None)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
         tmp = _tmp * kmean[idc_owner]
@@ -64,9 +64,9 @@ def add_adj_stationary_flow_to_q_next(
 
         # 1.1.2) For all nodes but with free head neighbors only
         idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(0, geometry.nx - 1), slice(None)),
-            (slice(1, geometry.nx), slice(None)),
+            grid,
+            (slice(0, grid.nx - 1), slice(None)),
+            (slice(1, grid.nx), slice(None)),
             neigh_indices_to_keep=fl_model.free_head_nn,
         )
         tmp = _tmp * kmean[idc_owner]
@@ -76,9 +76,9 @@ def add_adj_stationary_flow_to_q_next(
 
         # 1.2.1) For free head nodes only
         idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(1, geometry.nx), slice(None)),
-            (slice(0, geometry.nx - 1), slice(None)),
+            grid,
+            (slice(1, grid.nx), slice(None)),
+            (slice(0, grid.nx - 1), slice(None)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
         tmp = _tmp * kmean[idc_neigh]
@@ -86,28 +86,28 @@ def add_adj_stationary_flow_to_q_next(
 
         # 1.2.2) For all nodes but with free head neighbors only
         idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(1, geometry.nx), slice(None)),
-            (slice(0, geometry.nx - 1), slice(None)),
+            grid,
+            (slice(1, grid.nx), slice(None)),
+            (slice(0, grid.nx - 1), slice(None)),
             neigh_indices_to_keep=fl_model.free_head_nn,
         )
         tmp = _tmp * kmean[idc_neigh]
         q_next[idc_owner, idc_neigh] -= tmp
 
     # 2) Y contribution
-    if geometry.ny >= 2:
-        kmean = get_kmean(geometry, fl_model, 1)
+    if grid.ny >= 2:
+        kmean = get_kmean(grid, fl_model, 1)
 
         # 2.1) Forward scheme:
-        _tmp = geometry.gamma_ij_y / geometry.dy / geometry.grid_cell_volume
+        _tmp = grid.gamma_ij_y / grid.dy / grid.grid_cell_volume
         if fl_model.is_gravity:
             _tmp /= WATER_DENSITY * GRAVITY
 
         # 2.1.1) For free head nodes only
         idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(None), slice(0, geometry.ny - 1)),
-            (slice(None), slice(1, geometry.ny)),
+            grid,
+            (slice(None), slice(0, grid.ny - 1)),
+            (slice(None), slice(1, grid.ny)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
         tmp = _tmp * kmean[idc_owner]
@@ -115,9 +115,9 @@ def add_adj_stationary_flow_to_q_next(
 
         # 2.1.2) For all nodes but with free head neighbors only
         idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(None), slice(0, geometry.ny - 1)),
-            (slice(None), slice(1, geometry.ny)),
+            grid,
+            (slice(None), slice(0, grid.ny - 1)),
+            (slice(None), slice(1, grid.ny)),
             neigh_indices_to_keep=fl_model.free_head_nn,
         )
         tmp = _tmp * kmean[idc_owner]
@@ -127,9 +127,9 @@ def add_adj_stationary_flow_to_q_next(
 
         # 2.2.1) For free head nodes only
         idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(None), slice(1, geometry.ny)),
-            (slice(None), slice(0, geometry.ny - 1)),
+            grid,
+            (slice(None), slice(1, grid.ny)),
+            (slice(None), slice(0, grid.ny - 1)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
         tmp = _tmp * kmean[idc_neigh]
@@ -137,9 +137,9 @@ def add_adj_stationary_flow_to_q_next(
 
         # 2.2.2) For all nodes but with free head neighbors only
         idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(None), slice(1, geometry.ny)),
-            (slice(None), slice(0, geometry.ny - 1)),
+            grid,
+            (slice(None), slice(1, grid.ny)),
+            (slice(None), slice(0, grid.ny - 1)),
             neigh_indices_to_keep=fl_model.free_head_nn,
         )
         tmp = _tmp * kmean[idc_neigh]
@@ -149,7 +149,7 @@ def add_adj_stationary_flow_to_q_next(
 
 
 def make_transient_adj_flow_matrices(
-    geometry: Geometry,
+    grid: Geometry,
     fl_model: FlowModel,
     tr_model: TransportModel,
     a_fl_model: AdjointFlowModel,
@@ -165,7 +165,7 @@ def make_transient_adj_flow_matrices(
     matrices q_prev and q_next are the same.
     """
 
-    dim = geometry.nx * geometry.ny
+    dim = grid.nx * grid.ny
     q_prev = lil_array((dim, dim), dtype=np.float64)
     q_next = lil_array((dim, dim), dtype=np.float64)
     sc = fl_model.storage_coefficient.ravel("F")
@@ -175,23 +175,21 @@ def make_transient_adj_flow_matrices(
         fl_crank = a_fl_model.crank_nicolson
 
     # 1) X contribution
-    if geometry.nx >= 2:
-        _tmp = geometry.gamma_ij_x / geometry.dx / geometry.grid_cell_volume
+    if grid.nx >= 2:
+        _tmp = grid.gamma_ij_x / grid.dx / grid.grid_cell_volume
 
-        kmean = get_kmean(geometry, fl_model, 0)
+        kmean = get_kmean(grid, fl_model, 0)
         # at n - 1
-        rhomean_next = get_rhomean(
-            geometry, tr_model, axis=0, time_index=time_index - 1
-        )
+        rhomean_next = get_rhomean(grid, tr_model, axis=0, time_index=time_index - 1)
         # at n
-        rhomean_prev = get_rhomean(geometry, tr_model, axis=0, time_index=time_index)
+        rhomean_prev = get_rhomean(grid, tr_model, axis=0, time_index=time_index)
         # 1.1) Forward scheme:
 
         # 1.1.1) For free head nodes only
         idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(0, geometry.nx - 1), slice(None)),
-            (slice(1, geometry.nx), slice(None)),
+            grid,
+            (slice(0, grid.nx - 1), slice(None)),
+            (slice(1, grid.nx), slice(None)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
         # Add the storage coefficient with respect to the owner mesh
@@ -207,9 +205,9 @@ def make_transient_adj_flow_matrices(
 
         # 1.1.2) For all nodes but with free head neighbors only
         idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(0, geometry.nx - 1), slice(None)),
-            (slice(1, geometry.nx), slice(None)),
+            grid,
+            (slice(0, grid.nx - 1), slice(None)),
+            (slice(1, grid.nx), slice(None)),
             neigh_indices_to_keep=fl_model.free_head_nn,
         )
         # Add the storage coefficient with respect to the owner mesh
@@ -227,9 +225,9 @@ def make_transient_adj_flow_matrices(
 
         # 1.2.1) For free head nodes only
         idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(1, geometry.nx), slice(None)),
-            (slice(0, geometry.nx - 1), slice(None)),
+            grid,
+            (slice(1, grid.nx), slice(None)),
+            (slice(0, grid.nx - 1), slice(None)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
         # Add the storage coefficient with respect to the owner mesh
@@ -245,9 +243,9 @@ def make_transient_adj_flow_matrices(
 
         # 1.2.2) For all nodes but with free head neighbors only
         idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(1, geometry.nx), slice(None)),
-            (slice(0, geometry.nx - 1), slice(None)),
+            grid,
+            (slice(1, grid.nx), slice(None)),
+            (slice(0, grid.nx - 1), slice(None)),
             neigh_indices_to_keep=fl_model.free_head_nn,
         )
         # Add the storage coefficient with respect to the owner mesh
@@ -262,23 +260,21 @@ def make_transient_adj_flow_matrices(
         q_prev[idc_owner, idc_neigh] += (1.0 - fl_crank) * tmp_prev  # type: ignore
 
     # 2) Y contribution
-    if geometry.ny >= 2:
-        kmean = get_kmean(geometry, fl_model, 1)
+    if grid.ny >= 2:
+        kmean = get_kmean(grid, fl_model, 1)
 
         # at n - 1
-        rhomean_next = get_rhomean(
-            geometry, tr_model, axis=1, time_index=time_index - 1
-        )
+        rhomean_next = get_rhomean(grid, tr_model, axis=1, time_index=time_index - 1)
         # at n
-        rhomean_prev = get_rhomean(geometry, tr_model, axis=1, time_index=time_index)
+        rhomean_prev = get_rhomean(grid, tr_model, axis=1, time_index=time_index)
         # 2.1) Forward scheme:
-        _tmp = geometry.gamma_ij_y / geometry.dy / geometry.grid_cell_volume
+        _tmp = grid.gamma_ij_y / grid.dy / grid.grid_cell_volume
 
         # 2.1.1) For free head nodes only
         idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(None), slice(0, geometry.ny - 1)),
-            (slice(None), slice(1, geometry.ny)),
+            grid,
+            (slice(None), slice(0, grid.ny - 1)),
+            (slice(None), slice(1, grid.ny)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
         # Add the storage coefficient with respect to the owner mesh
@@ -294,9 +290,9 @@ def make_transient_adj_flow_matrices(
 
         # 2.1.2) For all nodes but with free head neighbors only
         idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(None), slice(0, geometry.ny - 1)),
-            (slice(None), slice(1, geometry.ny)),
+            grid,
+            (slice(None), slice(0, grid.ny - 1)),
+            (slice(None), slice(1, grid.ny)),
             neigh_indices_to_keep=fl_model.free_head_nn,
         )
         # Add the storage coefficient with respect to the owner mesh
@@ -315,9 +311,9 @@ def make_transient_adj_flow_matrices(
 
         # 2.2.1) For free head nodes only
         idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(None), slice(1, geometry.ny)),
-            (slice(None), slice(0, geometry.ny - 1)),
+            grid,
+            (slice(None), slice(1, grid.ny)),
+            (slice(None), slice(0, grid.ny - 1)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
         # Add the storage coefficient with respect to the owner mesh
@@ -333,9 +329,9 @@ def make_transient_adj_flow_matrices(
 
         # 2.2.2) For all nodes but with free head neighbors only
         idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(None), slice(1, geometry.ny)),
-            (slice(None), slice(0, geometry.ny - 1)),
+            grid,
+            (slice(None), slice(1, grid.ny)),
+            (slice(None), slice(0, grid.ny - 1)),
             neigh_indices_to_keep=fl_model.free_head_nn,
         )
         # Add the storage coefficient with respect to the owner mesh
@@ -353,7 +349,7 @@ def make_transient_adj_flow_matrices(
 
 
 def get_aflow_matrices(
-    geometry: Geometry,
+    grid: Geometry,
     fl_model: FlowModel,
     tr_model: TransportModel,
     a_fl_model: AdjointFlowModel,
@@ -364,7 +360,7 @@ def get_aflow_matrices(
     # matrices at each timestep.
     if fl_model.is_gravity:
         _q_next, _q_prev = make_transient_adj_flow_matrices(
-            geometry, fl_model, tr_model, a_fl_model, time_params, time_index
+            grid, fl_model, tr_model, a_fl_model, time_params, time_index
         )
     else:
         _q_prev = a_fl_model.q_prev.copy()
@@ -378,7 +374,7 @@ def get_aflow_matrices(
             diag += 1.0
         else:  # stationary case
             # add the derivative of the stationary flow for initialization
-            _q_next = add_adj_stationary_flow_to_q_next(geometry, fl_model, _q_next)
+            _q_next = add_adj_stationary_flow_to_q_next(grid, fl_model, _q_next)
             diag[fl_model.cst_head_nn] += 1.0
     else:
         # Add 1/dt for the left term contribution: only for free head
@@ -412,7 +408,7 @@ def get_aflow_matrices(
 
 
 def update_adjoint_u_darcy(
-    geometry: Geometry,
+    grid: Geometry,
     tr_model: TransportModel,
     a_tr_model: AdjointTransportModel,
     fl_model: FlowModel,
@@ -428,7 +424,7 @@ def update_adjoint_u_darcy(
         + tr_model.dispersivity * fl_model.get_u_darcy_norm_sample(time_index)
     )
     dUx, dUy = fl_model.get_du_darcy_norm_sample(time_index)
-    lhs = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
+    lhs = np.zeros((grid.nx, grid.ny), dtype=np.float64)
 
     # loop over the species
     for sp in range(tr_model.n_sp):
@@ -450,7 +446,7 @@ def update_adjoint_u_darcy(
             a_mob = np.zeros_like(mob)
 
         # X contribution
-        if geometry.nx > 1:
+        if grid.nx > 1:
             un_x = fl_model.u_darcy_x[1:-1, :, time_index]
 
             mob_ij_x = np.where(
@@ -460,7 +456,7 @@ def update_adjoint_u_darcy(
 
             # 1) advective term
             a_fl_model.a_u_darcy_x[1:-1, :, time_index] += (
-                geometry.gamma_ij_x
+                grid.gamma_ij_x
                 * (
                     (
                         crank_adv * (a_mob[1:, :] - a_mob[:-1, :])
@@ -468,27 +464,27 @@ def update_adjoint_u_darcy(
                     )
                     * mob_ij_x
                 )
-                / geometry.grid_cell_volume
+                / grid.grid_cell_volume
             )
 
             # 2) U divergence term
             a_fl_model.a_u_darcy_x[1:-1, :, time_index] += (
-                geometry.gamma_ij_x
+                grid.gamma_ij_x
                 * (
                     crank_adv
                     * (a_mob[:-1, :] * mob[:-1, :] - a_mob[1:, :] * mob[1:, :])
                     + (1.0 - crank_adv)
                     * (a_mob_old[:-1, :] * mob[:-1, :] - a_mob_old[1:, :] * mob[1:, :])
                 )
-                / geometry.grid_cell_volume
+                / grid.grid_cell_volume
             )
 
             # 3) Dispersivity term -> \lmabda *
             # forward in space
             lhs[:-1, :] += (
-                geometry.gamma_ij_x
-                / geometry.dx
-                / geometry.grid_cell_volume
+                grid.gamma_ij_x
+                / grid.dx
+                / grid.grid_cell_volume
                 * (
                     (
                         crank_diff * (mob[1:, :] - mob[:-1, :])
@@ -500,9 +496,9 @@ def update_adjoint_u_darcy(
             )
             # backward in space
             lhs[1:, :] += (
-                geometry.gamma_ij_x
-                / geometry.dx
-                / geometry.grid_cell_volume
+                grid.gamma_ij_x
+                / grid.dx
+                / grid.grid_cell_volume
                 * (
                     (
                         crank_diff * (mob[:-1, :] - mob[1:, :])
@@ -514,7 +510,7 @@ def update_adjoint_u_darcy(
             )
 
         # Y contribution
-        if geometry.ny > 1:
+        if grid.ny > 1:
             un_y = fl_model.u_darcy_y[:, 1:-1, time_index]
             mob_ij_y = np.where(
                 un_y > 0.0, mob[:, :-1], mob[:, 1:]
@@ -523,7 +519,7 @@ def update_adjoint_u_darcy(
 
             # 1) advective term
             a_fl_model.a_u_darcy_y[:, 1:-1, time_index] += (
-                geometry.gamma_ij_y
+                grid.gamma_ij_y
                 * (
                     (
                         crank_adv * (a_mob[:, 1:] - a_mob[:, :-1])
@@ -531,26 +527,26 @@ def update_adjoint_u_darcy(
                     )
                     * mob_ij_y
                 )
-                / geometry.grid_cell_volume
+                / grid.grid_cell_volume
             )
             # 2) U divergence term
             a_fl_model.a_u_darcy_y[:, 1:-1, time_index] += (
-                geometry.gamma_ij_y
+                grid.gamma_ij_y
                 * (
                     crank_adv
                     * (a_mob[:, :-1] * mob[:, :-1] - a_mob[:, 1:] * mob[:, 1:])
                     + (1.0 - crank_adv)
                     * (a_mob_old[:, :-1] * mob[:, :-1] - a_mob_old[:, 1:] * mob[:, 1:])
                 )
-                / geometry.grid_cell_volume
+                / grid.grid_cell_volume
             )
 
             # 3) Dispersivity term
             # forward in space
             lhs[:, :-1] += (
-                geometry.gamma_ij_y
-                / geometry.dy
-                / geometry.grid_cell_volume
+                grid.gamma_ij_y
+                / grid.dy
+                / grid.grid_cell_volume
                 * (
                     (
                         crank_diff * (mob[:, 1:] - mob[:, :-1])
@@ -562,9 +558,9 @@ def update_adjoint_u_darcy(
             )
             # backward in space
             lhs[:, 1:] += (
-                geometry.gamma_ij_y
-                / geometry.dy
-                / geometry.grid_cell_volume
+                grid.gamma_ij_y
+                / grid.dy
+                / grid.grid_cell_volume
                 * (
                     (
                         crank_diff * (mob[:, :-1] - mob[:, 1:])
@@ -583,7 +579,7 @@ def update_adjoint_u_darcy(
 
 
 def solve_adj_flow(
-    geometry: Geometry,
+    grid: Geometry,
     fl_model: FlowModel,
     tr_model: TransportModel,
     a_fl_model: AdjointFlowModel,
@@ -597,15 +593,15 @@ def solve_adj_flow(
     """
     if fl_model.is_gravity:
         return solve_adj_flow_density(
-            geometry, fl_model, tr_model, a_fl_model, time_params, time_index
+            grid, fl_model, tr_model, a_fl_model, time_params, time_index
         )
     return solve_adj_flow_saturated(
-        geometry, fl_model, tr_model, a_fl_model, time_params, time_index
+        grid, fl_model, tr_model, a_fl_model, time_params, time_index
     )
 
 
 def solve_adj_flow_saturated(
-    geometry: Geometry,
+    grid: Geometry,
     fl_model: FlowModel,
     tr_model: TransportModel,
     a_fl_model: AdjointFlowModel,
@@ -623,12 +619,12 @@ def solve_adj_flow_saturated(
     a_fl_model.a_pressure[:, :, time_index] = -(
         a_fl_model.a_pressure_sources[:, [time_index]]
         .todense()
-        .reshape(geometry.nx, geometry.ny, order="F")
+        .reshape(grid.nx, grid.ny, order="F")
     )
 
     # 2) Build adjoint flow matrices Q_{prev} and Q_{next}
     _q_next, _q_prev = get_aflow_matrices(
-        geometry, fl_model, tr_model, a_fl_model, time_params, time_index
+        grid, fl_model, tr_model, a_fl_model, time_params, time_index
     )
 
     # 3) Build LU preconditioner for Q_{next}
@@ -657,7 +653,7 @@ def solve_adj_flow_saturated(
     )
 
     # 6) Add the source terms from mob observations (adjoint transport)
-    tmp += get_adjoint_transport_src_terms(geometry, fl_model, a_fl_model, time_index)
+    tmp += get_adjoint_transport_src_terms(grid, fl_model, a_fl_model, time_index)
 
     # 7) Solve Ax = b with A sparse using LU preconditioner
     res, exit_code = lgmres(
@@ -669,13 +665,13 @@ def solve_adj_flow_saturated(
     )
 
     # 8) Update the adjoint head field
-    a_fl_model.a_head[:, :, time_index] = res.reshape(geometry.ny, geometry.nx).T
+    a_fl_model.a_head[:, :, time_index] = res.reshape(grid.ny, grid.nx).T
 
     return exit_code
 
 
 def solve_adj_flow_density(
-    geometry: Geometry,
+    grid: Geometry,
     fl_model: FlowModel,
     tr_model: TransportModel,
     a_fl_model: AdjointFlowModel,
@@ -693,12 +689,12 @@ def solve_adj_flow_density(
     a_fl_model.a_head[:, :, time_index] = -(
         a_fl_model.a_head_sources[:, [time_index]]
         .todense()
-        .reshape(geometry.nx, geometry.ny, order="F")
+        .reshape(grid.nx, grid.ny, order="F")
     )
 
     # 2) Build adjoint flow matrices Q_{prev} and Q_{next}
     _q_next, _q_prev = get_aflow_matrices(
-        geometry, fl_model, tr_model, a_fl_model, time_params, time_index
+        grid, fl_model, tr_model, a_fl_model, time_params, time_index
     )
 
     # 3) Build LU preconditioner for Q_{next}
@@ -733,7 +729,7 @@ def solve_adj_flow_density(
     )
 
     # 7) Add the source terms from mob observations (adjoint transport)
-    tmp += get_adjoint_transport_src_terms(geometry, fl_model, a_fl_model, time_index)
+    tmp += get_adjoint_transport_src_terms(grid, fl_model, a_fl_model, time_index)
 
     # 8) Solve Ax = b with A sparse using LU preconditioner
     res, exit_code = lgmres(
@@ -745,13 +741,13 @@ def solve_adj_flow_density(
     )
 
     # 10) Update the adjoint pressure field
-    a_fl_model.a_pressure[:, :, time_index] = res.reshape(geometry.ny, geometry.nx).T
+    a_fl_model.a_pressure[:, :, time_index] = res.reshape(grid.ny, grid.nx).T
 
     return exit_code
 
 
 def get_adjoint_transport_src_terms(
-    geometry: Geometry,
+    grid: Geometry,
     fl_model: FlowModel,
     a_fl_model: AdjointFlowModel,
     time_index: int,
@@ -761,7 +757,7 @@ def get_adjoint_transport_src_terms(
 
     Parameters
     ----------
-    geometry : Geometry
+    grid : Geometry
         _description_
     tmp : NDArrayFloat
         _description_
@@ -777,14 +773,14 @@ def get_adjoint_transport_src_terms(
     NDArrayFloat
         _description_
     """
-    src = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
+    src = np.zeros((grid.nx, grid.ny), dtype=np.float64)
     tmp = 1.0
     # Handle density flow
     if fl_model.is_gravity:
         tmp = 1.0 / GRAVITY / WATER_DENSITY
 
     # x contribution
-    if geometry.nx > 1:
+    if grid.nx > 1:
         # Get the permeability between nodes
         kmean_x = harmonic_mean(
             fl_model.permeability[:-1, :], fl_model.permeability[1:, :]
@@ -792,16 +788,16 @@ def get_adjoint_transport_src_terms(
 
         # Forward
         src[:-1, :] += (
-            kmean_x * a_fl_model.a_u_darcy_x[1:-1, :, time_index] / geometry.dx
+            kmean_x * a_fl_model.a_u_darcy_x[1:-1, :, time_index] / grid.dx
         ) * tmp
 
         # Backward
         src[1:, :] -= (
-            kmean_x * a_fl_model.a_u_darcy_x[1:-1, :, time_index] / geometry.dx
+            kmean_x * a_fl_model.a_u_darcy_x[1:-1, :, time_index] / grid.dx
         ) * tmp
 
     # y contribution
-    if geometry.ny > 1:
+    if grid.ny > 1:
         # Get the permeability between nodes
         kmean_y = harmonic_mean(
             fl_model.permeability[:, :-1], fl_model.permeability[:, 1:]
@@ -809,12 +805,12 @@ def get_adjoint_transport_src_terms(
 
         # Forward
         src[:, :-1] += (
-            kmean_y * a_fl_model.a_u_darcy_y[:, 1:-1, time_index] / geometry.dy
+            kmean_y * a_fl_model.a_u_darcy_y[:, 1:-1, time_index] / grid.dy
         ) * tmp
 
         # Backward
         src[:, 1:] -= (
-            kmean_y * a_fl_model.a_u_darcy_y[:, 1:-1, time_index] / geometry.dy
+            kmean_y * a_fl_model.a_u_darcy_y[:, 1:-1, time_index] / grid.dy
         ) * tmp
 
     return src.ravel("F")

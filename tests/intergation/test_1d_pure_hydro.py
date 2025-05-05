@@ -69,7 +69,7 @@ def get_forward_and_obs(
         dt_min=dt_min,
         courant_factor=courant_factor,
     )
-    geometry = dmfwd.Geometry(nx=nx, ny=ny, dx=dx, dy=dy, dz=dz)
+    grid = dmfwd.Geometry(nx=nx, ny=ny, dx=dx, dy=dy, dz=dz)
     fl_params = dmfwd.FlowParameters(
         permeability=k0,
         storage_coefficient=storage_coefficient,
@@ -81,7 +81,7 @@ def get_forward_and_obs(
     )
 
     base_model = dmfwd.ForwardModel(
-        geometry,
+        grid,
         time_params,
         fl_params,
         tr_params=dmfwd.TransportParameters(is_skip_rt=True),
@@ -227,7 +227,7 @@ def get_executor_k(
         ubounds=MAX_VAL_K * 10,
         preconditioner=dminv.LogTransform(),
         regularizators=dminv.regularization.TikhonovRegularizator(
-            geometry=model_initial_guess.geometry, preconditioner=dminv.LogTransform()
+            grid=model_initial_guess.grid, preconditioner=dminv.LogTransform()
         ),
         gradient_scaler_config=gsc,
         reg_weight_update_strategy=dminv.regularization.ConstantRegWeight(200.0),

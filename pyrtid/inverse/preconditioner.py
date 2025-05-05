@@ -2381,7 +2381,7 @@ class GDPCS(GDPNCS):
 class SubSelector(Preconditioner):
     """Apply a selection on the input field."""
 
-    def __init__(self, node_numbers: NDArrayInt, geometry: Geometry) -> None:
+    def __init__(self, node_numbers: NDArrayInt, grid: Geometry) -> None:
         """
         Initialize the instance.
 
@@ -2393,7 +2393,7 @@ class SubSelector(Preconditioner):
             Size of the field to be sampled.
         """
         self.node_numbers = np.array(node_numbers)
-        self.field_size: int = geometry.n_grid_cells
+        self.field_size: int = grid.n_grid_cells
         self.s_raw = np.zeros(self.field_size)
 
     def _transform(self, s_raw: NDArrayFloat) -> NDArrayFloat:
@@ -2531,16 +2531,16 @@ class Slicer(SubSelector):
 
     def __init__(
         self,
-        geometry: Geometry,
+        grid: Geometry,
         span: Union[NDArrayInt, Tuple[slice, slice], NDArrayBool] = (
             slice(None),
             slice(None),
         ),
     ) -> None:
         """Initialize the instance."""
-        field_size = geometry.n_grid_cells
-        node_numbers = np.arange(field_size).reshape(geometry.shape, order="F")[span]
-        super().__init__(node_numbers, geometry)
+        field_size = grid.n_grid_cells
+        node_numbers = np.arange(field_size).reshape(grid.shape, order="F")[span]
+        super().__init__(node_numbers, grid)
 
 
 def gaussian_cfd(x: NDArrayFloat, mu: float, std: float) -> NDArrayFloat:

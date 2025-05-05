@@ -11,9 +11,7 @@ from pyrtid.forward.flow_solver import get_rhomean
 from pyrtid.forward.models import GRAVITY, WATER_DENSITY, FlowRegime, VerticalAxis
 from pyrtid.inverse.asm import AdjointModel, AdjointSolver
 from pyrtid.inverse.asm.ageochem_solver import ddMdimmobprev
-from pyrtid.inverse.loss_function import (
-    eval_model_loss_function,
-)
+from pyrtid.inverse.loss_function import eval_model_loss_function
 from pyrtid.inverse.obs import Observable, Observables
 from pyrtid.inverse.params import (
     AdjustableParameter,
@@ -54,7 +52,7 @@ def get_diffusion_term_adjoint_gradient(
     NDArrayFloat
         Gradient of the objective function with respect to the diffusion.
     """
-    shape = (fwd_model.geometry.nx, fwd_model.geometry.ny, fwd_model.time_params.nt)
+    shape = (fwd_model.grid.nx, fwd_model.grid.ny, fwd_model.time_params.nt)
 
     # diffusion + dispersivity
     d = (
@@ -105,9 +103,9 @@ def get_diffusion_term_adjoint_gradient(
             # Gather the two schemes
             grad += (
                 (dconc_fx * damob_fx + dconc_bx * damob_bx)
-                * fwd_model.geometry.gamma_ij_x
-                / fwd_model.geometry.dx
-                / fwd_model.geometry.grid_cell_volume
+                * fwd_model.grid.gamma_ij_x
+                / fwd_model.grid.dx
+                / fwd_model.grid.grid_cell_volume
             )
 
         # Y axis contribution
@@ -133,9 +131,9 @@ def get_diffusion_term_adjoint_gradient(
             # Gather the two schemes
             grad += (
                 (dconc_fy * damob_fy + dconc_by * damob_by)
-                * fwd_model.geometry.gamma_ij_y
-                / fwd_model.geometry.dy
-                / fwd_model.geometry.grid_cell_volume
+                * fwd_model.grid.gamma_ij_y
+                / fwd_model.grid.dy
+                / fwd_model.grid.grid_cell_volume
             )
 
     # We sum along the temporal axis
@@ -215,7 +213,7 @@ def get_porosity_adjoint_gradient(
         Gradient of the objective function with respect to the porosity.
     """
     grad = np.zeros(
-        (fwd_model.geometry.nx, fwd_model.geometry.ny, fwd_model.time_params.nt - 1)
+        (fwd_model.grid.nx, fwd_model.grid.ny, fwd_model.time_params.nt - 1)
     )
 
     for sp in range(fwd_model.tr_model.n_sp):
@@ -295,7 +293,7 @@ def _get_perm_gradient_from_diffusivity_eq_saturated(
     if adj_model.a_fl_model.is_use_continuous_adj:
         pass
 
-    shape = (fwd_model.geometry.nx, fwd_model.geometry.ny, fwd_model.time_params.nt)
+    shape = (fwd_model.grid.nx, fwd_model.grid.ny, fwd_model.time_params.nt)
     permeability = fwd_model.fl_model.permeability
 
     if adj_model.a_fl_model.crank_nicolson is None:
@@ -313,13 +311,13 @@ def _get_perm_gradient_from_diffusivity_eq_saturated(
     # add the storgae coefficient tp ma_ahead_sc
     ma_ahead_sc = ma_ahead / (
         fwd_model.fl_model.storage_coefficient[:, :, np.newaxis]
-        * fwd_model.geometry.grid_cell_volume
+        * fwd_model.grid.grid_cell_volume
     )
     grad = np.zeros(shape)
 
     # Consider the x axis
     if shape[0] > 1:
-        tmp = fwd_model.geometry.gamma_ij_x / fwd_model.geometry.dx
+        tmp = fwd_model.grid.gamma_ij_x / fwd_model.grid.dx
 
         # Forward scheme
         dhead_fx = np.zeros(shape)
@@ -341,7 +339,7 @@ def _get_perm_gradient_from_diffusivity_eq_saturated(
             grad[:-1, :, :1] += (
                 dhead_fx
                 * (ma_ahead[1:, :, :1] - ma_ahead[:-1, :, :1])
-                / fwd_model.geometry.grid_cell_volume
+                / fwd_model.grid.grid_cell_volume
             ) * tmp
 
         # Backward scheme
@@ -363,12 +361,12 @@ def _get_perm_gradient_from_diffusivity_eq_saturated(
             grad[1:, :, :1] += (
                 dhead_bx
                 * (ma_ahead[:-1, :, :1] - ma_ahead[1:, :, :1])
-                / fwd_model.geometry.grid_cell_volume
+                / fwd_model.grid.grid_cell_volume
             ) * tmp
 
     # Consider the y axis for 2D cases
     if shape[1] > 1:
-        tmp = fwd_model.geometry.gamma_ij_y / fwd_model.geometry.dy
+        tmp = fwd_model.grid.gamma_ij_y / fwd_model.grid.dy
 
         # Forward scheme
         dhead_fy = (
@@ -389,7 +387,7 @@ def _get_perm_gradient_from_diffusivity_eq_saturated(
             grad[:, :-1, :1] += (
                 dhead_fy
                 * (ma_ahead[:, 1:, :1] - ma_ahead[:, :-1, :1])
-                / fwd_model.geometry.grid_cell_volume
+                / fwd_model.grid.grid_cell_volume
             ) * tmp
 
         # Backward scheme
@@ -411,7 +409,7 @@ def _get_perm_gradient_from_diffusivity_eq_saturated(
             grad[:, 1:, :1] += (
                 dhead_by
                 * (ma_ahead[:, :-1, :1] - ma_ahead[:, 1:, :1])
-                / fwd_model.geometry.grid_cell_volume
+                / fwd_model.grid.grid_cell_volume
             ) * tmp
 
     # We sum along the temporal axis
@@ -436,7 +434,7 @@ def _get_perm_gradient_from_diffusivity_eq_density(
     NDArrayFloat
         Gradient with respect to the permeability using head observations.
     """
-    shape = (fwd_model.geometry.nx, fwd_model.geometry.ny, fwd_model.time_params.nt)
+    shape = (fwd_model.grid.nx, fwd_model.grid.ny, fwd_model.time_params.nt)
     permeability = fwd_model.fl_model.permeability
 
     if adj_model.a_fl_model.crank_nicolson is None:
@@ -454,16 +452,16 @@ def _get_perm_gradient_from_diffusivity_eq_density(
     # add the storgae coefficient to ma_apressure
     ma_apressure_sc = ma_apressure / (
         fwd_model.fl_model.storage_coefficient[:, :, np.newaxis]
-        * fwd_model.geometry.grid_cell_volume
+        * fwd_model.grid.grid_cell_volume
     )
     grad = np.zeros(shape)
 
     vp = fwd_model.fl_model._get_mesh_center_vertical_pos().T
 
     # Consider the x axis
-    if fwd_model.geometry.nx > 1:
+    if fwd_model.grid.nx > 1:
         rhomean_x = get_rhomean(
-            fwd_model.geometry,
+            fwd_model.grid,
             fwd_model.tr_model,
             axis=0,
             time_index=slice(0, -1),
@@ -481,7 +479,7 @@ def _get_perm_gradient_from_diffusivity_eq_density(
                     + (1.0 - crank_flow)
                     * (pressure[1:, :, :-1] - pressure[:-1, :, :-1])
                 )
-                / fwd_model.geometry.dx
+                / fwd_model.grid.dx
                 * rhomean_x
                 + tmp
             )
@@ -494,7 +492,7 @@ def _get_perm_gradient_from_diffusivity_eq_density(
         grad[:-1, :, 1:] += (
             dpressure_fx
             * (ma_apressure_sc[1:, :, 1:] - ma_apressure_sc[:-1, :, 1:])
-            * fwd_model.geometry.gamma_ij_x
+            * fwd_model.grid.gamma_ij_x
         )
 
         # Handle the stationary case
@@ -510,10 +508,10 @@ def _get_perm_gradient_from_diffusivity_eq_density(
                 * dxi_harmonic_mean(permeability[:-1, :], permeability[1:, :])[
                     :, :, np.newaxis
                 ]
-                * fwd_model.geometry.gamma_ij_x
-                / fwd_model.geometry.dx
+                * fwd_model.grid.gamma_ij_x
+                / fwd_model.grid.dx
                 * (ma_apressure[1:, :, :1] - ma_apressure[:-1, :, :1])
-                / fwd_model.geometry.grid_cell_volume
+                / fwd_model.grid.grid_cell_volume
             )
 
         # Backward scheme
@@ -524,7 +522,7 @@ def _get_perm_gradient_from_diffusivity_eq_density(
                     + (1.0 - crank_flow)
                     * (pressure[:-1, :, :-1] - pressure[1:, :, :-1])
                 )
-                / fwd_model.geometry.dx
+                / fwd_model.grid.dx
                 * rhomean_x
                 - tmp
             )
@@ -537,7 +535,7 @@ def _get_perm_gradient_from_diffusivity_eq_density(
         grad[1:, :, 1:] += (
             dpressure_bx
             * (ma_apressure_sc[:-1, :, 1:] - ma_apressure_sc[1:, :, 1:])
-            * fwd_model.geometry.gamma_ij_x
+            * fwd_model.grid.gamma_ij_x
         )
 
         # Handle the stationary case
@@ -553,16 +551,16 @@ def _get_perm_gradient_from_diffusivity_eq_density(
                 * dxi_harmonic_mean(permeability[1:, :], permeability[:-1, :])[
                     :, :, np.newaxis
                 ]
-                * fwd_model.geometry.gamma_ij_x
-                / fwd_model.geometry.dx
+                * fwd_model.grid.gamma_ij_x
+                / fwd_model.grid.dx
                 * (ma_apressure[:-1, :, :1] - ma_apressure[1:, :, :1])
-                / fwd_model.geometry.grid_cell_volume
+                / fwd_model.grid.grid_cell_volume
             )
 
     # Consider the y axis for 2D cases
-    if fwd_model.geometry.ny > 1:
+    if fwd_model.grid.ny > 1:
         rhomean_y = get_rhomean(
-            fwd_model.geometry,
+            fwd_model.grid,
             fwd_model.tr_model,
             axis=1,
             time_index=slice(0, -1),
@@ -580,7 +578,7 @@ def _get_perm_gradient_from_diffusivity_eq_density(
                     + (1.0 - crank_flow)
                     * (pressure[:, 1:, :-1] - pressure[:, :-1, :-1])
                 )
-                / fwd_model.geometry.dy
+                / fwd_model.grid.dy
                 * rhomean_y
                 + tmp
             )
@@ -593,7 +591,7 @@ def _get_perm_gradient_from_diffusivity_eq_density(
         grad[:, :-1, 1:] += (
             dpressure_fy
             * (ma_apressure_sc[:, 1:, 1:] - ma_apressure_sc[:, :-1, 1:])
-            * fwd_model.geometry.gamma_ij_y
+            * fwd_model.grid.gamma_ij_y
         )
 
         # Handle the stationary case
@@ -609,10 +607,10 @@ def _get_perm_gradient_from_diffusivity_eq_density(
                 * dxi_harmonic_mean(permeability[:, :-1], permeability[:, 1:])[
                     :, :, np.newaxis
                 ]
-                * fwd_model.geometry.gamma_ij_y
-                / fwd_model.geometry.dy
+                * fwd_model.grid.gamma_ij_y
+                / fwd_model.grid.dy
                 * (apressure[:, 1:, :1] - ma_apressure[:, :-1, :1])
-                / fwd_model.geometry.grid_cell_volume
+                / fwd_model.grid.grid_cell_volume
             )
 
         # Backward scheme
@@ -623,7 +621,7 @@ def _get_perm_gradient_from_diffusivity_eq_density(
                     + (1.0 - crank_flow)
                     * (pressure[:, :-1, :-1] - pressure[:, 1:, :-1])
                 )
-                / fwd_model.geometry.dy
+                / fwd_model.grid.dy
                 * rhomean_y
                 - tmp
             )
@@ -636,7 +634,7 @@ def _get_perm_gradient_from_diffusivity_eq_density(
         grad[:, 1:, 1:] += (
             dpressure_by
             * (ma_apressure_sc[:, :-1, 1:] - ma_apressure_sc[:, 1:, 1:])
-            * fwd_model.geometry.gamma_ij_y
+            * fwd_model.grid.gamma_ij_y
         )
 
         # Handle the stationary case
@@ -652,10 +650,10 @@ def _get_perm_gradient_from_diffusivity_eq_density(
                 * dxi_harmonic_mean(permeability[:, 1:], permeability[:, :-1])[
                     :, :, np.newaxis
                 ]
-                * fwd_model.geometry.gamma_ij_y
-                / fwd_model.geometry.dy
+                * fwd_model.grid.gamma_ij_y
+                / fwd_model.grid.dy
                 * (apressure[:, :-1, :1] - ma_apressure[:, 1:, :1])
-                / fwd_model.geometry.grid_cell_volume
+                / fwd_model.grid.grid_cell_volume
             )
 
     # We sum along the temporal axis
@@ -682,14 +680,14 @@ def _get_perm_gradient_from_darcy_eq_saturated(
     NDArrayFloat
         Gradient with respect to the permeability using mob observations.
     """
-    shape = (fwd_model.geometry.nx, fwd_model.geometry.ny, fwd_model.time_params.nt)
+    shape = (fwd_model.grid.nx, fwd_model.grid.ny, fwd_model.time_params.nt)
     permeability = fwd_model.fl_model.permeability
 
     head = fwd_model.fl_model.head
 
     grad = np.zeros_like(head)
 
-    if fwd_model.geometry.nx > 1:
+    if fwd_model.grid.nx > 1:
         a_u_darcy_x = adj_model.a_fl_model.a_u_darcy_x[1:-1, :, :]
 
         # Consider the x axis
@@ -714,10 +712,10 @@ def _get_perm_gradient_from_darcy_eq_saturated(
         )
 
         # Gather the two schemes
-        grad += (dhead_fx + dhead_bx) / fwd_model.geometry.dx
+        grad += (dhead_fx + dhead_bx) / fwd_model.grid.dx
 
     # Consider the y axis for 2D cases
-    if fwd_model.geometry.ny > 1:
+    if fwd_model.grid.ny > 1:
         a_u_darcy_y = adj_model.a_fl_model.a_u_darcy_y[:, 1:-1, :]
         # Forward scheme
         dhead_fy = np.zeros(shape)
@@ -739,7 +737,7 @@ def _get_perm_gradient_from_darcy_eq_saturated(
             * a_u_darcy_y
         )
         # Gather the two schemes
-        grad += (dhead_fy + dhead_by) / fwd_model.geometry.dy
+        grad += (dhead_fy + dhead_by) / fwd_model.grid.dy
 
     # We sum along the temporal axis
     return np.sum(grad, axis=-1)
@@ -768,18 +766,18 @@ def _get_perm_gradient_from_darcy_eq_density(
     permeability = fwd_model.fl_model.permeability
 
     time_slice = slice(1, None)
-    shape = (fwd_model.geometry.nx, fwd_model.geometry.ny, fwd_model.time_params.nt - 1)
+    shape = (fwd_model.grid.nx, fwd_model.grid.ny, fwd_model.time_params.nt - 1)
 
     pressure = fwd_model.fl_model.pressure[:, :, time_slice]
     grad = np.zeros_like(pressure)
 
-    if fwd_model.geometry.nx > 1:
+    if fwd_model.grid.nx > 1:
         a_u_darcy_x = adj_model.a_fl_model.a_u_darcy_x[1:-1, :, time_slice]
 
         if fwd_model.fl_model.vertical_axis == VerticalAxis.X:
             rho_ij_g_x = (
                 get_rhomean(
-                    fwd_model.geometry,
+                    fwd_model.grid,
                     fwd_model.tr_model,
                     axis=0,
                     time_index=slice(None),
@@ -797,7 +795,7 @@ def _get_perm_gradient_from_darcy_eq_density(
         # Forward scheme
         dpressure_fx = np.zeros(shape)
         dpressure_fx[:-1, :] += (
-            ((pressure[1:, :] - pressure[:-1, :]) / fwd_model.geometry.dx + rho_ij_g_x)
+            ((pressure[1:, :] - pressure[:-1, :]) / fwd_model.grid.dx + rho_ij_g_x)
             * dxi_harmonic_mean(permeability[:-1, :], permeability[1:, :])[
                 :, :, np.newaxis
             ]
@@ -807,7 +805,7 @@ def _get_perm_gradient_from_darcy_eq_density(
         # Bconckward scheme
         dpressure_bx = np.zeros(shape)
         dpressure_bx[1:, :] -= (
-            ((pressure[:-1, :] - pressure[1:, :]) / fwd_model.geometry.dx - rho_ij_g_x)
+            ((pressure[:-1, :] - pressure[1:, :]) / fwd_model.grid.dx - rho_ij_g_x)
             * dxi_harmonic_mean(permeability[1:, :], permeability[:-1, :])[
                 :, :, np.newaxis
             ]
@@ -818,13 +816,13 @@ def _get_perm_gradient_from_darcy_eq_density(
         grad += (dpressure_fx + dpressure_bx) / GRAVITY / WATER_DENSITY
 
     # Consider the y axis for 2D cases
-    if fwd_model.geometry.ny > 1:
+    if fwd_model.grid.ny > 1:
         a_u_darcy_y = adj_model.a_fl_model.a_u_darcy_y[:, 1:-1, time_slice]
 
         if fwd_model.fl_model.vertical_axis == VerticalAxis.Y:
             rho_ij_g_y = (
                 get_rhomean(
-                    fwd_model.geometry,
+                    fwd_model.grid,
                     fwd_model.tr_model,
                     axis=1,
                     time_index=slice(None),
@@ -840,7 +838,7 @@ def _get_perm_gradient_from_darcy_eq_density(
         # Forward scheme
         dpressure_fy = np.zeros(shape)
         dpressure_fy[:, :-1] += (
-            ((pressure[:, 1:] - pressure[:, :-1]) / fwd_model.geometry.dy + rho_ij_g_y)
+            ((pressure[:, 1:] - pressure[:, :-1]) / fwd_model.grid.dy + rho_ij_g_y)
             * dxi_harmonic_mean(permeability[:, :-1], permeability[:, 1:])[
                 :, :, np.newaxis
             ]
@@ -850,7 +848,7 @@ def _get_perm_gradient_from_darcy_eq_density(
         # Backward scheme
         dpressure_by = np.zeros(shape)
         dpressure_by[:, 1:] -= (
-            ((pressure[:, :-1] - pressure[:, 1:]) / fwd_model.geometry.dy - rho_ij_g_y)
+            ((pressure[:, :-1] - pressure[:, 1:]) / fwd_model.grid.dy - rho_ij_g_y)
             * dxi_harmonic_mean(permeability[:, 1:], permeability[:, :-1])[
                 :, :, np.newaxis
             ]
@@ -921,7 +919,7 @@ def get_sc_adjoint_gradient_saturated(
     # We sum along the temporal axis
     return np.sum(grad, axis=-1) + adj_model.a_fl_model.a_storage_coefficient_sources[
         :, [0]
-    ].todense().reshape((fwd_model.geometry.nx, fwd_model.geometry.ny), order="F")
+    ].todense().reshape((fwd_model.grid.nx, fwd_model.grid.ny), order="F")
 
 
 def get_sc_adjoint_gradient_density(
@@ -960,7 +958,7 @@ def get_sc_adjoint_gradient_density(
     # We sum along the temporal axis
     return np.sum(grad, axis=-1) + adj_model.a_fl_model.a_storage_coefficient_sources[
         :, [0]
-    ].todense().reshape((fwd_model.geometry.nx, fwd_model.geometry.ny), order="F")
+    ].todense().reshape((fwd_model.grid.nx, fwd_model.grid.ny), order="F")
 
 
 def get_initial_grade_adjoint_gradient(
@@ -1097,11 +1095,11 @@ def get_initial_conc_adjoint_gradient(
     a_mob = adj_model.a_tr_model.a_mob[sp, :, :, 1]
 
     # X axis contribution
-    if fwd_model.geometry.nx > 1:
+    if fwd_model.grid.nx > 1:
         dmean = harmonic_mean(
             tr_model.effective_diffusion[:-1, :], tr_model.effective_diffusion[1:, :]
         )
-        tmp = fwd_model.geometry.gamma_ij_x / fwd_model.geometry.dx
+        tmp = fwd_model.grid.gamma_ij_x / fwd_model.grid.dx
         # Forward scheme
         grad[:-1, :] += (
             +(1.0 - crank_diff) * (a_mob[1:, :] - a_mob[:-1, :]) * dmean
@@ -1112,11 +1110,11 @@ def get_initial_conc_adjoint_gradient(
         ) * tmp
 
     # Y axis contribution
-    if fwd_model.geometry.ny > 1:
+    if fwd_model.grid.ny > 1:
         dmean = harmonic_mean(
             tr_model.effective_diffusion[:, :-1], tr_model.effective_diffusion[:, 1:]
         )
-        tmp = fwd_model.geometry.gamma_ij_y / fwd_model.geometry.dy
+        tmp = fwd_model.grid.gamma_ij_y / fwd_model.grid.dy
         # Forward scheme
         grad[:, :-1] += (
             +(1.0 - crank_diff) * (a_mob[:, 1:] - a_mob[:, :-1]) * dmean

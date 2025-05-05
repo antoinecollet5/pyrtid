@@ -47,7 +47,7 @@ class AdjointFlowModel(ABC):
 
     def __init__(
         self,
-        geometry: Geometry,
+        grid: Geometry,
         time_params: TimeParameters,
         is_use_continuous_adj: bool = False,
     ) -> None:
@@ -56,7 +56,7 @@ class AdjointFlowModel(ABC):
 
         Parameters
         ----------
-        geometry : Geometry
+        grid : Geometry
             Geometry of the problem, grid definition.
         time_params : TimeParameters
             Time parameters from the forward problem.
@@ -66,38 +66,34 @@ class AdjointFlowModel(ABC):
             This is only working with saturated flow. This option has been
             added to illustrate the paper TODO: add ref. The default is False.
         """
-        self.a_head = np.zeros(
-            (geometry.nx, geometry.ny, time_params.nt), dtype=np.float64
-        )
-        self.a_pressure = np.zeros(
-            (geometry.nx, geometry.ny, time_params.nt), dtype=np.float64
-        )
+        self.a_head = np.zeros((grid.nx, grid.ny, time_params.nt), dtype=np.float64)
+        self.a_pressure = np.zeros((grid.nx, grid.ny, time_params.nt), dtype=np.float64)
         self.a_u_darcy_x = np.zeros(
-            (geometry.nx + 1, geometry.ny, time_params.nt), dtype=np.float64
+            (grid.nx + 1, grid.ny, time_params.nt), dtype=np.float64
         )
         self.a_u_darcy_y = np.zeros(
-            (geometry.nx, geometry.ny + 1, time_params.nt), dtype=np.float64
+            (grid.nx, grid.ny + 1, time_params.nt), dtype=np.float64
         )
         # Generally, not so many observations, so only a few adjoint variable,
         # so use a sparse matrix instead of a dense array
         # NOTE: rows are grid cells, and columns are time indices
         # We use csc format for fast column (time) slicing
         self.a_head_sources: csc_array = csc_array(
-            (geometry.nx * geometry.ny, time_params.nt), dtype=np.float64
+            (grid.nx * grid.ny, time_params.nt), dtype=np.float64
         )
         self.a_pressure_sources: csc_array = csc_array(
-            (geometry.nx * geometry.ny, time_params.nt), dtype=np.float64
+            (grid.nx * grid.ny, time_params.nt), dtype=np.float64
         )
         # does not vary in time
         self.a_permeability_sources: csc_array = csc_array(
-            (geometry.nx * geometry.ny, 1), dtype=np.float64
+            (grid.nx * grid.ny, 1), dtype=np.float64
         )
         self.a_storage_coefficient_sources: csc_array = csc_array(
-            (geometry.nx * geometry.ny, 1), dtype=np.float64
+            (grid.nx * grid.ny, 1), dtype=np.float64
         )
 
-        self.q_prev: lil_array = lil_array((geometry.nx * geometry.ny, 1))
-        self.q_next: lil_array = lil_array((geometry.nx * geometry.ny, 1))
+        self.q_prev: lil_array = lil_array((grid.nx * grid.ny, 1))
+        self.q_next: lil_array = lil_array((grid.nx * grid.ny, 1))
 
         # crank nicolson: if None, then the crank-nicolson from the forward model
         # is used. This attribute only purpose is to test the impact of an
@@ -143,7 +139,7 @@ class SaturatedAdjointFlowModel(AdjointFlowModel):
 
     def __init__(
         self,
-        geometry: Geometry,
+        grid: Geometry,
         time_params: TimeParameters,
         is_use_continuous_adj: bool = False,
     ) -> None:
@@ -152,7 +148,7 @@ class SaturatedAdjointFlowModel(AdjointFlowModel):
 
         Parameters
         ----------
-        geometry : Geometry
+        grid : Geometry
             Geometry of the problem, grid definition.
         time_params : TimeParameters
             Time parameters from the forward problem.
@@ -163,7 +159,7 @@ class SaturatedAdjointFlowModel(AdjointFlowModel):
             added to illustrate the paper TODO: add ref. The default is False.
 
         """
-        super().__init__(geometry, time_params, is_use_continuous_adj)
+        super().__init__(grid, time_params, is_use_continuous_adj)
 
 
 class DensityAdjointFlowModel(AdjointFlowModel):
@@ -173,7 +169,7 @@ class DensityAdjointFlowModel(AdjointFlowModel):
 
     def __init__(
         self,
-        geometry: Geometry,
+        grid: Geometry,
         time_params: TimeParameters,
         is_use_continuous_adj: bool = False,
     ) -> None:
@@ -182,7 +178,7 @@ class DensityAdjointFlowModel(AdjointFlowModel):
 
         Parameters
         ----------
-        geometry : Geometry
+        grid : Geometry
             Geometry of the problem, grid definition.
         time_params : TimeParameters
             Time parameters from the forward problem.
@@ -195,7 +191,7 @@ class DensityAdjointFlowModel(AdjointFlowModel):
         """
         if is_use_continuous_adj:
             raise ValueError("Continuous adjoint not implemented for density flow!")
-        super().__init__(geometry, time_params, is_use_continuous_adj)
+        super().__init__(grid, time_params, is_use_continuous_adj)
 
 
 class AdjointTransportModel:
@@ -243,7 +239,7 @@ class AdjointTransportModel:
 
     def __init__(
         self,
-        geometry: Geometry,
+        grid: Geometry,
         time_params: TimeParameters,
         n_sp: int,
         afpi_eps: float = 1e-5,
@@ -254,8 +250,8 @@ class AdjointTransportModel:
 
         Parameters
         ----------
-        geometry: Geometry
-            Simulation geometry definition.
+        grid: Geometry
+            Simulation grid definition.
         time_params: TimeParameters
             Simulation time parameters (duration, timesteps, etc.)
         n_sp: int
@@ -268,17 +264,17 @@ class AdjointTransportModel:
         """
         self.n_sp = n_sp
         self.a_mob: NDArrayFloat = np.zeros(
-            (self.n_sp, geometry.nx, geometry.ny, time_params.nt), dtype=np.float64
+            (self.n_sp, grid.nx, grid.ny, time_params.nt), dtype=np.float64
         )
         self.a_mob_prev: NDArrayFloat = np.zeros(
-            (self.n_sp, geometry.nx, geometry.ny), dtype=np.float64
+            (self.n_sp, grid.nx, grid.ny), dtype=np.float64
         )
 
         self.a_immob: NDArrayFloat = np.zeros(
-            (self.n_sp, geometry.nx, geometry.ny, time_params.nt), dtype=np.float64
+            (self.n_sp, grid.nx, grid.ny, time_params.nt), dtype=np.float64
         )
         self.a_density: NDArrayFloat = np.zeros(
-            (geometry.nx, geometry.ny, time_params.nt), dtype=np.float64
+            (grid.nx, grid.ny, time_params.nt), dtype=np.float64
         )
 
         # Generally, not so many observations, so only a few adjoint variable,
@@ -286,30 +282,24 @@ class AdjointTransportModel:
         # NOTE: rows are grid cells, and columns are time indices
         # We use csc format for fast column (time) slicing
         self.a_conc_sources: List[csc_array] = [
-            csc_array((geometry.nx * geometry.ny, time_params.nt), dtype=np.float64)
+            csc_array((grid.nx * grid.ny, time_params.nt), dtype=np.float64)
             for sp in range(self.n_sp)  # type: ignore
         ]
         self.a_grade_sources: List[csc_array] = copy.copy(self.a_conc_sources)
-        self.a_porosity_sources = csc_array(
-            (geometry.nx * geometry.ny, 1), dtype=np.float64
-        )
-        self.a_diffusion_sources = csc_array(
-            (geometry.nx * geometry.ny, 1), dtype=np.float64
-        )
+        self.a_porosity_sources = csc_array((grid.nx * grid.ny, 1), dtype=np.float64)
+        self.a_diffusion_sources = csc_array((grid.nx * grid.ny, 1), dtype=np.float64)
         self.a_dispersivity_sources = csc_array(
-            (geometry.nx * geometry.ny, 1), dtype=np.float64
+            (grid.nx * grid.ny, 1), dtype=np.float64
         )
         self.a_density_sources: csc_array = csc_array(
-            (geometry.nx * geometry.ny, time_params.nt), dtype=np.float64
+            (grid.nx * grid.ny, time_params.nt), dtype=np.float64
         )
 
         # Adjoint source term from the adjoint geochem to the adjoint transport
-        self.a_gch_src_term = np.zeros(
-            (n_sp, geometry.nx, geometry.ny), dtype=np.float64
-        )
+        self.a_gch_src_term = np.zeros((n_sp, grid.nx, grid.ny), dtype=np.float64)
 
-        self.q_prev: lil_array = lil_array((geometry.nx * geometry.ny, 1))
-        self.q_next: lil_array = lil_array((geometry.nx * geometry.ny, 1))
+        self.q_prev: lil_array = lil_array((grid.nx * grid.ny, 1))
+        self.q_next: lil_array = lil_array((grid.nx * grid.ny, 1))
         self.afpi_eps = afpi_eps
         self.is_adj_numerical_acceleration: bool = is_adj_numerical_acceleration
         self.is_adj_num_acc_for_timestep: bool = self.is_adj_numerical_acceleration
@@ -355,11 +345,11 @@ class AdjointTransportModel:
 class AdjointModel:
     """Represent an adjoint model."""
 
-    __slots__ = ["geometry", "time_params", "gch_params", "a_fl_model", "a_tr_model"]
+    __slots__ = ["grid", "time_params", "gch_params", "a_fl_model", "a_tr_model"]
 
     def __init__(
         self,
-        geometry: Geometry,
+        grid: Geometry,
         time_params: TimeParameters,
         is_gravity: bool,
         n_sp: int,
@@ -372,8 +362,8 @@ class AdjointModel:
 
         Parameters
         ----------
-        geometry: Geometry
-            Simulation geometry definition.
+        grid: Geometry
+            Simulation grid definition.
         time_params: TimeParameters
             Simulation time parameters (duration, timesteps, etc.)
         is_gravity: bool
@@ -391,18 +381,18 @@ class AdjointModel:
             added to illustrate the paper TODO: add ref. The default is False.
 
         """
-        self.geometry: Geometry = geometry
+        self.grid: Geometry = grid
         self.time_params: TimeParameters = time_params
         if is_gravity:
             self.a_fl_model: AdjointFlowModel = DensityAdjointFlowModel(
-                geometry, time_params, is_use_continuous_adj
+                grid, time_params, is_use_continuous_adj
             )
         else:
             self.a_fl_model: AdjointFlowModel = SaturatedAdjointFlowModel(
-                geometry, time_params, is_use_continuous_adj
+                grid, time_params, is_use_continuous_adj
             )
         self.a_tr_model: AdjointTransportModel = AdjointTransportModel(
-            geometry, time_params, n_sp, afpi_eps, is_adj_numerical_acceleration
+            grid, time_params, n_sp, afpi_eps, is_adj_numerical_acceleration
         )
 
     def clear_adjoint_sources(self) -> None:

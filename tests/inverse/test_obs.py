@@ -180,13 +180,13 @@ def test_get_values_matching_node_indices(
 @pytest.fixture
 def model() -> dmfwd.ForwardModel:
     time_params = dmfwd.TimeParameters(duration=240000, dt_init=600.0)
-    geometry = dmfwd.Geometry(nx=20, ny=20, dx=4.5, dy=7.5)
+    grid = dmfwd.Geometry(nx=20, ny=20, dx=4.5, dy=7.5)
     fl_params = dmfwd.FlowParameters(1e-5)
     tr_params = dmfwd.TransportParameters(diffusion=1e-10, porosity=0.23)
     gch_params = dmfwd.GeochemicalParameters(0.0, 0.0)
 
     return dmfwd.ForwardModel(
-        geometry,
+        grid,
         time_params,
         fl_params,
         tr_params,
@@ -513,13 +513,13 @@ def test_get_interp_simu_values_matching_obs_times(
 )
 def test_get_predictions_matching_observations(max_obs_time, expected_output) -> None:
     time_params = dmfwd.TimeParameters(duration=1.0, dt_init=1.0)
-    geometry = dmfwd.Geometry(nx=20, ny=20, dx=4.5, dy=7.5)
+    grid = dmfwd.Geometry(nx=20, ny=20, dx=4.5, dy=7.5)
     fl_params = dmfwd.FlowParameters(1e-5)
     tr_params = dmfwd.TransportParameters(diffusion=1.0, porosity=0.23)
     gch_params = dmfwd.GeochemicalParameters(1.0, 0.0)
 
     model = dmfwd.ForwardModel(
-        geometry,
+        grid,
         time_params,
         fl_params,
         tr_params,
@@ -587,13 +587,13 @@ def test_get_adjoint_sources_for_obs(max_obs_time, mean_type) -> None:
     - simulated values interpolated to match the observation time
     """
     time_params = dmfwd.TimeParameters(duration=1.0, dt_init=1.0)
-    geometry = dmfwd.Geometry(nx=5, ny=5, dx=4.5, dy=7.5)
+    grid = dmfwd.Geometry(nx=5, ny=5, dx=4.5, dy=7.5)
     fl_params = dmfwd.FlowParameters(1e-5)
     tr_params = dmfwd.TransportParameters(diffusion=1.0, porosity=0.23)
     gch_params = dmfwd.GeochemicalParameters(1.0, 0.0)
 
     model = dmfwd.ForwardModel(
-        geometry,
+        grid,
         time_params,
         fl_params,
         tr_params,
@@ -602,17 +602,15 @@ def test_get_adjoint_sources_for_obs(max_obs_time, mean_type) -> None:
 
     # generate synthetic data
     model.tr_model.lmob.append(
-        np.random.default_rng(2023).random((2, geometry.nx, geometry.ny)) + 2.0
+        np.random.default_rng(2023).random((2, grid.nx, grid.ny)) + 2.0
     )
     model.tr_model.lmob.append(
-        np.random.default_rng(2023).random((2, geometry.nx, geometry.ny)) + 3.0
+        np.random.default_rng(2023).random((2, grid.nx, grid.ny)) + 3.0
     )
     model.time_params.save_dt()
     model.time_params.save_dt()
 
-    model.fl_model.permeability = np.random.default_rng(2023).random(
-        (geometry.nx, geometry.ny)
-    )
+    model.fl_model.permeability = np.random.default_rng(2023).random((grid.nx, grid.ny))
 
     obs1 = Observable(
         StateVariable.CONCENTRATION,

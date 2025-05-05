@@ -30,9 +30,9 @@ from pyrtid.utils import (
 
 
 def get_kmean(
-    geometry: Geometry, fl_model: FlowModel, axis: int, is_flatten=True
+    grid: Geometry, fl_model: FlowModel, axis: int, is_flatten=True
 ) -> NDArrayFloat:
-    kmean: NDArrayFloat = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
+    kmean: NDArrayFloat = np.zeros((grid.nx, grid.ny), dtype=np.float64)
     if axis == 0:
         kmean[:-1, :] = harmonic_mean(
             fl_model.permeability[:-1, :], fl_model.permeability[1:, :]
@@ -48,7 +48,7 @@ def get_kmean(
 
 
 def get_rhomean(
-    geometry: Geometry,
+    grid: Geometry,
     tr_model: TransportModel,
     axis: int,
     time_index: Union[int, slice],
@@ -58,7 +58,7 @@ def get_rhomean(
     density = np.array(tr_model.ldensity[time_index])
 
     if density.ndim == 2:
-        rhomean: NDArrayFloat = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
+        rhomean: NDArrayFloat = np.zeros((grid.nx, grid.ny), dtype=np.float64)
         if axis == 0:
             rhomean[:-1, :] = arithmetic_mean(density[:-1, :], density[1:, :])
         elif axis == 1:
@@ -67,7 +67,7 @@ def get_rhomean(
             raise NotImplementedError("axis should be 0 or 1")
     else:
         rhomean: NDArrayFloat = np.zeros(
-            (geometry.nx, geometry.ny, density.shape[0]), dtype=np.float64
+            (grid.nx, grid.ny, density.shape[0]), dtype=np.float64
         )
         if axis == 0:
             rhomean[:-1, :, :] = np.transpose(
@@ -84,7 +84,7 @@ def get_rhomean(
     return rhomean
 
 
-def make_stationary_flow_matrices(geometry: Geometry, fl_model: FlowModel) -> lil_array:
+def make_stationary_flow_matrices(grid: Geometry, fl_model: FlowModel) -> lil_array:
     """
     Make matrices for the transient flow.
 
@@ -94,23 +94,23 @@ def make_stationary_flow_matrices(geometry: Geometry, fl_model: FlowModel) -> li
     matrices q_prev and q_next are the same.
     """
 
-    dim = geometry.n_grid_cells
+    dim = grid.n_grid_cells
     q_next = lil_array((dim, dim), dtype=np.float64)
 
     # X contribution
-    if geometry.nx >= 2:
-        kmean = get_kmean(geometry, fl_model, 0)
+    if grid.nx >= 2:
+        kmean = get_kmean(grid, fl_model, 0)
 
-        tmp = geometry.gamma_ij_x / geometry.dx / geometry.grid_cell_volume
+        tmp = grid.gamma_ij_x / grid.dx / grid.grid_cell_volume
 
         if fl_model.is_gravity:
             tmp /= GRAVITY * WATER_DENSITY
 
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(0, geometry.nx - 1), slice(None)),
-            (slice(1, geometry.nx), slice(None)),
+            grid,
+            (slice(0, grid.nx - 1), slice(None)),
+            (slice(1, grid.nx), slice(None)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
 
@@ -119,9 +119,9 @@ def make_stationary_flow_matrices(geometry: Geometry, fl_model: FlowModel) -> li
 
         # Backward scheme
         idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(1, geometry.nx), slice(None)),
-            (slice(0, geometry.nx - 1), slice(None)),
+            grid,
+            (slice(1, grid.nx), slice(None)),
+            (slice(0, grid.nx - 1), slice(None)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
 
@@ -129,19 +129,19 @@ def make_stationary_flow_matrices(geometry: Geometry, fl_model: FlowModel) -> li
         q_next[idc_owner, idc_owner] += kmean[idc_neigh] * tmp  # type: ignore
 
     # Y contribution
-    if geometry.ny >= 2:
-        kmean = get_kmean(geometry, fl_model, 1)
+    if grid.ny >= 2:
+        kmean = get_kmean(grid, fl_model, 1)
 
-        tmp = geometry.gamma_ij_y / geometry.dy / geometry.grid_cell_volume
+        tmp = grid.gamma_ij_y / grid.dy / grid.grid_cell_volume
 
         if fl_model.is_gravity:
             tmp /= GRAVITY * WATER_DENSITY
 
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(None), slice(0, geometry.ny - 1)),
-            (slice(None), slice(1, geometry.ny)),
+            grid,
+            (slice(None), slice(0, grid.ny - 1)),
+            (slice(None), slice(1, grid.ny)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
 
@@ -150,9 +150,9 @@ def make_stationary_flow_matrices(geometry: Geometry, fl_model: FlowModel) -> li
 
         # Backward scheme
         idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(None), slice(1, geometry.ny)),
-            (slice(None), slice(0, geometry.ny - 1)),
+            grid,
+            (slice(None), slice(1, grid.ny)),
+            (slice(None), slice(0, grid.ny - 1)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
 
@@ -166,7 +166,7 @@ def make_stationary_flow_matrices(geometry: Geometry, fl_model: FlowModel) -> li
 
 
 def make_transient_flow_matrices(
-    geometry: Geometry, fl_model: FlowModel, tr_model: TransportModel, time_index: int
+    grid: Geometry, fl_model: FlowModel, tr_model: TransportModel, time_index: int
 ) -> Tuple[lil_array, lil_array]:
     """
     Make matrices for the transient flow.
@@ -177,29 +177,29 @@ def make_transient_flow_matrices(
     matrices q_prev and q_next are the same.
     """
 
-    dim = geometry.nx * geometry.ny
+    dim = grid.nx * grid.ny
     q_prev = lil_array((dim, dim), dtype=np.float64)
     q_next = lil_array((dim, dim), dtype=np.float64)
 
     sc = fl_model.storage_coefficient.ravel("F")
 
     # X contribution
-    if geometry.nx > 1:
-        kmean = get_kmean(geometry, fl_model, 0)
-        rhomean = get_rhomean(geometry, tr_model, axis=0, time_index=time_index - 1)
+    if grid.nx > 1:
+        kmean = get_kmean(grid, fl_model, 0)
+        rhomean = get_rhomean(grid, tr_model, axis=0, time_index=time_index - 1)
 
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(0, geometry.nx - 1), slice(None)),
-            (slice(1, geometry.nx), slice(None)),
+            grid,
+            (slice(0, grid.nx - 1), slice(None)),
+            (slice(1, grid.nx), slice(None)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
 
         tmp = (
-            geometry.gamma_ij_x
-            / geometry.dx
-            / geometry.grid_cell_volume
+            grid.gamma_ij_x
+            / grid.dx
+            / grid.grid_cell_volume
             / sc[idc_owner]
             * kmean[idc_owner]
         )
@@ -215,16 +215,16 @@ def make_transient_flow_matrices(
 
         # Backward scheme
         idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(1, geometry.nx), slice(None)),
-            (slice(0, geometry.nx - 1), slice(None)),
+            grid,
+            (slice(1, grid.nx), slice(None)),
+            (slice(0, grid.nx - 1), slice(None)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
 
         tmp = (
-            geometry.gamma_ij_x
-            / geometry.dx
-            / geometry.grid_cell_volume
+            grid.gamma_ij_x
+            / grid.dx
+            / grid.grid_cell_volume
             / sc[idc_owner]
             * kmean[idc_neigh]
         )
@@ -239,22 +239,22 @@ def make_transient_flow_matrices(
         q_prev[idc_owner, idc_owner] -= (1.0 - fl_model.crank_nicolson) * tmp  # type: ignore
 
     # Y contribution
-    if geometry.ny > 1:
-        kmean = get_kmean(geometry, fl_model, 1)
-        rhomean = get_rhomean(geometry, tr_model, axis=1, time_index=time_index - 1)
+    if grid.ny > 1:
+        kmean = get_kmean(grid, fl_model, 1)
+        rhomean = get_rhomean(grid, tr_model, axis=1, time_index=time_index - 1)
 
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(None), slice(0, geometry.ny - 1)),
-            (slice(None), slice(1, geometry.ny)),
+            grid,
+            (slice(None), slice(0, grid.ny - 1)),
+            (slice(None), slice(1, grid.ny)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
 
         tmp = (
-            geometry.gamma_ij_y
-            / geometry.dy
-            / geometry.grid_cell_volume
+            grid.gamma_ij_y
+            / grid.dy
+            / grid.grid_cell_volume
             / sc[idc_owner]
             * kmean[idc_owner]
         )
@@ -270,16 +270,16 @@ def make_transient_flow_matrices(
 
         # Backward scheme
         idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(None), slice(1, geometry.ny)),
-            (slice(None), slice(0, geometry.ny - 1)),
+            grid,
+            (slice(None), slice(1, grid.ny)),
+            (slice(None), slice(0, grid.ny - 1)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
 
         tmp = (
-            geometry.gamma_ij_y
-            / geometry.dy
-            / geometry.grid_cell_volume
+            grid.gamma_ij_y
+            / grid.dy
+            / grid.grid_cell_volume
             / sc[idc_owner]
             * kmean[idc_neigh]
         )
@@ -296,21 +296,21 @@ def make_transient_flow_matrices(
     return q_next, q_prev
 
 
-def get_zj_zi_rhs(geometry: Geometry, fl_model: FlowModel) -> NDArrayFloat:
-    rhs_z = np.zeros((geometry.n_grid_cells), dtype=np.float64)
+def get_zj_zi_rhs(grid: Geometry, fl_model: FlowModel) -> NDArrayFloat:
+    rhs_z = np.zeros((grid.n_grid_cells), dtype=np.float64)
     z = fl_model._get_mesh_center_vertical_pos().T.ravel("F")
 
     # X contribution
-    if geometry.nx >= 2 and fl_model.vertical_axis == VerticalAxis.X:
-        kmean = get_kmean(geometry, fl_model, 0)
+    if grid.nx >= 2 and fl_model.vertical_axis == VerticalAxis.X:
+        kmean = get_kmean(grid, fl_model, 0)
 
-        tmp = geometry.gamma_ij_x / geometry.dx / geometry.grid_cell_volume
+        tmp = grid.gamma_ij_x / grid.dx / grid.grid_cell_volume
 
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(0, geometry.nx - 1), slice(None)),
-            (slice(1, geometry.nx), slice(None)),
+            grid,
+            (slice(0, grid.nx - 1), slice(None)),
+            (slice(1, grid.nx), slice(None)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
 
@@ -319,9 +319,9 @@ def get_zj_zi_rhs(geometry: Geometry, fl_model: FlowModel) -> NDArrayFloat:
 
         # Backward scheme
         idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(1, geometry.nx), slice(None)),
-            (slice(0, geometry.nx - 1), slice(None)),
+            grid,
+            (slice(1, grid.nx), slice(None)),
+            (slice(0, grid.nx - 1), slice(None)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
 
@@ -329,16 +329,16 @@ def get_zj_zi_rhs(geometry: Geometry, fl_model: FlowModel) -> NDArrayFloat:
         rhs_z[idc_owner] -= kmean[idc_neigh] * tmp * z[idc_owner]  # type: ignore
 
     # Y contribution
-    if geometry.ny >= 2 and fl_model.vertical_axis == VerticalAxis.Y:
-        kmean = get_kmean(geometry, fl_model, 1)
+    if grid.ny >= 2 and fl_model.vertical_axis == VerticalAxis.Y:
+        kmean = get_kmean(grid, fl_model, 1)
 
-        tmp = geometry.gamma_ij_y / geometry.dy / geometry.grid_cell_volume
+        tmp = grid.gamma_ij_y / grid.dy / grid.grid_cell_volume
 
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(None), slice(0, geometry.ny - 1)),
-            (slice(None), slice(1, geometry.ny)),
+            grid,
+            (slice(None), slice(0, grid.ny - 1)),
+            (slice(None), slice(1, grid.ny)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
 
@@ -347,9 +347,9 @@ def get_zj_zi_rhs(geometry: Geometry, fl_model: FlowModel) -> NDArrayFloat:
 
         # Backward scheme
         idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(None), slice(1, geometry.ny)),
-            (slice(None), slice(0, geometry.ny - 1)),
+            grid,
+            (slice(None), slice(1, grid.ny)),
+            (slice(None), slice(0, grid.ny - 1)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
 
@@ -360,7 +360,7 @@ def get_zj_zi_rhs(geometry: Geometry, fl_model: FlowModel) -> NDArrayFloat:
 
 
 def solve_flow_stationary(
-    geometry: Geometry,
+    grid: Geometry,
     fl_model: FlowModel,
     tr_model: TransportModel,
     unitflw_sources: NDArrayFloat,
@@ -372,11 +372,11 @@ def solve_flow_stationary(
     dh/dt = div K grad h + ...
     """
     # Make stationary matrices
-    fl_model.q_next = make_stationary_flow_matrices(geometry, fl_model)
+    fl_model.q_next = make_stationary_flow_matrices(grid, fl_model)
     fl_model.q_prev = lil_array((fl_model.q_next.shape))
 
     # right hand side
-    rhs = np.zeros(geometry.n_grid_cells)
+    rhs = np.zeros(grid.n_grid_cells)
     # Add the source terms
     rhs += unitflw_sources.flatten(order="F")
     if fl_model.is_gravity:
@@ -385,7 +385,7 @@ def solve_flow_stationary(
             fl_model.cst_head_nn
         ]
         # Non constant head only
-        rhs += get_zj_zi_rhs(geometry, fl_model)
+        rhs += get_zj_zi_rhs(grid, fl_model)
     else:
         # Constant head
         rhs[fl_model.cst_head_nn] = fl_model.lhead[time_index].flatten(order="F")[
@@ -417,14 +417,14 @@ def solve_flow_stationary(
 
     # Here we don't append but we overwrite the already existing head for t0.
     if fl_model.is_gravity:
-        fl_model.lpressure[0] = res.reshape(geometry.ny, geometry.nx).T
+        fl_model.lpressure[0] = res.reshape(grid.ny, grid.nx).T
         # update the pressure field -> here we use the water density to be consistent
         # with HYTEC.
         fl_model.lhead[0] = (
             fl_model.lpressure[0] / GRAVITY / WATER_DENSITY
         ) + fl_model._get_mesh_center_vertical_pos().T
     else:
-        fl_model.lhead[0] = res.reshape(geometry.ny, geometry.nx).T
+        fl_model.lhead[0] = res.reshape(grid.ny, grid.nx).T
         # update the pressure field -> here we use the water density to be consistent
         # with HYTEC.
         fl_model.lpressure[0] = (
@@ -433,15 +433,15 @@ def solve_flow_stationary(
             * WATER_DENSITY
         )
 
-    compute_u_darcy(fl_model, tr_model, geometry, time_index)
+    compute_u_darcy(fl_model, tr_model, grid, time_index)
 
-    compute_u_darcy_div(fl_model, geometry, time_index)
+    compute_u_darcy_div(fl_model, grid, time_index)
 
     return exit_code
 
 
 def find_ux_boundary(
-    fl_model: FlowModel, geometry: Geometry, time_index: int
+    fl_model: FlowModel, grid: Geometry, time_index: int
 ) -> NDArrayFloat:
     """
     Compute the darcy velocities at the mesh boundaries along the x axis.
@@ -458,15 +458,15 @@ def find_ux_boundary(
     _type_
         _description_
     """
-    out = np.zeros((geometry.nx + 1, geometry.ny))
+    out = np.zeros((grid.nx + 1, grid.ny))
     head = fl_model.lhead[time_index]
-    kmean = get_kmean(geometry, fl_model, axis=0, is_flatten=False)[:-1, :]
-    out[1:-1, :] = -kmean * (head[1:, :] - head[:-1, :]) / geometry.dx
+    kmean = get_kmean(grid, fl_model, axis=0, is_flatten=False)[:-1, :]
+    out[1:-1, :] = -kmean * (head[1:, :] - head[:-1, :]) / grid.dx
     return out
 
 
 def find_uy_boundary(
-    fl_model: FlowModel, geometry: Geometry, time_index: int
+    fl_model: FlowModel, grid: Geometry, time_index: int
 ) -> NDArrayFloat:
     """
     Compute the darcy velocities at the mesh boundaries along the y axis.
@@ -483,15 +483,15 @@ def find_uy_boundary(
     _type_
         _description_
     """
-    out = np.zeros((geometry.nx, geometry.ny + 1))
+    out = np.zeros((grid.nx, grid.ny + 1))
     head = fl_model.lhead[time_index]
-    kmean = get_kmean(geometry, fl_model, axis=1, is_flatten=False)[:, :-1]
-    out[:, 1:-1] = -kmean * (head[:, 1:] - head[:, :-1]) / geometry.dy
+    kmean = get_kmean(grid, fl_model, axis=1, is_flatten=False)[:, :-1]
+    out[:, 1:-1] = -kmean * (head[:, 1:] - head[:, :-1]) / grid.dy
     return out
 
 
 def find_ux_boundary_density(
-    fl_model: FlowModel, tr_model: TransportModel, geometry: Geometry, time_index: int
+    fl_model: FlowModel, tr_model: TransportModel, grid: Geometry, time_index: int
 ) -> NDArrayFloat:
     """
     Compute the darcy velocities at the mesh boundaries along the x axis.
@@ -508,11 +508,11 @@ def find_ux_boundary_density(
     _type_
         _description_
     """
-    out = np.zeros((geometry.nx + 1, geometry.ny))
+    out = np.zeros((grid.nx + 1, grid.ny))
     pressure = fl_model.lpressure[time_index]
-    kmean = get_kmean(geometry, fl_model, axis=0, is_flatten=False)[:-1, :]
+    kmean = get_kmean(grid, fl_model, axis=0, is_flatten=False)[:-1, :]
     rhomean = get_rhomean(
-        geometry, tr_model, axis=0, time_index=time_index - 1, is_flatten=False
+        grid, tr_model, axis=0, time_index=time_index - 1, is_flatten=False
     )[:-1, :]
     if fl_model.vertical_axis == VerticalAxis.X:
         rho_ij_g = rhomean * GRAVITY
@@ -525,13 +525,13 @@ def find_ux_boundary_density(
         -kmean
         / WATER_DENSITY
         / GRAVITY
-        * ((pressure[1:, :] - pressure[:-1, :]) / geometry.dx + rho_ij_g)
+        * ((pressure[1:, :] - pressure[:-1, :]) / grid.dx + rho_ij_g)
     )
     return out
 
 
 def find_uy_boundary_density(
-    fl_model: FlowModel, tr_model: TransportModel, geometry: Geometry, time_index: int
+    fl_model: FlowModel, tr_model: TransportModel, grid: Geometry, time_index: int
 ) -> NDArrayFloat:
     """
     Compute the darcy velocities at the mesh boundaries along the y axis.
@@ -548,11 +548,11 @@ def find_uy_boundary_density(
     _type_
         _description_
     """
-    out = np.zeros((geometry.nx, geometry.ny + 1))
+    out = np.zeros((grid.nx, grid.ny + 1))
     pressure = fl_model.lpressure[time_index]
-    kmean = get_kmean(geometry, fl_model, axis=1, is_flatten=False)[:, :-1]
+    kmean = get_kmean(grid, fl_model, axis=1, is_flatten=False)[:, :-1]
     rhomean = get_rhomean(
-        geometry, tr_model, axis=1, time_index=time_index - 1, is_flatten=False
+        grid, tr_model, axis=1, time_index=time_index - 1, is_flatten=False
     )[:, :-1]
 
     if fl_model.vertical_axis == VerticalAxis.Y:
@@ -566,31 +566,31 @@ def find_uy_boundary_density(
         -kmean
         / WATER_DENSITY
         / GRAVITY
-        * ((pressure[:, 1:] - pressure[:, :-1]) / geometry.dy + rho_ij_g)
+        * ((pressure[:, 1:] - pressure[:, :-1]) / grid.dy + rho_ij_g)
     )
     return out
 
 
 def compute_u_darcy(
-    fl_model: FlowModel, tr_model: TransportModel, geometry: Geometry, time_index: int
+    fl_model: FlowModel, tr_model: TransportModel, grid: Geometry, time_index: int
 ) -> None:
     """Update the darcy velocities at the node boundaries."""
     if fl_model.is_gravity:
         fl_model.lu_darcy_x.append(
-            find_ux_boundary_density(fl_model, tr_model, geometry, time_index)
+            find_ux_boundary_density(fl_model, tr_model, grid, time_index)
         )
         fl_model.lu_darcy_y.append(
-            find_uy_boundary_density(fl_model, tr_model, geometry, time_index)
+            find_uy_boundary_density(fl_model, tr_model, grid, time_index)
         )
     else:
-        fl_model.lu_darcy_x.append(find_ux_boundary(fl_model, geometry, time_index))
-        fl_model.lu_darcy_y.append(find_uy_boundary(fl_model, geometry, time_index))
+        fl_model.lu_darcy_x.append(find_ux_boundary(fl_model, grid, time_index))
+        fl_model.lu_darcy_y.append(find_uy_boundary(fl_model, grid, time_index))
     # Handle constant head
-    update_unitflow_cst_head_nodes(fl_model, geometry, time_index)
+    update_unitflow_cst_head_nodes(fl_model, grid, time_index)
 
 
 def update_unitflow_cst_head_nodes(
-    fl_model: FlowModel, geometry: Geometry, time_index: int
+    fl_model: FlowModel, grid: Geometry, time_index: int
 ) -> None:
     """
     Update the darcy velocities for the constant-head nodes.
@@ -602,8 +602,8 @@ def update_unitflow_cst_head_nodes(
     ----------
     fl_model : FlowModel
         The flow model which contains flow parameters and variables.
-    geometry : Geometry
-        The geometry parameters.
+    grid : Geometry
+        The grid parameters.
     time_index : int
         Time index for which to update.
     """
@@ -612,14 +612,14 @@ def update_unitflow_cst_head_nodes(
 
     # 1) Compute the flow in each cell -> oriented darcy times the node centers
     # distances
-    flow = np.zeros(geometry.shape)
-    _flow = np.zeros(geometry.shape)
-    if geometry.nx > 1:
-        flow[:, :] += fl_model.lu_darcy_x[time_index][:-1, :] * geometry.gamma_ij_x
-        flow[:, :] -= fl_model.lu_darcy_x[time_index][1:, :] * geometry.gamma_ij_x
-    if geometry.ny > 1:
-        flow[:, :] += fl_model.lu_darcy_y[time_index][:, :-1] * geometry.gamma_ij_y
-        flow[:, :] -= fl_model.lu_darcy_y[time_index][:, 1:] * geometry.gamma_ij_y
+    flow = np.zeros(grid.shape)
+    _flow = np.zeros(grid.shape)
+    if grid.nx > 1:
+        flow[:, :] += fl_model.lu_darcy_x[time_index][:-1, :] * grid.gamma_ij_x
+        flow[:, :] -= fl_model.lu_darcy_x[time_index][1:, :] * grid.gamma_ij_x
+    if grid.ny > 1:
+        flow[:, :] += fl_model.lu_darcy_y[time_index][:, :-1] * grid.gamma_ij_y
+        flow[:, :] -= fl_model.lu_darcy_y[time_index][:, 1:] * grid.gamma_ij_y
 
     # Trick: Set the flow to zero where the head is not constant
     # Q: est-ce que c'est juste pour les constant head ????
@@ -628,22 +628,22 @@ def update_unitflow_cst_head_nodes(
     ]
 
     # Total boundary length per mesh
-    _ltot = np.zeros(geometry.shape)
-    if geometry.nx > 1:
+    _ltot = np.zeros(grid.shape)
+    if grid.nx > 1:
         # evacuation along x
-        _ltot[0, fl_model.is_boundary_west] += geometry.gamma_ij_x
-        _ltot[-1, fl_model.is_boundary_east] += geometry.gamma_ij_x
-    if geometry.ny > 1:
+        _ltot[0, fl_model.is_boundary_west] += grid.gamma_ij_x
+        _ltot[-1, fl_model.is_boundary_east] += grid.gamma_ij_x
+    if grid.ny > 1:
         # evacuation along y
-        _ltot[fl_model.is_boundary_north, 0] += geometry.gamma_ij_y
-        _ltot[fl_model.is_boundary_south, -1] += geometry.gamma_ij_y
+        _ltot[fl_model.is_boundary_north, 0] += grid.gamma_ij_y
+        _ltot[fl_model.is_boundary_south, -1] += grid.gamma_ij_y
 
     # 2) Update unitflow for the constant-head nodes
     fl_model.lunitflow[time_index][
         fl_model.cst_head_indices[0], fl_model.cst_head_indices[1]
     ] = (
         _flow[fl_model.cst_head_indices[0], fl_model.cst_head_indices[1]]
-        / geometry.grid_cell_volume
+        / grid.grid_cell_volume
     )
 
     # 3) Now creates an artificial flow on the domain boundaries
@@ -652,19 +652,19 @@ def update_unitflow_cst_head_nodes(
     # grid cells located in the boundary of the domain.
 
     # 3.1) For constant head in the borders -> unitflow is null
-    cst_head_border_mask = _flow != 0 & get_array_borders_selection(*geometry.shape)
+    cst_head_border_mask = _flow != 0 & get_array_borders_selection(*grid.shape)
     fl_model.lunitflow[time_index][cst_head_border_mask] = 0.0
 
     # 3.2) Report the flow on the boundaries
     # Note: so far, at borders, all flows are 0
-    if geometry.nx > 1:
+    if grid.nx > 1:
         fl_model.lu_darcy_x[time_index][0, fl_model.is_boundary_west] = (
             -_flow[0, fl_model.is_boundary_west] / _ltot[0, fl_model.is_boundary_west]
         )
         fl_model.lu_darcy_x[time_index][-1, fl_model.is_boundary_east] = (
             +_flow[-1, fl_model.is_boundary_east] / _ltot[-1, fl_model.is_boundary_east]
         )
-    if geometry.ny > 1:
+    if grid.ny > 1:
         fl_model.lu_darcy_y[time_index][fl_model.is_boundary_south, 0] = (
             -_flow[fl_model.is_boundary_south, 0] / _ltot[fl_model.is_boundary_south, 0]
         )
@@ -674,24 +674,22 @@ def update_unitflow_cst_head_nodes(
         )
 
 
-def compute_u_darcy_div(
-    fl_model: FlowModel, geometry: Geometry, time_index: int
-) -> None:
+def compute_u_darcy_div(fl_model: FlowModel, grid: Geometry, time_index: int) -> None:
     """Update the darcy velocities divergence (at the node centers)."""
 
     # Reset to zero
-    u_darcy_div = np.zeros(geometry.shape)
+    u_darcy_div = np.zeros(grid.shape)
 
     # x contribution -> multiply by the frontier (dy and not dx)
-    u_darcy_div -= fl_model.lu_darcy_x[time_index][:-1, :] * geometry.gamma_ij_x
-    u_darcy_div += fl_model.lu_darcy_x[time_index][1:, :] * geometry.gamma_ij_x
+    u_darcy_div -= fl_model.lu_darcy_x[time_index][:-1, :] * grid.gamma_ij_x
+    u_darcy_div += fl_model.lu_darcy_x[time_index][1:, :] * grid.gamma_ij_x
 
     # y contribution  -> multiply by the frontier (dx and not dy)
-    u_darcy_div -= fl_model.lu_darcy_y[time_index][:, :-1] * geometry.gamma_ij_y
-    u_darcy_div += fl_model.lu_darcy_y[time_index][:, 1:] * geometry.gamma_ij_y
+    u_darcy_div -= fl_model.lu_darcy_y[time_index][:, :-1] * grid.gamma_ij_y
+    u_darcy_div += fl_model.lu_darcy_y[time_index][:, 1:] * grid.gamma_ij_y
 
     # Take the surface into account
-    u_darcy_div /= geometry.grid_cell_volume
+    u_darcy_div /= grid.grid_cell_volume
 
     # Constant head handling - null divergence
     cst_idx = fl_model.cst_head_indices
@@ -701,96 +699,96 @@ def compute_u_darcy_div(
 
 
 def get_gravity_gradient(
-    geometry: Geometry, fl_model: FlowModel, tr_model: TransportModel, time_index: int
+    grid: Geometry, fl_model: FlowModel, tr_model: TransportModel, time_index: int
 ) -> NDArrayFloat:
-    tmp = np.zeros(geometry.nx * geometry.ny)
+    tmp = np.zeros(grid.nx * grid.ny)
     sc = fl_model.storage_coefficient.ravel("F")
 
     if fl_model.vertical_axis == VerticalAxis.X:
-        kmean = get_kmean(geometry, fl_model, axis=0)
-        rhomean = get_rhomean(geometry, tr_model, axis=0, time_index=time_index - 1)
+        kmean = get_kmean(grid, fl_model, axis=0)
+        rhomean = get_rhomean(grid, tr_model, axis=0, time_index=time_index - 1)
 
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(0, geometry.nx - 1), slice(None)),
-            (slice(1, geometry.nx), slice(None)),
+            grid,
+            (slice(0, grid.nx - 1), slice(None)),
+            (slice(1, grid.nx), slice(None)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
 
         tmp[idc_owner] += (
-            geometry.gamma_ij_x
+            grid.gamma_ij_x
             * rhomean[idc_owner] ** 2
             * GRAVITY
             / WATER_DENSITY
             * kmean[idc_owner]
-            / geometry.grid_cell_volume
+            / grid.grid_cell_volume
             / sc[idc_owner]
         )
 
         # Backward scheme
         idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(1, geometry.nx), slice(None)),
-            (slice(0, geometry.nx - 1), slice(None)),
+            grid,
+            (slice(1, grid.nx), slice(None)),
+            (slice(0, grid.nx - 1), slice(None)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
 
         tmp[idc_owner] -= (
-            geometry.gamma_ij_x
+            grid.gamma_ij_x
             * (rhomean[idc_neigh] ** 2)
             * GRAVITY
             / WATER_DENSITY
             * kmean[idc_neigh]
             / sc[idc_owner]
-            / geometry.grid_cell_volume
+            / grid.grid_cell_volume
         )
 
     elif fl_model.vertical_axis == VerticalAxis.Y:
-        kmean = get_kmean(geometry, fl_model, axis=1)
-        rhomean = get_rhomean(geometry, tr_model, axis=1, time_index=time_index - 1)
+        kmean = get_kmean(grid, fl_model, axis=1)
+        rhomean = get_rhomean(grid, tr_model, axis=1, time_index=time_index - 1)
 
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(None), slice(0, geometry.ny - 1)),
-            (slice(None), slice(1, geometry.ny)),
+            grid,
+            (slice(None), slice(0, grid.ny - 1)),
+            (slice(None), slice(1, grid.ny)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
 
         tmp[idc_owner] += (
-            geometry.gamma_ij_y
+            grid.gamma_ij_y
             * (rhomean[idc_owner] ** 2)
             * GRAVITY
             / WATER_DENSITY
             * kmean[idc_owner]
             / sc[idc_owner]
-            / geometry.grid_cell_volume
+            / grid.grid_cell_volume
         )
 
         # Backward scheme
         idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(None), slice(1, geometry.ny)),
-            (slice(None), slice(0, geometry.ny - 1)),
+            grid,
+            (slice(None), slice(1, grid.ny)),
+            (slice(None), slice(0, grid.ny - 1)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
 
         tmp[idc_owner] -= (
-            geometry.gamma_ij_y
+            grid.gamma_ij_y
             * (rhomean[idc_neigh] ** 2)
             * GRAVITY
             / WATER_DENSITY
             * kmean[idc_neigh]
             / sc[idc_owner]
-            / geometry.grid_cell_volume
+            / grid.grid_cell_volume
         )
 
     return tmp
 
 
 def solve_flow_transient_semi_implicit(
-    geometry: Geometry,
+    grid: Geometry,
     fl_model: FlowModel,
     tr_model: TransportModel,
     unitflw_sources: NDArrayFloat,
@@ -808,7 +806,7 @@ def solve_flow_transient_semi_implicit(
         # consequently, the matrix must be updated
         # time_index = 1 => first time the matrix is built
         fl_model.q_next, fl_model.q_prev = make_transient_flow_matrices(
-            geometry, fl_model, tr_model, time_index
+            grid, fl_model, tr_model, time_index
         )
         if not fl_model.is_gravity:  # store for the saturated case only
             fl_model.q_next_no_dt = fl_model.q_next.copy()
@@ -862,7 +860,7 @@ def solve_flow_transient_semi_implicit(
         # pressure
         rhs = fl_model.q_prev.dot(fl_model.lpressure[time_index - 1].flatten(order="F"))
         rhs += sources * tr_model.ldensity[time_index - 1].flatten(order="F") * GRAVITY
-        rhs += get_gravity_gradient(geometry, fl_model, tr_model, time_index)
+        rhs += get_gravity_gradient(grid, fl_model, tr_model, time_index)
 
         # Handle constant head nodes
         rhs[fl_model.cst_head_nn] = fl_model.lpressure[time_index - 1].flatten(
@@ -880,14 +878,14 @@ def solve_flow_transient_semi_implicit(
     res, exit_code = solve_fl_gmres(fl_model, rhs, super_ilu, preconditioner)
 
     if fl_model.is_gravity:
-        fl_model.lpressure.append(res.reshape(geometry.nx, geometry.ny, order="F"))
+        fl_model.lpressure.append(res.reshape(grid.nx, grid.ny, order="F"))
         # update the pressure field
         fl_model.lhead.append(
             (fl_model.lpressure[-1] / GRAVITY / tr_model.ldensity[time_index - 1])
             + fl_model._get_mesh_center_vertical_pos().T
         )
     else:
-        fl_model.lhead.append(res.reshape(geometry.nx, geometry.ny, order="F"))
+        fl_model.lhead.append(res.reshape(grid.nx, grid.ny, order="F"))
         # update the pressure field -> here we use the water density to be consistent
         # with HYTEC.
         fl_model.lpressure.append(
@@ -896,9 +894,9 @@ def solve_flow_transient_semi_implicit(
             * WATER_DENSITY
         )
 
-    compute_u_darcy(fl_model, tr_model, geometry, time_index)
+    compute_u_darcy(fl_model, tr_model, grid, time_index)
 
-    compute_u_darcy_div(fl_model, geometry, time_index)
+    compute_u_darcy_div(fl_model, grid, time_index)
 
     return exit_code
 

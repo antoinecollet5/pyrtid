@@ -62,7 +62,7 @@ def dFhdKv(
             ]
             * vecs[:-1, :, :]
         )
-        tmp = fwd_model.geometry.gamma_ij_x / fwd_model.geometry.dx
+        tmp = fwd_model.grid.gamma_ij_x / fwd_model.grid.dx
 
         # For all n != 0
         if time_index != 0:
@@ -72,7 +72,7 @@ def dFhdKv(
                     + (1.0 - crank_flow) * (head_prev[1:, :] - head_prev[:-1, :])
                 )
                 * tmp
-                / fwd_model.geometry.grid_cell_volume
+                / fwd_model.grid.grid_cell_volume
             )
             # Forward
             out[:-1, :, :] -= (lhs / fwd_model.fl_model.storage_coefficient[:-1, :])[
@@ -89,7 +89,7 @@ def dFhdKv(
             lhs = (
                 (head[1:, :] - head[:-1, :])[:, :, np.newaxis]
                 * tmp
-                / fwd_model.geometry.grid_cell_volume
+                / fwd_model.grid.grid_cell_volume
                 * dKijdKxv
             )
             out[:-1, :, :] -= lhs
@@ -108,7 +108,7 @@ def dFhdKv(
             ]
             * vecs[:, :-1, :]
         )
-        tmp = fwd_model.geometry.gamma_ij_y / fwd_model.geometry.dy
+        tmp = fwd_model.grid.gamma_ij_y / fwd_model.grid.dy
 
         # For all n != 0
         if time_index != 0:
@@ -118,7 +118,7 @@ def dFhdKv(
                     + (1.0 - crank_flow) * (head_prev[:, 1:] - head_prev[:, :-1])
                 )
                 * tmp
-                / fwd_model.geometry.grid_cell_volume
+                / fwd_model.grid.grid_cell_volume
             )
             # Forward
             out[:, :-1, :] -= (lhs / fwd_model.fl_model.storage_coefficient[:, :-1])[
@@ -135,7 +135,7 @@ def dFhdKv(
             lhs = (
                 (head[:, 1:] - head[:, :-1])[:, :, np.newaxis]
                 * tmp
-                / fwd_model.geometry.grid_cell_volume
+                / fwd_model.grid.grid_cell_volume
                 * dKijdKyv
             )
             out[:, :-1, :] -= lhs
@@ -179,7 +179,7 @@ def dFhdSsv(
     # Consider the x axis
     if shape[0] > 1:
         Kij = harmonic_mean(permeability[1:, :], permeability[:-1, :])
-        tmp = fwd_model.geometry.gamma_ij_x / fwd_model.geometry.dx
+        tmp = fwd_model.grid.gamma_ij_x / fwd_model.grid.dx
 
         # For all n != 0
         if time_index != 0:
@@ -190,7 +190,7 @@ def dFhdSsv(
                 )
                 * tmp
                 * Kij
-                / fwd_model.geometry.grid_cell_volume
+                / fwd_model.grid.grid_cell_volume
             )
             # Forward
             out[:-1, :, :] -= lhs[:, :, np.newaxis] * dinvSsV[:-1, :, :]
@@ -201,7 +201,7 @@ def dFhdSsv(
     # Consider the x axis
     if shape[1] > 1:
         Kij = harmonic_mean(permeability[:, 1:], permeability[:, :-1])
-        tmp = fwd_model.geometry.gamma_ij_y / fwd_model.geometry.dy
+        tmp = fwd_model.grid.gamma_ij_y / fwd_model.grid.dy
 
         # For all n != 0
         if time_index != 0:
@@ -212,7 +212,7 @@ def dFhdSsv(
                 )
                 * tmp
                 * Kij
-                / fwd_model.geometry.grid_cell_volume
+                / fwd_model.grid.grid_cell_volume
             )
             # Forward
             out[:, :-1, :] -= lhs[:, :, np.newaxis] * dinvSsV[:, :-1, :]
@@ -271,7 +271,7 @@ def dFpdKv(
         # For all n != 0
         if time_index != 0:
             rhoij = get_rhomean(
-                fwd_model.geometry,
+                fwd_model.grid,
                 fwd_model.tr_model,
                 axis=0,
                 time_index=time_index - 1,
@@ -288,13 +288,13 @@ def dFpdKv(
                         + (1.0 - crank_flow)
                         * (pressure_prev[1:, :] - pressure_prev[:-1, :])
                     )
-                    / fwd_model.geometry.dx
+                    / fwd_model.grid.dx
                     + rhoijg
                 )
-                * fwd_model.geometry.gamma_ij_x
+                * fwd_model.grid.gamma_ij_x
                 * rhoij
                 / WATER_DENSITY
-                / fwd_model.geometry.grid_cell_volume
+                / fwd_model.grid.grid_cell_volume
             )
             # Forward
             out[:-1, :, :] -= (lhs / fwd_model.fl_model.storage_coefficient[:-1, :])[
@@ -316,9 +316,9 @@ def dFpdKv(
                     - z[:-1, :]
                     + z[1:, :]
                 )
-                * fwd_model.geometry.gamma_ij_x
-                / fwd_model.geometry.dx
-                / fwd_model.geometry.grid_cell_volume
+                * fwd_model.grid.gamma_ij_x
+                / fwd_model.grid.dx
+                / fwd_model.grid.grid_cell_volume
             ) * dKijdKxv
 
             out[:-1, :, :] -= lhs
@@ -341,7 +341,7 @@ def dFpdKv(
         # For all n != 0
         if time_index != 0:
             rhoij = get_rhomean(
-                fwd_model.geometry,
+                fwd_model.grid,
                 fwd_model.tr_model,
                 axis=1,
                 time_index=time_index - 1,
@@ -360,13 +360,13 @@ def dFpdKv(
                         + (1.0 - crank_flow)
                         * (pressure_prev[:, 1:] - pressure_prev[:, :-1])
                     )
-                    / fwd_model.geometry.dy
+                    / fwd_model.grid.dy
                     + rhoijg
                 )
-                * fwd_model.geometry.gamma_ij_y
+                * fwd_model.grid.gamma_ij_y
                 * rhoij
                 / WATER_DENSITY
-                / fwd_model.geometry.grid_cell_volume
+                / fwd_model.grid.grid_cell_volume
             )
             # Forward
             out[:, :-1, :] -= (lhs / fwd_model.fl_model.storage_coefficient[:, :-1])[
@@ -388,9 +388,9 @@ def dFpdKv(
                     - z[:, :-1]
                     + z[:, 1:]
                 )
-                * fwd_model.geometry.gamma_ij_y
-                / fwd_model.geometry.dy
-                / fwd_model.geometry.grid_cell_volume
+                * fwd_model.grid.gamma_ij_y
+                / fwd_model.grid.dy
+                / fwd_model.grid.grid_cell_volume
             ) * dKijdKyv
 
             out[:, :-1, :] -= lhs
@@ -434,7 +434,7 @@ def dFpdSsv(
     if shape[0] > 1:
         Kij = harmonic_mean(permeability[1:, :], permeability[:-1, :])
         rhoij = get_rhomean(
-            fwd_model.geometry,
+            fwd_model.grid,
             fwd_model.tr_model,
             axis=0,
             time_index=time_index - 1,
@@ -453,14 +453,14 @@ def dFpdSsv(
                         + (1.0 - crank_flow)
                         * (pressure_prev[1:, :] - pressure_prev[:-1, :])
                     )
-                    / fwd_model.geometry.dx
+                    / fwd_model.grid.dx
                     + rhoijg
                 )
-                * fwd_model.geometry.gamma_ij_x
+                * fwd_model.grid.gamma_ij_x
                 * rhoij
                 * Kij
                 / WATER_DENSITY
-                / fwd_model.geometry.grid_cell_volume
+                / fwd_model.grid.grid_cell_volume
             )
             # Forward
             out[:-1, :, :] -= lhs[:, :, np.newaxis] * dinvSsV[:-1, :, :]
@@ -471,7 +471,7 @@ def dFpdSsv(
     if shape[1] > 1:
         Kij = harmonic_mean(permeability[:, 1:], permeability[:, :-1])
         rhoij = get_rhomean(
-            fwd_model.geometry,
+            fwd_model.grid,
             fwd_model.tr_model,
             axis=1,
             time_index=time_index - 1,
@@ -492,14 +492,14 @@ def dFpdSsv(
                         + (1.0 - crank_flow)
                         * (pressure_prev[:, 1:] - pressure_prev[:, :-1])
                     )
-                    / fwd_model.geometry.dy
+                    / fwd_model.grid.dy
                     + rhoijg
                 )
-                * fwd_model.geometry.gamma_ij_y
+                * fwd_model.grid.gamma_ij_y
                 * Kij
                 * rhoij
                 / WATER_DENSITY
-                / fwd_model.geometry.grid_cell_volume
+                / fwd_model.grid.grid_cell_volume
             )
             # Forward
             out[:, :-1, :] -= lhs[:, :, np.newaxis] * dinvSsV[:, :-1, :]
@@ -528,7 +528,7 @@ def dFUxdKv(
 ) -> NDArrayFloat:
     permeability = fwd_model.fl_model.permeability
     out = np.zeros(
-        (fwd_model.geometry.nx + 1, fwd_model.geometry.ny, vecs.shape[-1]),
+        (fwd_model.grid.nx + 1, fwd_model.grid.ny, vecs.shape[-1]),
         dtype=np.float64,
     )
     dKijdKxv = (
@@ -540,7 +540,7 @@ def dFUxdKv(
 
     if fwd_model.fl_model.is_gravity:
         rhomean = get_rhomean(
-            fwd_model.geometry,
+            fwd_model.grid,
             fwd_model.tr_model,
             axis=0,
             time_index=time_index - 1,
@@ -557,10 +557,7 @@ def dFUxdKv(
         out[1:-1, :, :] += (
             dKijdKxv
             * (
-                (
-                    (pressure[1:, :] - pressure[:-1, :]) / fwd_model.geometry.dx
-                    + rho_ij_g
-                )
+                ((pressure[1:, :] - pressure[:-1, :]) / fwd_model.grid.dx + rho_ij_g)
                 / WATER_DENSITY
                 / GRAVITY
             )[:, :, np.newaxis]
@@ -569,7 +566,7 @@ def dFUxdKv(
         head = fwd_model.fl_model.lhead[time_index]
         out[1:-1, :, :] += (
             dKijdKxv
-            * ((head[1:, :] - head[:-1, :]) / fwd_model.geometry.dx)[:, :, np.newaxis]
+            * ((head[1:, :] - head[:-1, :]) / fwd_model.grid.dx)[:, :, np.newaxis]
         )
     return out
 
@@ -579,7 +576,7 @@ def dFUydKv(
 ) -> NDArrayFloat:
     permeability = fwd_model.fl_model.permeability
     out = np.zeros(
-        (fwd_model.geometry.nx, fwd_model.geometry.ny + 1, vecs.shape[-1]),
+        (fwd_model.grid.nx, fwd_model.grid.ny + 1, vecs.shape[-1]),
         dtype=np.float64,
     )
     dKijdKyv = (
@@ -591,7 +588,7 @@ def dFUydKv(
 
     if fwd_model.fl_model.is_gravity:
         rhomean = get_rhomean(
-            fwd_model.geometry,
+            fwd_model.grid,
             fwd_model.tr_model,
             axis=1,
             time_index=time_index - 1,
@@ -608,10 +605,7 @@ def dFUydKv(
         out[:, 1:-1, :] += (
             dKijdKyv
             * (
-                (
-                    (pressure[:, 1:] - pressure[:, :-1]) / fwd_model.geometry.dy
-                    + rho_ij_g
-                )
+                ((pressure[:, 1:] - pressure[:, :-1]) / fwd_model.grid.dy + rho_ij_g)
                 / WATER_DENSITY
                 / GRAVITY
             )[:, :, np.newaxis]
@@ -620,7 +614,7 @@ def dFUydKv(
         head = fwd_model.fl_model.lhead[time_index]
         out[:, 1:-1, :] += (
             dKijdKyv
-            * ((head[:, 1:] - head[:, :-1]) / fwd_model.geometry.dy)[:, :, np.newaxis]
+            * ((head[:, 1:] - head[:, :-1]) / fwd_model.grid.dy)[:, :, np.newaxis]
         )
     return out
 

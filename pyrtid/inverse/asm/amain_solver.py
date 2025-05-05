@@ -58,7 +58,7 @@ class AdjointSolver:
             self.adj_model.a_fl_model.q_next,
             self.adj_model.a_fl_model.q_prev,
         ) = make_transient_adj_flow_matrices(
-            self.fwd_model.geometry,
+            self.fwd_model.grid,
             self.fwd_model.fl_model,
             self.fwd_model.tr_model,
             self.adj_model.a_fl_model,
@@ -123,7 +123,7 @@ class AdjointSolver:
             self.adj_model.a_tr_model,
             time_index,
             self.fwd_model.time_params,
-            self.fwd_model.geometry,
+            self.fwd_model.grid,
             self.fwd_model.gch_params.Ms,
         )
 
@@ -149,7 +149,7 @@ class AdjointSolver:
                 self.fwd_model.tr_model,
                 self.adj_model.a_tr_model,
                 self.fwd_model.gch_params,
-                self.fwd_model.geometry,
+                self.fwd_model.grid,
                 self.fwd_model.time_params,
                 time_index,
                 nafpi=nafpi,
@@ -157,7 +157,7 @@ class AdjointSolver:
 
             # 2.2) Solve the adjoint transport
             solve_adj_transport_transient_semi_implicit(
-                self.fwd_model.geometry,
+                self.fwd_model.grid,
                 self.fwd_model.fl_model,
                 self.fwd_model.tr_model,
                 self.adj_model.a_tr_model,
@@ -185,7 +185,7 @@ class AdjointSolver:
 
         # 3) Need to compute the adjoint darcy velocities
         update_adjoint_u_darcy(
-            self.fwd_model.geometry,
+            self.fwd_model.grid,
             self.fwd_model.tr_model,
             self.adj_model.a_tr_model,
             self.fwd_model.fl_model,
@@ -196,7 +196,7 @@ class AdjointSolver:
 
         # 4) Solve the flow last -> requires the previous
         solve_adj_flow(
-            self.fwd_model.geometry,
+            self.fwd_model.grid,
             self.fwd_model.fl_model,
             self.fwd_model.tr_model,
             self.adj_model.a_fl_model,

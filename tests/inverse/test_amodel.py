@@ -20,8 +20,8 @@ from pyrtid.utils import MeanType, NDArrayFloat, finite_gradient
 )
 def test_adjoint_model_init(args, kwargs) -> None:
     time_params = dmfwd.TimeParameters(duration=1.0, dt_init=1.0)
-    geometry = dmfwd.Geometry(nx=5, ny=5, dx=4.5, dy=7.5)
-    dminv.AdjointModel(geometry, time_params, False, 2, *args, **kwargs)
+    grid = dmfwd.Geometry(nx=5, ny=5, dx=4.5, dy=7.5)
+    dminv.AdjointModel(grid, time_params, False, 2, *args, **kwargs)
 
 
 @pytest.mark.parametrize(
@@ -36,13 +36,13 @@ def test_adjoint_model_init(args, kwargs) -> None:
 )
 def test_init_adjoint_sources(max_obs_time, mean_type) -> None:
     time_params = dmfwd.TimeParameters(duration=1.0, dt_init=1.0)
-    geometry = dmfwd.Geometry(nx=5, ny=5, dx=4.5, dy=7.5)
+    grid = dmfwd.Geometry(nx=5, ny=5, dx=4.5, dy=7.5)
     fl_params = dmfwd.FlowParameters(1e-5)
     tr_params = dmfwd.TransportParameters(diffusion=1.0, porosity=0.23)
     gch_params = dmfwd.GeochemicalParameters(1.0, 0.0)
 
     model = dmfwd.ForwardModel(
-        geometry,
+        grid,
         time_params,
         fl_params,
         tr_params,
@@ -52,51 +52,43 @@ def test_init_adjoint_sources(max_obs_time, mean_type) -> None:
     # generate synthetic data
     # I don't understand why is does not work if we leave it to 997... ???
     model.tr_model.ldensity.append(
-        np.abs(np.random.default_rng(2023).random((geometry.nx, geometry.ny)) + 2.0)
+        np.abs(np.random.default_rng(2023).random((grid.nx, grid.ny)) + 2.0)
     )
     model.tr_model.ldensity.append(
-        np.abs(np.random.default_rng(2023).random((geometry.nx, geometry.ny)) + 2.0)
+        np.abs(np.random.default_rng(2023).random((grid.nx, grid.ny)) + 2.0)
     )
     model.tr_model.ldensity.append(
-        np.abs(np.random.default_rng(2023).random((geometry.nx, geometry.ny)) + 3.0)
+        np.abs(np.random.default_rng(2023).random((grid.nx, grid.ny)) + 3.0)
     )
     model.tr_model.lmob.append(
         np.abs(
-            np.random.default_rng(2023).random(
-                (model.tr_model.n_sp, geometry.nx, geometry.ny)
-            )
+            np.random.default_rng(2023).random((model.tr_model.n_sp, grid.nx, grid.ny))
             + 2.0
         )
     )
     model.tr_model.lmob.append(
         np.abs(
-            np.random.default_rng(2023).random(
-                (model.tr_model.n_sp, geometry.nx, geometry.ny)
-            )
+            np.random.default_rng(2023).random((model.tr_model.n_sp, grid.nx, grid.ny))
             + 3.0
         )
     )
     model.tr_model.limmob.append(
         np.abs(
-            np.random.default_rng(2023).random(
-                (model.tr_model.n_sp, geometry.nx, geometry.ny)
-            )
+            np.random.default_rng(2023).random((model.tr_model.n_sp, grid.nx, grid.ny))
             + 2.0
         )
     )
     model.tr_model.limmob.append(
         np.abs(
-            np.random.default_rng(2023).random(
-                (model.tr_model.n_sp, geometry.nx, geometry.ny)
-            )
+            np.random.default_rng(2023).random((model.tr_model.n_sp, grid.nx, grid.ny))
             + 3.0
         )
     )
     model.fl_model.lhead.append(
-        np.abs(np.random.default_rng(2023).random((geometry.nx, geometry.ny)) + 2.0)
+        np.abs(np.random.default_rng(2023).random((grid.nx, grid.ny)) + 2.0)
     )
     model.fl_model.lhead.append(
-        np.abs(np.random.default_rng(2023).random((geometry.nx, geometry.ny)) + 3.0)
+        np.abs(np.random.default_rng(2023).random((grid.nx, grid.ny)) + 3.0)
     )
 
     for head in model.fl_model.lhead:
@@ -106,7 +98,7 @@ def test_init_adjoint_sources(max_obs_time, mean_type) -> None:
     model.time_params.save_dt()
 
     model.fl_model.permeability = np.abs(
-        np.random.default_rng(2023).random((geometry.nx, geometry.ny))
+        np.random.default_rng(2023).random((grid.nx, grid.ny))
     )
 
     observables = [
@@ -159,7 +151,7 @@ def test_init_adjoint_sources(max_obs_time, mean_type) -> None:
             )
         )
 
-    adj_model = dminv.AdjointModel(geometry, time_params, False, model.tr_model.n_sp)
+    adj_model = dminv.AdjointModel(grid, time_params, False, model.tr_model.n_sp)
     adj_model.init_adjoint_sources(
         copy.copy(model), observables, hm_end_time=max_obs_time
     )
@@ -173,7 +165,7 @@ def test_init_adjoint_sources(max_obs_time, mean_type) -> None:
     np.testing.assert_allclose(
         adj_model.a_tr_model.a_conc_sources[0]
         .toarray()
-        .reshape(geometry.nx, geometry.ny, time_params.nt, order="F"),
+        .reshape(grid.nx, grid.ny, time_params.nt, order="F"),
         finite_gradient(model.tr_model.mob[0], wrapper_conc),
     )
 
@@ -184,7 +176,7 @@ def test_init_adjoint_sources(max_obs_time, mean_type) -> None:
 
     np.testing.assert_allclose(
         adj_model.a_fl_model.a_permeability_sources.toarray().reshape(
-            geometry.nx, geometry.ny, order="F"
+            grid.nx, grid.ny, order="F"
         ),
         finite_gradient(model.fl_model.permeability, wrapper_perm),
     )

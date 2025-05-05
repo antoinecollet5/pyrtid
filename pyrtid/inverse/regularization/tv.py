@@ -29,7 +29,7 @@ class TVRegularizator(Regularizator):
 
     Attributes
     ----------
-    geometry : Geometry
+    grid : Geometry
         Geometry of the field.
     eps: float
         Small factor added in the square root to deal with the singularity at
@@ -41,7 +41,7 @@ class TVRegularizator(Regularizator):
 
     """
 
-    geometry: Geometry
+    grid: Geometry
     eps: float = 1e-20
     preconditioner: Preconditioner = NoTransform()
 
@@ -49,9 +49,9 @@ class TVRegularizator(Regularizator):
         # sum of squared spatial gradient
         sg2 = np.zeros_like(values)
         if values.shape[0] > 2:
-            sg2 += np.square(gradient_ffd(values, self.geometry.dx, axis=0))
+            sg2 += np.square(gradient_ffd(values, self.grid.dx, axis=0))
         if values.shape[1] > 2:
-            sg2 += np.square(gradient_ffd(values, self.geometry.dy, axis=1))
+            sg2 += np.square(gradient_ffd(values, self.grid.dy, axis=1))
         # Add epsilon to prevent undetermination when deriving
         return np.sqrt(sg2 + self.eps)
 
@@ -73,7 +73,7 @@ class TVRegularizator(Regularizator):
         -------
         float
         """
-        _values = values.reshape(self.geometry.nx, self.geometry.ny, order="F")
+        _values = values.reshape(self.grid.nx, self.grid.ny, order="F")
         return float(np.sum(self._get_grid_cell_l1(_values)))
 
     def _eval_loss_gradient_analytical(self, values: NDArrayFloat) -> NDArrayFloat:
@@ -90,27 +90,23 @@ class TVRegularizator(Regularizator):
         NDArrayFloat
             The regularization gradient.
         """
-        _values = values.reshape(self.geometry.nx, self.geometry.ny, order="F")
+        _values = values.reshape(self.grid.nx, self.grid.ny, order="F")
         grad = np.zeros_like(_values)
         den = self._get_grid_cell_l1(_values)
 
         if _values.shape[0] > 2:
-            grad -= (
-                gradient_ffd(_values, self.geometry.dx, axis=0) / self.geometry.dx / den
-            )
+            grad -= gradient_ffd(_values, self.grid.dx, axis=0) / self.grid.dx / den
             grad[1:, :] += (
-                gradient_ffd(_values, self.geometry.dx, axis=0)[:-1, :]
-                / self.geometry.dx
+                gradient_ffd(_values, self.grid.dx, axis=0)[:-1, :]
+                / self.grid.dx
                 / den[:-1, :]
             )
 
         if _values.shape[1] > 2:
-            grad -= (
-                gradient_ffd(_values, self.geometry.dy, axis=1) / self.geometry.dy / den
-            )
+            grad -= gradient_ffd(_values, self.grid.dy, axis=1) / self.grid.dy / den
             grad[:, 1:] += (
-                gradient_ffd(_values, self.geometry.dy, axis=1)[:, :-1]
-                / self.geometry.dy
+                gradient_ffd(_values, self.grid.dy, axis=1)[:, :-1]
+                / self.grid.dy
                 / den[:, :-1]
             )
         return grad.ravel("F")
@@ -123,7 +119,7 @@ class TVMatRegularizator(Regularizator):
 
     Attributes
     ----------
-    geometry : Geometry
+    grid : Geometry
         Geometry of the field
     sub_selection : Optional[NDArrayInt], optional
         Optional sub selection of the field. Non selected elements will be
@@ -139,7 +135,7 @@ class TVMatRegularizator(Regularizator):
 
     """
 
-    geometry: Geometry
+    grid: Geometry
     sub_selection: Optional[NDArrayInt] = None
     eps: float = 1e-20
     preconditioner: Preconditioner = NoTransform()
@@ -147,11 +143,11 @@ class TVMatRegularizator(Regularizator):
     def __post_init__(self) -> None:
         """Post initialize the object."""
         self.mat_grad_x, self.mat_grad_y = make_spatial_gradient_matrices(
-            self.geometry, self.sub_selection, which="forward"
+            self.grid, self.sub_selection, which="forward"
         )
 
         self.mat_perm_x, self.mat_perm_y = make_spatial_permutation_matrices(
-            self.geometry, self.sub_selection
+            self.grid, self.sub_selection
         )
 
         self.permutation = self.mat_perm_x + self.mat_perm_y
@@ -205,13 +201,13 @@ class TVMatRegularizator(Regularizator):
         grad += (
             self.mat_grad_x @ values.ravel("F") / den
             - self.mat_perm_x @ (self.mat_grad_x @ values.ravel("F") / den)
-        ) / self.geometry.dx
+        ) / self.grid.dx
 
         # y contribution
         grad += (
             self.mat_grad_y @ values.ravel("F") / den
             - self.mat_perm_y @ (self.mat_grad_y @ values.ravel("F") / den)
-        ) / self.geometry.dy
+        ) / self.grid.dy
 
         return grad.reshape(values.shape, order="F")
 
@@ -223,7 +219,7 @@ class TVFVMRegularizator(Regularizator):
 
     Attributes
     ----------
-    geometry : Geometry
+    grid : Geometry
         Geometry of the field.
     sub_selection : Optional[NDArrayInt], optional
         Optional sub selection of the field. Non selected elements will be
@@ -238,7 +234,7 @@ class TVFVMRegularizator(Regularizator):
         is made.
     """
 
-    geometry: Geometry
+    grid: Geometry
     sub_selection: Optional[NDArrayInt] = None
     eps: float = 1e-20
     preconditioner: Preconditioner = NoTransform()
@@ -247,22 +243,22 @@ class TVFVMRegularizator(Regularizator):
         """Post initialize the object."""
         # These are adjacence matrices (graphs)
         self.mat_perm_x, self.mat_perm_y = make_spatial_permutation_matrices(
-            self.geometry, self.sub_selection
+            self.grid, self.sub_selection
         )
 
     def _get_grid_cell_l1(self, v: NDArrayFloat) -> NDArrayFloat:
         # Add epsilon to prevent undetermination when deriving
         arr = np.zeros_like(v)
-        if self.geometry.nx > 2:
-            tmp: float = self.geometry.gamma_ij_x / self.geometry.grid_cell_volume
+        if self.grid.nx > 2:
+            tmp: float = self.grid.gamma_ij_x / self.grid.grid_cell_volume
             arr += tmp**2 * (
                 (self.mat_perm_x @ (self.mat_perm_x.T @ v) - self.mat_perm_x @ v) ** 2
                 + (self.mat_perm_x.T @ (self.mat_perm_x @ v) - self.mat_perm_x.T @ v)
                 ** 2
             )
 
-        if self.geometry.ny > 2:
-            tmp = self.geometry.gamma_ij_y / self.geometry.grid_cell_volume
+        if self.grid.ny > 2:
+            tmp = self.grid.gamma_ij_y / self.grid.grid_cell_volume
             arr += tmp**2 * (
                 (self.mat_perm_y @ (self.mat_perm_y.T @ v) - self.mat_perm_y @ v) ** 2
                 + (self.mat_perm_y.T @ (self.mat_perm_y @ v) - self.mat_perm_y.T @ v)
@@ -312,10 +308,8 @@ class TVFVMRegularizator(Regularizator):
         l1 = self._get_grid_cell_l1(v.ravel("F"))
 
         grad = np.zeros(v.size)
-        if self.geometry.nx > 2:
-            tmp: float = (
-                self.geometry.gamma_ij_x / self.geometry.grid_cell_volume
-            ) ** 2
+        if self.grid.nx > 2:
+            tmp: float = (self.grid.gamma_ij_x / self.grid.grid_cell_volume) ** 2
             # term 1
             grad += (
                 tmp
@@ -341,8 +335,8 @@ class TVFVMRegularizator(Regularizator):
             mask = denbwd > 0
             grad[mask] += tmp * xbwd[mask] / denbwd[mask]
 
-        if self.geometry.ny > 2:
-            tmp = (self.geometry.gamma_ij_y / self.geometry.grid_cell_volume) ** 2
+        if self.grid.ny > 2:
+            tmp = (self.grid.gamma_ij_y / self.grid.grid_cell_volume) ** 2
             # term 1
             grad += (
                 tmp

@@ -22,7 +22,7 @@ from pyrtid.utils.types import NDArrayFloat
 
 
 def make_transport_matrices(
-    geometry: Geometry,
+    grid: Geometry,
     tr_model: TransportModel,
     fl_model: FlowModel,
     time_index: int,
@@ -37,7 +37,7 @@ def make_transport_matrices(
         The iteration, or timestep id.
     """
 
-    dim = geometry.nx * geometry.ny
+    dim = grid.nx * grid.ny
     q_prev = lil_array((dim, dim), dtype=np.float64)
     q_next = lil_array((dim, dim), dtype=np.float64)
 
@@ -48,18 +48,18 @@ def make_transport_matrices(
     )
 
     # X contribution
-    if geometry.nx >= 2:
-        dmean: NDArrayFloat = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
+    if grid.nx >= 2:
+        dmean: NDArrayFloat = np.zeros((grid.nx, grid.ny), dtype=np.float64)
         dmean[:-1, :] = harmonic_mean(d[:-1, :], d[1:, :])
         dmean = dmean.flatten(order="F")
 
-        tmp = geometry.gamma_ij_x / geometry.dx / geometry.grid_cell_volume
+        tmp = grid.gamma_ij_x / grid.dx / grid.grid_cell_volume
 
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(0, geometry.nx - 1), slice(None)),
-            (slice(1, geometry.nx), slice(None)),
+            grid,
+            (slice(0, grid.nx - 1), slice(None)),
+            (slice(1, grid.nx), slice(None)),
             owner_indices_to_keep=tr_model.free_conc_nn,
         )
 
@@ -78,9 +78,9 @@ def make_transport_matrices(
 
         # Backward scheme
         idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(1, geometry.nx), slice(None)),
-            (slice(0, geometry.nx - 1), slice(None)),
+            grid,
+            (slice(1, grid.nx), slice(None)),
+            (slice(0, grid.nx - 1), slice(None)),
             owner_indices_to_keep=tr_model.free_conc_nn,
         )
 
@@ -98,18 +98,18 @@ def make_transport_matrices(
         )  # type: ignore
 
     # Y contribution
-    if geometry.ny >= 2:
-        dmean: NDArrayFloat = np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
+    if grid.ny >= 2:
+        dmean: NDArrayFloat = np.zeros((grid.nx, grid.ny), dtype=np.float64)
         dmean[:, :-1] = harmonic_mean(d[:, :-1], d[:, 1:])
         dmean = dmean.flatten(order="F")
 
-        tmp = geometry.gamma_ij_y / geometry.dy / geometry.grid_cell_volume
+        tmp = grid.gamma_ij_y / grid.dy / grid.grid_cell_volume
 
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(None), slice(0, geometry.ny - 1)),
-            (slice(None), slice(1, geometry.ny)),
+            grid,
+            (slice(None), slice(0, grid.ny - 1)),
+            (slice(None), slice(1, grid.ny)),
             owner_indices_to_keep=tr_model.free_conc_nn,
         )
 
@@ -128,9 +128,9 @@ def make_transport_matrices(
 
         # Backward scheme
         idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(None), slice(1, geometry.ny)),
-            (slice(None), slice(0, geometry.ny - 1)),
+            grid,
+            (slice(None), slice(1, grid.ny)),
+            (slice(None), slice(0, grid.ny - 1)),
             owner_indices_to_keep=tr_model.free_conc_nn,
         )
 
@@ -151,7 +151,7 @@ def make_transport_matrices(
 
 
 def _add_advection_to_transport_matrices(
-    geometry: Geometry,
+    grid: Geometry,
     fl_model: FlowModel,
     tr_model: TransportModel,
     q_next: lil_array,
@@ -161,23 +161,23 @@ def _add_advection_to_transport_matrices(
     crank_adv: float = tr_model.crank_nicolson_advection
 
     # X contribution
-    if geometry.nx >= 2:
-        tmp_x = np.zeros((geometry.nx, geometry.ny))
+    if grid.nx >= 2:
+        tmp_x = np.zeros((grid.nx, grid.ny))
         tmp_x[:-1, :] = fl_model.u_darcy_x[1:-1, :, time_index]
-        tmp_x_old = np.zeros((geometry.nx, geometry.ny))
+        tmp_x_old = np.zeros((grid.nx, grid.ny))
         tmp_x_old[:-1, :] = fl_model.u_darcy_x[1:-1, :, time_index - 1]
 
         un_x = tmp_x.flatten(order="F")
         un_x_old = tmp_x_old.flatten(order="F")
 
-        tmp = geometry.gamma_ij_x / geometry.grid_cell_volume
+        tmp = grid.gamma_ij_x / grid.grid_cell_volume
 
         # Forward scheme:
         normal = 1.0
         idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(0, geometry.nx - 1), slice(None)),
-            (slice(1, geometry.nx), slice(None)),
+            grid,
+            (slice(0, grid.nx - 1), slice(None)),
+            (slice(1, grid.nx), slice(None)),
             owner_indices_to_keep=tr_model.free_conc_nn,
         )
 
@@ -205,9 +205,9 @@ def _add_advection_to_transport_matrices(
         # Backward scheme
         normal = -1.0
         idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(1, geometry.nx), slice(None)),
-            (slice(0, geometry.nx - 1), slice(None)),
+            grid,
+            (slice(1, grid.nx), slice(None)),
+            (slice(0, grid.nx - 1), slice(None)),
             owner_indices_to_keep=tr_model.free_conc_nn,
         )
 
@@ -233,10 +233,10 @@ def _add_advection_to_transport_matrices(
         )  # type: ignore
 
     # Y contribution
-    if geometry.ny >= 2:
-        tmp_y = np.zeros((geometry.nx, geometry.ny))
+    if grid.ny >= 2:
+        tmp_y = np.zeros((grid.nx, grid.ny))
         tmp_y[:, :-1] = fl_model.u_darcy_y[:, 1:-1, time_index]
-        tmp_y_old = np.zeros((geometry.nx, geometry.ny))
+        tmp_y_old = np.zeros((grid.nx, grid.ny))
         tmp_y_old[:, :-1] = fl_model.u_darcy_y[:, 1:-1, time_index - 1]
 
         un_y = tmp_y.flatten(order="F")
@@ -245,13 +245,13 @@ def _add_advection_to_transport_matrices(
         # Forward scheme:
         normal = 1.0
         idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(None), slice(0, geometry.ny - 1)),
-            (slice(None), slice(1, geometry.ny)),
+            grid,
+            (slice(None), slice(0, grid.ny - 1)),
+            (slice(None), slice(1, grid.ny)),
             owner_indices_to_keep=tr_model.free_conc_nn,
         )
 
-        tmp = geometry.gamma_ij_y / geometry.grid_cell_volume
+        tmp = grid.gamma_ij_y / grid.grid_cell_volume
 
         q_next[idc_owner, idc_neigh] += (
             crank_adv
@@ -277,9 +277,9 @@ def _add_advection_to_transport_matrices(
         # Backward scheme
         normal: float = -1.0
         idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(None), slice(1, geometry.ny)),
-            (slice(None), slice(0, geometry.ny - 1)),
+            grid,
+            (slice(None), slice(1, grid.ny)),
+            (slice(None), slice(0, grid.ny - 1)),
             owner_indices_to_keep=tr_model.free_conc_nn,
         )
 
@@ -310,7 +310,7 @@ def _add_advection_to_transport_matrices(
 
     # Handle boundary conditions
     _add_transport_boundary_conditions(
-        geometry, fl_model, tr_model, q_next, q_prev, time_index
+        grid, fl_model, tr_model, q_next, q_prev, time_index
     )
 
 
@@ -355,7 +355,7 @@ def _apply_divergence_effect(
 
 
 def _add_transport_boundary_conditions(
-    geometry: Geometry,
+    grid: Geometry,
     fl_model: FlowModel,
     tr_model: TransportModel,
     q_next: lil_array,
@@ -365,13 +365,13 @@ def _add_transport_boundary_conditions(
     """Add the boundary conditions to the matrix."""
     # We get the indices of the four borders and we apply a zero gradient.
 
-    if geometry.nx > 1:
+    if grid.nx > 1:
         idc_left_border, idc_right_border = get_owner_neigh_indices(
-            geometry,
+            grid,
             (slice(0, 1), slice(None)),
-            (slice(geometry.nx - 1, geometry.nx), slice(None)),
+            (slice(grid.nx - 1, grid.nx), slice(None)),
         )
-        tmp = geometry.gamma_ij_x / geometry.grid_cell_volume
+        tmp = grid.gamma_ij_x / grid.grid_cell_volume
 
         # left border
         _un = fl_model.u_darcy_x[:-1, :, time_index].ravel("F")[idc_left_border]
@@ -397,14 +397,14 @@ def _add_transport_boundary_conditions(
         )  # type: ignore
 
     # # Y contribution
-    if geometry.ny > 1:
+    if grid.ny > 1:
         # We get the indices of the four borders and we apply a zero-conc gradient.
         idc_left, idc_right = get_owner_neigh_indices(
-            geometry,
+            grid,
             (slice(None), slice(0, 1)),
-            (slice(None), slice(geometry.ny - 1, geometry.ny)),
+            (slice(None), slice(grid.ny - 1, grid.ny)),
         )
-        tmp = geometry.gamma_ij_y / geometry.grid_cell_volume
+        tmp = grid.gamma_ij_y / grid.grid_cell_volume
 
         _un = fl_model.u_darcy_y[:, :-1, time_index].ravel("F")[idc_left]
         _un_old = fl_model.u_darcy_y[:, :-1, time_index - 1].ravel("F")[idc_left]
@@ -428,7 +428,7 @@ def _add_transport_boundary_conditions(
 
 
 def solve_transport_semi_implicit(
-    geometry: Geometry,
+    grid: Geometry,
     fl_model: FlowModel,
     tr_model: TransportModel,
     conc_sources: NDArrayFloat,
@@ -442,7 +442,7 @@ def solve_transport_semi_implicit(
 
     Parameters
     ----------
-    geometry: Geometry
+    grid: Geometry
         Geometry of the system.
     fl_model: FlowModel
         The flow model.
@@ -459,15 +459,13 @@ def solve_transport_semi_implicit(
     # The matrix with respect to the advection only needs to be updated if the head
     # have changed.
     if nfpi == 1:
-        q_next, q_prev = make_transport_matrices(
-            geometry, tr_model, fl_model, time_index
-        )
+        q_next, q_prev = make_transport_matrices(grid, tr_model, fl_model, time_index)
 
         # Update q_next and q_prev with the advection term (must be copied)
         # Note that this is required at the first fixed point iteration only,
         # afterwards, only the chemical source term varies.
         _add_advection_to_transport_matrices(
-            geometry,
+            grid,
             fl_model,
             tr_model,
             q_next,
@@ -544,8 +542,6 @@ def solve_transport_semi_implicit(
             rtol=tr_model.rtol,
         )
 
-    tr_model.lmob[time_index] = tmp.reshape(
-        tr_model.n_sp, geometry.nx, geometry.ny, order="F"
-    )
+    tr_model.lmob[time_index] = tmp.reshape(tr_model.n_sp, grid.nx, grid.ny, order="F")
 
     return exit_code

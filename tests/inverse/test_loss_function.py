@@ -48,13 +48,13 @@ def test_eval_model_loss_function(
     expected_total_loss_function,
 ) -> None:
     time_params = dmfwd.TimeParameters(duration=1.0, dt_init=1.0)
-    geometry = dmfwd.Geometry(nx=20, ny=20, dx=4.5, dy=7.5)
+    grid = dmfwd.Geometry(nx=20, ny=20, dx=4.5, dy=7.5)
     fl_params = dmfwd.FlowParameters(1e-5)
     tr_params = dmfwd.TransportParameters(diffusion=1.0, porosity=0.23)
     gch_params = dmfwd.GeochemicalParameters(1.0, 0.0)
 
     model = dmfwd.ForwardModel(
-        geometry,
+        grid,
         time_params,
         fl_params,
         tr_params,
@@ -95,7 +95,7 @@ def test_eval_model_loss_function(
 
     param = dminv.AdjustableParameter(
         dminv.ParameterName.POROSITY,
-        regularizators=TikhonovRegularizator(geometry),
+        regularizators=TikhonovRegularizator(grid),
         reg_weight_update_strategy=dminv.regularization.ConstantRegWeight(reg_weight),
     )
 

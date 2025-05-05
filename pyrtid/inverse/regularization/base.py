@@ -231,7 +231,7 @@ class Regularizator(ABC):
 
 
 def make_spatial_gradient_matrices(
-    geometry: Geometry,
+    grid: Geometry,
     sub_selection: Optional[NDArrayInt] = None,
     which: Literal["forward", "backward", "both"] = "both",
 ) -> Tuple[csc_array, csc_array]:
@@ -242,7 +242,7 @@ def make_spatial_gradient_matrices(
 
     Parameters
     ----------
-    geometry : Geometry
+    grid : Geometry
         Geometry of the field
     sub_selection : Optional[NDArrayInt], optional
         Optional sub selection of the field. Non selected elements will be
@@ -254,7 +254,7 @@ def make_spatial_gradient_matrices(
     Tuple[csc_array, csc_array]
         Spatial gradient matrices for x and y axes.
     """
-    dim = geometry.nx * geometry.ny
+    dim = grid.nx * grid.ny
     # matrix for the spatial gradient along the x axis
     mat_grad_x = lil_array((dim, dim), dtype=np.float64)
     # matrix for the spatial gradient along the y axis
@@ -266,15 +266,15 @@ def make_spatial_gradient_matrices(
         _sub_selection = sub_selection
 
     # X contribution
-    if geometry.nx >= 2:
-        tmp = geometry.gamma_ij_x / geometry.grid_cell_volume
+    if grid.nx >= 2:
+        tmp = grid.gamma_ij_x / grid.grid_cell_volume
 
         if which in ["forward", "both"]:
             # Forward scheme only: see PhD manuscript, chapter 7 for the explanaition.
             idc_owner, idc_neigh = get_owner_neigh_indices(
-                geometry,
-                (slice(0, geometry.nx - 1), slice(None)),
-                (slice(1, geometry.nx), slice(None)),
+                grid,
+                (slice(0, grid.nx - 1), slice(None)),
+                (slice(1, grid.nx), slice(None)),
                 owner_indices_to_keep=_sub_selection,
                 neigh_indices_to_keep=_sub_selection,
             )
@@ -285,9 +285,9 @@ def make_spatial_gradient_matrices(
         if which in ["backward", "both"]:
             # Forward scheme only: see PhD manuscript, chapter 7 for the explanaition.
             idc_owner, idc_neigh = get_owner_neigh_indices(
-                geometry,
-                (slice(1, geometry.nx), slice(None)),
-                (slice(0, geometry.nx - 1), slice(None)),
+                grid,
+                (slice(1, grid.nx), slice(None)),
+                (slice(0, grid.nx - 1), slice(None)),
                 owner_indices_to_keep=_sub_selection,
                 neigh_indices_to_keep=_sub_selection,
             )
@@ -296,15 +296,15 @@ def make_spatial_gradient_matrices(
             mat_grad_x[idc_owner, idc_owner] += tmp * np.ones(idc_owner.size)  # type: ignore
 
     # Y contribution
-    if geometry.ny >= 2:
-        tmp = geometry.gamma_ij_y / geometry.grid_cell_volume
+    if grid.ny >= 2:
+        tmp = grid.gamma_ij_y / grid.grid_cell_volume
 
         if which in ["forward", "both"]:
             # Forward scheme only: see PhD manuscript, chapter 7 for the explanaition.
             idc_owner, idc_neigh = get_owner_neigh_indices(
-                geometry,
-                (slice(None), slice(0, geometry.ny - 1)),
-                (slice(None), slice(1, geometry.ny)),
+                grid,
+                (slice(None), slice(0, grid.ny - 1)),
+                (slice(None), slice(1, grid.ny)),
                 owner_indices_to_keep=_sub_selection,
                 neigh_indices_to_keep=_sub_selection,
             )
@@ -315,9 +315,9 @@ def make_spatial_gradient_matrices(
         if which in ["backward", "both"]:
             # Forward scheme only: see PhD manuscript, chapter 7 for the explanaition.
             idc_owner, idc_neigh = get_owner_neigh_indices(
-                geometry,
-                (slice(None), slice(1, geometry.ny)),
-                (slice(None), slice(0, geometry.ny - 1)),
+                grid,
+                (slice(None), slice(1, grid.ny)),
+                (slice(None), slice(0, grid.ny - 1)),
                 owner_indices_to_keep=_sub_selection,
                 neigh_indices_to_keep=_sub_selection,
             )
@@ -328,14 +328,14 @@ def make_spatial_gradient_matrices(
 
 
 def make_spatial_permutation_matrices(
-    geometry: Geometry, sub_selection: Optional[NDArrayInt] = None
+    grid: Geometry, sub_selection: Optional[NDArrayInt] = None
 ) -> Tuple[csc_array, csc_array]:
     """
     Make matrices to compute the spatial permutations along x and y axes of a field.
 
     Parameters
     ----------
-    geometry : Geometry
+    grid : Geometry
         Geometry of the field
     sub_selection : Optional[NDArrayInt], optional
         Optional sub selection of the field. Non selected elements will be
@@ -347,7 +347,7 @@ def make_spatial_permutation_matrices(
     Tuple[csc_array, csc_array]
         Spatial permutation matrices for x and y axes.
     """
-    dim = geometry.nx * geometry.ny
+    dim = grid.nx * grid.ny
     # matrix for the spatial permutation along the x axis
     mat_perm_x = lil_array((dim, dim), dtype=np.float64)
     # matrix for the spatial permutation along the y axis
@@ -359,12 +359,12 @@ def make_spatial_permutation_matrices(
         _sub_selection = sub_selection
 
     # X contribution
-    if geometry.nx >= 2:
+    if grid.nx >= 2:
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(0, geometry.nx - 1), slice(None)),
-            (slice(1, geometry.nx), slice(None)),
+            grid,
+            (slice(0, grid.nx - 1), slice(None)),
+            (slice(1, grid.nx), slice(None)),
             owner_indices_to_keep=_sub_selection,
             neigh_indices_to_keep=_sub_selection,
         )
@@ -372,12 +372,12 @@ def make_spatial_permutation_matrices(
         mat_perm_x[idc_neigh, idc_owner] = np.ones(idc_owner.size)  # type: ignore
 
     # Y contribution
-    if geometry.ny >= 2:
+    if grid.ny >= 2:
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
-            geometry,
-            (slice(None), slice(0, geometry.ny - 1)),
-            (slice(None), slice(1, geometry.ny)),
+            grid,
+            (slice(None), slice(0, grid.ny - 1)),
+            (slice(None), slice(1, grid.ny)),
             owner_indices_to_keep=_sub_selection,
             neigh_indices_to_keep=_sub_selection,
         )

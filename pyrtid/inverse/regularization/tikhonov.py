@@ -29,7 +29,7 @@ class TikhonovRegularizator(Regularizator):
 
     Attributes
     ----------
-    geometry : Geometry
+    grid : Geometry
         Geometry of the field.
     preconditioner: Preconditioner
         Parameter pre-transformation operator (variable change for the solver).
@@ -37,7 +37,7 @@ class TikhonovRegularizator(Regularizator):
         is made.
     """
 
-    geometry: Geometry
+    grid: Geometry
     preconditioner: Preconditioner = NoTransform()
 
     def _eval_loss(self, values: NDArrayFloat) -> float:
@@ -62,16 +62,12 @@ class TikhonovRegularizator(Regularizator):
         NDArrayFloat
             The regularization gradient.
         """
-        _values = values.reshape(self.geometry.nx, self.geometry.ny, order="F")
+        _values = values.reshape(self.grid.nx, self.grid.ny, order="F")
         f = 0.0
         if _values.shape[0] > 2:
-            f += 0.5 * float(
-                np.sum(gradient_ffd(_values, self.geometry.dx, axis=0) ** 2.0)
-            )
+            f += 0.5 * float(np.sum(gradient_ffd(_values, self.grid.dx, axis=0) ** 2.0))
         if _values.shape[1] > 2:
-            f += 0.5 * float(
-                np.sum(gradient_ffd(_values, self.geometry.dy, axis=1) ** 2.0)
-            )
+            f += 0.5 * float(np.sum(gradient_ffd(_values, self.grid.dy, axis=1) ** 2.0))
         return f
 
     def _eval_loss_gradient_analytical(self, values: NDArrayFloat) -> NDArrayFloat:
@@ -88,12 +84,12 @@ class TikhonovRegularizator(Regularizator):
         NDArrayFloat
             The regularization gradient.
         """
-        _values = values.reshape(self.geometry.nx, self.geometry.ny, order="F")
+        _values = values.reshape(self.grid.nx, self.grid.ny, order="F")
         grad = np.zeros_like(_values)
         if _values.shape[0] > 2:
-            grad += -hessian_cfd(_values, self.geometry.dx, 0)
+            grad += -hessian_cfd(_values, self.grid.dx, 0)
         if _values.shape[1] > 2:
-            grad += -hessian_cfd(_values, self.geometry.dy, 1)
+            grad += -hessian_cfd(_values, self.grid.dy, 1)
         return grad.ravel("F")
 
 
@@ -104,7 +100,7 @@ class TikhonovMatRegularizator(Regularizator):
 
     Attributes
     ----------
-    geometry : Geometry
+    grid : Geometry
         Geometry of the field.
     sub_selection : Optional[NDArrayInt], optional
         Optional sub selection of the field. Non selected elements will be
@@ -116,14 +112,14 @@ class TikhonovMatRegularizator(Regularizator):
         is made.
     """
 
-    geometry: Geometry
+    grid: Geometry
     sub_selection: Optional[NDArrayInt] = None
     preconditioner: Preconditioner = NoTransform()
 
     def __post_init__(self) -> None:
         """Post initialize the object."""
         self.mat_grad_x, self.mat_grad_y = make_spatial_gradient_matrices(
-            self.geometry, self.sub_selection, which="forward"
+            self.grid, self.sub_selection, which="forward"
         )
 
     def _eval_loss(self, values: NDArrayFloat) -> float:
@@ -180,7 +176,7 @@ class TikhonovFVMRegularizator(Regularizator):
 
     Attributes
     ----------
-    geometry : Geometry
+    grid : Geometry
         Geometry of the field.
     sub_selection : Optional[NDArrayInt], optional
         Optional sub selection of the field. Non selected elements will be
@@ -192,7 +188,7 @@ class TikhonovFVMRegularizator(Regularizator):
         is made.
     """
 
-    geometry: Geometry
+    grid: Geometry
     sub_selection: Optional[NDArrayInt] = None
     preconditioner: Preconditioner = NoTransform()
 
@@ -200,7 +196,7 @@ class TikhonovFVMRegularizator(Regularizator):
         """Post initialize the object."""
         # These are adjacence matrices (graphs)
         self.mat_perm_x, self.mat_perm_y = make_spatial_permutation_matrices(
-            self.geometry, self.sub_selection
+            self.grid, self.sub_selection
         )
 
     def _eval_loss(self, values: NDArrayFloat) -> float:
@@ -227,8 +223,8 @@ class TikhonovFVMRegularizator(Regularizator):
         """
         f = 0.0
         v = values.ravel("F")
-        if self.geometry.nx > 2:
-            tmp: float = self.geometry.gamma_ij_x / self.geometry.grid_cell_volume
+        if self.grid.nx > 2:
+            tmp: float = self.grid.gamma_ij_x / self.grid.grid_cell_volume
             f += 0.25 * float(
                 np.sum(
                     (
@@ -249,8 +245,8 @@ class TikhonovFVMRegularizator(Regularizator):
                 )
             )
 
-        if self.geometry.ny > 2:
-            tmp = self.geometry.gamma_ij_y / self.geometry.grid_cell_volume
+        if self.grid.ny > 2:
+            tmp = self.grid.gamma_ij_y / self.grid.grid_cell_volume
             f += 0.25 * float(
                 np.sum(
                     (
@@ -288,17 +284,15 @@ class TikhonovFVMRegularizator(Regularizator):
             The regularization gradient.
         """
         grad = np.zeros(v.size)
-        if self.geometry.nx > 2:
-            tmp: float = (
-                self.geometry.gamma_ij_x / self.geometry.grid_cell_volume
-            ) ** 2
+        if self.grid.nx > 2:
+            tmp: float = (self.grid.gamma_ij_x / self.grid.grid_cell_volume) ** 2
             grad += tmp * (
                 (self.mat_perm_x @ (self.mat_perm_x.T @ v) - self.mat_perm_x @ v)
                 + (self.mat_perm_x.T @ (self.mat_perm_x @ v) - self.mat_perm_x.T @ v)
             )
 
-        if self.geometry.ny > 2:
-            tmp = (self.geometry.gamma_ij_y / self.geometry.grid_cell_volume) ** 2
+        if self.grid.ny > 2:
+            tmp = (self.grid.gamma_ij_y / self.grid.grid_cell_volume) ** 2
             grad += tmp * (
                 (self.mat_perm_y @ (self.mat_perm_y.T @ v) - self.mat_perm_y @ v)
                 + (self.mat_perm_y.T @ (self.mat_perm_y @ v) - self.mat_perm_y.T @ v)

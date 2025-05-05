@@ -42,7 +42,7 @@ class FSMVects:
     Since most vectors will be null, we rely on sparse objects to save some memory.
     """
 
-    def __init__(self, geometry: Geometry, vecs: NDArrayFloat, n_obs: int) -> None:
+    def __init__(self, grid: Geometry, vecs: NDArrayFloat, n_obs: int) -> None:
         """Initiate the instance."""
 
         self.vecs = vecs
@@ -51,23 +51,23 @@ class FSMVects:
         ns, ne = vecs.shape
 
         # create sparse arrays
-        self.dFhdsv = csc_array((geometry.nx, geometry.ny))
-        self.dFpdsv = csc_array((geometry.nx, geometry.ny))
-        self.dFUxdsv = csc_array((geometry.nx + 1, geometry.ny))
-        self.dFUydsv = csc_array((geometry.nx, geometry.ny + 1))
-        self.dFDdsv = csc_array((geometry.nx, geometry.ny))
-        self.dFcdsv = csc_array((2, geometry.nx, geometry.ny))
-        self.dFmdsv = csc_array((2, geometry.nx, geometry.ny))
-        self.dFrhodsv = csc_array((geometry.nx, geometry.ny))
+        self.dFhdsv = csc_array((grid.nx, grid.ny))
+        self.dFpdsv = csc_array((grid.nx, grid.ny))
+        self.dFUxdsv = csc_array((grid.nx + 1, grid.ny))
+        self.dFUydsv = csc_array((grid.nx, grid.ny + 1))
+        self.dFDdsv = csc_array((grid.nx, grid.ny))
+        self.dFcdsv = csc_array((2, grid.nx, grid.ny))
+        self.dFmdsv = csc_array((2, grid.nx, grid.ny))
+        self.dFrhodsv = csc_array((grid.nx, grid.ny))
 
-        self.zh = csc_array((geometry.nx, geometry.ny, ne))
-        self.zp = csc_array((geometry.nx, geometry.ny, ne))
-        self.zUx = csc_array((geometry.nx + 1, geometry.ny, ne))
-        self.zUy = csc_array((geometry.nx, geometry.ny + 1, ne))
-        self.zD = csc_array((geometry.nx, geometry.ny, ne))
-        self.zc = csc_array((2, geometry.nx, geometry.ny, ne))
-        self.zm = csc_array((2, geometry.nx, geometry.ny, ne))
-        self.zrho = csc_array((geometry.nx, geometry.ny, ne))
+        self.zh = csc_array((grid.nx, grid.ny, ne))
+        self.zp = csc_array((grid.nx, grid.ny, ne))
+        self.zUx = csc_array((grid.nx + 1, grid.ny, ne))
+        self.zUy = csc_array((grid.nx, grid.ny + 1, ne))
+        self.zD = csc_array((grid.nx, grid.ny, ne))
+        self.zc = csc_array((2, grid.nx, grid.ny, ne))
+        self.zm = csc_array((2, grid.nx, grid.ny, ne))
+        self.zrho = csc_array((grid.nx, grid.ny, ne))
 
         # Array in which the Ne products with the Jacobian matrix are stored.
         # This matrix has shape (N_obs, Ne)
@@ -138,7 +138,7 @@ class FSMSolver:
         # TODO: Apply preconditioning to vects -> subsampling etc.
 
         # Initiate an instance to hold the FSM temp vectors
-        fsm_vects = FSMVects(self.model.geometry, vecs, n_obs)
+        fsm_vects = FSMVects(self.model.grid, vecs, n_obs)
 
         # compute the sensitivities for t=0
         # z is the working vector

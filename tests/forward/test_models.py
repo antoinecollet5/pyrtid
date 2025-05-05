@@ -22,7 +22,7 @@ from pyrtid.forward.models import (
 from pyrtid.utils.types import NDArrayFloat
 
 time_params = TimeParameters(duration=240000, dt_init=600.0)
-geometry = Geometry(nx=20, ny=20, dx=4.5, dy=7.5)
+grid = Geometry(nx=20, ny=20, dx=4.5, dy=7.5)
 fl_params = FlowParameters(1e-5)
 tr_params = TransportParameters(diffusion=1e-10, porosity=0.23, dispersivity=0.1)
 gch_params = GeochemicalParameters(0.0, 0.0)
@@ -143,7 +143,7 @@ def get_source_term() -> SourceTerm:
 
 
 def test_minimal_model_init() -> None:
-    ForwardModel(geometry, time_params, fl_params, tr_params, gch_params)
+    ForwardModel(grid, time_params, fl_params, tr_params, gch_params)
 
 
 @pytest.fixture
@@ -155,7 +155,7 @@ def model() -> ForwardModel:
         ZeroConcGradient(slice(None)),
     )
     return ForwardModel(
-        geometry,
+        grid,
         time_params,
         fl_params,
         tr_params,
@@ -283,10 +283,10 @@ def test_get_owner_neigh_indices(
     expected_idc_owner,
     expected_idc_neigh,
 ) -> None:
-    geometry = Geometry(4, 4, 1.0, 1.0, 1.0)
+    grid = Geometry(4, 4, 1.0, 1.0, 1.0)
 
     idc_owner, idc_neigh = get_owner_neigh_indices(
-        geometry,
+        grid,
         span_owner,
         span_neigh,
         owner_indices_to_keep=owner_indices_to_keep,
@@ -472,12 +472,12 @@ def test_get_sources(
     time: float, expected_src_flw: NDArrayFloat, expected_src_conc: NDArrayFloat
 ) -> None:
     time_params = TimeParameters(duration=240000, dt_init=600.0)
-    geometry = Geometry(nx=3, ny=3, dx=2.0, dy=2.0, dz=2.0)
+    grid = Geometry(nx=3, ny=3, dx=2.0, dy=2.0, dz=2.0)
     fl_params = FlowParameters(1e-5)
     tr_params = TransportParameters(diffusion=1e-10, porosity=0.23)
     gch_params = GeochemicalParameters(0.0, 0.0)
 
-    model = ForwardModel(geometry, time_params, fl_params, tr_params, gch_params)
+    model = ForwardModel(grid, time_params, fl_params, tr_params, gch_params)
 
     model.add_boundary_conditions(ConstantConcentration((slice(0, 1), slice(1, 2))))
 
@@ -512,7 +512,7 @@ def test_get_sources(
         )
     )
 
-    _unitflw_src, _conc_src = model.get_sources(time, geometry)
+    _unitflw_src, _conc_src = model.get_sources(time, grid)
     np.testing.assert_equal(_unitflw_src, expected_src_flw)
     np.testing.assert_equal(_conc_src, expected_src_conc)
 
@@ -543,13 +543,13 @@ def test_cst_head(
     boundary_conditions, expected_cst_head_nn, expected_free_head_nn
 ) -> None:
     time_params = TimeParameters(duration=240000, dt_init=600.0)
-    geometry = Geometry(nx=3, ny=3, dx=2.0, dy=2.0, dz=2.0)
+    grid = Geometry(nx=3, ny=3, dx=2.0, dy=2.0, dz=2.0)
     fl_params = FlowParameters(1e-5)
     tr_params = TransportParameters(diffusion=1e-10, porosity=0.23)
     gch_params = GeochemicalParameters(0.0, 0.0)
 
     model = ForwardModel(
-        geometry,
+        grid,
         time_params,
         fl_params,
         tr_params,
