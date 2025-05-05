@@ -324,7 +324,8 @@ def test_source_term_et_node_indices() -> None:
     [
         (0.0, (0.0, 0.0)),
         (1.0, (0.0, 1.0)),
-        (22.0, (0.0, 1.0)),  # the new flowrates applies once t is above the time
+        (21.0, (0.0, 1.0)),
+        (22.0, (2.0, 2.0)),  # the new flowrates applies
         (25.0, (2.0, 2.0)),
         (60.0, (2.0, 0.0)),
         (99.2, (4.0, 4.0)),
