@@ -33,7 +33,7 @@ from pyrtid.inverse.executors.base import (
     register_params_ds,
 )
 from pyrtid.inverse.params import get_parameters_bounds
-from pyrtid.utils.types import NDArrayFloat
+from pyrtid.utils import NDArrayFloat
 
 
 class SIESInversionType(str, Enum):

@@ -8,18 +8,18 @@ from typing import Optional, Sequence, Tuple, Union
 import numpy as np
 
 from pyrtid.forward import ForwardModel
-from pyrtid.utils import node_number_to_indices
+from pyrtid.utils import (
+    Int,
+    NDArrayFloat,
+    NDArrayInt,
+    node_number_to_indices,
+    object_or_object_sequence_to_list,
+)
 from pyrtid.utils.enum import StrEnum
 from pyrtid.utils.means import (
     MeanType,
     get_mean_values_for_last_axis,
     get_mean_values_gradient_for_last_axis,
-)
-from pyrtid.utils.types import (
-    Int,
-    NDArrayFloat,
-    NDArrayInt,
-    object_or_object_sequence_to_list,
 )
 
 
@@ -718,7 +718,7 @@ def get_adjoint_sources_for_obs(
 
     # Location in the grid
     X, Y, _ = node_number_to_indices(
-        obs.node_indices, nx=model.geometry.nx, ny=model.geometry.ny
+        obs.node_indices, nx=model.grid.nx, ny=model.grid.ny
     )
 
     # 2) Taking into account the derivative linked with the values time interpolation

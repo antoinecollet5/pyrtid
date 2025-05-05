@@ -165,6 +165,7 @@ Other functions
     NDArrayFloat
     NDArrayInt
     NDArrayBool
+    Int
 
 Sparse helpers
 ^^^^^^^^^^^^^^
@@ -232,6 +233,7 @@ from pyrtid.utils.random_field import (
 from pyrtid.utils.sparse_helpers import assert_allclose_sparse, sparse_cholesky
 from pyrtid.utils.spatial_filters import GaussianFilter
 from pyrtid.utils.types import (
+    Int,
     NDArrayBool,
     NDArrayFloat,
     NDArrayInt,
@@ -281,6 +283,7 @@ __all__ = [
     "NDArrayFloat",
     "NDArrayInt",
     "NDArrayBool",
+    "Int",
     "show_versions",
     "get_a_not_in_b_1d",
     "create_selections_array_2d",

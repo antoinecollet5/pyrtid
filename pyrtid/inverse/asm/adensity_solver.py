@@ -9,18 +9,21 @@ from pyrtid.forward.models import (  # ConstantHead,; ZeroConcGradient,
     GRAVITY,
     WATER_DENSITY,
     FlowModel,
-    Geometry,
     TimeParameters,
     TransportModel,
     VerticalAxis,
 )
 from pyrtid.inverse.asm.amodels import AdjointFlowModel, AdjointTransportModel
-from pyrtid.utils import dxi_arithmetic_mean, harmonic_mean
-from pyrtid.utils.types import NDArrayFloat
+from pyrtid.utils import (
+    NDArrayFloat,
+    RectilinearGrid,
+    dxi_arithmetic_mean,
+    harmonic_mean,
+)
 
 
 def get_drhomean(
-    grid: Geometry,
+    grid: RectilinearGrid,
     tr_model: TransportModel,
     axis: int,
     time_index: int,
@@ -48,7 +51,7 @@ def solve_adj_density(
     a_tr_model: AdjointTransportModel,
     time_index: int,
     time_params: TimeParameters,
-    grid: Geometry,
+    grid: RectilinearGrid,
     mw: float,
 ) -> None:
     shape = tr_model.ldensity[0].shape
@@ -102,7 +105,7 @@ def _add_darcy_contribution(
     a_fl_model: AdjointFlowModel,
     a_tr_model: AdjointTransportModel,
     time_index: int,
-    grid: Geometry,
+    grid: RectilinearGrid,
 ) -> None:
     # X contribution
     if fl_model.vertical_axis == VerticalAxis.X:
@@ -138,7 +141,7 @@ def _add_diffusivity_contribution(
     a_fl_model: AdjointFlowModel,
     a_tr_model: AdjointTransportModel,
     time_index: int,
-    grid: Geometry,
+    grid: RectilinearGrid,
 ) -> None:
     """Return the contribution from the derivative of the diffusivity equation."""
     if a_fl_model.crank_nicolson is None:
@@ -297,7 +300,7 @@ def _add_diffusivity_contribution(
             * grid.gamma_ij_y
         )
 
-    a_tr_model.a_density[:, :, time_index] += contrib.reshape(grid.shape, order="F")
+    a_tr_model.a_density[:, :, time_index] += contrib.reshape(grid.shape2d, order="F")
 
     # 3) Add unitflow: only for free head nodes
     a_tr_model.a_density[:, :, time_index] += (

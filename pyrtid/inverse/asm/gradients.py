@@ -21,9 +21,14 @@ from pyrtid.inverse.params import (
     update_model_with_parameters_values,
     update_parameters_from_model,
 )
-from pyrtid.utils import StrEnum, finite_gradient, is_all_close
+from pyrtid.utils import (
+    NDArrayFloat,
+    StrEnum,
+    finite_gradient,
+    is_all_close,
+    object_or_object_sequence_to_list,
+)
 from pyrtid.utils.means import dxi_harmonic_mean, harmonic_mean
-from pyrtid.utils.types import NDArrayFloat, object_or_object_sequence_to_list
 
 
 class DerivationVariable(StrEnum):

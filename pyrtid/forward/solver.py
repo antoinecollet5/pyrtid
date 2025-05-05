@@ -79,7 +79,7 @@ class ForwardSolver:
 
         # Get the flow and concentration sources
         unitflw_sources, conc_sources = self.model.get_sources(
-            self.model.time_params.time_elapsed, self.model.geometry
+            self.model.time_params.time_elapsed, self.model.grid
         )
         self.model.fl_model.lunitflow.append(unitflw_sources)
         self.model.tr_model.lsources.append(conc_sources)
@@ -95,7 +95,7 @@ class ForwardSolver:
 
         if self.model.fl_model.regime == FlowRegime.STATIONARY:
             solve_flow_stationary(
-                self.model.geometry,
+                self.model.grid,
                 self.model.fl_model,
                 self.model.tr_model,
                 unitflw_sources,
@@ -104,16 +104,16 @@ class ForwardSolver:
         else:
             # To reproduce HYTEC's behavior -> the initial darcy velocity is null
             self.model.fl_model.lu_darcy_x = [
-                np.zeros((self.model.geometry.nx + 1, self.model.geometry.ny))
+                np.zeros((self.model.grid.nx + 1, self.model.grid.ny))
             ]
             self.model.fl_model.lu_darcy_y = [
-                np.zeros((self.model.geometry.nx, self.model.geometry.ny + 1))
+                np.zeros((self.model.grid.nx, self.model.grid.ny + 1))
             ]
-            compute_u_darcy_div(self.model.fl_model, self.model.geometry, 0)
+            compute_u_darcy_div(self.model.fl_model, self.model.grid, 0)
 
             # Add the stiffness matrices A and B so that indices match between
             # the forward and the adjoint. This is for development purposes.
-            ngc = self.model.geometry.n_grid_cells
+            ngc = self.model.grid.n_grid_cells
 
             # only useful for devs or to check the adjoint state correctness
             if self.model.fl_model.is_save_spmats:
@@ -164,7 +164,7 @@ class ForwardSolver:
         conc_sources_old = self.model.tr_model.lsources[-1]
         # Careful, we need to consider the time at the beginning of the timestep
         unitflw_sources, conc_sources = self.model.get_sources(
-            np.sum(self.model.time_params.ldt[:-1]), self.model.geometry
+            np.sum(self.model.time_params.ldt[:-1]), self.model.grid
         )
 
         self.model.fl_model.lunitflow.append(unitflw_sources)
@@ -173,7 +173,7 @@ class ForwardSolver:
         # Solve the flow -> no iterations with transport/chemistry since we don't have
         # variable permeability nor porosity/diffusion.
         solve_flow_transient_semi_implicit(
-            self.model.geometry,
+            self.model.grid,
             self.model.fl_model,
             self.model.tr_model,
             unitflw_sources,
@@ -216,7 +216,7 @@ class ForwardSolver:
 
             # Solve the transport
             solve_transport_semi_implicit(
-                self.model.geometry,
+                self.model.grid,
                 self.model.fl_model,
                 self.model.tr_model,
                 conc_sources,

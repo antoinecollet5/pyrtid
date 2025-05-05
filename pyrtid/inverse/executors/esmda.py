@@ -40,7 +40,7 @@ from pyrtid.inverse.params import (
     get_parameters_bounds,
     update_model_with_parameters_values,
 )
-from pyrtid.utils.types import NDArrayFloat
+from pyrtid.utils import NDArrayFloat
 
 esmda_base_solver_config_params_ds = r"""n_assimilations : int, optional
         Number of data assimilations (:math:`N_{a}`). The default is 4.

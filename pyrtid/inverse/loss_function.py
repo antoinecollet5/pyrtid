@@ -11,7 +11,7 @@ from pyrtid.inverse.obs import (
     get_predictions_matching_observations,
 )
 from pyrtid.inverse.params import AdjustableParameters, eval_weighted_loss_reg
-from pyrtid.utils.types import NDArrayFloat
+from pyrtid.utils import NDArrayFloat
 
 
 def eval_loss_ls(

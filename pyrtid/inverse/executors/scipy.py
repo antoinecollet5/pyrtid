@@ -22,7 +22,7 @@ from pyrtid.inverse.executors.base import (
     register_params_ds,
 )
 from pyrtid.inverse.params import get_parameters_bounds
-from pyrtid.utils.types import NDArrayFloat
+from pyrtid.utils import NDArrayFloat
 
 scipy_solver_config_params_ds = r"""solver_name: str = "L-BFGS-B"
         Name of the solver to use. TODO: point to scipy.

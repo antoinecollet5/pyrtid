@@ -29,9 +29,13 @@ from pyrtid.inverse.regularization.toeplitz import (
     create_toepliz_first_row,
     toeplitz_product,
 )
-from pyrtid.utils import get_pts_coords_regular_grid, sparse_cholesky
+from pyrtid.utils import (
+    NDArrayFloat,
+    NDArrayInt,
+    get_pts_coords_regular_grid,
+    sparse_cholesky,
+)
 from pyrtid.utils.spde import get_variance
-from pyrtid.utils.types import NDArrayFloat, NDArrayInt
 
 
 class CallBack:

@@ -10,7 +10,7 @@ import numpy as np
 
 from pyrtid.inverse.preconditioner import NoTransform, Preconditioner
 from pyrtid.inverse.regularization.base import Regularizator
-from pyrtid.utils.types import NDArrayFloat
+from pyrtid.utils import NDArrayFloat
 
 
 def get_clostest_mode(x: NDArrayFloat, modes: NDArrayFloat) -> NDArrayFloat:

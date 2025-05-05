@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 from pyrtid.utils import (
+    NDArrayBool,
     get_a_not_in_b_1d,
     get_array_borders_selection,
     get_pts_coords_regular_grid,
@@ -8,7 +9,6 @@ from pyrtid.utils import (
     node_number_to_indices,
     span_to_node_numbers_2d,
 )
-from pyrtid.utils.types import NDArrayBool
 
 
 def test_indices_to_node_number() -> None:

@@ -11,15 +11,14 @@ from typing import Optional
 
 import numpy as np
 
-from pyrtid.forward.models import Geometry
 from pyrtid.inverse.preconditioner import NoTransform, Preconditioner
 from pyrtid.inverse.regularization.base import (
     Regularizator,
     make_spatial_gradient_matrices,
     make_spatial_permutation_matrices,
 )
+from pyrtid.utils import NDArrayFloat, NDArrayInt, RectilinearGrid
 from pyrtid.utils.operators import gradient_ffd, hessian_cfd
-from pyrtid.utils.types import NDArrayFloat, NDArrayInt
 
 
 @dataclass
@@ -29,15 +28,15 @@ class TikhonovRegularizator(Regularizator):
 
     Attributes
     ----------
-    grid : Geometry
-        Geometry of the field.
+    grid : RectilinearGrid
+        RectilinearGrid of the field.
     preconditioner: Preconditioner
         Parameter pre-transformation operator (variable change for the solver).
         The default is the identity function: f(x) = x, which means no change
         is made.
     """
 
-    grid: Geometry
+    grid: RectilinearGrid
     preconditioner: Preconditioner = NoTransform()
 
     def _eval_loss(self, values: NDArrayFloat) -> float:
@@ -100,8 +99,8 @@ class TikhonovMatRegularizator(Regularizator):
 
     Attributes
     ----------
-    grid : Geometry
-        Geometry of the field.
+    grid : RectilinearGrid
+        RectilinearGrid of the field.
     sub_selection : Optional[NDArrayInt], optional
         Optional sub selection of the field. Non selected elements will be
         ignored in the gradient computation (as if non existing). If None, all
@@ -112,7 +111,7 @@ class TikhonovMatRegularizator(Regularizator):
         is made.
     """
 
-    grid: Geometry
+    grid: RectilinearGrid
     sub_selection: Optional[NDArrayInt] = None
     preconditioner: Preconditioner = NoTransform()
 
@@ -176,8 +175,8 @@ class TikhonovFVMRegularizator(Regularizator):
 
     Attributes
     ----------
-    grid : Geometry
-        Geometry of the field.
+    grid : RectilinearGrid
+        RectilinearGrid of the field.
     sub_selection : Optional[NDArrayInt], optional
         Optional sub selection of the field. Non selected elements will be
         ignored in the gradient computation (as if non existing). If None, all
@@ -188,7 +187,7 @@ class TikhonovFVMRegularizator(Regularizator):
         is made.
     """
 
-    grid: Geometry
+    grid: RectilinearGrid
     sub_selection: Optional[NDArrayInt] = None
     preconditioner: Preconditioner = NoTransform()
 

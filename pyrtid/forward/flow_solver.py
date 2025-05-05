@@ -13,7 +13,6 @@ from pyrtid.forward.models import (
     GRAVITY,
     WATER_DENSITY,
     FlowModel,
-    Geometry,
     TimeParameters,
     TransportModel,
     VerticalAxis,
@@ -22,6 +21,7 @@ from pyrtid.forward.models import (
 from pyrtid.utils import (
     Callback,
     NDArrayFloat,
+    RectilinearGrid,
     arithmetic_mean,
     get_array_borders_selection,
     get_super_ilu_preconditioner,
@@ -30,7 +30,7 @@ from pyrtid.utils import (
 
 
 def get_kmean(
-    grid: Geometry, fl_model: FlowModel, axis: int, is_flatten=True
+    grid: RectilinearGrid, fl_model: FlowModel, axis: int, is_flatten=True
 ) -> NDArrayFloat:
     kmean: NDArrayFloat = np.zeros((grid.nx, grid.ny), dtype=np.float64)
     if axis == 0:
@@ -48,7 +48,7 @@ def get_kmean(
 
 
 def get_rhomean(
-    grid: Geometry,
+    grid: RectilinearGrid,
     tr_model: TransportModel,
     axis: int,
     time_index: Union[int, slice],
@@ -84,7 +84,9 @@ def get_rhomean(
     return rhomean
 
 
-def make_stationary_flow_matrices(grid: Geometry, fl_model: FlowModel) -> lil_array:
+def make_stationary_flow_matrices(
+    grid: RectilinearGrid, fl_model: FlowModel
+) -> lil_array:
     """
     Make matrices for the transient flow.
 
@@ -166,7 +168,10 @@ def make_stationary_flow_matrices(grid: Geometry, fl_model: FlowModel) -> lil_ar
 
 
 def make_transient_flow_matrices(
-    grid: Geometry, fl_model: FlowModel, tr_model: TransportModel, time_index: int
+    grid: RectilinearGrid,
+    fl_model: FlowModel,
+    tr_model: TransportModel,
+    time_index: int,
 ) -> Tuple[lil_array, lil_array]:
     """
     Make matrices for the transient flow.
@@ -296,7 +301,7 @@ def make_transient_flow_matrices(
     return q_next, q_prev
 
 
-def get_zj_zi_rhs(grid: Geometry, fl_model: FlowModel) -> NDArrayFloat:
+def get_zj_zi_rhs(grid: RectilinearGrid, fl_model: FlowModel) -> NDArrayFloat:
     rhs_z = np.zeros((grid.n_grid_cells), dtype=np.float64)
     z = fl_model._get_mesh_center_vertical_pos().T.ravel("F")
 
@@ -360,7 +365,7 @@ def get_zj_zi_rhs(grid: Geometry, fl_model: FlowModel) -> NDArrayFloat:
 
 
 def solve_flow_stationary(
-    grid: Geometry,
+    grid: RectilinearGrid,
     fl_model: FlowModel,
     tr_model: TransportModel,
     unitflw_sources: NDArrayFloat,
@@ -441,7 +446,7 @@ def solve_flow_stationary(
 
 
 def find_ux_boundary(
-    fl_model: FlowModel, grid: Geometry, time_index: int
+    fl_model: FlowModel, grid: RectilinearGrid, time_index: int
 ) -> NDArrayFloat:
     """
     Compute the darcy velocities at the mesh boundaries along the x axis.
@@ -466,7 +471,7 @@ def find_ux_boundary(
 
 
 def find_uy_boundary(
-    fl_model: FlowModel, grid: Geometry, time_index: int
+    fl_model: FlowModel, grid: RectilinearGrid, time_index: int
 ) -> NDArrayFloat:
     """
     Compute the darcy velocities at the mesh boundaries along the y axis.
@@ -491,7 +496,10 @@ def find_uy_boundary(
 
 
 def find_ux_boundary_density(
-    fl_model: FlowModel, tr_model: TransportModel, grid: Geometry, time_index: int
+    fl_model: FlowModel,
+    tr_model: TransportModel,
+    grid: RectilinearGrid,
+    time_index: int,
 ) -> NDArrayFloat:
     """
     Compute the darcy velocities at the mesh boundaries along the x axis.
@@ -531,7 +539,10 @@ def find_ux_boundary_density(
 
 
 def find_uy_boundary_density(
-    fl_model: FlowModel, tr_model: TransportModel, grid: Geometry, time_index: int
+    fl_model: FlowModel,
+    tr_model: TransportModel,
+    grid: RectilinearGrid,
+    time_index: int,
 ) -> NDArrayFloat:
     """
     Compute the darcy velocities at the mesh boundaries along the y axis.
@@ -572,7 +583,10 @@ def find_uy_boundary_density(
 
 
 def compute_u_darcy(
-    fl_model: FlowModel, tr_model: TransportModel, grid: Geometry, time_index: int
+    fl_model: FlowModel,
+    tr_model: TransportModel,
+    grid: RectilinearGrid,
+    time_index: int,
 ) -> None:
     """Update the darcy velocities at the node boundaries."""
     if fl_model.is_gravity:
@@ -590,7 +604,7 @@ def compute_u_darcy(
 
 
 def update_unitflow_cst_head_nodes(
-    fl_model: FlowModel, grid: Geometry, time_index: int
+    fl_model: FlowModel, grid: RectilinearGrid, time_index: int
 ) -> None:
     """
     Update the darcy velocities for the constant-head nodes.
@@ -602,7 +616,7 @@ def update_unitflow_cst_head_nodes(
     ----------
     fl_model : FlowModel
         The flow model which contains flow parameters and variables.
-    grid : Geometry
+    grid : RectilinearGrid
         The grid parameters.
     time_index : int
         Time index for which to update.
@@ -612,8 +626,8 @@ def update_unitflow_cst_head_nodes(
 
     # 1) Compute the flow in each cell -> oriented darcy times the node centers
     # distances
-    flow = np.zeros(grid.shape)
-    _flow = np.zeros(grid.shape)
+    flow = np.zeros(grid.shape2d)
+    _flow = np.zeros(grid.shape2d)
     if grid.nx > 1:
         flow[:, :] += fl_model.lu_darcy_x[time_index][:-1, :] * grid.gamma_ij_x
         flow[:, :] -= fl_model.lu_darcy_x[time_index][1:, :] * grid.gamma_ij_x
@@ -628,7 +642,7 @@ def update_unitflow_cst_head_nodes(
     ]
 
     # Total boundary length per mesh
-    _ltot = np.zeros(grid.shape)
+    _ltot = np.zeros(grid.shape2d)
     if grid.nx > 1:
         # evacuation along x
         _ltot[0, fl_model.is_boundary_west] += grid.gamma_ij_x
@@ -652,7 +666,7 @@ def update_unitflow_cst_head_nodes(
     # grid cells located in the boundary of the domain.
 
     # 3.1) For constant head in the borders -> unitflow is null
-    cst_head_border_mask = _flow != 0 & get_array_borders_selection(*grid.shape)
+    cst_head_border_mask = _flow != 0 & get_array_borders_selection(*grid.shape2d)
     fl_model.lunitflow[time_index][cst_head_border_mask] = 0.0
 
     # 3.2) Report the flow on the boundaries
@@ -674,11 +688,13 @@ def update_unitflow_cst_head_nodes(
         )
 
 
-def compute_u_darcy_div(fl_model: FlowModel, grid: Geometry, time_index: int) -> None:
+def compute_u_darcy_div(
+    fl_model: FlowModel, grid: RectilinearGrid, time_index: int
+) -> None:
     """Update the darcy velocities divergence (at the node centers)."""
 
     # Reset to zero
-    u_darcy_div = np.zeros(grid.shape)
+    u_darcy_div = np.zeros(grid.shape2d)
 
     # x contribution -> multiply by the frontier (dy and not dx)
     u_darcy_div -= fl_model.lu_darcy_x[time_index][:-1, :] * grid.gamma_ij_x
@@ -699,7 +715,10 @@ def compute_u_darcy_div(fl_model: FlowModel, grid: Geometry, time_index: int) ->
 
 
 def get_gravity_gradient(
-    grid: Geometry, fl_model: FlowModel, tr_model: TransportModel, time_index: int
+    grid: RectilinearGrid,
+    fl_model: FlowModel,
+    tr_model: TransportModel,
+    time_index: int,
 ) -> NDArrayFloat:
     tmp = np.zeros(grid.nx * grid.ny)
     sc = fl_model.storage_coefficient.ravel("F")
@@ -788,7 +807,7 @@ def get_gravity_gradient(
 
 
 def solve_flow_transient_semi_implicit(
-    grid: Geometry,
+    grid: RectilinearGrid,
     fl_model: FlowModel,
     tr_model: TransportModel,
     unitflw_sources: NDArrayFloat,

@@ -3,6 +3,7 @@
 import numpy as np
 import pytest
 from pyrtid.utils import (
+    NDArrayFloat,
     get_angle_btw_vectors_deg,
     get_angle_btw_vectors_rad,
     get_super_ilu_preconditioner,
@@ -10,7 +11,6 @@ from pyrtid.utils import (
     gradient_ffd,
     hessian_cfd,
 )
-from pyrtid.utils.types import NDArrayFloat
 from scipy.sparse import csc_array
 from scipy.sparse.linalg import gmres
 

@@ -11,18 +11,16 @@ from scipy.sparse.linalg import gmres
 
 from pyrtid.forward.models import (
     FlowModel,
-    Geometry,
     TimeParameters,
     TransportModel,
     get_owner_neigh_indices,
 )
-from pyrtid.utils import harmonic_mean
+from pyrtid.utils import NDArrayFloat, RectilinearGrid, harmonic_mean
 from pyrtid.utils.operators import get_super_ilu_preconditioner
-from pyrtid.utils.types import NDArrayFloat
 
 
 def make_transport_matrices(
-    grid: Geometry,
+    grid: RectilinearGrid,
     tr_model: TransportModel,
     fl_model: FlowModel,
     time_index: int,
@@ -151,7 +149,7 @@ def make_transport_matrices(
 
 
 def _add_advection_to_transport_matrices(
-    grid: Geometry,
+    grid: RectilinearGrid,
     fl_model: FlowModel,
     tr_model: TransportModel,
     q_next: lil_array,
@@ -355,7 +353,7 @@ def _apply_divergence_effect(
 
 
 def _add_transport_boundary_conditions(
-    grid: Geometry,
+    grid: RectilinearGrid,
     fl_model: FlowModel,
     tr_model: TransportModel,
     q_next: lil_array,
@@ -428,7 +426,7 @@ def _add_transport_boundary_conditions(
 
 
 def solve_transport_semi_implicit(
-    grid: Geometry,
+    grid: RectilinearGrid,
     fl_model: FlowModel,
     tr_model: TransportModel,
     conc_sources: NDArrayFloat,
@@ -442,8 +440,8 @@ def solve_transport_semi_implicit(
 
     Parameters
     ----------
-    grid: Geometry
-        Geometry of the system.
+    grid: RectilinearGrid
+        RectilinearGrid of the system.
     fl_model: FlowModel
         The flow model.
     tr_model: TransportModel

@@ -3,7 +3,7 @@ from typing import Optional
 import numpy as np
 from matplotlib.axes import Axes
 
-from pyrtid.utils.types import NDArrayFloat
+from pyrtid.utils import NDArrayFloat
 
 
 def plot_observed_vs_simulated(

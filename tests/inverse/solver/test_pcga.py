@@ -8,8 +8,7 @@ from pyrtid.inverse.regularization import (
     eigen_factorize_cov_mat,
 )
 from pyrtid.inverse.solvers import PCGA
-from pyrtid.utils import sparse_cholesky, spde
-from pyrtid.utils.types import NDArrayFloat
+from pyrtid.utils import NDArrayFloat, sparse_cholesky, spde
 from scipy.ndimage import gaussian_filter
 
 

@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 from pyrtid.utils import (
     MeanType,
+    NDArrayFloat,
     amean_gradient,
     arithmetic_mean,
     dxi_arithmetic_mean,
@@ -17,7 +18,6 @@ from pyrtid.utils import (
     harmonic_mean,
     hmean_gradient,
 )
-from pyrtid.utils.types import NDArrayFloat
 from scipy.stats import gmean, hmean
 
 

@@ -4,7 +4,7 @@ import numpy as np
 import pyrtid.forward as dmfwd
 import pyrtid.inverse as dminv
 import pytest
-from pyrtid.utils import MeanType, NDArrayFloat, finite_gradient
+from pyrtid.utils import MeanType, NDArrayFloat, RectilinearGrid, finite_gradient
 
 
 @pytest.mark.parametrize(
@@ -20,7 +20,7 @@ from pyrtid.utils import MeanType, NDArrayFloat, finite_gradient
 )
 def test_adjoint_model_init(args, kwargs) -> None:
     time_params = dmfwd.TimeParameters(duration=1.0, dt_init=1.0)
-    grid = dmfwd.Geometry(nx=5, ny=5, dx=4.5, dy=7.5)
+    grid = RectilinearGrid(nx=5, ny=5, dx=4.5, dy=7.5)
     dminv.AdjointModel(grid, time_params, False, 2, *args, **kwargs)
 
 
@@ -36,7 +36,7 @@ def test_adjoint_model_init(args, kwargs) -> None:
 )
 def test_init_adjoint_sources(max_obs_time, mean_type) -> None:
     time_params = dmfwd.TimeParameters(duration=1.0, dt_init=1.0)
-    grid = dmfwd.Geometry(nx=5, ny=5, dx=4.5, dy=7.5)
+    grid = RectilinearGrid(nx=5, ny=5, dx=4.5, dy=7.5)
     fl_params = dmfwd.FlowParameters(1e-5)
     tr_params = dmfwd.TransportParameters(diffusion=1.0, porosity=0.23)
     gch_params = dmfwd.GeochemicalParameters(1.0, 0.0)

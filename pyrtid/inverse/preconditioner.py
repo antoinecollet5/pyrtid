@@ -107,9 +107,14 @@ from scipy.sparse import csc_array, lil_array
 from sksparse.cholmod import Factor
 
 import pyrtid.utils.spde as spde
-from pyrtid.forward.models import Geometry
-from pyrtid.utils import object_or_object_sequence_to_list, sparse_cholesky
-from pyrtid.utils.types import NDArrayBool, NDArrayFloat, NDArrayInt
+from pyrtid.utils import (
+    NDArrayBool,
+    NDArrayFloat,
+    NDArrayInt,
+    RectilinearGrid,
+    object_or_object_sequence_to_list,
+    sparse_cholesky,
+)
 
 
 class Preconditioner(ABC):
@@ -2381,7 +2386,7 @@ class GDPCS(GDPNCS):
 class SubSelector(Preconditioner):
     """Apply a selection on the input field."""
 
-    def __init__(self, node_numbers: NDArrayInt, grid: Geometry) -> None:
+    def __init__(self, node_numbers: NDArrayInt, grid: RectilinearGrid) -> None:
         """
         Initialize the instance.
 
@@ -2531,7 +2536,7 @@ class Slicer(SubSelector):
 
     def __init__(
         self,
-        grid: Geometry,
+        grid: RectilinearGrid,
         span: Union[NDArrayInt, Tuple[slice, slice], NDArrayBool] = (
             slice(None),
             slice(None),
@@ -2539,7 +2544,7 @@ class Slicer(SubSelector):
     ) -> None:
         """Initialize the instance."""
         field_size = grid.n_grid_cells
-        node_numbers = np.arange(field_size).reshape(grid.shape, order="F")[span]
+        node_numbers = np.arange(field_size).reshape(grid.shape2d, order="F")[span]
         super().__init__(node_numbers, grid)
 
 

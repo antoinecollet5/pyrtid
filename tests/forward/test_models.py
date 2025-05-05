@@ -12,17 +12,16 @@ from pyrtid.forward.models import (
     FlowParameters,
     ForwardModel,
     GeochemicalParameters,
-    Geometry,
     SourceTerm,
     TimeParameters,
     TransportParameters,
     ZeroConcGradient,
     get_owner_neigh_indices,
 )
-from pyrtid.utils.types import NDArrayFloat
+from pyrtid.utils import NDArrayFloat, RectilinearGrid
 
 time_params = TimeParameters(duration=240000, dt_init=600.0)
-grid = Geometry(nx=20, ny=20, dx=4.5, dy=7.5)
+grid = RectilinearGrid(nx=20, ny=20, dx=4.5, dy=7.5)
 fl_params = FlowParameters(1e-5)
 tr_params = TransportParameters(diffusion=1e-10, porosity=0.23, dispersivity=0.1)
 gch_params = GeochemicalParameters(0.0, 0.0)
@@ -125,9 +124,9 @@ def test_wrong_time_params() -> None:
         ),
     ],
 )
-def test_geometry(nx, ny, dx, dy, expected_exception) -> None:
+def test_grid(nx, ny, dx, dy, expected_exception) -> None:
     with expected_exception:
-        geom = Geometry(nx, ny, dx, dy)
+        geom = RectilinearGrid(nx=nx, ny=ny, dx=dx, dy=dy)
         assert geom.grid_cell_volume == geom.grid_cell_volume == dx * dy
 
 
@@ -283,7 +282,7 @@ def test_get_owner_neigh_indices(
     expected_idc_owner,
     expected_idc_neigh,
 ) -> None:
-    grid = Geometry(4, 4, 1.0, 1.0, 1.0)
+    grid = RectilinearGrid(nx=4, ny=4, dx=1.0, dy=1.0, dz=1.0)
 
     idc_owner, idc_neigh = get_owner_neigh_indices(
         grid,
@@ -312,7 +311,7 @@ def test_source_term_et_node_indices() -> None:
         np.array([1.0, 2.0, 0.0, 4.0]),
     )
     np.testing.assert_equal(
-        st.get_node_indices(Geometry(5, 5, 2.0, 2.0, 5.0)),
+        st.get_node_indices(RectilinearGrid(nx=5, ny=5, dx=2.0, dy=2.0, dz=5.0)),
         np.array([[1, 0, 2, 4], [0, 1, 2, 4], [0, 0, 0, 0]]),
     )
 
@@ -472,7 +471,7 @@ def test_get_sources(
     time: float, expected_src_flw: NDArrayFloat, expected_src_conc: NDArrayFloat
 ) -> None:
     time_params = TimeParameters(duration=240000, dt_init=600.0)
-    grid = Geometry(nx=3, ny=3, dx=2.0, dy=2.0, dz=2.0)
+    grid = RectilinearGrid(nx=3, ny=3, dx=2.0, dy=2.0, dz=2.0)
     fl_params = FlowParameters(1e-5)
     tr_params = TransportParameters(diffusion=1e-10, porosity=0.23)
     gch_params = GeochemicalParameters(0.0, 0.0)
@@ -543,7 +542,7 @@ def test_cst_head(
     boundary_conditions, expected_cst_head_nn, expected_free_head_nn
 ) -> None:
     time_params = TimeParameters(duration=240000, dt_init=600.0)
-    grid = Geometry(nx=3, ny=3, dx=2.0, dy=2.0, dz=2.0)
+    grid = RectilinearGrid(nx=3, ny=3, dx=2.0, dy=2.0, dz=2.0)
     fl_params = FlowParameters(1e-5)
     tr_params = TransportParameters(diffusion=1e-10, porosity=0.23)
     gch_params = GeochemicalParameters(0.0, 0.0)

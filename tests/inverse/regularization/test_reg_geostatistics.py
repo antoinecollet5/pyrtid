@@ -17,8 +17,7 @@ from pyrtid.inverse.regularization import (  # DriftMatrix,; LinearDriftMatrix,
     eigen_factorize_cov_mat,
     generate_dense_matrix,
 )
-from pyrtid.utils import sparse_cholesky
-from pyrtid.utils.types import NDArrayFloat
+from pyrtid.utils import NDArrayFloat, sparse_cholesky
 
 # For now we use the exact parameters, we will complexify a bit later
 prior_std = 1.0

@@ -26,7 +26,7 @@ from pyrtid.inverse.executors.base import (
     register_params_ds,
 )
 from pyrtid.inverse.params import get_parameters_bounds
-from pyrtid.utils.types import NDArrayFloat
+from pyrtid.utils import NDArrayFloat
 
 stochopy_solver_config_params_ds = """
     solver_name: Literal["cmaes", "cpso", "de", "na", "pso", "vdcma"]

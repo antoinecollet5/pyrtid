@@ -15,7 +15,6 @@ from pyrtid.forward.models import (  # ConstantHead,; ZeromobGradient,
     WATER_DENSITY,
     FlowModel,
     FlowRegime,
-    Geometry,
     TimeParameters,
     TransportModel,
     get_owner_neigh_indices,
@@ -23,6 +22,7 @@ from pyrtid.forward.models import (  # ConstantHead,; ZeromobGradient,
 from pyrtid.inverse.asm.amodels import AdjointFlowModel, AdjointTransportModel
 from pyrtid.utils import (
     NDArrayFloat,
+    RectilinearGrid,
     assert_allclose_sparse,
     dxi_harmonic_mean,
     get_super_ilu_preconditioner,
@@ -31,7 +31,7 @@ from pyrtid.utils import (
 
 
 def add_adj_stationary_flow_to_q_next(
-    grid: Geometry,
+    grid: RectilinearGrid,
     fl_model: FlowModel,
     q_next: lil_array,
 ) -> lil_array:
@@ -149,7 +149,7 @@ def add_adj_stationary_flow_to_q_next(
 
 
 def make_transient_adj_flow_matrices(
-    grid: Geometry,
+    grid: RectilinearGrid,
     fl_model: FlowModel,
     tr_model: TransportModel,
     a_fl_model: AdjointFlowModel,
@@ -349,7 +349,7 @@ def make_transient_adj_flow_matrices(
 
 
 def get_aflow_matrices(
-    grid: Geometry,
+    grid: RectilinearGrid,
     fl_model: FlowModel,
     tr_model: TransportModel,
     a_fl_model: AdjointFlowModel,
@@ -408,7 +408,7 @@ def get_aflow_matrices(
 
 
 def update_adjoint_u_darcy(
-    grid: Geometry,
+    grid: RectilinearGrid,
     tr_model: TransportModel,
     a_tr_model: AdjointTransportModel,
     fl_model: FlowModel,
@@ -579,7 +579,7 @@ def update_adjoint_u_darcy(
 
 
 def solve_adj_flow(
-    grid: Geometry,
+    grid: RectilinearGrid,
     fl_model: FlowModel,
     tr_model: TransportModel,
     a_fl_model: AdjointFlowModel,
@@ -601,7 +601,7 @@ def solve_adj_flow(
 
 
 def solve_adj_flow_saturated(
-    grid: Geometry,
+    grid: RectilinearGrid,
     fl_model: FlowModel,
     tr_model: TransportModel,
     a_fl_model: AdjointFlowModel,
@@ -671,7 +671,7 @@ def solve_adj_flow_saturated(
 
 
 def solve_adj_flow_density(
-    grid: Geometry,
+    grid: RectilinearGrid,
     fl_model: FlowModel,
     tr_model: TransportModel,
     a_fl_model: AdjointFlowModel,
@@ -747,7 +747,7 @@ def solve_adj_flow_density(
 
 
 def get_adjoint_transport_src_terms(
-    grid: Geometry,
+    grid: RectilinearGrid,
     fl_model: FlowModel,
     a_fl_model: AdjointFlowModel,
     time_index: int,
@@ -757,7 +757,7 @@ def get_adjoint_transport_src_terms(
 
     Parameters
     ----------
-    grid : Geometry
+    grid : RectilinearGrid
         _description_
     tmp : NDArrayFloat
         _description_

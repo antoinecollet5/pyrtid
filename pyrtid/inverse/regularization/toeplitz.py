@@ -9,7 +9,7 @@ from typing import Callable, List, Sequence, Union
 
 import numpy as np
 
-from pyrtid.utils.types import NDArrayFloat, NDArrayInt
+from pyrtid.utils import NDArrayFloat, NDArrayInt
 
 
 def create_toepliz_first_row(

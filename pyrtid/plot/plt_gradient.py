@@ -7,14 +7,13 @@ import matplotlib.pyplot as plt
 import nested_grid_plotter as ngp
 import numpy as np
 
-from pyrtid.forward import Geometry
-from pyrtid.utils import NDArrayFloat
+from pyrtid.utils import NDArrayFloat, RectilinearGrid
 
 
 def plot_2d_grad_res_adj_vs_fd(
     adj_grad: NDArrayFloat,
     fd_grad: NDArrayFloat,
-    geom: Geometry,
+    geom: RectilinearGrid,
     fname: str,
     fig_save_path: Path,
     grid_scaling: float = 1.0,

@@ -8,7 +8,7 @@ import pyrtid.forward as dmfwd
 import pyrtid.inverse as dminv
 import pytest
 import scipy as sp
-from pyrtid.utils import NDArrayFloat, indices_to_node_number
+from pyrtid.utils import NDArrayFloat, RectilinearGrid, indices_to_node_number
 from pyrtid.utils.operators import get_angle_btw_vectors_deg
 
 logger = logging.getLogger()
@@ -69,7 +69,7 @@ def get_forward_and_obs(
         dt_min=dt_min,
         courant_factor=courant_factor,
     )
-    grid = dmfwd.Geometry(nx=nx, ny=ny, dx=dx, dy=dy, dz=dz)
+    grid = RectilinearGrid(nx=nx, ny=ny, dx=dx, dy=dy, dz=dz)
     fl_params = dmfwd.FlowParameters(
         permeability=k0,
         storage_coefficient=storage_coefficient,

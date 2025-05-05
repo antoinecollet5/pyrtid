@@ -1,6 +1,5 @@
 import numpy as np
-from pyrtid.utils import np_cache
-from pyrtid.utils.types import NDArrayFloat
+from pyrtid.utils import NDArrayFloat, np_cache
 
 
 def test_np_cache() -> None:

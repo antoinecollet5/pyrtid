@@ -49,8 +49,7 @@ from pyrtid.inverse.params import (
     update_model_with_parameters_values,
     update_parameters_from_model,
 )
-from pyrtid.utils import is_all_close
-from pyrtid.utils.types import NDArrayFloat
+from pyrtid.utils import NDArrayFloat, is_all_close
 
 
 def register_params_ds(params_ds: str):  # type: ignore
@@ -356,7 +355,7 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
     ) -> None:
         """Initialize a new adjoint model for the executor."""
         self.adj_model = AdjointModel(
-            self.fwd_model.geometry,
+            self.fwd_model.grid,
             self.fwd_model.time_params,
             self.fwd_model.fl_model.is_gravity,
             self.fwd_model.tr_model.n_sp,

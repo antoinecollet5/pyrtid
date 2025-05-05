@@ -17,8 +17,12 @@ from pyrtid.inverse.params import (
     update_model_with_parameters_values,
     update_parameters_from_model,
 )
-from pyrtid.utils import finite_jacobian, is_all_close
-from pyrtid.utils.types import NDArrayFloat, object_or_object_sequence_to_list
+from pyrtid.utils import (
+    NDArrayFloat,
+    finite_jacobian,
+    is_all_close,
+    object_or_object_sequence_to_list,
+)
 
 
 def _local_fun_pred(

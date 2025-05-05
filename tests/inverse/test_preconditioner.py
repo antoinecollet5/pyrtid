@@ -4,7 +4,6 @@ from typing import Optional
 
 import numdifftools as nd
 import numpy as np
-import pyrtid.forward as dmfwd
 import pyrtid.inverse as dminv
 import pyrtid.utils.spde as spde
 import pytest
@@ -29,6 +28,7 @@ from pyrtid.inverse.preconditioner import (
 from pyrtid.utils import (
     NDArrayFloat,
     NDArrayInt,
+    RectilinearGrid,
     indices_to_node_number,
     sparse_cholesky,
 )
@@ -238,7 +238,7 @@ def test_gd_parametrize(ne, expected_exception) -> None:
         ],
         [
             dminv.SubSelector,
-            ([1, 2, 6], dmfwd.Geometry(nx=5, ny=2, dx=1.0, dy=1.0)),
+            ([1, 2, 6], RectilinearGrid(nx=5, ny=2, dx=1.0, dy=1.0)),
             {},
             np.ones(10) * 0.1,
             np.ones(10) * 1.0,

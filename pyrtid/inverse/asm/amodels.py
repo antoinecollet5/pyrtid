@@ -11,7 +11,6 @@ from scipy.sparse import csc_array, lil_array
 
 from pyrtid.forward.models import (  # ConstantHead,; ZeroConcGradient,
     ForwardModel,
-    Geometry,
     TimeParameters,
 )
 from pyrtid.inverse.obs import (
@@ -20,8 +19,11 @@ from pyrtid.inverse.obs import (
     get_adjoint_sources_for_obs,
     get_observables_values_as_1d_vector,
 )
-from pyrtid.utils import object_or_object_sequence_to_list
-from pyrtid.utils.types import NDArrayFloat
+from pyrtid.utils import (
+    NDArrayFloat,
+    RectilinearGrid,
+    object_or_object_sequence_to_list,
+)
 
 
 class AdjointFlowModel(ABC):
@@ -47,7 +49,7 @@ class AdjointFlowModel(ABC):
 
     def __init__(
         self,
-        grid: Geometry,
+        grid: RectilinearGrid,
         time_params: TimeParameters,
         is_use_continuous_adj: bool = False,
     ) -> None:
@@ -56,8 +58,8 @@ class AdjointFlowModel(ABC):
 
         Parameters
         ----------
-        grid : Geometry
-            Geometry of the problem, grid definition.
+        grid : RectilinearGrid
+            RectilinearGrid of the problem, grid definition.
         time_params : TimeParameters
             Time parameters from the forward problem.
         is_use_continuous_adj: bool
@@ -139,7 +141,7 @@ class SaturatedAdjointFlowModel(AdjointFlowModel):
 
     def __init__(
         self,
-        grid: Geometry,
+        grid: RectilinearGrid,
         time_params: TimeParameters,
         is_use_continuous_adj: bool = False,
     ) -> None:
@@ -148,8 +150,8 @@ class SaturatedAdjointFlowModel(AdjointFlowModel):
 
         Parameters
         ----------
-        grid : Geometry
-            Geometry of the problem, grid definition.
+        grid : RectilinearGrid
+            RectilinearGrid of the problem, grid definition.
         time_params : TimeParameters
             Time parameters from the forward problem.
         is_use_continuous_adj: bool
@@ -169,7 +171,7 @@ class DensityAdjointFlowModel(AdjointFlowModel):
 
     def __init__(
         self,
-        grid: Geometry,
+        grid: RectilinearGrid,
         time_params: TimeParameters,
         is_use_continuous_adj: bool = False,
     ) -> None:
@@ -178,8 +180,8 @@ class DensityAdjointFlowModel(AdjointFlowModel):
 
         Parameters
         ----------
-        grid : Geometry
-            Geometry of the problem, grid definition.
+        grid : RectilinearGrid
+            RectilinearGrid of the problem, grid definition.
         time_params : TimeParameters
             Time parameters from the forward problem.
         is_use_continuous_adj: bool
@@ -239,7 +241,7 @@ class AdjointTransportModel:
 
     def __init__(
         self,
-        grid: Geometry,
+        grid: RectilinearGrid,
         time_params: TimeParameters,
         n_sp: int,
         afpi_eps: float = 1e-5,
@@ -250,7 +252,7 @@ class AdjointTransportModel:
 
         Parameters
         ----------
-        grid: Geometry
+        grid: RectilinearGrid
             Simulation grid definition.
         time_params: TimeParameters
             Simulation time parameters (duration, timesteps, etc.)
@@ -349,7 +351,7 @@ class AdjointModel:
 
     def __init__(
         self,
-        grid: Geometry,
+        grid: RectilinearGrid,
         time_params: TimeParameters,
         is_gravity: bool,
         n_sp: int,
@@ -362,7 +364,7 @@ class AdjointModel:
 
         Parameters
         ----------
-        grid: Geometry
+        grid: RectilinearGrid
             Simulation grid definition.
         time_params: TimeParameters
             Simulation time parameters (duration, timesteps, etc.)
@@ -381,7 +383,7 @@ class AdjointModel:
             added to illustrate the paper TODO: add ref. The default is False.
 
         """
-        self.grid: Geometry = grid
+        self.grid: RectilinearGrid = grid
         self.time_params: TimeParameters = time_params
         if is_gravity:
             self.a_fl_model: AdjointFlowModel = DensityAdjointFlowModel(

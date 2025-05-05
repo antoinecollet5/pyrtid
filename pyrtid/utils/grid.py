@@ -262,48 +262,79 @@ class RectilinearGrid:
     ----
     For Euler angles:
     https://www.meccanismocomplesso.org/en/3d-rotations-and-euler-angles-in-python/
-
-    Attributes
-    ----------
-    x0 : float
-        Grid origin x coordinate (smalest value) in meters.
-    y0 : float
-        Grid origin y coordinate (smalest value) in meters.
-    z0 : float
-        Grid origin z coordinate (smalest value) in meters.
-    dx : float
-        Mesh size along the x axis in meters.
-    dy : float
-        Mesh size along the y axis in meters.
-    dz : float
-        Mesh size along the z axis in meters.
-    nx : int
-        Number of meshes along the x axis.
-    ny : int
-        Number of meshes along the y axis.
-    nz : int
-        Number of meshes along the v axis.
-    theta : float
-        z-axis rotation angle in degrees with (x0, y0, z0) as origin.
-    phi : float
-        y-axis-rotation angle in degrees with (x0, y0, z0) as origin.
-    psi : float
-        x-axis-rotation angle in degrees with (x0, y0, z0) as origin.
-
     """
 
-    x0: float = 0.0
-    y0: float = 0.0
-    z0: float = 0.0
-    dx: float = 1.0
-    dy: float = 1.0
-    dz: float = 1.0
-    nx: int = 1
-    ny: int = 1
-    nz: int = 1
-    theta: float = 0.0
-    phi: float = 0.0
-    psi: float = 0.0
+    def __init__(
+        self,
+        x0: float = 0.0,
+        y0: float = 0.0,
+        z0: float = 0.0,
+        dx: float = 1.0,
+        dy: float = 1.0,
+        dz: float = 1.0,
+        nx: int = 1,
+        ny: int = 1,
+        nz: int = 1,
+        rot_center: Optional[Tuple[float, float, float]] = None,
+        theta: float = 0.0,
+        phi: float = 0.0,
+        psi: float = 0.0,
+    ) -> None:
+        """
+        Initialize the instance.
+
+        Parameters
+        ----------
+        x0 : float
+            Grid origin x coordinate (smalest value, not centroid) in meters.
+        y0 : float
+            Grid origin y coordinate (smalest value, not centroid) in meters.
+        z0 : float
+            Grid origin z coordinate (smalest value, not centroid) in meters.
+        dx : float
+            Mesh size along the x axis in meters.
+        dy : float
+            Mesh size along the y axis in meters.
+        dz : float
+            Mesh size along the z axis in meters.
+        nx : int
+            Number of meshes along the x axis.
+        ny : int
+            Number of meshes along the y axis.
+        nz : int
+            Number of meshes along the v axis.
+        rot_center:
+            Coordinates (x, y, z) used as a reference point for the grid rotation.
+            If None, (x0, y0, z0) is used. The default is None.
+        theta : float
+            z-axis rotation angle in degrees with (x0, y0, z0) as origin.
+        phi : float
+            y-axis-rotation angle in degrees with (x0, y0, z0) as origin.
+        psi : float
+            x-axis-rotation angle in degrees with (x0, y0, z0) as origin.
+        """
+        self.x0: float = x0
+        self.y0: float = y0
+        self.z0: float = z0
+        self.dx: float = dx
+        self.dy: float = dy
+        self.dz: float = dz
+        self._nx = 1
+        self._ny = 1
+        self._nz = 1
+        self.nx = int(nx)
+        self.ny = int(ny)
+        self.nz = int(nz)
+        if rot_center is not None:
+            self.rot_center: Tuple[float, float, float] = rot_center
+        else:
+            self.rot_center = (x0, y0, z0)
+        self.theta = theta
+        self.phi = phi
+        self.psi = psi
+
+        if self.nx < 3 and self.ny < 3:
+            raise (ValueError("At least one of (nx, ny) should be of dimension 3"))
 
     @property
     def shape(self) -> Tuple[int, int, int]:
@@ -311,26 +342,78 @@ class RectilinearGrid:
         return (self.nx, self.ny, self.nz)
 
     @property
-    def voxel_volume_m3(self) -> float:
+    def shape2d(self) -> Tuple[int, int]:
+        """Return the shape of the grid."""
+        return (self.nx, self.ny)
+
+    @property
+    def nx(self) -> int:
+        """Return the number of grid cells along the x axis."""
+        return self._nx
+
+    @nx.setter
+    def nx(self, value: int) -> None:
+        if value < 1:
+            raise (ValueError("nx should be > 1!)"))
+        self._nx = value
+
+    @property
+    def ny(self) -> int:
+        """Return the number of grid cells along the y axis."""
+        return self._ny
+
+    @ny.setter
+    def ny(self, value: int) -> None:
+        if value < 1:
+            raise (ValueError("ny should be > 1!)"))
+        self._ny = value
+
+    @property
+    def n_grid_cells(self) -> int:
+        """Return the number of grid cells."""
+        return self.nx * self.ny
+
+    @property
+    def grid_cell_surface(self) -> float:
+        """Return the surface of the grid cell in the x-y plan (m2)."""
+        return self.dx * self.dy
+
+    @property
+    def grid_cell_volume(self) -> float:
+        """Return the volume of a voxel in m3."""
+        return self.dx * self.dy * self.dz
+
+    @property
+    def grid_cell_volume_m3(self) -> float:
         """Return the volume of one voxel in m3."""
         return self.dx * self.dy * self.dz
 
     @property
-    def number_voxels(self) -> int:
-        """Return the number of voxels."""
-        return self.nx * self.ny * self.nz
-
-    @property
     def total_volume_m3(self) -> float:
         """Return the total grid volume in m3."""
-        return self.voxel_volume_m3 * self.number_voxels
+        return self.grid_cell_volume_m3 * self.n_grid_cells
+
+    @property
+    def gamma_ij_x(self) -> float:
+        """Return the surface of the frontiers along the x axis in m2"""
+        return self.dy * self.dz
+
+    @property
+    def gamma_ij_y(self) -> float:
+        """Return the surface of the frontiers along the y axis in m2"""
+        return self.dx * self.dz
+
+    @property
+    def gamma_ij_z(self) -> float:
+        """Return the surface of the frontiers along the z axis in m2"""
+        return self.dx * self.dy
 
     @property
     def indices(self) -> NDArrayInt:
         """Return the grid indices with shape (3, nx, ny, nz)."""
         return np.asarray(
             np.meshgrid(range(self.nx), range(self.ny), range(self.nz), indexing="ij"),
-            dtype=np.int32,
+            dtype=np.int64,
         )
 
     @property

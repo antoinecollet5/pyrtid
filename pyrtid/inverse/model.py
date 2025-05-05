@@ -9,7 +9,7 @@ from pyrtid.inverse.params import (
     AdjustableParameters,
     ParameterName,
 )
-from pyrtid.utils.types import NDArrayFloat, object_or_object_sequence_to_list
+from pyrtid.utils import NDArrayFloat, object_or_object_sequence_to_list
 
 
 class InverseModel:

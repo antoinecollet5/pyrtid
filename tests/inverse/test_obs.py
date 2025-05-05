@@ -21,9 +21,8 @@ from pyrtid.inverse.obs import (
     get_values_matching_node_indices,
     get_weights,
 )
-from pyrtid.utils import finite_gradient
+from pyrtid.utils import NDArrayFloat, NDArrayInt, RectilinearGrid, finite_gradient
 from pyrtid.utils.means import MeanType
-from pyrtid.utils.types import NDArrayFloat, NDArrayInt
 
 
 @pytest.mark.parametrize(
@@ -180,7 +179,7 @@ def test_get_values_matching_node_indices(
 @pytest.fixture
 def model() -> dmfwd.ForwardModel:
     time_params = dmfwd.TimeParameters(duration=240000, dt_init=600.0)
-    grid = dmfwd.Geometry(nx=20, ny=20, dx=4.5, dy=7.5)
+    grid = RectilinearGrid(nx=20, ny=20, dx=4.5, dy=7.5)
     fl_params = dmfwd.FlowParameters(1e-5)
     tr_params = dmfwd.TransportParameters(diffusion=1e-10, porosity=0.23)
     gch_params = dmfwd.GeochemicalParameters(0.0, 0.0)
@@ -513,7 +512,7 @@ def test_get_interp_simu_values_matching_obs_times(
 )
 def test_get_predictions_matching_observations(max_obs_time, expected_output) -> None:
     time_params = dmfwd.TimeParameters(duration=1.0, dt_init=1.0)
-    grid = dmfwd.Geometry(nx=20, ny=20, dx=4.5, dy=7.5)
+    grid = RectilinearGrid(nx=20, ny=20, dx=4.5, dy=7.5)
     fl_params = dmfwd.FlowParameters(1e-5)
     tr_params = dmfwd.TransportParameters(diffusion=1.0, porosity=0.23)
     gch_params = dmfwd.GeochemicalParameters(1.0, 0.0)
@@ -587,7 +586,7 @@ def test_get_adjoint_sources_for_obs(max_obs_time, mean_type) -> None:
     - simulated values interpolated to match the observation time
     """
     time_params = dmfwd.TimeParameters(duration=1.0, dt_init=1.0)
-    grid = dmfwd.Geometry(nx=5, ny=5, dx=4.5, dy=7.5)
+    grid = RectilinearGrid(nx=5, ny=5, dx=4.5, dy=7.5)
     fl_params = dmfwd.FlowParameters(1e-5)
     tr_params = dmfwd.TransportParameters(diffusion=1.0, porosity=0.23)
     gch_params = dmfwd.GeochemicalParameters(1.0, 0.0)

@@ -11,8 +11,7 @@ from pyrtid.inverse.regularization import (
     get_explained_var,
     sample_from_sparse_cov_factor,
 )
-from pyrtid.utils import sparse_cholesky, spde
-from pyrtid.utils.types import NDArrayFloat
+from pyrtid.utils import NDArrayFloat, sparse_cholesky, spde
 
 
 def test_get_shape() -> None:

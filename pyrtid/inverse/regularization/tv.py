@@ -11,15 +11,13 @@ from typing import Optional
 
 import numpy as np
 
-from pyrtid.forward.models import Geometry
 from pyrtid.inverse.preconditioner import NoTransform, Preconditioner
 from pyrtid.inverse.regularization.base import (
     Regularizator,
     make_spatial_gradient_matrices,
     make_spatial_permutation_matrices,
 )
-from pyrtid.utils.operators import gradient_ffd
-from pyrtid.utils.types import NDArrayFloat, NDArrayInt
+from pyrtid.utils import NDArrayFloat, NDArrayInt, RectilinearGrid, gradient_ffd
 
 
 @dataclass
@@ -29,8 +27,8 @@ class TVRegularizator(Regularizator):
 
     Attributes
     ----------
-    grid : Geometry
-        Geometry of the field.
+    grid : RectilinearGrid
+        RectilinearGrid of the field.
     eps: float
         Small factor added in the square root to deal with the singularity at
         $\nabla u = 0$ when computing the gradient. The default is 1e-20.
@@ -41,7 +39,7 @@ class TVRegularizator(Regularizator):
 
     """
 
-    grid: Geometry
+    grid: RectilinearGrid
     eps: float = 1e-20
     preconditioner: Preconditioner = NoTransform()
 
@@ -119,8 +117,8 @@ class TVMatRegularizator(Regularizator):
 
     Attributes
     ----------
-    grid : Geometry
-        Geometry of the field
+    grid : RectilinearGrid
+        RectilinearGrid of the field
     sub_selection : Optional[NDArrayInt], optional
         Optional sub selection of the field. Non selected elements will be
         ignored in the gradient computation (as if non existing). If None, all
@@ -135,7 +133,7 @@ class TVMatRegularizator(Regularizator):
 
     """
 
-    grid: Geometry
+    grid: RectilinearGrid
     sub_selection: Optional[NDArrayInt] = None
     eps: float = 1e-20
     preconditioner: Preconditioner = NoTransform()
@@ -219,8 +217,8 @@ class TVFVMRegularizator(Regularizator):
 
     Attributes
     ----------
-    grid : Geometry
-        Geometry of the field.
+    grid : RectilinearGrid
+        RectilinearGrid of the field.
     sub_selection : Optional[NDArrayInt], optional
         Optional sub selection of the field. Non selected elements will be
         ignored in the gradient computation (as if non existing). If None, all
@@ -234,7 +232,7 @@ class TVFVMRegularizator(Regularizator):
         is made.
     """
 
-    grid: Geometry
+    grid: RectilinearGrid
     sub_selection: Optional[NDArrayInt] = None
     eps: float = 1e-20
     preconditioner: Preconditioner = NoTransform()

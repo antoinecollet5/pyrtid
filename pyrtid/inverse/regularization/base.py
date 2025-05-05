@@ -9,10 +9,10 @@ from typing import List, Literal, Optional, Tuple
 import numpy as np
 from scipy.sparse import csc_array, lil_array
 
-from pyrtid.forward.models import Geometry, get_owner_neigh_indices
+from pyrtid.forward.models import get_owner_neigh_indices
 from pyrtid.inverse.preconditioner import NoTransform, Preconditioner
+from pyrtid.utils import NDArrayFloat, NDArrayInt, RectilinearGrid
 from pyrtid.utils.finite_differences import finite_gradient
-from pyrtid.utils.types import NDArrayFloat, NDArrayInt
 
 
 class RegWeightUpdateStrategy(ABC):
@@ -231,7 +231,7 @@ class Regularizator(ABC):
 
 
 def make_spatial_gradient_matrices(
-    grid: Geometry,
+    grid: RectilinearGrid,
     sub_selection: Optional[NDArrayInt] = None,
     which: Literal["forward", "backward", "both"] = "both",
 ) -> Tuple[csc_array, csc_array]:
@@ -242,8 +242,8 @@ def make_spatial_gradient_matrices(
 
     Parameters
     ----------
-    grid : Geometry
-        Geometry of the field
+    grid : RectilinearGrid
+        RectilinearGrid of the field
     sub_selection : Optional[NDArrayInt], optional
         Optional sub selection of the field. Non selected elements will be
         ignored in the gradient computation (as if non existing). If None, all
@@ -328,15 +328,15 @@ def make_spatial_gradient_matrices(
 
 
 def make_spatial_permutation_matrices(
-    grid: Geometry, sub_selection: Optional[NDArrayInt] = None
+    grid: RectilinearGrid, sub_selection: Optional[NDArrayInt] = None
 ) -> Tuple[csc_array, csc_array]:
     """
     Make matrices to compute the spatial permutations along x and y axes of a field.
 
     Parameters
     ----------
-    grid : Geometry
-        Geometry of the field
+    grid : RectilinearGrid
+        RectilinearGrid of the field
     sub_selection : Optional[NDArrayInt], optional
         Optional sub selection of the field. Non selected elements will be
         ignored in the gradient computation (as if non existing). If None, all

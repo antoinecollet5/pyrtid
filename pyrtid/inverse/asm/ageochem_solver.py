@@ -9,19 +9,18 @@ import numpy as np
 from pyrtid.forward.geochem_solver import get_dM, get_dM_pos
 from pyrtid.forward.models import (  # ConstantHead,; ZeroConcGradient,
     GeochemicalParameters,
-    Geometry,
     TimeParameters,
     TransportModel,
 )
 from pyrtid.inverse.asm.amodels import AdjointTransportModel
-from pyrtid.utils import NDArrayFloat
+from pyrtid.utils import NDArrayFloat, RectilinearGrid
 
 
 def solve_adj_geochem(
     tr_model: TransportModel,
     a_tr_model: AdjointTransportModel,
     gch_params: GeochemicalParameters,
-    grid: Geometry,
+    grid: RectilinearGrid,
     time_params: TimeParameters,
     time_index: int,
     nafpi: int,

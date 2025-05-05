@@ -14,7 +14,6 @@ from pyrtid.forward.models import (
     WATER_DENSITY,
     FlowModel,
     GeochemicalParameters,
-    Geometry,
     TimeParameters,
     TransportModel,
     get_owner_neigh_indices,
@@ -23,6 +22,7 @@ from pyrtid.forward.solver import get_max_coupling_error
 from pyrtid.inverse.asm.amodels import AdjointTransportModel
 from pyrtid.utils import (
     NDArrayFloat,
+    RectilinearGrid,
     assert_allclose_sparse,
     get_super_ilu_preconditioner,
     harmonic_mean,
@@ -51,7 +51,7 @@ def get_adjoint_max_coupling_error(
 
 
 def make_transient_adj_transport_matrices(
-    grid: Geometry,
+    grid: RectilinearGrid,
     fl_model: FlowModel,
     tr_model: TransportModel,
     time_params: TimeParameters,
@@ -203,7 +203,7 @@ def make_transient_adj_transport_matrices(
 
 
 def _add_advection_to_adj_transport_matrices(
-    grid: Geometry,
+    grid: RectilinearGrid,
     fl_model: FlowModel,
     tr_model: TransportModel,
     a_tr_model: AdjointTransportModel,
@@ -335,7 +335,7 @@ def _apply_adj_divergence_effect(
 
 
 def _add_adj_transport_boundary_conditions(
-    grid: Geometry,
+    grid: RectilinearGrid,
     fl_model: FlowModel,
     tr_model: TransportModel,
     q_next: lil_array,
@@ -403,7 +403,7 @@ def _add_adj_transport_boundary_conditions(
 
 
 def solve_adj_transport_transient_semi_implicit(
-    grid: Geometry,
+    grid: RectilinearGrid,
     fl_model: FlowModel,
     tr_model: TransportModel,
     a_tr_model: AdjointTransportModel,

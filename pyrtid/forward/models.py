@@ -21,16 +21,15 @@ from scipy.sparse import lil_array
 from scipy.sparse.linalg import LinearOperator, SuperLU
 
 from pyrtid.utils import (
-    StrEnum,
-    get_a_not_in_b_1d,
-    node_number_to_indices,
-    span_to_node_numbers_2d,
-)
-from pyrtid.utils.types import (
     NDArrayBool,
     NDArrayFloat,
     NDArrayInt,
+    RectilinearGrid,
+    StrEnum,
+    get_a_not_in_b_1d,
+    node_number_to_indices,
     object_or_object_sequence_to_list,
+    span_to_node_numbers_2d,
 )
 
 GRAVITY = 9.81
@@ -401,98 +400,6 @@ class GeochemicalParameters:
         self.stocoef: float = stocoef
 
 
-class Geometry:
-    """
-    Class defining the grid geometry used in the simulation.
-
-    Attributes
-    ----------
-    nx : int
-        Number of voxels along the x axis.
-    ny : int
-        Number of voxels along the y axis.
-    dx : float
-        Voxel dimension along the x axis.
-    dy : float
-        Voxel dimension along the y axis.
-    dz : float
-        Voxel dimension along the z axis. This is only taken into account for
-        the voxel volume computation.
-    """
-
-    def __init__(
-        self,
-        nx: int,
-        ny: int,
-        dx: float,
-        dy: float,
-        dz: float = 1.0,
-    ) -> None:
-        """Initialize the class instance."""
-        self._nx = 1
-        self._ny = 1
-        self.nx = int(nx)
-        self.ny = int(ny)
-        self.dx: float = dx
-        self.dy: float = dy
-        self.dz: float = dz
-
-        if self.nx < 3 and self.ny < 3:
-            raise (ValueError("At least one of (nx, ny) should be of dimension 3"))
-
-    @property
-    def nx(self) -> int:
-        """Return the number of grid cells along the x axis."""
-        return self._nx
-
-    @nx.setter
-    def nx(self, value: int) -> None:
-        if value < 1:
-            raise (ValueError("nx should be > 1!)"))
-        self._nx = value
-
-    @property
-    def ny(self) -> int:
-        """Return the number of grid cells along the y axis."""
-        return self._ny
-
-    @ny.setter
-    def ny(self, value: int) -> None:
-        if value < 1:
-            raise (ValueError("ny should be > 1!)"))
-        self._ny = value
-
-    @property
-    def shape(self) -> Tuple[int, int]:
-        """Return the shape of the grid as (nx, ny)."""
-        return (self.nx, self.ny)
-
-    @property
-    def n_grid_cells(self) -> int:
-        """Return the number of grid cells."""
-        return self.nx * self.ny
-
-    @property
-    def grid_cell_surface(self) -> float:
-        """Return the surface of the grid cell in the x-y plan (m2)."""
-        return self.dx * self.dy
-
-    @property
-    def grid_cell_volume(self) -> float:
-        """Return the volume of a voxel in m3."""
-        return self.dx * self.dy * self.dz
-
-    @property
-    def gamma_ij_x(self) -> float:
-        """Return the surface of the frontiers along the x axis in m2"""
-        return self.dy * self.dz
-
-    @property
-    def gamma_ij_y(self) -> float:
-        """Return the surface of the frontiers along the y axis in m2"""
-        return self.dx * self.dz
-
-
 class SourceTerm:
     """
     Define a source term object.
@@ -563,10 +470,10 @@ class SourceTerm:
                 "Times, flowrates and concentrations must have the same dimension !"
             )
 
-    def get_node_indices(self, geometry: Geometry) -> NDArrayInt:
+    def get_node_indices(self, grid: RectilinearGrid) -> NDArrayInt:
         """Return the node indices."""
         return np.array(
-            node_number_to_indices(self.node_ids, nx=geometry.nx, ny=geometry.ny)
+            node_number_to_indices(self.node_ids, nx=grid.nx, ny=grid.ny)
         ).reshape(3, -1)
 
     @property
@@ -681,18 +588,20 @@ class FlowModel(ABC):
     ]
 
     def __init__(
-        self, geometry: Geometry, time_params: TimeParameters, fl_params: FlowParameters
+        self,
+        grid: RectilinearGrid,
+        time_params: TimeParameters,
+        fl_params: FlowParameters,
     ) -> None:
         """Initialize the instance."""
         self.crank_nicolson: float = fl_params.crank_nicolson
         self.storage_coefficient: NDArrayFloat = (
-            np.ones((geometry.nx, geometry.ny), dtype=np.float64)
+            np.ones((grid.nx, grid.ny), dtype=np.float64)
             * fl_params.storage_coefficient
         )
         self.regime: FlowRegime = fl_params.regime
         self.permeability: NDArrayFloat = (
-            np.ones((geometry.nx, geometry.ny), dtype=np.float64)
-            * fl_params.permeability
+            np.ones((grid.nx, grid.ny), dtype=np.float64) * fl_params.permeability
         )
 
         self.lu_darcy_x: List[NDArrayFloat] = []
@@ -701,38 +610,38 @@ class FlowModel(ABC):
         self.lunitflow: List[NDArrayFloat] = []
 
         self.boundary_conditions: List[BoundaryCondition] = []
-        self.q_prev_no_dt = lil_array((geometry.n_grid_cells, geometry.n_grid_cells))
-        self.q_next_no_dt = lil_array((geometry.n_grid_cells, geometry.n_grid_cells))
-        self.q_prev = lil_array((geometry.n_grid_cells, geometry.n_grid_cells))
-        self.q_next = lil_array((geometry.n_grid_cells, geometry.n_grid_cells))
+        self.q_prev_no_dt = lil_array((grid.n_grid_cells, grid.n_grid_cells))
+        self.q_next_no_dt = lil_array((grid.n_grid_cells, grid.n_grid_cells))
+        self.q_prev = lil_array((grid.n_grid_cells, grid.n_grid_cells))
+        self.q_next = lil_array((grid.n_grid_cells, grid.n_grid_cells))
         self.cst_head_nn: NDArrayInt = np.array([], dtype=np.int32)
         self.rtol = fl_params.rtol
         self.vertical_axis = fl_params.vertical_axis
         self.vertical_mesh_size = {
-            VerticalAxis.X: geometry.dx,
-            VerticalAxis.Y: geometry.dy,
-            VerticalAxis.Z: geometry.dz,
+            VerticalAxis.X: grid.dx,
+            VerticalAxis.Y: grid.dy,
+            VerticalAxis.Z: grid.dz,
         }[fl_params.vertical_axis]
 
         # Indicate whether there is a boundary on the border of the domain
         # right border
-        self.is_boundary_east: NDArrayBool = np.zeros(geometry.ny, dtype=np.bool_)
+        self.is_boundary_east: NDArrayBool = np.zeros(grid.ny, dtype=np.bool_)
         # left border
-        self.is_boundary_west: NDArrayBool = np.zeros(geometry.ny, dtype=np.bool_)
+        self.is_boundary_west: NDArrayBool = np.zeros(grid.ny, dtype=np.bool_)
         # top border
-        self.is_boundary_north: NDArrayBool = np.zeros(geometry.nx, dtype=np.bool_)
+        self.is_boundary_north: NDArrayBool = np.zeros(grid.nx, dtype=np.bool_)
         # right border
-        self.is_boundary_south: NDArrayBool = np.zeros(geometry.nx, dtype=np.bool_)
+        self.is_boundary_south: NDArrayBool = np.zeros(grid.nx, dtype=np.bool_)
 
         # These are list of ndarrays
         self.lhead: List[NDArrayFloat] = [
-            np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
+            np.zeros((grid.nx, grid.ny), dtype=np.float64)
         ]
 
         # TODO: provide the initial density
         self.lpressure: List[NDArrayFloat] = [
             (
-                np.zeros((geometry.nx, geometry.ny), dtype=np.float64)
+                np.zeros((grid.nx, grid.ny), dtype=np.float64)
                 - self._get_mesh_center_vertical_pos().T
             )
             * GRAVITY
@@ -1122,10 +1031,13 @@ class SaturatedFlowModel(FlowModel):
     ]
 
     def __init__(
-        self, geometry: Geometry, time_params: TimeParameters, fl_params: FlowParameters
+        self,
+        grid: RectilinearGrid,
+        time_params: TimeParameters,
+        fl_params: FlowParameters,
     ) -> None:
         """Initialize the instance."""
-        super().__init__(geometry, time_params, fl_params)
+        super().__init__(grid, time_params, fl_params)
 
     @property
     def is_gravity(self) -> bool:
@@ -1137,10 +1049,13 @@ class DensityFlowModel(FlowModel):
     __slots__ = ["_pressure", "density"]
 
     def __init__(
-        self, geometry: Geometry, time_params: TimeParameters, fl_params: FlowParameters
+        self,
+        grid: RectilinearGrid,
+        time_params: TimeParameters,
+        fl_params: FlowParameters,
     ) -> None:
         """Initialize the instance."""
-        super().__init__(geometry, time_params, fl_params)
+        super().__init__(grid, time_params, fl_params)
 
     @property
     def is_gravity(self) -> bool:
@@ -1183,7 +1098,7 @@ class TransportModel:
 
     def __init__(
         self,
-        geometry: Geometry,
+        grid: RectilinearGrid,
         time_params: TimeParameters,
         tr_params: TransportParameters,
         gch_params: GeochemicalParameters,
@@ -1192,23 +1107,22 @@ class TransportModel:
         self.crank_nicolson_diffusion: float = tr_params.crank_nicolson_diffusion
         self.crank_nicolson_advection: float = tr_params.crank_nicolson_advection
         self.diffusion = (
-            np.ones((geometry.nx, geometry.ny), dtype=np.float64) * tr_params.diffusion
+            np.ones((grid.nx, grid.ny), dtype=np.float64) * tr_params.diffusion
         )
         self.dispersivity = (
-            np.ones((geometry.nx, geometry.ny), dtype=np.float64)
-            * tr_params.dispersivity
+            np.ones((grid.nx, grid.ny), dtype=np.float64) * tr_params.dispersivity
         )
         self.porosity = (
-            np.ones((geometry.nx, geometry.ny), dtype=np.float64) * tr_params.porosity
+            np.ones((grid.nx, grid.ny), dtype=np.float64) * tr_params.porosity
         )
         self.lmob: List[NDArrayFloat] = [
-            np.zeros((self.n_sp, geometry.nx, geometry.ny), dtype=np.float64)
+            np.zeros((self.n_sp, grid.nx, grid.ny), dtype=np.float64)
         ]
         self.lmob[0][0, :, :] = gch_params.conc
         self.lmob[0][1, :, :] = gch_params.conc2
 
         self.limmob: List[NDArrayFloat] = [
-            np.zeros((self.n_sp, geometry.nx, geometry.ny), dtype=np.float64)
+            np.zeros((self.n_sp, grid.nx, grid.ny), dtype=np.float64)
         ]
         # For now, only on mineral
         self.limmob[0][0, :, :] = gch_params.grade
@@ -1216,16 +1130,10 @@ class TransportModel:
 
         self.ldensity: List[NDArrayFloat] = []
         self.lsources: List[NDArrayFloat] = []
-        self.immob_prev = np.zeros(
-            (self.n_sp, geometry.nx, geometry.ny), dtype=np.float64
-        )
+        self.immob_prev = np.zeros((self.n_sp, grid.nx, grid.ny), dtype=np.float64)
         self.boundary_conditions: List[BoundaryCondition] = []
-        self.q_prev: lil_array = lil_array(
-            (geometry.n_grid_cells, geometry.n_grid_cells)
-        )
-        self.q_next: lil_array = lil_array(
-            (geometry.n_grid_cells, geometry.n_grid_cells)
-        )
+        self.q_prev: lil_array = lil_array((grid.n_grid_cells, grid.n_grid_cells))
+        self.q_next: lil_array = lil_array((grid.n_grid_cells, grid.n_grid_cells))
         self.cst_conc_nn: NDArrayInt = np.array([], dtype=np.int64)
         self.rtol: float = tr_params.rtol
         self.is_numerical_acceleration: bool = tr_params.is_numerical_acceleration
@@ -1440,7 +1348,7 @@ class ForwardModel:
     """
 
     slots = [
-        "geometry",
+        "grid",
         "time_params",
         "fl_params",
         "tr_params",
@@ -1451,7 +1359,7 @@ class ForwardModel:
 
     def __init__(
         self,
-        geometry: Geometry,
+        grid: RectilinearGrid,
         time_params: TimeParameters,
         fl_params: FlowParameters = FlowParameters(),
         tr_params: TransportParameters = TransportParameters(),
@@ -1466,7 +1374,7 @@ class ForwardModel:
 
         Parameters
         ----------
-        geometry : Geometry
+        grid : RectilinearGrid
             _description_
         time_params : TimeParameters
             _description_
@@ -1479,21 +1387,17 @@ class ForwardModel:
         wells : Sequence[Well], optional
             _description_, by default default_field([])
         """
-        self.geometry: Geometry = geometry
+        self.grid: RectilinearGrid = grid
         self.time_params: TimeParameters = time_params
         self.gch_params: GeochemicalParameters = gch_params
         # Two possible flowmodels
         if fl_params.is_gravity:
-            self.fl_model: FlowModel = DensityFlowModel(
-                geometry, time_params, fl_params
-            )
+            self.fl_model: FlowModel = DensityFlowModel(grid, time_params, fl_params)
         else:
-            self.fl_model: FlowModel = SaturatedFlowModel(
-                geometry, time_params, fl_params
-            )
+            self.fl_model: FlowModel = SaturatedFlowModel(grid, time_params, fl_params)
 
         self.tr_model: TransportModel = TransportModel(
-            geometry, time_params, tr_params, gch_params
+            grid, time_params, tr_params, gch_params
         )
         if source_terms is not None:
             self.source_terms: Dict[str, SourceTerm] = {
@@ -1508,18 +1412,18 @@ class ForwardModel:
         self.fl_model.set_constant_head_indices()
 
     def get_sources(
-        self, time: float, geometry: Geometry
+        self, time: float, grid: RectilinearGrid
     ) -> Tuple[NDArrayFloat, NDArrayFloat]:
         """Get the flow sources and sink terms."""
 
-        _unitflw_src = np.zeros((geometry.nx, geometry.ny))
-        _conc_src = np.zeros((self.tr_model.n_sp, geometry.nx, geometry.ny))
+        _unitflw_src = np.zeros((grid.nx, grid.ny))
+        _conc_src = np.zeros((self.tr_model.n_sp, grid.nx, grid.ny))
 
         # iterate the source terms
         for source in self.source_terms.values():
             # identify the source term applying
             _flw, _conc = source.get_values(time)
-            nids = source.get_node_indices(geometry)
+            nids = source.get_node_indices(grid)
 
             # Add the flowrates contribution
             _unitflw_src[nids[0], nids[1]] += _flw / source.n_nodes
@@ -1545,8 +1449,8 @@ class ForwardModel:
                     _conc_src[sp][condition.span] = 0.0
 
         return (
-            _unitflw_src / self.geometry.grid_cell_volume,  # /s
-            _conc_src / self.geometry.grid_cell_volume,  # mol/L
+            _unitflw_src / self.grid.grid_cell_volume,  # /s
+            _conc_src / self.grid.grid_cell_volume,  # mol/L
         )
 
     def add_src_term(self, source_term: SourceTerm) -> None:
@@ -1581,10 +1485,10 @@ class ForwardModel:
     def get_ij_over_u(self, time_index: int) -> NDArrayFloat:
         """Get the ij/Unorm for the CFL condition."""
         num = 1e300
-        if self.geometry.nx > 1:
-            num = min(self.geometry.dx, num)
-        if self.geometry.ny > 1:
-            num = min(self.geometry.dy, num)
+        if self.grid.nx > 1:
+            num = min(self.grid.dx, num)
+        if self.grid.ny > 1:
+            num = min(self.grid.dy, num)
         den = np.sqrt(
             self.fl_model.u_darcy_x_center[:, :, time_index] ** 2
             + self.fl_model.u_darcy_y_center[:, :, time_index] ** 2
@@ -1657,7 +1561,7 @@ def keep_a_b_if_c_in_a(
 
 
 def get_owner_neigh_indices(
-    geometry: Geometry,
+    grid: RectilinearGrid,
     span_owner: Tuple[slice, slice],
     span_neigh: Tuple[slice, slice],
     owner_indices_to_keep: Optional[NDArrayInt] = None,
@@ -1667,7 +1571,7 @@ def get_owner_neigh_indices(
 
     Parameters
     ----------
-    geometry : Geometry
+    grid : RectilinearGrid
         _description_
     span_owner : Tuple[slice, slice]
         _description_
@@ -1683,10 +1587,10 @@ def get_owner_neigh_indices(
     """
     # Get indices
     indices_owner: NDArrayInt = span_to_node_numbers_2d(
-        span_owner, nx=geometry.nx, ny=geometry.ny
+        span_owner, nx=grid.nx, ny=grid.ny
     )
     indices_neigh: NDArrayInt = span_to_node_numbers_2d(
-        span_neigh, nx=geometry.nx, ny=geometry.ny
+        span_neigh, nx=grid.nx, ny=grid.ny
     )
 
     if owner_indices_to_keep is not None:

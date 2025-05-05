@@ -24,7 +24,6 @@ Classes from which a :class:`ForwardModel` is built.
 .. autosummary::
    :toctree: _autosummary
 
-    Geometry
     TimeParameters
     FlowParameters
     TransportParameters
@@ -89,7 +88,6 @@ from .models import (
     FlowRegime,
     ForwardModel,
     GeochemicalParameters,
-    Geometry,
     SourceTerm,
     TimeParameters,
     TransportParameters,
@@ -101,7 +99,6 @@ from .solver import ForwardSolver, get_max_coupling_error
 from .transport_solver import solve_transport_semi_implicit
 
 __all__ = [
-    "Geometry",
     "TimeParameters",
     "FlowParameters",
     "TransportParameters",
