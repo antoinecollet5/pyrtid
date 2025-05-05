@@ -9,8 +9,8 @@ from scipy._lib._util import check_random_state  # To handle random_state
 from scipy.sparse import csc_array, lil_array
 from sksparse.cholmod import Factor
 
-from pyrtid.utils import sparse_cholesky
 from pyrtid.utils.grid import indices_to_node_number, span_to_node_numbers_3d
+from pyrtid.utils.sparse_helpers import sparse_cholesky
 from pyrtid.utils.types import NDArrayFloat, NDArrayInt
 
 

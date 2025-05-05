@@ -152,7 +152,6 @@ Other functions
    :toctree: _autosummary
 
     object_or_object_sequence_to_list
-    extract_hess_inv_diag
     get_super_ilu_preconditioner
     show_versions
 
@@ -223,7 +222,6 @@ from pyrtid.utils.operators import (
     gradient_ffd,
     hessian_cfd,
 )
-from pyrtid.utils.optimize import extract_hess_inv_diag
 from pyrtid.utils.random_field import (
     gen_random_ensemble,
     get_log_normalized_mean_from_normal_params,
@@ -280,7 +278,6 @@ __all__ = [
     "span_to_node_numbers_3d",
     "get_array_borders_selection",
     "get_pts_coords_regular_grid",
-    "extract_hess_inv_diag",
     "NDArrayFloat",
     "NDArrayInt",
     "NDArrayBool",
