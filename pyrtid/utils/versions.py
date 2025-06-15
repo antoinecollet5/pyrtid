@@ -2,7 +2,6 @@
 
 import logging
 
-import gstools
 import lbfgsb
 import matplotlib
 import nested_grid_plotter
@@ -22,7 +21,6 @@ def show_versions(logger: logging.Logger) -> None:
     logger.info(f"Current version = {__version__}\n")
     logger.info("Used packages version:\n")
     logger.info("iterative_ensemble_smoother = 0.1.1")  # todo update the library
-    logger.info(f"gstools                     = {gstools.__version__}")
     logger.info(f"matplotlib                  = {matplotlib.__version__}")
     logger.info(f"nested_grid_plotter         = {nested_grid_plotter.__version__}")
     logger.info(f"numdiftools                 = {numdifftools.__version__}")

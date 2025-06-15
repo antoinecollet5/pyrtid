@@ -46,7 +46,7 @@ def get_adjoint_max_coupling_error(
     This error is evaluated from the mobile adjoint concentrations.
     """
     return get_max_coupling_error(
-        atr_model.a_mob[:, :, :, time_index], atr_model.a_mob_prev
+        atr_model.a_mob[:, :, :, :, time_index], atr_model.a_mob_prev
     )
 
 
@@ -66,7 +66,7 @@ def make_transient_adj_transport_matrices(
     matrices q_prev and q_next are the same.
     """
 
-    dim = grid.nx * grid.ny
+    dim = grid.n_grid_cells
     q_prev = lil_array((dim, dim), dtype=np.float64)
     q_next = lil_array((dim, dim), dtype=np.float64)
 
@@ -87,13 +87,13 @@ def make_transient_adj_transport_matrices(
 
     # X contribution
     if grid.nx >= 2:
-        dmean: NDArrayFloat = np.zeros((grid.nx, grid.ny), dtype=np.float64)
-        dmean[:-1, :] = harmonic_mean(d[:-1, :], d[1:, :])
+        dmean: NDArrayFloat = np.zeros(grid.shape, dtype=np.float64)
+        dmean[:-1, :, :] = harmonic_mean(d[:-1, :, :], d[1:, :, :])
         dmean = dmean.flatten(order="F")
 
         if time_index + 1 != time_params.nt:
-            dmean_old: NDArrayFloat = np.zeros((grid.nx, grid.ny), dtype=np.float64)
-            dmean_old[:-1, :] = harmonic_mean(d_old[:-1, :], d_old[1:, :])
+            dmean_old: NDArrayFloat = np.zeros(grid.shape, dtype=np.float64)
+            dmean_old[:-1, :, :] = harmonic_mean(d_old[:-1, :, :], d_old[1:, :, :])
             dmean_old = dmean_old.flatten(order="F")
         else:
             dmean_old = np.zeros_like(dmean)
@@ -101,8 +101,8 @@ def make_transient_adj_transport_matrices(
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
             grid,
-            (slice(0, grid.nx - 1), slice(None)),
-            (slice(1, grid.nx), slice(None)),
+            (slice(0, grid.nx - 1), slice(None), slice(None)),
+            (slice(1, grid.nx), slice(None), slice(None)),
             owner_indices_to_keep=tr_model.free_conc_nn,
         )
 
@@ -124,8 +124,8 @@ def make_transient_adj_transport_matrices(
         # Backward scheme
         idc_owner, idc_neigh = get_owner_neigh_indices(
             grid,
-            (slice(1, grid.nx), slice(None)),
-            (slice(0, grid.nx - 1), slice(None)),
+            (slice(1, grid.nx), slice(None), slice(None)),
+            (slice(0, grid.nx - 1), slice(None), slice(None)),
             owner_indices_to_keep=tr_model.free_conc_nn,
         )
 
@@ -144,13 +144,13 @@ def make_transient_adj_transport_matrices(
 
     # Y contribution
     if grid.ny >= 2:
-        dmean: NDArrayFloat = np.zeros((grid.nx, grid.ny), dtype=np.float64)
-        dmean[:, :-1] = harmonic_mean(d[:, :-1], d[:, 1:])
+        dmean: NDArrayFloat = np.zeros(grid.shape, dtype=np.float64)
+        dmean[:, :-1, :] = harmonic_mean(d[:, :-1, :], d[:, 1:, :])
         dmean = dmean.flatten(order="F")
 
         if time_index + 1 != time_params.nt:
-            dmean_old: NDArrayFloat = np.zeros((grid.nx, grid.ny), dtype=np.float64)
-            dmean_old[:, :-1] = harmonic_mean(d_old[:, :-1], d_old[:, 1:])
+            dmean_old: NDArrayFloat = np.zeros(grid.shape, dtype=np.float64)
+            dmean_old[:, :-1, :] = harmonic_mean(d_old[:, :-1, :], d_old[:, 1:, :])
             dmean_old = dmean_old.flatten(order="F")
         else:
             dmean_old = np.zeros_like(dmean)
@@ -158,8 +158,8 @@ def make_transient_adj_transport_matrices(
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
             grid,
-            (slice(None), slice(0, grid.ny - 1)),
-            (slice(None), slice(1, grid.ny)),
+            (slice(None), slice(0, grid.ny - 1), slice(None)),
+            (slice(None), slice(1, grid.ny), slice(None)),
             owner_indices_to_keep=tr_model.free_conc_nn,
         )
 
@@ -181,8 +181,8 @@ def make_transient_adj_transport_matrices(
         # Backward scheme
         idc_owner, idc_neigh = get_owner_neigh_indices(
             grid,
-            (slice(None), slice(1, grid.ny)),
-            (slice(None), slice(0, grid.ny - 1)),
+            (slice(None), slice(1, grid.ny), slice(None)),
+            (slice(None), slice(0, grid.ny - 1), slice(None)),
             owner_indices_to_keep=tr_model.free_conc_nn,
         )
 
@@ -215,16 +215,16 @@ def _add_advection_to_adj_transport_matrices(
 
     # X contribution
     if grid.nx >= 2:
-        tmp = np.zeros((grid.nx, grid.ny))
-        tmp[:-1, :] = fl_model.u_darcy_x[1:-1, :, time_index]
+        tmp = np.zeros(grid.shape)
+        tmp[:-1, :, :] = fl_model.u_darcy_x[1:-1, :, :, time_index]
         un_x = tmp.flatten(order="F")
 
         # Forward scheme:
         normal = 1.0
         idc_owner, idc_neigh = get_owner_neigh_indices(
             grid,
-            (slice(0, grid.nx - 1), slice(None)),
-            (slice(1, grid.nx), slice(None)),
+            (slice(0, grid.nx - 1), slice(None), slice(None)),
+            (slice(1, grid.nx), slice(None), slice(None)),
             owner_indices_to_keep=tr_model.free_conc_nn,
         )
         tmp = grid.gamma_ij_x / grid.grid_cell_volume
@@ -240,8 +240,8 @@ def _add_advection_to_adj_transport_matrices(
         normal = -1.0
         idc_owner, idc_neigh = get_owner_neigh_indices(
             grid,
-            (slice(1, grid.nx), slice(None)),
-            (slice(0, grid.nx - 1), slice(None)),
+            (slice(1, grid.nx), slice(None), slice(None)),
+            (slice(0, grid.nx - 1), slice(None), slice(None)),
             owner_indices_to_keep=tr_model.free_conc_nn,
         )
 
@@ -254,16 +254,16 @@ def _add_advection_to_adj_transport_matrices(
 
     # Y contribution
     if grid.ny >= 2:
-        tmp = np.zeros((grid.nx, grid.ny))
-        tmp[:, :-1] = fl_model.u_darcy_y[:, 1:-1, time_index]
+        tmp = np.zeros(grid.shape)
+        tmp[:, :-1, :] = fl_model.u_darcy_y[:, 1:-1, :, time_index]
         un_y = tmp.flatten(order="F")
 
         # Forward scheme:
         normal = 1.0
         idc_owner, idc_neigh = get_owner_neigh_indices(
             grid,
-            (slice(None), slice(0, grid.ny - 1)),
-            (slice(None), slice(1, grid.ny)),
+            (slice(None), slice(0, grid.ny - 1), slice(None)),
+            (slice(None), slice(1, grid.ny), slice(None)),
             owner_indices_to_keep=tr_model.free_conc_nn,
         )
         tmp = grid.gamma_ij_y / grid.grid_cell_volume
@@ -279,8 +279,8 @@ def _add_advection_to_adj_transport_matrices(
         normal = -1.0
         idc_owner, idc_neigh = get_owner_neigh_indices(
             grid,
-            (slice(None), slice(1, grid.ny)),
-            (slice(None), slice(0, grid.ny - 1)),
+            (slice(None), slice(1, grid.ny), slice(None)),
+            (slice(None), slice(0, grid.ny - 1), slice(None)),
             owner_indices_to_keep=tr_model.free_conc_nn,
         )
 
@@ -325,8 +325,8 @@ def _apply_adj_divergence_effect(
     src = fl_model.lunitflow[time_index]
     src_old = fl_model.lunitflow[time_index]
 
-    div = (fl_model.u_darcy_div[:, :, time_index] - src).flatten(order="F")
-    div_old = (fl_model.u_darcy_div[:, :, time_index] - src_old).flatten(order="F")
+    div = (fl_model.u_darcy_div[:, :, :, time_index] - src).flatten(order="F")
+    div_old = (fl_model.u_darcy_div[:, :, :, time_index] - src_old).flatten(order="F")
 
     q_next.setdiag(q_next.diagonal() - tr_model.crank_nicolson_advection * div)
     q_prev.setdiag(
@@ -348,12 +348,12 @@ def _add_adj_transport_boundary_conditions(
         # We get the indices of the four borders and we apply a zero-conc gradient.
         idc_left, idc_right = get_owner_neigh_indices(
             grid,
-            (slice(0, 1), slice(None)),
-            (slice(grid.nx - 1, grid.nx), slice(None)),
+            (slice(0, 1), slice(None), slice(None)),
+            (slice(grid.nx - 1, grid.nx), slice(None), slice(None)),
         )
         tmp = grid.gamma_ij_x / grid.grid_cell_volume
 
-        _un = fl_model.u_darcy_x[:-1, :, time_index].ravel("F")[idc_left]
+        _un = fl_model.u_darcy_x[:-1, :, :, time_index].ravel("F")[idc_left]
         # _un_old = fl_model.u_darcy_x[:-1, :, time_index + 1].ravel("F")[idc_left]
         normal = -1.0
         q_next[idc_left, idc_left] += (
@@ -363,7 +363,7 @@ def _add_adj_transport_boundary_conditions(
             (1 - tr_model.crank_nicolson_advection) * _un * tmp * normal
         )  # type: ignore
 
-        _un = fl_model.u_darcy_x[1:, :, time_index].ravel("F")[idc_right]
+        _un = fl_model.u_darcy_x[1:, :, :, time_index].ravel("F")[idc_right]
         # _un_old = fl_model.u_darcy_x[1:, :, time_index + 1].ravel("F")[idc_right]
         normal = 1.0
         q_next[idc_right, idc_right] += (
@@ -378,12 +378,12 @@ def _add_adj_transport_boundary_conditions(
         # We get the indices of the four borders and we apply a zero-conc gradient.
         idc_left, idc_right = get_owner_neigh_indices(
             grid,
-            (slice(None), slice(0, 1)),
-            (slice(None), slice(grid.ny - 1, grid.ny)),
+            (slice(None), slice(0, 1), slice(None)),
+            (slice(None), slice(grid.ny - 1, grid.ny), slice(None)),
         )
         tmp = grid.gamma_ij_y / grid.grid_cell_volume
 
-        _un = fl_model.u_darcy_y[:, :-1, time_index].ravel("F")[idc_left]
+        _un = fl_model.u_darcy_y[:, :-1, :, time_index].ravel("F")[idc_left]
         normal = -1.0
         q_next[idc_left, idc_left] += (
             tr_model.crank_nicolson_advection * _un * tmp * normal
@@ -392,7 +392,7 @@ def _add_adj_transport_boundary_conditions(
             (1 - tr_model.crank_nicolson_advection) * _un * tmp * normal
         )  # type: ignore
 
-        _un = fl_model.u_darcy_y[:, 1:, time_index].ravel("F")[idc_right]
+        _un = fl_model.u_darcy_y[:, 1:, :, time_index].ravel("F")[idc_right]
         normal = 1.0
         q_next[idc_right, idc_right] += (
             tr_model.crank_nicolson_advection * _un * tmp * normal
@@ -430,7 +430,7 @@ def solve_adj_transport_transient_semi_implicit(
         )
 
         # # Add 1/dt for the left term contribution: only for free head
-        # diag = np.zeros(shape)
+        # diag = np.zeros(grid.n_grid_cells)
         # diag[fl_model.free_head_nn] += float(1.0 / time_params.ldt[time_index - 1])
         # # One for the cts head -> we must divide by storage coef and mesh volume
         # because
@@ -440,7 +440,7 @@ def solve_adj_transport_transient_semi_implicit(
         # )
 
         # _q_next.setdiag(_q_next.diagonal() + diag)
-        # diag = np.zeros(a_fl_model.a_head[:, :, -1].size)
+        # diag = np.zeros(grid.n_grid_cells)
         # # Need a try - except for n = N_{ts} resolution:
         # then \Delta t^{N_{ts}+1} does not
         # # exists
@@ -495,7 +495,7 @@ def solve_adj_transport_transient_semi_implicit(
     # Get the previous vector
     try:
         prev_vector = (
-            a_tr_model.a_mob[:, :, :, time_index + 1].reshape(2, -1, order="F").T
+            a_tr_model.a_mob[:, :, :, :, time_index + 1].reshape(2, -1, order="F").T
         )
     except IndexError:
         prev_vector = np.zeros((grid.n_grid_cells, 2))
@@ -512,7 +512,7 @@ def solve_adj_transport_transient_semi_implicit(
 
     # Add the adjoint density source term for species 1
     tmp[0, :] += (
-        a_tr_model.a_density[:, :, time_index].ravel("F")
+        a_tr_model.a_density[:, :, :, time_index].ravel("F")
         * WATER_DENSITY
         * TDS_LINEAR_COEFFICIENT
         * gch_params.Ms
@@ -521,7 +521,7 @@ def solve_adj_transport_transient_semi_implicit(
 
     # Add the adjoint density source term for species 2
     tmp[1, :] += (
-        a_tr_model.a_density[:, :, time_index].ravel("F")
+        a_tr_model.a_density[:, :, :, time_index].ravel("F")
         * WATER_DENSITY
         * TDS_LINEAR_COEFFICIENT
         * gch_params.Ms2
@@ -550,8 +550,8 @@ def solve_adj_transport_transient_semi_implicit(
         )
 
     # Note: we go backward in time, so time_index -1...
-    a_tr_model.a_mob[:, :, :, time_index] = tmp.reshape(
-        tr_model.n_sp, grid.nx, grid.ny, order="F"
+    a_tr_model.a_mob[:, :, :, :, time_index] = tmp.reshape(
+        tr_model.n_sp, *grid.shape, order="F"
     )
 
     return exit_code

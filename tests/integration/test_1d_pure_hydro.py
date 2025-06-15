@@ -24,6 +24,7 @@ def get_forward_and_obs(
 ) -> Tuple[dmfwd.ForwardModel, dminv.Observables]:
     nx = 40  # number of voxels along the x axis
     ny = 1  # number of voxels along the y axis
+    nz = 1
     dx = 9.3  # voxel dimension along the x axis
     dy = 8.45  # voxel dimension along the y axis
     dz = 1.0  # voxel dimension along the z axis
@@ -47,7 +48,7 @@ def get_forward_and_obs(
     production_locations = [12, 28]
     injection_locations = [4, 20, 36]
 
-    perm_reference = np.ones((nx, ny)) * MIN_VAL_K * 1.5  # m2/s
+    perm_reference = np.ones((nx, ny, nz)) * MIN_VAL_K * 1.5  # m2/s
     perm_reference[10:20, 0] = 2e-3
 
     # add a bit of noise
@@ -55,7 +56,7 @@ def get_forward_and_obs(
     # (1 + np.random.default_rng(2023).random(size=perm_reference.shape))
 
     # Initial estimate = an homogeneous value
-    perm_estimate = np.ones((nx, ny)) * MIN_VAL_K  # m2/s
+    perm_estimate = np.ones((nx, ny, nz)) * MIN_VAL_K  # m2/s
     # perm_reference = np.ones((nx, ny)) * MIN_VAL_K * 4  # m2/s
     # add a bit of noise
     # perm_estimate *=
@@ -69,7 +70,7 @@ def get_forward_and_obs(
         dt_min=dt_min,
         courant_factor=courant_factor,
     )
-    grid = RectilinearGrid(nx=nx, ny=ny, dx=dx, dy=dy, dz=dz)
+    grid = RectilinearGrid(nx=nx, ny=ny, nz=nz, dx=dx, dy=dy, dz=dz)
     fl_params = dmfwd.FlowParameters(
         permeability=k0,
         storage_coefficient=storage_coefficient,
@@ -89,13 +90,13 @@ def get_forward_and_obs(
 
     # Boundary conditions
     base_model.add_boundary_conditions(
-        dmfwd.ConstantHead(span=(slice(0, 1), slice(None)))
+        dmfwd.ConstantHead(span=(slice(0, 1), slice(None), slice(None)))
     )
-    base_model.fl_model.lhead[0][0, :] = cst_head_left
+    base_model.fl_model.lhead[0][0, :, :] = cst_head_left
     base_model.add_boundary_conditions(
-        dmfwd.ConstantHead(span=(slice(nx - 1, nx), slice(None)))
+        dmfwd.ConstantHead(span=(slice(nx - 1, nx), slice(None), slice(None)))
     )
-    base_model.fl_model.lhead[0][-1, :] = cst_head_right
+    base_model.fl_model.lhead[0][-1, :, :] = cst_head_right
 
     day = 0
     prod_flw = -8.0 / 3600  # 8 m3/h
@@ -181,7 +182,7 @@ def get_forward_and_obs(
         # interpolate the values
         obs_values_head[count] = (
             sp.interpolate.interp1d(
-                all_times, model_reference.fl_model.head[ix, 0, :], kind="cubic"
+                all_times, model_reference.fl_model.head[ix, 0, 0, :], kind="cubic"
             )(obs_times_in_s_head)
             + obs_noise_head[count, :]
         )

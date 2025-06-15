@@ -63,12 +63,12 @@ def test_eval_model_loss_function(
     )
 
     # generate synthetic data
-    model.tr_model.lmob.append(np.ones((2, 20, 20)) * 2.0)
-    model.tr_model.lmob.append(np.ones((2, 20, 20)) * 3.0)
+    model.tr_model.lmob.append(np.ones((2, 20, 20, 1)) * 2.0)
+    model.tr_model.lmob.append(np.ones((2, 20, 20, 1)) * 3.0)
     model.time_params.save_dt()
     model.time_params.save_dt()
 
-    model.tr_model.porosity[:, :] = np.random.default_rng(2023).random(size=(20, 20))
+    model.tr_model.porosity[:, :] = np.random.default_rng(2023).random(size=(20, 20, 1))
 
     obs1 = Observable(
         StateVariable.CONCENTRATION,

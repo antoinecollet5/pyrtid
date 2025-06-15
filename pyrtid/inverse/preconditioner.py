@@ -102,7 +102,6 @@ from typing import Generator, List, Optional, Sequence, Tuple, Union
 import numdifftools as nd
 import numpy as np
 import scipy as sp
-from scipy._lib._util import check_random_state  # To handle random_state
 from scipy.sparse import csc_array, lil_array
 from sksparse.cholmod import Factor
 
@@ -112,6 +111,7 @@ from pyrtid.utils import (
     NDArrayFloat,
     NDArrayInt,
     RectilinearGrid,
+    check_random_state,
     object_or_object_sequence_to_list,
     sparse_cholesky,
 )
@@ -2544,7 +2544,7 @@ class Slicer(SubSelector):
     ) -> None:
         """Initialize the instance."""
         field_size = grid.n_grid_cells
-        node_numbers = np.arange(field_size).reshape(grid.shape2d, order="F")[span]
+        node_numbers = np.arange(field_size).reshape(grid.shape, order="F")[span]
         super().__init__(node_numbers, grid)
 
 

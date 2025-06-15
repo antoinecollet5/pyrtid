@@ -3,7 +3,8 @@ import pytest
 from pyrtid.utils import (
     NDArrayBool,
     get_a_not_in_b_1d,
-    get_array_borders_selection,
+    get_array_borders_selection_2d,
+    get_array_borders_selection_3d,
     get_pts_coords_regular_grid,
     indices_to_node_number,
     node_number_to_indices,
@@ -83,10 +84,93 @@ def test_span_to_node_numbers_2d() -> None:
         (3, 3, np.array([[True, True, True], [True, False, True], [True, True, True]])),
     ],
 )
-def test_get_array_borders_selection(
+def test_get_array_borders_selection_2d(
     nx: int, ny: int, expected_array: NDArrayBool
 ) -> None:
-    np.testing.assert_array_equal(get_array_borders_selection(nx, ny), expected_array)
+    np.testing.assert_array_equal(
+        get_array_borders_selection_2d(nx, ny), expected_array
+    )
+
+
+@pytest.mark.parametrize(
+    "nx, ny, nz, expected_array",
+    [
+        (1, 1, 1, np.array([[[False]]])),
+        (1, 1, 2, np.array([[[True, True]]])),
+        (2, 2, 1, np.array([[[True], [True]], [[True], [True]]])),
+        (5, 1, 1, np.array([[[True]], [[False]], [[False]], [[False]], [[True]]])),
+        (1, 5, 1, np.array([[[True], [False], [False], [False], [True]]])),
+        (
+            3,
+            3,
+            1,
+            np.array(
+                [
+                    [[True], [True], [True]],
+                    [[True], [False], [True]],
+                    [[True], [True], [True]],
+                ]
+            ),
+        ),
+        (
+            2,
+            2,
+            2,
+            np.array([[[True, True], [True, True]], [[True, True], [True, True]]]),
+        ),
+        (
+            3,
+            3,
+            3,
+            np.array(
+                [
+                    [[True, True, True], [True, True, True], [True, True, True]],
+                    [[True, True, True], [True, False, True], [True, True, True]],
+                    [[True, True, True], [True, True, True], [True, True, True]],
+                ]
+            ),
+        ),
+        (
+            4,
+            4,
+            4,
+            np.array(
+                [
+                    [
+                        [True, True, True, True],
+                        [True, True, True, True],
+                        [True, True, True, True],
+                        [True, True, True, True],
+                    ],
+                    [
+                        [True, True, True, True],
+                        [True, False, False, True],
+                        [True, False, False, True],
+                        [True, True, True, True],
+                    ],
+                    [
+                        [True, True, True, True],
+                        [True, False, False, True],
+                        [True, False, False, True],
+                        [True, True, True, True],
+                    ],
+                    [
+                        [True, True, True, True],
+                        [True, True, True, True],
+                        [True, True, True, True],
+                        [True, True, True, True],
+                    ],
+                ]
+            ),
+        ),
+    ],
+)
+def test_get_array_borders_selection_3d(
+    nx: int, ny: int, nz: int, expected_array: NDArrayBool
+) -> None:
+    np.testing.assert_array_equal(
+        get_array_borders_selection_3d(nx, ny, nz), expected_array
+    )
 
 
 @pytest.mark.parametrize(

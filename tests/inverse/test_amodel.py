@@ -52,43 +52,51 @@ def test_init_adjoint_sources(max_obs_time, mean_type) -> None:
     # generate synthetic data
     # I don't understand why is does not work if we leave it to 997... ???
     model.tr_model.ldensity.append(
-        np.abs(np.random.default_rng(2023).random((grid.nx, grid.ny)) + 2.0)
+        np.abs(np.random.default_rng(2023).random(grid.shape) + 2.0)
     )
     model.tr_model.ldensity.append(
-        np.abs(np.random.default_rng(2023).random((grid.nx, grid.ny)) + 2.0)
+        np.abs(np.random.default_rng(2023).random(grid.shape) + 2.0)
     )
     model.tr_model.ldensity.append(
-        np.abs(np.random.default_rng(2023).random((grid.nx, grid.ny)) + 3.0)
+        np.abs(np.random.default_rng(2023).random(grid.shape) + 3.0)
     )
     model.tr_model.lmob.append(
         np.abs(
-            np.random.default_rng(2023).random((model.tr_model.n_sp, grid.nx, grid.ny))
+            np.random.default_rng(2023).random(
+                (model.tr_model.n_sp, grid.nx, grid.ny, grid.nz)
+            )
             + 2.0
         )
     )
     model.tr_model.lmob.append(
         np.abs(
-            np.random.default_rng(2023).random((model.tr_model.n_sp, grid.nx, grid.ny))
+            np.random.default_rng(2023).random(
+                (model.tr_model.n_sp, grid.nx, grid.ny, grid.nz)
+            )
             + 3.0
         )
     )
     model.tr_model.limmob.append(
         np.abs(
-            np.random.default_rng(2023).random((model.tr_model.n_sp, grid.nx, grid.ny))
+            np.random.default_rng(2023).random(
+                (model.tr_model.n_sp, grid.nx, grid.ny, grid.nz)
+            )
             + 2.0
         )
     )
     model.tr_model.limmob.append(
         np.abs(
-            np.random.default_rng(2023).random((model.tr_model.n_sp, grid.nx, grid.ny))
+            np.random.default_rng(2023).random(
+                (model.tr_model.n_sp, grid.nx, grid.ny, grid.nz)
+            )
             + 3.0
         )
     )
     model.fl_model.lhead.append(
-        np.abs(np.random.default_rng(2023).random((grid.nx, grid.ny)) + 2.0)
+        np.abs(np.random.default_rng(2023).random(grid.shape) + 2.0)
     )
     model.fl_model.lhead.append(
-        np.abs(np.random.default_rng(2023).random((grid.nx, grid.ny)) + 3.0)
+        np.abs(np.random.default_rng(2023).random(grid.shape) + 3.0)
     )
 
     for head in model.fl_model.lhead:
@@ -97,9 +105,7 @@ def test_init_adjoint_sources(max_obs_time, mean_type) -> None:
     model.time_params.save_dt()
     model.time_params.save_dt()
 
-    model.fl_model.permeability = np.abs(
-        np.random.default_rng(2023).random((grid.nx, grid.ny))
-    )
+    model.fl_model.permeability = np.abs(np.random.default_rng(2023).random(grid.shape))
 
     observables = [
         dminv.Observable(
@@ -159,13 +165,13 @@ def test_init_adjoint_sources(max_obs_time, mean_type) -> None:
     def wrapper_conc(arr: NDArrayFloat) -> float:
         model1 = copy.copy(model)
         for i in range(arr.shape[-1]):
-            model1.tr_model.lmob[i][0] = arr[:, :, i]
+            model1.tr_model.lmob[i][0] = arr[:, :, :, i]
         return dminv.eval_model_loss_ls(model1, observables, max_obs_time)
 
     np.testing.assert_allclose(
         adj_model.a_tr_model.a_conc_sources[0]
         .toarray()
-        .reshape(grid.nx, grid.ny, time_params.nt, order="F"),
+        .reshape(*grid.shape, time_params.nt, order="F"),
         finite_gradient(model.tr_model.mob[0], wrapper_conc),
     )
 
@@ -176,7 +182,7 @@ def test_init_adjoint_sources(max_obs_time, mean_type) -> None:
 
     np.testing.assert_allclose(
         adj_model.a_fl_model.a_permeability_sources.toarray().reshape(
-            grid.nx, grid.ny, order="F"
+            *grid.shape, order="F"
         ),
         finite_gradient(model.fl_model.permeability, wrapper_perm),
     )

@@ -14,7 +14,7 @@ import types
 import warnings
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence, Tuple, Union
+from typing import Dict, List, Optional, Sequence, Set, Tuple, Union
 
 import numpy as np
 from scipy.sparse import lil_array
@@ -29,7 +29,7 @@ from pyrtid.utils import (
     get_a_not_in_b_1d,
     node_number_to_indices,
     object_or_object_sequence_to_list,
-    span_to_node_numbers_2d,
+    span_to_node_numbers_3d,
 )
 
 GRAVITY = 9.81
@@ -507,7 +507,7 @@ class BoundaryCondition(ABC):
         The span over which the condition applies.
     """
 
-    span: Union[NDArrayInt, Tuple[slice, slice]]
+    span: Union[NDArrayInt, Tuple[slice, slice, slice]]
 
 
 @dataclass
@@ -519,9 +519,12 @@ class ConstantHead(BoundaryCondition):
     ----------
     span: slice
         The span over which the condition applies.
+    values: Union[float, NDArrayFloat]
+        The values to set.
     """
 
-    span: Union[NDArrayInt, Tuple[slice, slice], slice]
+    span: Union[NDArrayInt, Tuple[slice, slice, slice], slice]
+    values: Union[float, NDArrayFloat]
 
 
 @dataclass
@@ -533,9 +536,12 @@ class ConstantConcentration(BoundaryCondition):
     ----------
     span: slice
         The span over which the condition applies.
+    values: Union[float, NDArrayFloat]
+        The values to set.
     """
 
-    span: Union[NDArrayInt, Tuple[slice, slice], slice]
+    span: Union[NDArrayInt, Tuple[slice, slice, slice], slice]
+    value: Union[float, NDArrayFloat]
 
 
 @dataclass
@@ -549,7 +555,7 @@ class ZeroConcGradient(BoundaryCondition):
         The span over which the condition applies.
     """
 
-    span: Union[NDArrayInt, Tuple[slice, slice], slice]
+    span: Union[NDArrayInt, Tuple[slice, slice, slice], slice]
 
 
 class FlowModel(ABC):
@@ -565,6 +571,7 @@ class FlowModel(ABC):
         "lpressure",
         "lu_darcy_x",
         "lu_darcy_y",
+        "lu_darcy_z",
         "lu_darcy_div",
         "lunitflow",
         "boundary_conditions",
@@ -575,10 +582,12 @@ class FlowModel(ABC):
         "q_prev",
         "q_next",
         "rtol",
-        "is_boundary_east",
-        "is_boundary_west",
-        "is_boundary_north",
-        "is_boundary_south",
+        "west_boundary_idx",
+        "east_boundary_idx",
+        "north_boundary_idx",
+        "south_boundary_idx",
+        "top_boundary_idx",
+        "bottom_boundary_idx",
         "is_save_spmats",
         "l_q_next",
         "l_q_prev",
@@ -596,16 +605,16 @@ class FlowModel(ABC):
         """Initialize the instance."""
         self.crank_nicolson: float = fl_params.crank_nicolson
         self.storage_coefficient: NDArrayFloat = (
-            np.ones((grid.nx, grid.ny), dtype=np.float64)
-            * fl_params.storage_coefficient
+            np.ones(grid.shape, dtype=np.float64) * fl_params.storage_coefficient
         )
         self.regime: FlowRegime = fl_params.regime
         self.permeability: NDArrayFloat = (
-            np.ones((grid.nx, grid.ny), dtype=np.float64) * fl_params.permeability
+            np.ones(grid.shape, dtype=np.float64) * fl_params.permeability
         )
 
         self.lu_darcy_x: List[NDArrayFloat] = []
         self.lu_darcy_y: List[NDArrayFloat] = []
+        self.lu_darcy_z: List[NDArrayFloat] = []
         self.lu_darcy_div: List[NDArrayFloat] = []
         self.lunitflow: List[NDArrayFloat] = []
 
@@ -614,7 +623,7 @@ class FlowModel(ABC):
         self.q_next_no_dt = lil_array((grid.n_grid_cells, grid.n_grid_cells))
         self.q_prev = lil_array((grid.n_grid_cells, grid.n_grid_cells))
         self.q_next = lil_array((grid.n_grid_cells, grid.n_grid_cells))
-        self.cst_head_nn: NDArrayInt = np.array([], dtype=np.int32)
+        self.cst_head_nn: NDArrayInt = np.array([], dtype=np.int64)
         self.rtol = fl_params.rtol
         self.vertical_axis = fl_params.vertical_axis
         self.vertical_mesh_size = {
@@ -623,26 +632,22 @@ class FlowModel(ABC):
             VerticalAxis.Z: grid.dz,
         }[fl_params.vertical_axis]
 
-        # Indicate whether there is a boundary on the border of the domain
-        # right border
-        self.is_boundary_east: NDArrayBool = np.zeros(grid.ny, dtype=np.bool_)
-        # left border
-        self.is_boundary_west: NDArrayBool = np.zeros(grid.ny, dtype=np.bool_)
-        # top border
-        self.is_boundary_north: NDArrayBool = np.zeros(grid.nx, dtype=np.bool_)
-        # right border
-        self.is_boundary_south: NDArrayBool = np.zeros(grid.nx, dtype=np.bool_)
+        # Empty arrays
+        self.west_boundary_idx: NDArrayInt = np.zeros([], dtype=np.int64)
+        self.east_boundary_idx: NDArrayInt = np.zeros([], dtype=np.int64)
+        self.south_boundary_idx: NDArrayInt = np.zeros([], dtype=np.int64)
+        self.north_boundary_idx: NDArrayInt = np.zeros([], dtype=np.int64)
+        self.bottom_boundary_idx: NDArrayInt = np.zeros([], dtype=np.int64)
+        self.top_boundary_idx: NDArrayInt = np.zeros([], dtype=np.int64)
 
         # These are list of ndarrays
-        self.lhead: List[NDArrayFloat] = [
-            np.zeros((grid.nx, grid.ny), dtype=np.float64)
-        ]
+        self.lhead: List[NDArrayFloat] = [np.zeros(grid.shape, dtype=np.float64)]
 
         # TODO: provide the initial density
         self.lpressure: List[NDArrayFloat] = [
             (
-                np.zeros((grid.nx, grid.ny), dtype=np.float64)
-                - self._get_mesh_center_vertical_pos().T
+                np.zeros(grid.shape, dtype=np.float64)
+                - self._get_mesh_center_vertical_pos()
             )
             * GRAVITY
             * WATER_DENSITY
@@ -668,52 +673,61 @@ class FlowModel(ABC):
 
         This is read-only.
         """
-        return np.transpose(np.array(self.lhead), axes=(1, 2, 0))
+        return np.transpose(np.array(self.lhead), axes=(1, 2, 3, 0))
 
     @property
     def pressure(self) -> NDArrayFloat:
         """
-        Return pressure [Pa] as array with dimension (nx, ny, nt).
+        Return pressure [Pa] as array with dimension (nx, ny, nz, nt).
 
         This is read-only.
         """
-        return np.transpose(np.array(self.lpressure), axes=(1, 2, 0))
+        return np.transpose(np.array(self.lpressure), axes=(1, 2, 3, 0))
 
     @property
     def u_darcy_x(self) -> NDArrayFloat:
         """
-        Return x-darcy velocities as array with dimension (nx, ny, nt + 1).
+        Return x-darcy velocities as array with dimension (nx, ny, nz, nt + 1).
 
         This is read-only.
         """
-        return np.transpose(np.array(self.lu_darcy_x), axes=(1, 2, 0))
+        return np.transpose(np.array(self.lu_darcy_x), axes=(1, 2, 3, 0))
 
     @property
     def u_darcy_y(self) -> NDArrayFloat:
         """
-        Return y-darcy velocities as array with dimension (nx, ny, nt + 1).
+        Return y-darcy velocities as array with dimension (nx, ny, nz, nt + 1).
 
         This is read-only.
         """
-        return np.transpose(np.array(self.lu_darcy_y), axes=(1, 2, 0))
+        return np.transpose(np.array(self.lu_darcy_y), axes=(1, 2, 3, 0))
+
+    @property
+    def u_darcy_z(self) -> NDArrayFloat:
+        """
+        Return z-darcy velocities as array with dimension (nx, ny, nz, nt + 1).
+
+        This is read-only.
+        """
+        return np.transpose(np.array(self.lu_darcy_z), axes=(1, 2, 3, 0))
 
     @property
     def u_darcy_div(self) -> NDArrayFloat:
         """
-        Return darcy divergence as array with dimension (nx, ny, nt + 1).
+        Return darcy divergence as array with dimension (nx, ny, nz, nt + 1).
 
         This is read-only.
         """
-        return np.transpose(np.array(self.lu_darcy_div), axes=(1, 2, 0))
+        return np.transpose(np.array(self.lu_darcy_div), axes=(1, 2, 3, 0))
 
     @property
     def unitflow(self) -> NDArrayFloat:
         """
-        Return flow sources sources as array with dimension (nx, ny, nt + 1).
+        Return flow sources sources as array with dimension (nx, ny, nz, nt + 1).
 
         This is read-only.
         """
-        return np.transpose(np.array(self.lunitflow), axes=(1, 2, 0))
+        return np.transpose(np.array(self.lunitflow), axes=(1, 2, 3, 0))
 
     def add_boundary_conditions(self, condition: BoundaryCondition) -> None:
         """Add a boundary condition to the flow model."""
@@ -723,39 +737,89 @@ class FlowModel(ABC):
             )
         self.boundary_conditions.append(condition)
 
+        if isinstance(condition, ConstantHead):
+            # 0) Set the values
+            self.lhead[0][condition.span] = condition.values
+            # 1) Get the new constant head node numbers
+
     def set_constant_head_indices(self) -> None:
         """Set the indices of nodes with constant head."""
         node_numbers = np.array([], dtype=np.int32)
-        nx: int = self.lhead[0].shape[0]  # type: ignore
-        ny: int = self.lhead[0].shape[1]  # type: ignore
+        nx, ny, nz = self.lhead[0].shape  # type: ignore
+
+        _west_bidx: Set[Tuple[int, int]] = set()
+        _east_bidx: Set[Tuple[int, int]] = set()
+        _south_bidx: Set[Tuple[int, int]] = set()
+        _north_bidx: Set[Tuple[int, int]] = set()
+        _bottom_bidx: Set[Tuple[int, int]] = set()
+        _top_bidx: Set[Tuple[int, int]] = set()
+
         for condition in self.boundary_conditions:
             if isinstance(condition, ConstantHead):
                 # 1) Get the new constant head node numbers
-                new_nn: NDArrayInt = span_to_node_numbers_2d(
-                    condition.span,
-                    nx,
-                    ny,
-                )
+                new_nn: NDArrayInt = span_to_node_numbers_3d(condition.span, nx, ny, nz)
                 # 2) add the new nn to the global list of nn
                 node_numbers = np.hstack([node_numbers, new_nn])
-                # 3) determine if the segment is along one of the 4 borders of the
+
+                # 3) determine if the segment is along one of the 5 borders of the
                 # domain. First we start by getting the indices in the grid
-                idx = node_number_to_indices(new_nn, nx, ny)
+                _ix, _iy, _iz = node_number_to_indices(new_nn, nx, ny)
                 # The span must be continuous (rectangular group of grid cells),
                 # so we can estimate the direction of constant head segment:
                 # must be more than 2 values on one of the borders
-                non_zero_west: int = np.count_nonzero(idx[0] == 0)
-                if non_zero_west > 1 or (non_zero_west == 1 and ny == 1):
-                    self.is_boundary_west[idx[1]] = True
-                non_zero_east: int = np.count_nonzero(idx[0] == nx - 1)
-                if non_zero_east > 1 or (non_zero_east == 1 and ny == 1):
-                    self.is_boundary_east[idx[1]] = True
-                non_zero_north: int = np.count_nonzero(idx[1] == 0)
-                if non_zero_north > 1 or (non_zero_north == 1 and nx == 1):
-                    self.is_boundary_north[idx[0]] = True
-                non_zero_south: int = np.count_nonzero(idx[1] == ny - 1)
-                if non_zero_south > 1 or (non_zero_south == 1 and nx == 1):
-                    self.is_boundary_south[idx[0]] = True
+                # X
+                non_zero_west: int = np.count_nonzero(_ix == 0)
+                if non_zero_west > 1 or (non_zero_west == 1 and ny == 1 and nz == 1):
+                    for iy, iz in zip(_iy, _iz):
+                        _west_bidx.add((iy, iz))
+                non_zero_east: int = np.count_nonzero(_ix == nx - 1)
+                if non_zero_east > 1 or (non_zero_east == 1 and ny == 1 and nz == 1):
+                    for iy, iz in zip(_iy, _iz):
+                        _east_bidx.add((iy, iz))
+
+                # Y
+                non_zero_south: int = np.count_nonzero(_iy == 0)
+                if non_zero_south > 1 or (non_zero_south == 1 and nx == 1 and nz == 1):
+                    for ix, iz in zip(_ix, _iz):
+                        _south_bidx.add((ix, iz))
+
+                non_zero_north: int = np.count_nonzero(_iy == ny - 1)
+                if non_zero_north > 1 or (non_zero_north == 1 and nx == 1 and nz == 1):
+                    for ix, iz in zip(_ix, _iz):
+                        _north_bidx.add((ix, iz))
+
+                # Z
+                non_zero_bottom: int = np.count_nonzero(_iz == 0)
+                if non_zero_bottom > 1 or (
+                    non_zero_bottom == 1 and nx == 1 and ny == 1
+                ):
+                    for ix, iy in zip(_ix, _iy):
+                        _bottom_bidx.add((ix, iy))
+
+                non_zero_top: int = np.count_nonzero(_iz == nz - 1)
+                if non_zero_top > 1 or (non_zero_top == 1 and nx == 1 and ny == 1):
+                    for ix, iy in zip(_ix, _iy):
+                        _top_bidx.add((ix, iy))
+
+        # domain boundary indices to numpy => easier indexing
+        self.west_boundary_idx = np.atleast_2d(
+            np.array(list(_west_bidx), dtype=np.int64).T
+        )
+        self.east_boundary_idx = np.atleast_2d(
+            np.array(list(_east_bidx), dtype=np.int64).T
+        )
+        self.south_boundary_idx = np.atleast_2d(
+            np.array(list(_south_bidx), dtype=np.int64).T
+        )
+        self.north_boundary_idx = np.atleast_2d(
+            np.array(list(_north_bidx), dtype=np.int64).T
+        )
+        self.bottom_boundary_idx = np.atleast_2d(
+            np.array(list(_bottom_bidx), dtype=np.int64).T
+        )
+        self.top_boundary_idx = np.atleast_2d(
+            np.array(list(_top_bidx), dtype=np.int64).T
+        )
 
         # remove duplicates from the global list
         self.cst_head_nn: NDArrayInt = np.unique(node_numbers.flatten())
@@ -767,7 +831,7 @@ class FlowModel(ABC):
         return np.array(
             node_number_to_indices(
                 self.cst_head_nn, nx=self.head.shape[0], ny=self.head.shape[1]
-            )[:2]
+            )
         )
 
     @property
@@ -785,7 +849,7 @@ class FlowModel(ABC):
         return np.array(
             node_number_to_indices(
                 self.free_head_nn, nx=self.head.shape[0], ny=self.head.shape[1]
-            )[:2]
+            )
         )
 
     def reinit(self) -> None:
@@ -794,6 +858,7 @@ class FlowModel(ABC):
         self.lpressure = self.lpressure[:1]
         self.lu_darcy_x = []
         self.lu_darcy_y = []
+        self.lu_darcy_z = []
         self.lu_darcy_div = []
         self.lunitflow = []
         self.set_constant_head_indices()
@@ -807,15 +872,17 @@ class FlowModel(ABC):
         """The darcy x-velocities estimated at the mesh centers."""
         # Compute the average velocity
         tmp = np.zeros((self.head.shape))
-        tmp += self.u_darcy_x[:-1, :, :]
-        tmp += self.u_darcy_x[1:, :, :]
+        tmp += self.u_darcy_x[:-1, :, :, :]
+        tmp += self.u_darcy_x[1:, :, :, :]
         # All nodes have 2 boundaries along the y axis, except for the
         # borders grid cells
-        tmp[1:-1, :, :] /= 2
+        tmp[1:-1, :, :, :] /= 2
         # for the borders we need to check if a boundary (flow) exist or not
         # this is a consequence of constant head and imposed flux
-        tmp[0, self.is_boundary_west, :] /= 2
-        tmp[-1, self.is_boundary_east, :] /= 2
+        if self.west_boundary_idx.size != 0:
+            tmp[0, self.west_boundary_idx[0], self.west_boundary_idx[1], :] /= 2
+        if self.east_boundary_idx.size != 0:
+            tmp[-1, self.east_boundary_idx[0], self.east_boundary_idx[1], :] /= 2
         return tmp
 
     @property
@@ -823,15 +890,37 @@ class FlowModel(ABC):
         """The darcy y-velocities estimated at the mesh centers."""
         # Compute the average velocity
         tmp = np.zeros((self.head.shape))
-        tmp += self.u_darcy_y[:, :-1, :]
-        tmp += self.u_darcy_y[:, 1:, :]
-        tmp[:, 1:-1, :] /= 2
+        tmp += self.u_darcy_y[:, :-1, :, :]
+        tmp += self.u_darcy_y[:, 1:, :, :]
+        tmp[:, 1:-1, :, :] /= 2
         # All nodes have 2 boundaries along the x axis, except for the
         # borders grid cells
         # for the borders we need to check if a boundary (flow) exist or not
         # this is a consequence of constant head and imposed flux
-        tmp[self.is_boundary_south, 0, :] /= 2
-        tmp[self.is_boundary_north, -1, :] /= 2
+        if self.south_boundary_idx.size != 0:
+            tmp[self.south_boundary_idx[0], 0, self.south_boundary_idx[1], :] /= 2
+        if self.north_boundary_idx.size != 0:
+            tmp[self.north_boundary_idx[0], -1, self.north_boundary_idx[1], :] /= 2
+
+        return tmp
+
+    @property
+    def u_darcy_z_center(self) -> NDArrayFloat:
+        """The darcy Z-velocities estimated at the mesh centers."""
+        # Compute the average velocity
+        tmp = np.zeros((self.head.shape))
+        tmp += self.u_darcy_z[:, :, :-1, :]
+        tmp += self.u_darcy_z[:, :, 1:, :]
+        tmp[:, :, 1:-1, :] /= 2
+        # All nodes have 2 boundaries along the z axis, except for the
+        # borders grid cells
+        # for the borders we need to check if a boundary (flow) exist or not
+        # this is a consequence of constant head and imposed flux
+        if self.bottom_boundary_idx.size != 0:
+            tmp[self.bottom_boundary_idx[0], self.bottom_boundary_idx[1], 0, :] /= 2
+        if self.top_boundary_idx.size != 0:
+            tmp[self.top_boundary_idx[0], self.top_boundary_idx[1], -1, :] /= 2
+
         return tmp
 
     @property
@@ -844,106 +933,172 @@ class FlowModel(ABC):
         # for x
         tmp_x = np.zeros_like(self.lhead[time_index])
         tmp_x += (
-            self.lu_darcy_x[time_index][:-1, :] + self.lu_darcy_x[time_index][1:, :]
+            self.lu_darcy_x[time_index][:-1, :, :]
+            + self.lu_darcy_x[time_index][1:, :, :]
         )
         # All nodes have 2 boundaries along the y axis, except for the
         # borders grid cells
-        tmp_x[1:-1, :] /= 2
+        tmp_x[1:-1, :, :] /= 2
         # for the borders we need to check if a boundary (flow) exist or not
         # this is a consequence of constant head and imposed flux
-        tmp_x[0, self.is_boundary_west] /= 2
-        tmp_x[-1, self.is_boundary_east] /= 2
+        if self.west_boundary_idx.size != 0:
+            tmp_x[0, self.west_boundary_idx[0], self.west_boundary_idx[1]] /= 2
+        if self.east_boundary_idx.size != 0:
+            tmp_x[-1, self.east_boundary_idx[0], self.east_boundary_idx[1]] /= 2
 
         # for y
         tmp_y = np.zeros((self.lhead[time_index].shape))
         tmp_y += (
-            self.lu_darcy_y[time_index][:, :-1] + self.lu_darcy_y[time_index][:, 1:]
+            self.lu_darcy_y[time_index][:, :-1, :]
+            + self.lu_darcy_y[time_index][:, 1:, :]
         )
         # All nodes have 2 boundaries along the y axis, except for the
         # borders grid cells
-        tmp_y[:, 1:-1] /= 2
+        tmp_y[:, 1:-1, :] /= 2
         # for the borders we need to check if a boundary (flow) exist or not
         # this is a consequence of constant head and imposed flux
-        tmp_y[self.is_boundary_south, 0] /= 2
-        tmp_y[self.is_boundary_north, -1] /= 2
+        if self.south_boundary_idx.size != 0:
+            tmp_y[self.south_boundary_idx[0], 0, self.south_boundary_idx[1]] /= 2
+        if self.north_boundary_idx.size != 0:
+            tmp_y[self.north_boundary_idx[0], -1, self.north_boundary_idx[1]] /= 2
+
+        # for z
+        tmp_z = np.zeros((self.lhead[time_index].shape))
+        tmp_z += (
+            self.lu_darcy_z[time_index][:, :, :-1]
+            + self.lu_darcy_z[time_index][:, :, 1:]
+        )
+        # All nodes have 2 boundaries along the y axis, except for the
+        # borders grid cells
+        tmp_z[:, :, 1:-1] /= 2
+        # for the borders we need to check if a boundary (flow) exist or not
+        # this is a consequence of constant head and imposed flux
+        if self.bottom_boundary_idx.size != 0:
+            tmp_z[self.bottom_boundary_idx[0], self.bottom_boundary_idx[1], 0] /= 2
+        if self.top_boundary_idx.size != 0:
+            tmp_z[self.top_boundary_idx[0], self.top_boundary_idx[1], -1] /= 2
 
         # norm
-        return np.sqrt(tmp_x**2 + tmp_y**2)
+        return np.sqrt(tmp_x**2 + tmp_y**2 + tmp_z**2)
 
     def get_du_darcy_norm_sample(
         self, time_index: int
-    ) -> Tuple[NDArrayFloat, NDArrayFloat]:
+    ) -> Tuple[NDArrayFloat, NDArrayFloat, NDArrayFloat]:
         """The norm of the darcy velocity estimated at the center of the grid cell."""
         # for x
         tmp_x = np.zeros_like(self.lhead[time_index])
         tmp_x += (
-            self.lu_darcy_x[time_index][:-1, :] + self.lu_darcy_x[time_index][1:, :]
+            self.lu_darcy_x[time_index][:-1, :, :]
+            + self.lu_darcy_x[time_index][1:, :, :]
         )
         # All nodes have 2 boundaries along the y axis, except for the
         # borders grid cells
         divx = np.ones_like(tmp_x)
-        divx[1:-1, :] /= 2
+        divx[1:-1, :, :] /= 2
         # for the borders we need to check if a boundary (flow) exist or not
         # this is a consequence of constant head and imposed flux
-        divx[0, self.is_boundary_west] /= 2
-        divx[-1, self.is_boundary_east] /= 2
+        if self.west_boundary_idx.size != 0:
+            divx[0, self.west_boundary_idx[0], self.west_boundary_idx[1]] /= 2
+        if self.east_boundary_idx.size != 0:
+            divx[-1, self.east_boundary_idx[0], self.east_boundary_idx[1]] /= 2
 
         tmp_x *= divx
 
         # for y
         tmp_y = np.zeros((self.lhead[time_index].shape))
         tmp_y += (
-            self.lu_darcy_y[time_index][:, :-1] + self.lu_darcy_y[time_index][:, 1:]
+            self.lu_darcy_y[time_index][:, :-1, :]
+            + self.lu_darcy_y[time_index][:, 1:, :]
         )
         # All nodes have 2 boundaries along the y axis, except for the
         # borders grid cells
         divy = np.ones_like(tmp_y)
-        divy[:, 1:-1] /= 2
+        divy[:, 1:-1, :] /= 2
 
         # for the borders we need to check if a boundary (flow) exist or not
         # this is a consequence of constant head and imposed flux
-        divy[self.is_boundary_south, 0] /= 2
-        divy[self.is_boundary_north, -1] /= 2
+        if self.south_boundary_idx.size != 0:
+            divy[self.south_boundary_idx[0], 0, self.south_boundary_idx[1]] /= 2
+        if self.north_boundary_idx.size != 0:
+            divy[self.north_boundary_idx[0], -1, self.north_boundary_idx[1]] /= 2
 
         tmp_y *= divy
 
+        # for z
+        tmp_z = np.zeros((self.lhead[time_index].shape))
+        tmp_z += (
+            self.lu_darcy_z[time_index][:, :, :-1]
+            + self.lu_darcy_z[time_index][:, :, 1:]
+        )
+        # All nodes have 2 boundaries along the y axis, except for the
+        # borders grid cells
+        divz = np.ones_like(tmp_z)
+        divz[:, :, 1:-1] /= 2
+
+        # for the borders we need to check if a boundary (flow) exist or not
+        # this is a consequence of constant head and imposed flux
+        if self.bottom_boundary_idx.size != 0:
+            divz[self.bottom_boundary_idx[0], self.bottom_boundary_idx[1], 0] /= 2
+        if self.top_boundary_idx.size != 0:
+            divz[self.top_boundary_idx[0], self.top_boundary_idx[1], -1] /= 2
+
+        tmp_z *= divz
+
         # norm
-        norm = np.sqrt(tmp_x**2 + tmp_y**2)
+        norm = np.sqrt(tmp_x**2 + tmp_y**2, tmp_z**2)
 
         # inverse of the norm -> avoid division by zero
         inv_norm = np.zeros_like(norm)
         mask = norm > 0.0
         inv_norm[mask] = 1.0 / norm[mask]
 
-        # return (d|U|/dUx , d|U|/dUy)
-        return inv_norm * tmp_x * divx, inv_norm * tmp_y * divy
+        # return (d|U|/dUx , d|U|/dUy, d|U|/dUz)
+        return inv_norm * tmp_x * divx, inv_norm * tmp_y * divy, inv_norm * tmp_z * divz
 
     def get_u_darcy_norm(self) -> NDArrayFloat:
         """The norm of the darcy velocity estimated at the center of the grid cell."""
         # for x
         tmp_x = np.zeros_like(self.head)
-        tmp_x += self.u_darcy_x[:-1, :] + self.u_darcy_x[1:, :]
+        tmp_x += self.u_darcy_x[:-1, :, :] + self.u_darcy_x[1:, :, :]
         # All nodes have 2 boundaries along the y axis, except for the
         # borders grid cells
-        tmp_x[1:-1, :] /= 2
+        tmp_x[1:-1, :, :] /= 2
         # for the borders we need to check if a boundary (flow) exist or not
         # this is a consequence of constant head and imposed flux
-        tmp_x[0, self.is_boundary_west] /= 2
-        tmp_x[-1, self.is_boundary_east] /= 2
+
+        if self.west_boundary_idx.size != 0:
+            tmp_x[0, self.west_boundary_idx[0], self.west_boundary_idx[1]] /= 2
+        if self.east_boundary_idx.size != 0:
+            tmp_x[-1, self.east_boundary_idx[0], self.east_boundary_idx[1]] /= 2
 
         # for y
         tmp_y = np.zeros((self.head.shape))
-        tmp_y += self.u_darcy_y[:, :-1] + self.u_darcy_y[:, 1:]
+        tmp_y += self.u_darcy_y[:, :-1, :] + self.u_darcy_y[:, 1:, :]
         # All nodes have 2 boundaries along the y axis, except for the
         # borders grid cells
-        tmp_y[:, 1:-1] /= 2
+        tmp_y[:, 1:-1, :] /= 2
         # for the borders we need to check if a boundary (flow) exist or not
         # this is a consequence of constant head and imposed flux
-        tmp_y[self.is_boundary_south, 0] /= 2
-        tmp_y[self.is_boundary_north, 1:-1] /= 2
+        if self.south_boundary_idx.size != 0:
+            tmp_y[self.south_boundary_idx[0], 0, self.south_boundary_idx[1]] /= 2
+        if self.north_boundary_idx.size != 0:
+            tmp_y[self.north_boundary_idx[0], -1, self.north_boundary_idx[1]] /= 2
+
+        # for z
+        tmp_z = np.zeros((self.head.shape))
+        tmp_z += self.u_darcy_z[:, :, :-1] + self.u_darcy_z[:, :, 1:]
+        # All nodes have 2 boundaries along the y axis, except for the
+        # borders grid cells
+        tmp_z[:, :, 1:-1] /= 2
+        # for the borders we need to check if a boundary (flow) exist or not
+        # this is a consequence of constant head and imposed flux
+        if self.bottom_boundary_idx.size != 0:
+            tmp_z[self.bottom_boundary_idx[0], self.bottom_boundary_idx[1], 0] /= 2
+        if self.top_boundary_idx.size != 0:
+            tmp_z[self.top_boundary_idx[0], self.top_boundary_idx[1], -1] /= 2
 
         # norm
-        return np.sqrt(tmp_x**2 + tmp_y**2)
+        return np.sqrt(tmp_x**2 + tmp_y**2 + tmp_z**2)
 
     def get_vertical_dim(self) -> int:
         """Return the number of voxel along the vertical_axis axis."""
@@ -952,17 +1107,23 @@ class FlowModel(ABC):
         elif self.vertical_axis == VerticalAxis.Y:
             return self.lhead[0].shape[1]
         else:
-            return 1
+            return self.lhead[0].shape[2]
 
+    # TODO: cache
     def _get_mesh_center_vertical_pos(self) -> NDArrayFloat:
         """Return the vertical position of the grid cells centers."""
-        xv, yv = np.meshgrid(range(self.head.shape[0]), range(self.head.shape[1]))
+        xv, yv, zv = np.meshgrid(
+            range(self.lhead[0].shape[0]),
+            range(self.lhead[0].shape[1]),
+            range(self.lhead[0].shape[2]),
+            indexing="ij",
+        )
         if self.vertical_axis == VerticalAxis.X:
             return (xv + 0.5) * self.vertical_mesh_size
         elif self.vertical_axis == VerticalAxis.Y:
             return (yv + 0.5) * self.vertical_mesh_size
         else:
-            return np.array([[0.5 * self.vertical_mesh_size]])
+            return (zv + 0.5) * self.vertical_mesh_size
 
     def get_pressure_pa(self) -> NDArrayFloat:
         """Return the pressure in Pa."""
@@ -977,26 +1138,20 @@ class FlowModel(ABC):
         pressure: NDArrayFloat,
     ) -> NDArrayFloat:
         """Convert pressure [Pa] to head [m]."""
-        return (
-            pressure / GRAVITY / WATER_DENSITY
-            + self._get_mesh_center_vertical_pos().T[:, :]
-        )
+        return pressure / GRAVITY / WATER_DENSITY + self._get_mesh_center_vertical_pos()
 
     def head_to_pressure(
         self,
         head: NDArrayFloat,
     ) -> NDArrayFloat:
         """Convert head [m] to pressure [Pa]."""
-        return (
-            (head - self._get_mesh_center_vertical_pos().T[:, :])
-            * GRAVITY
-            * WATER_DENSITY
-        )
+        return (head - self._get_mesh_center_vertical_pos()) * GRAVITY * WATER_DENSITY
 
     def set_initial_head(
         self,
         values: Union[float, int, NDArrayInt, NDArrayFloat],
-        span: Union[NDArrayInt, Tuple[slice, slice], NDArrayBool] = (
+        span: Union[NDArrayInt, Tuple[slice, slice, slice], NDArrayBool] = (
+            slice(None),
             slice(None),
             slice(None),
         ),
@@ -1008,7 +1163,8 @@ class FlowModel(ABC):
     def set_initial_pressure(
         self,
         values: Union[float, int, NDArrayInt, NDArrayFloat],
-        span: Union[NDArrayInt, Tuple[slice, slice], NDArrayBool] = (
+        span: Union[NDArrayInt, Tuple[slice, slice, slice], NDArrayBool] = (
+            slice(None),
             slice(None),
             slice(None),
         ),
@@ -1106,31 +1262,29 @@ class TransportModel:
         """Initialize the instance."""
         self.crank_nicolson_diffusion: float = tr_params.crank_nicolson_diffusion
         self.crank_nicolson_advection: float = tr_params.crank_nicolson_advection
-        self.diffusion = (
-            np.ones((grid.nx, grid.ny), dtype=np.float64) * tr_params.diffusion
-        )
+        self.diffusion = np.ones(grid.shape, dtype=np.float64) * tr_params.diffusion
         self.dispersivity = (
-            np.ones((grid.nx, grid.ny), dtype=np.float64) * tr_params.dispersivity
+            np.ones(grid.shape, dtype=np.float64) * tr_params.dispersivity
         )
-        self.porosity = (
-            np.ones((grid.nx, grid.ny), dtype=np.float64) * tr_params.porosity
-        )
+        self.porosity = np.ones(grid.shape, dtype=np.float64) * tr_params.porosity
         self.lmob: List[NDArrayFloat] = [
-            np.zeros((self.n_sp, grid.nx, grid.ny), dtype=np.float64)
+            np.zeros((self.n_sp, grid.nx, grid.ny, grid.nz), dtype=np.float64)
         ]
-        self.lmob[0][0, :, :] = gch_params.conc
-        self.lmob[0][1, :, :] = gch_params.conc2
+        self.lmob[0][0, :, :, :] = gch_params.conc
+        self.lmob[0][1, :, :, :] = gch_params.conc2
 
         self.limmob: List[NDArrayFloat] = [
-            np.zeros((self.n_sp, grid.nx, grid.ny), dtype=np.float64)
+            np.zeros((self.n_sp, grid.nx, grid.ny, grid.nz), dtype=np.float64)
         ]
         # For now, only on mineral
-        self.limmob[0][0, :, :] = gch_params.grade
-        self.limmob[0][1, :, :] = gch_params.grade2
+        self.limmob[0][0, :, :, :] = gch_params.grade
+        self.limmob[0][1, :, :, :] = gch_params.grade2
 
         self.ldensity: List[NDArrayFloat] = []
         self.lsources: List[NDArrayFloat] = []
-        self.immob_prev = np.zeros((self.n_sp, grid.nx, grid.ny), dtype=np.float64)
+        self.immob_prev = np.zeros(
+            (self.n_sp, grid.nx, grid.ny, grid.nz), dtype=np.float64
+        )
         self.boundary_conditions: List[BoundaryCondition] = []
         self.q_prev: lil_array = lil_array((grid.n_grid_cells, grid.n_grid_cells))
         self.q_next: lil_array = lil_array((grid.n_grid_cells, grid.n_grid_cells))
@@ -1164,7 +1318,7 @@ class TransportModel:
 
         This is read-only.
         """
-        return np.transpose(np.array(self.lmob), axes=(1, 2, 3, 0))
+        return np.transpose(np.array(self.lmob), axes=(1, 2, 3, 4, 0))
 
     @property
     def immob(self) -> NDArrayFloat:
@@ -1173,7 +1327,7 @@ class TransportModel:
 
         This is read-only.
         """
-        return np.transpose(np.array(self.limmob), axes=(1, 2, 3, 0))
+        return np.transpose(np.array(self.limmob), axes=(1, 2, 3, 4, 0))
 
     @property
     def conc(self) -> NDArrayFloat:
@@ -1220,16 +1374,16 @@ class TransportModel:
         """
         if len(self.ldensity) == 0:
             return np.array([])
-        return np.transpose(np.array(self.ldensity), axes=(1, 2, 0))
+        return np.transpose(np.array(self.ldensity), axes=(1, 2, 3, 0))
 
     @property
     def sources(self) -> NDArrayFloat:
         """
-        Return concentration sources as array with dimension (nx, ny, nz, nt + 1).
+        Return concentration sources as array with dimension (2, nx, ny, nz, nt + 1).
 
         This is read-only.
         """
-        return np.transpose(np.array(self.lsources), axes=(1, 2, 3, 0))
+        return np.transpose(np.array(self.lsources), axes=(1, 2, 3, 4, 0))
 
     @property
     def effective_diffusion(self) -> NDArrayFloat:
@@ -1249,7 +1403,8 @@ class TransportModel:
         self,
         values: Union[float, int, NDArrayInt, NDArrayFloat],
         sp: Optional[int] = 0,
-        span: Union[NDArrayInt, Tuple[slice, slice], NDArrayBool] = (
+        span: Union[NDArrayInt, Tuple[slice, slice, slice], NDArrayBool] = (
+            slice(None),
             slice(None),
             slice(None),
         ),
@@ -1261,7 +1416,8 @@ class TransportModel:
         self,
         values: Union[float, int, NDArrayInt, NDArrayFloat],
         sp: int = 0,
-        span: Union[NDArrayInt, Tuple[slice, slice], NDArrayBool] = (
+        span: Union[NDArrayInt, Tuple[slice, slice, slice], NDArrayBool] = (
+            slice(None),
             slice(None),
             slice(None),
         ),
@@ -1280,6 +1436,11 @@ class TransportModel:
             )
         self.boundary_conditions.append(condition)
 
+        if isinstance(condition, ConstantConcentration):
+            # 0) Set the values
+            # TODO
+            pass
+
     def set_constant_conc_indices(self) -> None:
         """Set the indices of nodes with constant head."""
         node_numbers = np.array([], dtype=np.int32)
@@ -1288,8 +1449,11 @@ class TransportModel:
                 node_numbers = np.hstack(
                     [
                         node_numbers,
-                        span_to_node_numbers_2d(
-                            condition.span, self.mob.shape[0], self.mob.shape[1]
+                        span_to_node_numbers_3d(
+                            condition.span,
+                            self.mob.shape[0],
+                            self.mob.shape[1],
+                            self.mob.shape[2],
                         ),
                     ]
                 )
@@ -1302,7 +1466,7 @@ class TransportModel:
         return np.array(
             node_number_to_indices(
                 self.cst_conc_nn, nx=self.mob.shape[0], ny=self.mob.shape[1]
-            )[:2]
+            )
         )
 
     @property
@@ -1320,7 +1484,7 @@ class TransportModel:
         return np.array(
             node_number_to_indices(
                 self.free_conc_nn, nx=self.mob.shape[0], ny=self.mob.shape[1]
-            )[:2]
+            )
         )
 
     def reinit(self) -> None:
@@ -1416,8 +1580,8 @@ class ForwardModel:
     ) -> Tuple[NDArrayFloat, NDArrayFloat]:
         """Get the flow sources and sink terms."""
 
-        _unitflw_src = np.zeros((grid.nx, grid.ny))
-        _conc_src = np.zeros((self.tr_model.n_sp, grid.nx, grid.ny))
+        _unitflw_src = np.zeros(grid.shape)
+        _conc_src = np.zeros((self.tr_model.n_sp, grid.nx, grid.ny, grid.nz))
 
         # iterate the source terms
         for source in self.source_terms.values():
@@ -1426,13 +1590,13 @@ class ForwardModel:
             nids = source.get_node_indices(grid)
 
             # Add the flowrates contribution
-            _unitflw_src[nids[0], nids[1]] += _flw / source.n_nodes
+            _unitflw_src[nids[0], nids[1], nids[2]] += _flw / source.n_nodes
 
             # Keep only non negative flowrates (remove sink terms)
             if _flw > 0:
                 for sp in range(self.tr_model.n_sp):
                     try:
-                        _conc_src[sp, nids[0], nids[1]] += (
+                        _conc_src[sp, nids[0], nids[1], nids[2]] += (
                             _flw * _conc[sp] / source.n_nodes
                         )
                     except IndexError:
@@ -1489,9 +1653,12 @@ class ForwardModel:
             num = min(self.grid.dx, num)
         if self.grid.ny > 1:
             num = min(self.grid.dy, num)
+        if self.grid.nz > 1:
+            num = min(self.grid.dz, num)
         den = np.sqrt(
-            self.fl_model.u_darcy_x_center[:, :, time_index] ** 2
-            + self.fl_model.u_darcy_y_center[:, :, time_index] ** 2
+            self.fl_model.u_darcy_x_center[:, :, :, time_index] ** 2
+            + self.fl_model.u_darcy_y_center[:, :, :, time_index] ** 2
+            + self.fl_model.u_darcy_z_center[:, :, :, time_index] ** 2
         )
         # VERY_SMALL_NUMBER to avoid division by zero.
         den = np.where(den < VERY_SMALL_NUMBER, VERY_SMALL_NUMBER, den)
@@ -1560,10 +1727,11 @@ def keep_a_b_if_c_in_a(
     return a[is_kept], b[is_kept]
 
 
+# TODO cache
 def get_owner_neigh_indices(
     grid: RectilinearGrid,
-    span_owner: Tuple[slice, slice],
-    span_neigh: Tuple[slice, slice],
+    span_owner: Tuple[slice, slice, slice],
+    span_neigh: Tuple[slice, slice, slice],
     owner_indices_to_keep: Optional[NDArrayInt] = None,
     neigh_indices_to_keep: Optional[NDArrayInt] = None,
 ) -> Tuple[NDArrayInt, NDArrayInt]:
@@ -1573,9 +1741,9 @@ def get_owner_neigh_indices(
     ----------
     grid : RectilinearGrid
         _description_
-    span_owner : Tuple[slice, slice]
+    span_owner : Tuple[slice, slice, slice]
         _description_
-    span_neigh : Tuple[slice, slice]
+    span_neigh : Tuple[slice, slice, slice]
         _description_
     indices_to_remove : NDArrayInt
         _description_
@@ -1586,11 +1754,11 @@ def get_owner_neigh_indices(
         _description_
     """
     # Get indices
-    indices_owner: NDArrayInt = span_to_node_numbers_2d(
-        span_owner, nx=grid.nx, ny=grid.ny
+    indices_owner: NDArrayInt = span_to_node_numbers_3d(
+        span_owner, nx=grid.nx, ny=grid.ny, nz=grid.nz
     )
-    indices_neigh: NDArrayInt = span_to_node_numbers_2d(
-        span_neigh, nx=grid.nx, ny=grid.ny
+    indices_neigh: NDArrayInt = span_to_node_numbers_3d(
+        span_neigh, nx=grid.nx, ny=grid.ny, nz=grid.nz
     )
 
     if owner_indices_to_keep is not None:

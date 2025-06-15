@@ -68,34 +68,34 @@ class AdjointFlowModel(ABC):
             This is only working with saturated flow. This option has been
             added to illustrate the paper TODO: add ref. The default is False.
         """
-        self.a_head = np.zeros((grid.nx, grid.ny, time_params.nt), dtype=np.float64)
-        self.a_pressure = np.zeros((grid.nx, grid.ny, time_params.nt), dtype=np.float64)
+        self.a_head = np.zeros((*grid.shape, time_params.nt), dtype=np.float64)
+        self.a_pressure = np.zeros((*grid.shape, time_params.nt), dtype=np.float64)
         self.a_u_darcy_x = np.zeros(
-            (grid.nx + 1, grid.ny, time_params.nt), dtype=np.float64
+            (grid.nx + 1, grid.ny, grid.nz, time_params.nt), dtype=np.float64
         )
         self.a_u_darcy_y = np.zeros(
-            (grid.nx, grid.ny + 1, time_params.nt), dtype=np.float64
+            (grid.nx, grid.ny + 1, grid.nz, time_params.nt), dtype=np.float64
         )
         # Generally, not so many observations, so only a few adjoint variable,
         # so use a sparse matrix instead of a dense array
         # NOTE: rows are grid cells, and columns are time indices
         # We use csc format for fast column (time) slicing
         self.a_head_sources: csc_array = csc_array(
-            (grid.nx * grid.ny, time_params.nt), dtype=np.float64
+            (grid.n_grid_cells, time_params.nt), dtype=np.float64
         )
         self.a_pressure_sources: csc_array = csc_array(
-            (grid.nx * grid.ny, time_params.nt), dtype=np.float64
+            (grid.n_grid_cells, time_params.nt), dtype=np.float64
         )
         # does not vary in time
         self.a_permeability_sources: csc_array = csc_array(
-            (grid.nx * grid.ny, 1), dtype=np.float64
+            (grid.n_grid_cells, 1), dtype=np.float64
         )
         self.a_storage_coefficient_sources: csc_array = csc_array(
-            (grid.nx * grid.ny, 1), dtype=np.float64
+            (grid.n_grid_cells, 1), dtype=np.float64
         )
 
-        self.q_prev: lil_array = lil_array((grid.nx * grid.ny, 1))
-        self.q_next: lil_array = lil_array((grid.nx * grid.ny, 1))
+        self.q_prev: lil_array = lil_array((grid.n_grid_cells, 1))
+        self.q_next: lil_array = lil_array((grid.n_grid_cells, 1))
 
         # crank nicolson: if None, then the crank-nicolson from the forward model
         # is used. This attribute only purpose is to test the impact of an
@@ -266,17 +266,17 @@ class AdjointTransportModel:
         """
         self.n_sp = n_sp
         self.a_mob: NDArrayFloat = np.zeros(
-            (self.n_sp, grid.nx, grid.ny, time_params.nt), dtype=np.float64
+            (self.n_sp, *grid.shape, time_params.nt), dtype=np.float64
         )
         self.a_mob_prev: NDArrayFloat = np.zeros(
-            (self.n_sp, grid.nx, grid.ny), dtype=np.float64
+            (self.n_sp, *grid.shape), dtype=np.float64
         )
 
         self.a_immob: NDArrayFloat = np.zeros(
-            (self.n_sp, grid.nx, grid.ny, time_params.nt), dtype=np.float64
+            (self.n_sp, *grid.shape, time_params.nt), dtype=np.float64
         )
         self.a_density: NDArrayFloat = np.zeros(
-            (grid.nx, grid.ny, time_params.nt), dtype=np.float64
+            (*grid.shape, time_params.nt), dtype=np.float64
         )
 
         # Generally, not so many observations, so only a few adjoint variable,
@@ -284,24 +284,24 @@ class AdjointTransportModel:
         # NOTE: rows are grid cells, and columns are time indices
         # We use csc format for fast column (time) slicing
         self.a_conc_sources: List[csc_array] = [
-            csc_array((grid.nx * grid.ny, time_params.nt), dtype=np.float64)
+            csc_array((grid.n_grid_cells, time_params.nt), dtype=np.float64)
             for sp in range(self.n_sp)  # type: ignore
         ]
         self.a_grade_sources: List[csc_array] = copy.copy(self.a_conc_sources)
-        self.a_porosity_sources = csc_array((grid.nx * grid.ny, 1), dtype=np.float64)
-        self.a_diffusion_sources = csc_array((grid.nx * grid.ny, 1), dtype=np.float64)
+        self.a_porosity_sources = csc_array((grid.n_grid_cells, 1), dtype=np.float64)
+        self.a_diffusion_sources = csc_array((grid.n_grid_cells, 1), dtype=np.float64)
         self.a_dispersivity_sources = csc_array(
-            (grid.nx * grid.ny, 1), dtype=np.float64
+            (grid.n_grid_cells, 1), dtype=np.float64
         )
         self.a_density_sources: csc_array = csc_array(
-            (grid.nx * grid.ny, time_params.nt), dtype=np.float64
+            (grid.n_grid_cells, time_params.nt), dtype=np.float64
         )
 
         # Adjoint source term from the adjoint geochem to the adjoint transport
-        self.a_gch_src_term = np.zeros((n_sp, grid.nx, grid.ny), dtype=np.float64)
+        self.a_gch_src_term = np.zeros((n_sp, *grid.shape), dtype=np.float64)
 
-        self.q_prev: lil_array = lil_array((grid.nx * grid.ny, 1))
-        self.q_next: lil_array = lil_array((grid.nx * grid.ny, 1))
+        self.q_prev: lil_array = lil_array((grid.n_grid_cells, 1))
+        self.q_next: lil_array = lil_array((grid.n_grid_cells, 1))
         self.afpi_eps = afpi_eps
         self.is_adj_numerical_acceleration: bool = is_adj_numerical_acceleration
         self.is_adj_num_acc_for_timestep: bool = self.is_adj_numerical_acceleration

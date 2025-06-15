@@ -23,7 +23,7 @@ from pyrtid.utils import (
     NDArrayFloat,
     RectilinearGrid,
     arithmetic_mean,
-    get_array_borders_selection,
+    get_array_borders_selection_3d,
     get_super_ilu_preconditioner,
     harmonic_mean,
 )
@@ -32,16 +32,19 @@ from pyrtid.utils import (
 def get_kmean(
     grid: RectilinearGrid, fl_model: FlowModel, axis: int, is_flatten=True
 ) -> NDArrayFloat:
-    kmean: NDArrayFloat = np.zeros((grid.nx, grid.ny), dtype=np.float64)
+    kmean: NDArrayFloat = np.zeros(grid.shape, dtype=np.float64)
     if axis == 0:
-        kmean[:-1, :] = harmonic_mean(
-            fl_model.permeability[:-1, :], fl_model.permeability[1:, :]
+        kmean[:-1, :, :] = harmonic_mean(
+            fl_model.permeability[:-1, :, :], fl_model.permeability[1:, :, :]
+        )
+    elif axis == 1:
+        kmean[:, :-1, :] = harmonic_mean(
+            fl_model.permeability[:, :-1, :], fl_model.permeability[:, 1:, :]
         )
     else:
-        kmean[:, :-1] = harmonic_mean(
-            fl_model.permeability[:, :-1], fl_model.permeability[:, 1:]
+        kmean[:, :, :-1] = harmonic_mean(
+            fl_model.permeability[:, :, :-1], fl_model.permeability[:, :, 1:]
         )
-
     if is_flatten:
         return kmean.flatten(order="F")
     return kmean
@@ -57,28 +60,37 @@ def get_rhomean(
     # get the density -> 2D or 3D array
     density = np.array(tr_model.ldensity[time_index])
 
-    if density.ndim == 2:
-        rhomean: NDArrayFloat = np.zeros((grid.nx, grid.ny), dtype=np.float64)
+    if density.ndim == 3:
+        rhomean: NDArrayFloat = np.zeros(grid.shape, dtype=np.float64)
         if axis == 0:
-            rhomean[:-1, :] = arithmetic_mean(density[:-1, :], density[1:, :])
+            rhomean[:-1, :, :] = arithmetic_mean(density[:-1, :, :], density[1:, :, :])
         elif axis == 1:
-            rhomean[:, :-1] = arithmetic_mean(density[:, :-1], density[:, 1:])
+            rhomean[:, :-1, :] = arithmetic_mean(density[:, :-1, :], density[:, 1:, :])
+        elif axis == 2:
+            rhomean[:, :, :-1] = arithmetic_mean(density[:, :, :-1], density[:, :, 1:])
         else:
-            raise NotImplementedError("axis should be 0 or 1")
+            raise NotImplementedError("axis should be 0, 1 or 2")
     else:
         rhomean: NDArrayFloat = np.zeros(
-            (grid.nx, grid.ny, density.shape[0]), dtype=np.float64
+            (*grid.shape, density.shape[0]), dtype=np.float64
         )
         if axis == 0:
-            rhomean[:-1, :, :] = np.transpose(
-                arithmetic_mean(density[:, :-1, :], density[:, 1:, :]), axes=(1, 2, 0)
+            rhomean[:-1, :, :, :] = np.transpose(
+                arithmetic_mean(density[:, :-1, :, :], density[:, 1:, :, :]),
+                axes=(1, 2, 3, 0),
             )
         elif axis == 1:
-            rhomean[:, :-1, :] = np.transpose(
-                arithmetic_mean(density[:, :, :-1], density[:, :, 1:]), axes=(1, 2, 0)
+            rhomean[:, :-1, :, :] = np.transpose(
+                arithmetic_mean(density[:, :, :-1, :], density[:, :, 1:, :]),
+                axes=(1, 2, 3, 0),
+            )
+        elif axis == 2:
+            rhomean[:, :, :-1, :] = np.transpose(
+                arithmetic_mean(density[:, :, :, :-1], density[:, :, :, 1:]),
+                axes=(1, 2, 3, 0),
             )
         else:
-            raise NotImplementedError("axis should be 0 or 1")
+            raise NotImplementedError("axis should be 0, 1 or 2")
     if is_flatten:
         return rhomean.flatten(order="F")
     return rhomean
@@ -111,8 +123,8 @@ def make_stationary_flow_matrices(
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
             grid,
-            (slice(0, grid.nx - 1), slice(None)),
-            (slice(1, grid.nx), slice(None)),
+            (slice(0, grid.nx - 1), slice(None), slice(None)),
+            (slice(1, grid.nx), slice(None), slice(None)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
 
@@ -122,8 +134,8 @@ def make_stationary_flow_matrices(
         # Backward scheme
         idc_owner, idc_neigh = get_owner_neigh_indices(
             grid,
-            (slice(1, grid.nx), slice(None)),
-            (slice(0, grid.nx - 1), slice(None)),
+            (slice(1, grid.nx), slice(None), slice(None)),
+            (slice(0, grid.nx - 1), slice(None), slice(None)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
 
@@ -142,8 +154,8 @@ def make_stationary_flow_matrices(
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
             grid,
-            (slice(None), slice(0, grid.ny - 1)),
-            (slice(None), slice(1, grid.ny)),
+            (slice(None), slice(0, grid.ny - 1), slice(None)),
+            (slice(None), slice(1, grid.ny), slice(None)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
 
@@ -153,8 +165,8 @@ def make_stationary_flow_matrices(
         # Backward scheme
         idc_owner, idc_neigh = get_owner_neigh_indices(
             grid,
-            (slice(None), slice(1, grid.ny)),
-            (slice(None), slice(0, grid.ny - 1)),
+            (slice(None), slice(1, grid.ny), slice(None)),
+            (slice(None), slice(0, grid.ny - 1), slice(None)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
 
@@ -182,7 +194,7 @@ def make_transient_flow_matrices(
     matrices q_prev and q_next are the same.
     """
 
-    dim = grid.nx * grid.ny
+    dim = grid.n_grid_cells
     q_prev = lil_array((dim, dim), dtype=np.float64)
     q_next = lil_array((dim, dim), dtype=np.float64)
 
@@ -196,8 +208,8 @@ def make_transient_flow_matrices(
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
             grid,
-            (slice(0, grid.nx - 1), slice(None)),
-            (slice(1, grid.nx), slice(None)),
+            (slice(0, grid.nx - 1), slice(None), slice(None)),
+            (slice(1, grid.nx), slice(None), slice(None)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
 
@@ -221,8 +233,8 @@ def make_transient_flow_matrices(
         # Backward scheme
         idc_owner, idc_neigh = get_owner_neigh_indices(
             grid,
-            (slice(1, grid.nx), slice(None)),
-            (slice(0, grid.nx - 1), slice(None)),
+            (slice(1, grid.nx), slice(None), slice(None)),
+            (slice(0, grid.nx - 1), slice(None), slice(None)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
 
@@ -251,8 +263,8 @@ def make_transient_flow_matrices(
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
             grid,
-            (slice(None), slice(0, grid.ny - 1)),
-            (slice(None), slice(1, grid.ny)),
+            (slice(None), slice(0, grid.ny - 1), slice(None)),
+            (slice(None), slice(1, grid.ny), slice(None)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
 
@@ -276,8 +288,8 @@ def make_transient_flow_matrices(
         # Backward scheme
         idc_owner, idc_neigh = get_owner_neigh_indices(
             grid,
-            (slice(None), slice(1, grid.ny)),
-            (slice(None), slice(0, grid.ny - 1)),
+            (slice(None), slice(1, grid.ny), slice(None)),
+            (slice(None), slice(0, grid.ny - 1), slice(None)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
 
@@ -303,7 +315,7 @@ def make_transient_flow_matrices(
 
 def get_zj_zi_rhs(grid: RectilinearGrid, fl_model: FlowModel) -> NDArrayFloat:
     rhs_z = np.zeros((grid.n_grid_cells), dtype=np.float64)
-    z = fl_model._get_mesh_center_vertical_pos().T.ravel("F")
+    z = fl_model._get_mesh_center_vertical_pos().ravel("F")
 
     # X contribution
     if grid.nx >= 2 and fl_model.vertical_axis == VerticalAxis.X:
@@ -314,8 +326,8 @@ def get_zj_zi_rhs(grid: RectilinearGrid, fl_model: FlowModel) -> NDArrayFloat:
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
             grid,
-            (slice(0, grid.nx - 1), slice(None)),
-            (slice(1, grid.nx), slice(None)),
+            (slice(0, grid.nx - 1), slice(None), slice(None)),
+            (slice(1, grid.nx), slice(None), slice(None)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
 
@@ -325,8 +337,8 @@ def get_zj_zi_rhs(grid: RectilinearGrid, fl_model: FlowModel) -> NDArrayFloat:
         # Backward scheme
         idc_owner, idc_neigh = get_owner_neigh_indices(
             grid,
-            (slice(1, grid.nx), slice(None)),
-            (slice(0, grid.nx - 1), slice(None)),
+            (slice(1, grid.nx), slice(None), slice(None)),
+            (slice(0, grid.nx - 1), slice(None), slice(None)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
 
@@ -342,8 +354,8 @@ def get_zj_zi_rhs(grid: RectilinearGrid, fl_model: FlowModel) -> NDArrayFloat:
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
             grid,
-            (slice(None), slice(0, grid.ny - 1)),
-            (slice(None), slice(1, grid.ny)),
+            (slice(None), slice(0, grid.ny - 1), slice(None)),
+            (slice(None), slice(1, grid.ny), slice(None)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
 
@@ -353,8 +365,8 @@ def get_zj_zi_rhs(grid: RectilinearGrid, fl_model: FlowModel) -> NDArrayFloat:
         # Backward scheme
         idc_owner, idc_neigh = get_owner_neigh_indices(
             grid,
-            (slice(None), slice(1, grid.ny)),
-            (slice(None), slice(0, grid.ny - 1)),
+            (slice(None), slice(1, grid.ny), slice(None)),
+            (slice(None), slice(0, grid.ny - 1), slice(None)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
 
@@ -422,18 +434,18 @@ def solve_flow_stationary(
 
     # Here we don't append but we overwrite the already existing head for t0.
     if fl_model.is_gravity:
-        fl_model.lpressure[0] = res.reshape(grid.ny, grid.nx).T
+        fl_model.lpressure[0] = res.reshape(grid.shape, order="F")
         # update the pressure field -> here we use the water density to be consistent
         # with HYTEC.
         fl_model.lhead[0] = (
             fl_model.lpressure[0] / GRAVITY / WATER_DENSITY
-        ) + fl_model._get_mesh_center_vertical_pos().T
+        ) + fl_model._get_mesh_center_vertical_pos()
     else:
-        fl_model.lhead[0] = res.reshape(grid.ny, grid.nx).T
+        fl_model.lhead[0] = res.reshape(grid.shape, order="F")
         # update the pressure field -> here we use the water density to be consistent
         # with HYTEC.
         fl_model.lpressure[0] = (
-            (fl_model.lhead[0] - fl_model._get_mesh_center_vertical_pos().T)
+            (fl_model.lhead[0] - fl_model._get_mesh_center_vertical_pos())
             * GRAVITY
             * WATER_DENSITY
         )
@@ -443,6 +455,28 @@ def solve_flow_stationary(
     compute_u_darcy_div(fl_model, grid, time_index)
 
     return exit_code
+
+
+def find_u(
+    fl_model: FlowModel, grid: RectilinearGrid, time_index: int, axis: int
+) -> NDArrayFloat:
+    """
+    Compute the darcy velocities at the mesh boundaries along the x axis.
+
+    U = - k grad(h)
+
+    Parameters
+    ----------
+    fl_model : FlowModel
+        The
+
+    Returns
+    -------
+    _type_
+        _description_
+    """
+    out = np.zeros((grid.nx + 1, grid.ny, grid.nz))
+    return out
 
 
 def find_ux_boundary(
@@ -463,10 +497,10 @@ def find_ux_boundary(
     _type_
         _description_
     """
-    out = np.zeros((grid.nx + 1, grid.ny))
+    out = np.zeros((grid.nx + 1, grid.ny, grid.nz))
     head = fl_model.lhead[time_index]
-    kmean = get_kmean(grid, fl_model, axis=0, is_flatten=False)[:-1, :]
-    out[1:-1, :] = -kmean * (head[1:, :] - head[:-1, :]) / grid.dx
+    kmean = get_kmean(grid, fl_model, axis=0, is_flatten=False)[:-1, :, :]
+    out[1:-1, :, :] = -kmean * (head[1:, :, :] - head[:-1, :, :]) / grid.dx
     return out
 
 
@@ -488,10 +522,35 @@ def find_uy_boundary(
     _type_
         _description_
     """
-    out = np.zeros((grid.nx, grid.ny + 1))
+    out = np.zeros((grid.nx, grid.ny + 1, grid.nz))
     head = fl_model.lhead[time_index]
-    kmean = get_kmean(grid, fl_model, axis=1, is_flatten=False)[:, :-1]
-    out[:, 1:-1] = -kmean * (head[:, 1:] - head[:, :-1]) / grid.dy
+    kmean = get_kmean(grid, fl_model, axis=1, is_flatten=False)[:, :-1, :]
+    out[:, 1:-1, :] = -kmean * (head[:, 1:, :] - head[:, :-1, :]) / grid.dy
+    return out
+
+
+def find_uz_boundary(
+    fl_model: FlowModel, grid: RectilinearGrid, time_index: int
+) -> NDArrayFloat:
+    """
+    Compute the darcy velocities at the mesh boundaries along the z axis.
+
+    U = - k grad(h)
+
+    Parameters
+    ----------
+    fl_model : FlowModel
+        _description_
+
+    Returns
+    -------
+    _type_
+        _description_
+    """
+    out = np.zeros((grid.nx, grid.ny, grid.nz + 1))
+    head = fl_model.lhead[time_index]
+    kmean = get_kmean(grid, fl_model, axis=1, is_flatten=False)[:, :, :-1]
+    out[:, :, 1:-1] = -kmean * (head[:, :, 1:] - head[:, :, :-1]) / grid.dz
     return out
 
 
@@ -516,24 +575,24 @@ def find_ux_boundary_density(
     _type_
         _description_
     """
-    out = np.zeros((grid.nx + 1, grid.ny))
+    out = np.zeros((grid.nx + 1, grid.ny, grid.nz))
     pressure = fl_model.lpressure[time_index]
-    kmean = get_kmean(grid, fl_model, axis=0, is_flatten=False)[:-1, :]
+    kmean = get_kmean(grid, fl_model, axis=0, is_flatten=False)[:-1, :, :]
     rhomean = get_rhomean(
         grid, tr_model, axis=0, time_index=time_index - 1, is_flatten=False
-    )[:-1, :]
+    )[:-1, :, :]
     if fl_model.vertical_axis == VerticalAxis.X:
         rho_ij_g = rhomean * GRAVITY
         if time_index == 0:
-            rho_ij_g[:, :] = WATER_DENSITY * GRAVITY
+            rho_ij_g[:, :, :] = WATER_DENSITY * GRAVITY
     else:
         rho_ij_g = np.zeros_like(rhomean)
 
-    out[1:-1, :] = (
+    out[1:-1, :, :] = (
         -kmean
         / WATER_DENSITY
         / GRAVITY
-        * ((pressure[1:, :] - pressure[:-1, :]) / grid.dx + rho_ij_g)
+        * ((pressure[1:, :, :] - pressure[:-1, :, :]) / grid.dx + rho_ij_g)
     )
     return out
 
@@ -559,25 +618,69 @@ def find_uy_boundary_density(
     _type_
         _description_
     """
-    out = np.zeros((grid.nx, grid.ny + 1))
+    out = np.zeros((grid.nx, grid.ny + 1, grid.nz))
     pressure = fl_model.lpressure[time_index]
-    kmean = get_kmean(grid, fl_model, axis=1, is_flatten=False)[:, :-1]
+    kmean = get_kmean(grid, fl_model, axis=1, is_flatten=False)[:, :-1, :]
     rhomean = get_rhomean(
         grid, tr_model, axis=1, time_index=time_index - 1, is_flatten=False
-    )[:, :-1]
+    )[:, :-1, :]
 
     if fl_model.vertical_axis == VerticalAxis.Y:
         rho_ij_g = rhomean * GRAVITY
         if time_index == 0:
-            rho_ij_g[:, :] = WATER_DENSITY * GRAVITY
+            rho_ij_g[:, :, :] = WATER_DENSITY * GRAVITY
     else:
         rho_ij_g = np.zeros_like(rhomean)
 
-    out[:, 1:-1] = (
+    out[:, 1:-1, :] = (
         -kmean
         / WATER_DENSITY
         / GRAVITY
-        * ((pressure[:, 1:] - pressure[:, :-1]) / grid.dy + rho_ij_g)
+        * ((pressure[:, 1:, :] - pressure[:, :-1, :]) / grid.dy + rho_ij_g)
+    )
+    return out
+
+
+def find_uz_boundary_density(
+    fl_model: FlowModel,
+    tr_model: TransportModel,
+    grid: RectilinearGrid,
+    time_index: int,
+) -> NDArrayFloat:
+    """
+    Compute the darcy velocities at the mesh boundaries along the z axis.
+
+    U = - k grad(h)
+
+    Parameters
+    ----------
+    fl_model : FlowModel
+        _description_
+
+    Returns
+    -------
+    _type_
+        _description_
+    """
+    out = np.zeros((grid.nx, grid.ny, grid.nz + 1))
+    pressure = fl_model.lpressure[time_index]
+    kmean = get_kmean(grid, fl_model, axis=1, is_flatten=False)[:, :, :-1]
+    rhomean = get_rhomean(
+        grid, tr_model, axis=1, time_index=time_index - 1, is_flatten=False
+    )[:, :, :-1]
+
+    if fl_model.vertical_axis == VerticalAxis.Z:
+        rho_ij_g = rhomean * GRAVITY
+        if time_index == 0:
+            rho_ij_g[:, :, :] = WATER_DENSITY * GRAVITY
+    else:
+        rho_ij_g = np.zeros_like(rhomean)
+
+    out[:, :, 1:-1] = (
+        -kmean
+        / WATER_DENSITY
+        / GRAVITY
+        * ((pressure[:, :, 1:] - pressure[:, :, :-1]) / grid.dz + rho_ij_g)
     )
     return out
 
@@ -596,9 +699,13 @@ def compute_u_darcy(
         fl_model.lu_darcy_y.append(
             find_uy_boundary_density(fl_model, tr_model, grid, time_index)
         )
+        fl_model.lu_darcy_z.append(
+            find_uz_boundary_density(fl_model, tr_model, grid, time_index)
+        )
     else:
         fl_model.lu_darcy_x.append(find_ux_boundary(fl_model, grid, time_index))
         fl_model.lu_darcy_y.append(find_uy_boundary(fl_model, grid, time_index))
+        fl_model.lu_darcy_z.append(find_uz_boundary(fl_model, grid, time_index))
     # Handle constant head
     update_unitflow_cst_head_nodes(fl_model, grid, time_index)
 
@@ -626,31 +733,62 @@ def update_unitflow_cst_head_nodes(
 
     # 1) Compute the flow in each cell -> oriented darcy times the node centers
     # distances
-    flow = np.zeros(grid.shape2d)
-    _flow = np.zeros(grid.shape2d)
+    flow = np.zeros(grid.shape)
+    _flow = np.zeros(grid.shape)
     if grid.nx > 1:
-        flow[:, :] += fl_model.lu_darcy_x[time_index][:-1, :] * grid.gamma_ij_x
-        flow[:, :] -= fl_model.lu_darcy_x[time_index][1:, :] * grid.gamma_ij_x
+        flow += fl_model.lu_darcy_x[time_index][:-1, :, :] * grid.gamma_ij_x
+        flow -= fl_model.lu_darcy_x[time_index][1:, :, :] * grid.gamma_ij_x
     if grid.ny > 1:
-        flow[:, :] += fl_model.lu_darcy_y[time_index][:, :-1] * grid.gamma_ij_y
-        flow[:, :] -= fl_model.lu_darcy_y[time_index][:, 1:] * grid.gamma_ij_y
+        flow += fl_model.lu_darcy_y[time_index][:, :-1, :] * grid.gamma_ij_y
+        flow -= fl_model.lu_darcy_y[time_index][:, 1:, :] * grid.gamma_ij_y
+    if grid.nz > 1:
+        flow += fl_model.lu_darcy_z[time_index][:, :, :-1] * grid.gamma_ij_z
+        flow -= fl_model.lu_darcy_z[time_index][:, :, 1:] * grid.gamma_ij_z
 
     # Trick: Set the flow to zero where the head is not constant
     # Q: est-ce que c'est juste pour les constant head ????
-    _flow[fl_model.cst_head_indices[0], fl_model.cst_head_indices[1]] = flow[
-        fl_model.cst_head_indices[0], fl_model.cst_head_indices[1]
+    _flow[
+        fl_model.cst_head_indices[0],
+        fl_model.cst_head_indices[1],
+        fl_model.cst_head_indices[2],
+    ] = flow[
+        fl_model.cst_head_indices[0],
+        fl_model.cst_head_indices[1],
+        fl_model.cst_head_indices[2],
     ]
 
     # Total boundary length per mesh
-    _ltot = np.zeros(grid.shape2d)
+    _ltot = np.zeros(grid.shape)
     if grid.nx > 1:
         # evacuation along x
-        _ltot[0, fl_model.is_boundary_west] += grid.gamma_ij_x
-        _ltot[-1, fl_model.is_boundary_east] += grid.gamma_ij_x
+        if fl_model.west_boundary_idx.size != 0:
+            _ltot[0, fl_model.west_boundary_idx[0], fl_model.west_boundary_idx[1]] += (
+                grid.gamma_ij_x
+            )
+        if fl_model.east_boundary_idx.size != 0:
+            _ltot[-1, fl_model.east_boundary_idx[0], fl_model.east_boundary_idx[1]] += (
+                grid.gamma_ij_x
+            )
     if grid.ny > 1:
         # evacuation along y
-        _ltot[fl_model.is_boundary_north, 0] += grid.gamma_ij_y
-        _ltot[fl_model.is_boundary_south, -1] += grid.gamma_ij_y
+        if fl_model.south_boundary_idx.size != 0:
+            _ltot[
+                fl_model.south_boundary_idx[0], 0, fl_model.south_boundary_idx[1]
+            ] += grid.gamma_ij_y
+        if fl_model.north_boundary_idx.size != 0:
+            _ltot[
+                fl_model.north_boundary_idx[0], -1, fl_model.north_boundary_idx[1]
+            ] += grid.gamma_ij_y
+    if grid.nz > 1:
+        # evacuation along z
+        if fl_model.bottom_boundary_idx.size != 0:
+            _ltot[
+                fl_model.bottom_boundary_idx[0], fl_model.bottom_boundary_idx[1], 0
+            ] += grid.gamma_ij_z
+        if fl_model.top_boundary_idx.size != 0:
+            _ltot[fl_model.top_boundary_idx[0], fl_model.top_boundary_idx[1], -1] += (
+                grid.gamma_ij_z
+            )
 
     # 2) Update unitflow for the constant-head nodes
     fl_model.lunitflow[time_index][
@@ -666,26 +804,78 @@ def update_unitflow_cst_head_nodes(
     # grid cells located in the boundary of the domain.
 
     # 3.1) For constant head in the borders -> unitflow is null
-    cst_head_border_mask = _flow != 0 & get_array_borders_selection(*grid.shape2d)
+    cst_head_border_mask = _flow != 0 & get_array_borders_selection_3d(*grid.shape)
     fl_model.lunitflow[time_index][cst_head_border_mask] = 0.0
 
     # 3.2) Report the flow on the boundaries
     # Note: so far, at borders, all flows are 0
     if grid.nx > 1:
-        fl_model.lu_darcy_x[time_index][0, fl_model.is_boundary_west] = (
-            -_flow[0, fl_model.is_boundary_west] / _ltot[0, fl_model.is_boundary_west]
-        )
-        fl_model.lu_darcy_x[time_index][-1, fl_model.is_boundary_east] = (
-            +_flow[-1, fl_model.is_boundary_east] / _ltot[-1, fl_model.is_boundary_east]
-        )
+        if fl_model.west_boundary_idx.size != 0:
+            fl_model.lu_darcy_x[time_index][
+                0, fl_model.west_boundary_idx[0], fl_model.west_boundary_idx[1]
+            ] = (
+                -_flow[0, fl_model.west_boundary_idx[0], fl_model.west_boundary_idx[1]]
+                / _ltot[0, fl_model.west_boundary_idx[0], fl_model.west_boundary_idx[1]]
+            )
+        if fl_model.east_boundary_idx.size != 0:
+            fl_model.lu_darcy_x[time_index][
+                -1, fl_model.east_boundary_idx[0], fl_model.east_boundary_idx[1]
+            ] = (
+                +_flow[-1, fl_model.east_boundary_idx[0], fl_model.east_boundary_idx[1]]
+                / _ltot[
+                    -1, fl_model.east_boundary_idx[0], fl_model.east_boundary_idx[1]
+                ]
+            )
     if grid.ny > 1:
-        fl_model.lu_darcy_y[time_index][fl_model.is_boundary_south, 0] = (
-            -_flow[fl_model.is_boundary_south, 0] / _ltot[fl_model.is_boundary_south, 0]
-        )
-        fl_model.lu_darcy_y[time_index][fl_model.is_boundary_north, -1] = (
-            +_flow[fl_model.is_boundary_north, -1]
-            / _ltot[fl_model.is_boundary_north, -1]
-        )
+        if fl_model.south_boundary_idx.size != 0:
+            fl_model.lu_darcy_y[time_index][
+                fl_model.south_boundary_idx[0], 0, fl_model.south_boundary_idx[1]
+            ] = (
+                -_flow[
+                    fl_model.south_boundary_idx[0], 0, fl_model.south_boundary_idx[1]
+                ]
+                / _ltot[
+                    fl_model.south_boundary_idx[0], 0, fl_model.south_boundary_idx[1]
+                ]
+            )
+        if fl_model.north_boundary_idx.size != 0:
+            fl_model.lu_darcy_y[time_index][
+                fl_model.north_boundary_idx[0], -1, fl_model.north_boundary_idx[1]
+            ] = (
+                +_flow[
+                    fl_model.north_boundary_idx[0],
+                    -1,
+                    fl_model.north_boundary_idx[1],
+                ]
+                / _ltot[
+                    fl_model.north_boundary_idx[0],
+                    -1,
+                    fl_model.north_boundary_idx[1],
+                ]
+            )
+    if grid.nz > 1:
+        if fl_model.bottom_boundary_idx.size != 0:
+            fl_model.lu_darcy_z[time_index][
+                fl_model.bottom_boundary_idx[0], fl_model.bottom_boundary_idx[1], 0
+            ] = (
+                -_flow[
+                    fl_model.bottom_boundary_idx[0],
+                    fl_model.bottom_boundary_idx[1],
+                    0,
+                ]
+                / _ltot[
+                    fl_model.bottom_boundary_idx[0],
+                    fl_model.bottom_boundary_idx[1],
+                    0,
+                ]
+            )
+        if fl_model.top_boundary_idx.size != 0:
+            fl_model.lu_darcy_z[time_index][
+                fl_model.top_boundary_idx[0], fl_model.top_boundary_idx[1], -1
+            ] = (
+                +_flow[fl_model.top_boundary_idx[0], fl_model.top_boundary_idx[1], -1]
+                / _ltot[fl_model.top_boundary_idx[0], fl_model.top_boundary_idx[1], -1]
+            )
 
 
 def compute_u_darcy_div(
@@ -694,22 +884,26 @@ def compute_u_darcy_div(
     """Update the darcy velocities divergence (at the node centers)."""
 
     # Reset to zero
-    u_darcy_div = np.zeros(grid.shape2d)
+    u_darcy_div = np.zeros(grid.shape)
 
-    # x contribution -> multiply by the frontier (dy and not dx)
-    u_darcy_div -= fl_model.lu_darcy_x[time_index][:-1, :] * grid.gamma_ij_x
-    u_darcy_div += fl_model.lu_darcy_x[time_index][1:, :] * grid.gamma_ij_x
+    # x contribution
+    u_darcy_div -= fl_model.lu_darcy_x[time_index][:-1, :, :] * grid.gamma_ij_x
+    u_darcy_div += fl_model.lu_darcy_x[time_index][1:, :, :] * grid.gamma_ij_x
 
-    # y contribution  -> multiply by the frontier (dx and not dy)
-    u_darcy_div -= fl_model.lu_darcy_y[time_index][:, :-1] * grid.gamma_ij_y
-    u_darcy_div += fl_model.lu_darcy_y[time_index][:, 1:] * grid.gamma_ij_y
+    # y contribution
+    u_darcy_div -= fl_model.lu_darcy_y[time_index][:, :-1, :] * grid.gamma_ij_y
+    u_darcy_div += fl_model.lu_darcy_y[time_index][:, 1:, :] * grid.gamma_ij_y
+
+    # z contribution
+    u_darcy_div -= fl_model.lu_darcy_z[time_index][:, :, :-1] * grid.gamma_ij_z
+    u_darcy_div += fl_model.lu_darcy_z[time_index][:, :, 1:] * grid.gamma_ij_z
 
     # Take the surface into account
     u_darcy_div /= grid.grid_cell_volume
 
     # Constant head handling - null divergence
     cst_idx = fl_model.cst_head_indices
-    u_darcy_div[cst_idx[0], cst_idx[1]] = 0
+    u_darcy_div[cst_idx[0], cst_idx[1], cst_idx[2]] = 0
 
     fl_model.lu_darcy_div.append(u_darcy_div)
 
@@ -720,7 +914,7 @@ def get_gravity_gradient(
     tr_model: TransportModel,
     time_index: int,
 ) -> NDArrayFloat:
-    tmp = np.zeros(grid.nx * grid.ny)
+    tmp = np.zeros(grid.n_grid_cells)
     sc = fl_model.storage_coefficient.ravel("F")
 
     if fl_model.vertical_axis == VerticalAxis.X:
@@ -730,8 +924,8 @@ def get_gravity_gradient(
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
             grid,
-            (slice(0, grid.nx - 1), slice(None)),
-            (slice(1, grid.nx), slice(None)),
+            (slice(0, grid.nx - 1), slice(None), slice(None)),
+            (slice(1, grid.nx), slice(None), slice(None)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
 
@@ -748,8 +942,8 @@ def get_gravity_gradient(
         # Backward scheme
         idc_owner, idc_neigh = get_owner_neigh_indices(
             grid,
-            (slice(1, grid.nx), slice(None)),
-            (slice(0, grid.nx - 1), slice(None)),
+            (slice(1, grid.nx), slice(None), slice(None)),
+            (slice(0, grid.nx - 1), slice(None), slice(None)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
 
@@ -770,8 +964,8 @@ def get_gravity_gradient(
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
             grid,
-            (slice(None), slice(0, grid.ny - 1)),
-            (slice(None), slice(1, grid.ny)),
+            (slice(None), slice(0, grid.ny - 1), slice(None)),
+            (slice(None), slice(1, grid.ny), slice(None)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
 
@@ -788,8 +982,8 @@ def get_gravity_gradient(
         # Backward scheme
         idc_owner, idc_neigh = get_owner_neigh_indices(
             grid,
-            (slice(None), slice(1, grid.ny)),
-            (slice(None), slice(0, grid.ny - 1)),
+            (slice(None), slice(1, grid.ny), slice(None)),
+            (slice(None), slice(0, grid.ny - 1), slice(None)),
             owner_indices_to_keep=fl_model.free_head_nn,
         )
 
@@ -897,18 +1091,18 @@ def solve_flow_transient_semi_implicit(
     res, exit_code = solve_fl_gmres(fl_model, rhs, super_ilu, preconditioner)
 
     if fl_model.is_gravity:
-        fl_model.lpressure.append(res.reshape(grid.nx, grid.ny, order="F"))
+        fl_model.lpressure.append(res.reshape(*grid.shape, order="F"))
         # update the pressure field
         fl_model.lhead.append(
             (fl_model.lpressure[-1] / GRAVITY / tr_model.ldensity[time_index - 1])
-            + fl_model._get_mesh_center_vertical_pos().T
+            + fl_model._get_mesh_center_vertical_pos()
         )
     else:
-        fl_model.lhead.append(res.reshape(grid.nx, grid.ny, order="F"))
+        fl_model.lhead.append(res.reshape(*grid.shape, order="F"))
         # update the pressure field -> here we use the water density to be consistent
         # with HYTEC.
         fl_model.lpressure.append(
-            (fl_model.lhead[-1] - fl_model._get_mesh_center_vertical_pos().T)
+            (fl_model.lhead[-1] - fl_model._get_mesh_center_vertical_pos())
             * GRAVITY
             * WATER_DENSITY
         )

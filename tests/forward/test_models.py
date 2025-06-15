@@ -21,7 +21,7 @@ from pyrtid.forward.models import (
 from pyrtid.utils import NDArrayFloat, RectilinearGrid
 
 time_params = TimeParameters(duration=240000, dt_init=600.0)
-grid = RectilinearGrid(nx=20, ny=20, dx=4.5, dy=7.5)
+grid = RectilinearGrid(nx=20, ny=20, nz=1, dx=4.5, dy=7.5)
 fl_params = FlowParameters(1e-5)
 tr_params = TransportParameters(diffusion=1e-10, porosity=0.23, dispersivity=0.1)
 gch_params = GeochemicalParameters(0.0, 0.0)
@@ -98,8 +98,8 @@ def test_wrong_time_params() -> None:
     "nx,ny,dx,dy,expected_exception",
     [
         (10.0, 10.0, 10.0, 10.0, does_not_raise()),
-        (0.0, 10.0, 0.0, 10.0, pytest.raises(ValueError, match="nx should be > 1!")),
-        (10.0, 0.0, 10.0, 10.0, pytest.raises(ValueError, match="ny should be > 1!")),
+        (0.0, 10.0, 0.0, 10.0, pytest.raises(ValueError, match="nx should be >= 1!")),
+        (10.0, 0.0, 10.0, 10.0, pytest.raises(ValueError, match="ny should be >= 1!")),
         (10.0, 10.0, 0.0, 10.0, does_not_raise()),
         (10.0, 10.0, 10.0, 0.0, does_not_raise()),
         # (
@@ -347,25 +347,26 @@ def test_source_term_get_values(
 
 def test_model_effective_diffusion(model: ForwardModel) -> None:
     np.testing.assert_array_equal(
-        model.tr_model.effective_diffusion, np.ones((20, 20)) * 2.3e-11
+        model.tr_model.effective_diffusion, np.ones((20, 20, 1)) * 2.3e-11
     )
 
 
 def test_model_set_values(model: ForwardModel) -> None:
-    arr = np.random.random(size=(20, 20, 1))
+    # (nx, ny, nz, nt)
+    arr = np.random.random(size=(20, 20, 1, 1))
 
-    model.tr_model.set_initial_conc(arr[:, :, 0])
+    model.tr_model.set_initial_conc(arr[:, :, :, 0])
     np.testing.assert_array_equal(model.tr_model.mob[0], arr)
     np.testing.assert_array_equal(model.tr_model.mob[1], np.zeros_like(arr))
 
-    model.tr_model.set_initial_conc(arr[:, :, 0], sp=1)
+    model.tr_model.set_initial_conc(arr[:, :, :, 0], sp=1)
     np.testing.assert_array_equal(model.tr_model.mob[0], arr)
     np.testing.assert_array_equal(model.tr_model.mob[1], arr)
 
     model.tr_model.set_initial_conc(4.0)
-    np.testing.assert_array_equal(model.tr_model.mob[0], np.ones((20, 20, 1)) * 4.0)
+    np.testing.assert_array_equal(model.tr_model.mob[0], np.ones((20, 20, 1, 1)) * 4.0)
 
-    model.tr_model.set_initial_grade(arr[:, :, 0] * 2.0, sp=0)
+    model.tr_model.set_initial_grade(arr[:, :, :, 0] * 2.0, sp=0)
     np.testing.assert_array_equal(model.tr_model.immob[0], arr * 2.0)
     np.testing.assert_array_almost_equal(
         model.tr_model.immob[1], np.zeros_like(arr), decimal=10
@@ -373,13 +374,15 @@ def test_model_set_values(model: ForwardModel) -> None:
 
     model.tr_model.set_initial_grade(2.0, sp=1)
     np.testing.assert_array_equal(model.tr_model.immob[0], arr * 2.0)
-    np.testing.assert_array_equal(model.tr_model.immob[1], np.ones((20, 20, 1)) * 2.0)
+    np.testing.assert_array_equal(
+        model.tr_model.immob[1], np.ones((20, 20, 1, 1)) * 2.0
+    )
 
-    model.fl_model.set_initial_head(arr[:, :, 0] * 3.0)
+    model.fl_model.set_initial_head(arr[:, :, :, 0] * 3.0)
     np.testing.assert_array_equal(model.fl_model.head, arr * 3.0)
 
     model.fl_model.set_initial_head(100.0)
-    np.testing.assert_array_equal(model.fl_model.head, np.ones((20, 20, 1)) * 100.0)
+    np.testing.assert_array_equal(model.fl_model.head, np.ones((20, 20, 1, 1)) * 100.0)
 
 
 def test_model_reinit(model: ForwardModel) -> None:
@@ -427,43 +430,51 @@ def test_model_reinit(model: ForwardModel) -> None:
     [
         (
             0.0,
-            np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, -0.75, 1.0]]),
+            np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, -0.75, 1.0]]).reshape(
+                3, 3, 1
+            ),
             np.array(
                 [
                     [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 1.0]],
                     [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 1.0]],
                 ]
-            ),
+            ).reshape(2, 3, 3, 1),
         ),
         (
             0.5,
-            np.array([[0.0, 0.25, 0.0], [0.25, 0.0, 0.0], [0.0, -0.75, 1.0]]),
+            np.array([[[0.0, 0.25, 0.0], [0.25, 0.0, 0.0], [0.0, -0.75, 1.0]]]).reshape(
+                3, 3, 1
+            ),
             np.array(
                 [
                     [[0.0, 0.0, 0.0], [0.25, 0.0, 0.0], [0.0, 0.0, 1.0]],
                     [[0.0, 0.0, 0.0], [0.25, 0.0, 0.0], [0.0, 0.0, 1.0]],
                 ]
-            ),
+            ).reshape(2, 3, 3, 1),
         ),
         (
             50.0,
-            np.array([[0.0, 0.125, 0.0], [0.125, 0.0, 0.0], [0.0, 0.125, 0.25]]),
+            np.array(
+                [[[0.0, 0.125, 0.0], [0.125, 0.0, 0.0], [0.0, 0.125, 0.25]]]
+            ).reshape(3, 3, 1),
             np.array(
                 [
                     [[0.0, 0.0, 0.25], [0.25, 0.0, 0.0], [0.0, 0.25, 0.5]],
                     [[0.0, 0.0, 0.25], [0.25, 0.0, 0.0], [0.0, 0.25, 0.5]],
                 ]
-            ),
+            ).reshape(2, 3, 3, 1),
         ),
         (
             500.0,
-            np.array([[0.0, 0.25, 0.0], [0.25, 0.0, 0.0], [0.0, 0.25, 0.5]]),
+            np.array([[0.0, 0.25, 0.0], [0.25, 0.0, 0.0], [0.0, 0.25, 0.5]]).reshape(
+                3, 3, 1
+            ),
             np.array(
                 [
                     [[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 2.0]],
                     [[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 2.0]],
                 ]
-            ),
+            ).reshape(2, 3, 3, 1),
         ),
     ],
 )
@@ -478,9 +489,11 @@ def test_get_sources(
 
     model = ForwardModel(grid, time_params, fl_params, tr_params, gch_params)
 
-    model.add_boundary_conditions(ConstantConcentration((slice(0, 1), slice(1, 2))))
+    model.add_boundary_conditions(
+        ConstantConcentration((slice(0, 1), slice(1, 2), slice(None)))
+    )
 
-    model.add_boundary_conditions(ConstantHead((slice(0, 1), slice(2, 3))))
+    model.add_boundary_conditions(ConstantHead((slice(0, 1), slice(2, 3), slice(None))))
 
     model.add_src_term(
         SourceTerm(
@@ -522,17 +535,17 @@ def test_get_sources(
         ((), [], np.array([0, 1, 2, 3, 4, 5, 6, 7, 8])),
         (ConstantHead(slice(None)), [0, 1, 2, 3, 4, 5, 6, 7, 8], np.array([])),
         (
-            ConstantHead((slice(0, 3), slice(0, 3))),
+            ConstantHead((slice(0, 3), slice(0, 3), slice(None))),
             np.array([0, 1, 2, 3, 4, 5, 6, 7, 8]),
             [],
         ),
         (
-            ConstantHead((slice(0, 3), slice(0, 1))),
+            ConstantHead((slice(0, 3), slice(0, 1), slice(None))),
             np.array([0, 1, 2]),
             [3, 4, 5, 6, 7, 8],
         ),
         (
-            ConstantHead((slice(0, 2), slice(0, 1))),
+            ConstantHead((slice(0, 2), slice(0, 1), slice(None))),
             np.array([0, 1]),
             [2, 3, 4, 5, 6, 7, 8],
         ),

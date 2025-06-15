@@ -29,10 +29,10 @@ from pyrtid.utils import (
     NDArrayFloat,
     NDArrayInt,
     RectilinearGrid,
+    check_random_state,
     indices_to_node_number,
     sparse_cholesky,
 )
-from scipy._lib._util import check_random_state  # To handle random_state
 
 logger = logging.getLogger("ROOT")
 scaler_log = logging.getLogger("SCALER")
@@ -406,7 +406,7 @@ def test_GDP_SPDE(is_update_mean: bool) -> None:
     )
     cholQ_ref = sparse_cholesky(Q_ref)
     # Non conditional simulation -> change the random state to obtain a different field
-    simu_ = spde.simu_nc(cholQ_ref, random_state=2026).reshape(ny, nx).T
+    simu_ = spde.simu_nc(cholQ_ref, random_state=2026).reshape(nx, ny, order="F")
     reference_grade_ppm = np.abs(simu_ + mean)
 
     # Conditioning data

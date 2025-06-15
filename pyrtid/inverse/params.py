@@ -537,7 +537,9 @@ class AdjustableParameter:
             logger,
         )
 
-    def get_values_change(self, ord: float = 2) -> float:
+    def get_values_change(
+        self, is_use_pcd: bool = True, ord: Optional[float] = None
+    ) -> float:
         """
         Evaluate the change between the two last vectors of values.
 
@@ -548,8 +550,10 @@ class AdjustableParameter:
             return 0
 
         def _pcd(x: NDArrayFloat) -> NDArrayFloat:
-            if self.is_scale_logarithmically:
-                return np.log(x)
+            # if self.is_scale_logarithmically:
+            #     return np.log(x)
+            if is_use_pcd:
+                return self.preconditioner(x.ravel("F"))
             return x
 
         return sp.linalg.norm(
@@ -592,9 +596,9 @@ def get_parameter_values_from_model(
             f"Supported parameters are {ParameterName.to_list()}"
         )
     arr = get_array_from_state_variable(model, PARAM_TO_STATE_VAR[param.name], param.sp)
-    if len(arr.shape) == 2:  # porosity, diffusion, perm, etc.
+    if len(arr.shape) == 3:  # porosity, diffusion, perm, etc.
         return arr
-    return arr[:, :, 0]  # initial head, pressure, concentrations and grade
+    return arr[:, :, :, 0]  # initial head, pressure, concentrations and grade
 
 
 def update_parameters_from_model(
@@ -748,7 +752,7 @@ def get_gridded_archived_gradients(
     out: NDArrayFloat = np.empty((*param.values.shape, len(gradients)))
     out[:] = np.nan
     for i, vals in enumerate(gradients):
-        out[:, :, i] = vals.reshape(*param.values.shape, order="F")
+        out[:, :, :, i] = vals.reshape(*param.values.shape, order="F")
     return out
 
 

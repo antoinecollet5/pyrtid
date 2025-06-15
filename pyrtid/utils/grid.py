@@ -78,7 +78,7 @@ def node_number_to_indices(
     For 1D and 2D, simply leave ny, and nz to their default values.
 
     Note
-    ----
+    ----node_number_to_indices
     Node numbering start at zero.
 
     Warning
@@ -138,7 +138,7 @@ def span_to_node_numbers_3d(
     )
 
 
-def get_array_borders_selection(nx: int, ny: int) -> NDArrayBool:
+def get_array_borders_selection_2d(nx: int, ny: int) -> NDArrayBool:
     """
     Get a selection of the array border as a bool array.
 
@@ -162,6 +162,45 @@ def get_array_borders_selection(nx: int, ny: int) -> NDArrayBool:
     return np.pad(
         np.zeros((_nx, _ny), dtype=np.bool_),
         ((min(max(nx - 1, 0), 1),), ((min(max(ny - 1, 0), 1),))),
+        "constant",
+        constant_values=1,
+    )
+
+
+def get_array_borders_selection_3d(nx: int, ny: int, nz: int) -> NDArrayBool:
+    """
+    Get a selection of the array border as a bool array.
+
+    Note
+    ----
+    There is no border for an awis of dim 1.
+
+    Parameters
+    ----------
+    nx: int
+        Number of grid cells along the x axis.
+    ny: int
+        Number of grid cells along the y axis.
+    nz: int
+        Number of grid cells along the y zxis.
+    """
+    _nx = nx - 2
+    if _nx < 0:
+        _nx = nx
+    _ny = ny - 2
+    if _ny < 0:
+        _ny = ny
+    _nz = nz - 2
+    if _nz < 0:
+        _nz = nz
+
+    return np.pad(
+        np.zeros((_nx, _ny, _nz), dtype=np.bool_),
+        (
+            (min(max(nx - 1, 0), 1),),
+            (min(max(ny - 1, 0), 1),),
+            (min(max(nz - 1, 0), 1),),
+        ),
         "constant",
         constant_values=1,
     )
@@ -342,11 +381,6 @@ class RectilinearGrid:
         return (self.nx, self.ny, self.nz)
 
     @property
-    def shape2d(self) -> Tuple[int, int]:
-        """Return the shape of the grid."""
-        return (self.nx, self.ny)
-
-    @property
     def nx(self) -> int:
         """Return the number of grid cells along the x axis."""
         return self._nx
@@ -354,7 +388,7 @@ class RectilinearGrid:
     @nx.setter
     def nx(self, value: int) -> None:
         if value < 1:
-            raise (ValueError("nx should be > 1!)"))
+            raise (ValueError("nx should be >= 1!)"))
         self._nx = value
 
     @property
@@ -365,13 +399,24 @@ class RectilinearGrid:
     @ny.setter
     def ny(self, value: int) -> None:
         if value < 1:
-            raise (ValueError("ny should be > 1!)"))
+            raise (ValueError("ny should be >= 1!)"))
         self._ny = value
+
+    @property
+    def nz(self) -> int:
+        """Return the number of grid cells along the z axis."""
+        return self._nz
+
+    @nz.setter
+    def nz(self, value: int) -> None:
+        if value < 1:
+            raise (ValueError("nz should be >= 1!)"))
+        self._nz = value
 
     @property
     def n_grid_cells(self) -> int:
         """Return the number of grid cells."""
-        return self.nx * self.ny
+        return self.nx * self.ny * self.nz
 
     @property
     def grid_cell_surface(self) -> float:
@@ -676,7 +721,7 @@ def create_selections_array_2d(
         )
 
     # flatten points coordinates
-    _sel_array = np.zeros((grid.nx, grid.ny), dtype=np.int8)
+    _sel_array = np.zeros(grid.shape, dtype=np.int8)
 
     # The mask sum ensure that a voxel is not selected twice
     mask_sum: Optional[NDArrayInt] = None
@@ -751,7 +796,7 @@ def get_polygon_selection_with_dilation_2d(
         _selection = selection.copy()
 
     # initiate _oldselection variable
-    _old_selection = np.zeros((grid.nx, grid.ny, grid.nz), dtype=np.int8)
+    _old_selection = np.zeros((grid.nx, grid.ny), dtype=np.int8)
 
     # Grid coordinates -> Flat array
     _grid_coords_2d = grid.center_coords_2d.reshape(2, -1, order="F").T

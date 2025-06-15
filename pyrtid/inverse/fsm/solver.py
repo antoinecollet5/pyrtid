@@ -55,23 +55,25 @@ class FSMVects:
         ns, ne = vecs.shape
 
         # create sparse arrays
-        self.dFhdsv = csc_array((grid.nx, grid.ny))
-        self.dFpdsv = csc_array((grid.nx, grid.ny))
-        self.dFUxdsv = csc_array((grid.nx + 1, grid.ny))
-        self.dFUydsv = csc_array((grid.nx, grid.ny + 1))
-        self.dFDdsv = csc_array((grid.nx, grid.ny))
-        self.dFcdsv = csc_array((2, grid.nx, grid.ny))
-        self.dFmdsv = csc_array((2, grid.nx, grid.ny))
-        self.dFrhodsv = csc_array((grid.nx, grid.ny))
+        self.dFhdsv = csc_array(grid.shape)
+        self.dFpdsv = csc_array(grid.shape)
+        self.dFUxdsv = csc_array((grid.nx + 1, grid.ny, grid.nz))
+        self.dFUydsv = csc_array((grid.nx, grid.ny + 1, grid.nz))
+        self.dFUzdsv = csc_array((grid.nx, grid.ny, grid.nz + 1))
+        self.dFDdsv = csc_array(grid.shape)
+        self.dFcdsv = csc_array((2, grid.nx, grid.ny, grid.nz))
+        self.dFmdsv = csc_array((2, grid.nx, grid.ny, grid.nz))
+        self.dFrhodsv = csc_array(grid.shape)
 
-        self.zh = csc_array((grid.nx, grid.ny, ne))
-        self.zp = csc_array((grid.nx, grid.ny, ne))
-        self.zUx = csc_array((grid.nx + 1, grid.ny, ne))
-        self.zUy = csc_array((grid.nx, grid.ny + 1, ne))
-        self.zD = csc_array((grid.nx, grid.ny, ne))
-        self.zc = csc_array((2, grid.nx, grid.ny, ne))
-        self.zm = csc_array((2, grid.nx, grid.ny, ne))
-        self.zrho = csc_array((grid.nx, grid.ny, ne))
+        self.zh = csc_array((*grid.shape, ne))
+        self.zp = csc_array((*grid.shape, ne))
+        self.zUx = csc_array((grid.nx + 1, grid.ny, grid.nz, ne))
+        self.zUy = csc_array((grid.nx, grid.ny + 1, grid.nz, ne))
+        self.zUz = csc_array((grid.nx, grid.ny, grid.nz + 1, ne))
+        self.zD = csc_array((*grid.shape, ne))
+        self.zc = csc_array((2, *grid.shape, ne))
+        self.zm = csc_array((2, *grid.shape, ne))
+        self.zrho = csc_array((*grid.shape, ne))
 
         # Array in which the Ne products with the Jacobian matrix are stored.
         # This matrix has shape (N_obs, Ne)
@@ -85,6 +87,7 @@ class FSMVects:
         self.dFpdsv[self.dFpdsv.nonzero()] = 0.0
         self.dFUxdsv[self.dFUxdsv.nonzero()] = 0.0
         self.dFUydsv[self.dFUydsv.nonzero()] = 0.0
+        self.dFUzdsv[self.dFUzdsv.nonzero()] = 0.0
         self.dFDdsv[self.dFDdsv.nonzero()] = 0.0
         self.dFcdsv[self.dFcdsv.nonzero()] = 0.0
         self.dFmdsv[self.dFmdsv.nonzero()] = 0.0

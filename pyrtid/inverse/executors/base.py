@@ -812,6 +812,7 @@ class AdjointInversionExecutor(BaseInversionExecutor, Generic[_AdjointSolverConf
             hm_end_time=self.solver_config.hm_end_time,
             is_verbose=is_verbose,
             max_nafpi=max_nafpi,
+            is_save_state=True,
         )
 
     def eval_loss_gradient(

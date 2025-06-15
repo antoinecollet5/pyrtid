@@ -149,7 +149,9 @@ def test_get_weights() -> None:
         (
             np.array([0, 1, 2, 3, 4, 5]),
             np.repeat(
-                np.array([[1, 4], [2, 5], [3, 6]])[:, :, np.newaxis], 5, axis=-1
+                np.array([[[1], [4]], [[2], [5]], [[3], [6]]])[:, :, :, np.newaxis],
+                5,
+                axis=-1,
             ).reshape(-1, 5, order="F"),
         ),
         (np.array([1, 3]), np.repeat(np.array([[2], [4]]), 5, axis=-1)),
@@ -161,15 +163,17 @@ def test_get_values_matching_node_indices(
 ) -> None:
     # 3D arrays -> with time axis
     input_values = np.repeat(
-        np.array([[1.0, 4.0], [2.0, 5.0], [3.0, 6.0]])[:, :, np.newaxis], 5, axis=-1
+        np.array([[[1.0], [4.0]], [[2.0], [5.0]], [[3.0], [6.0]]])[:, :, :, np.newaxis],
+        5,
+        axis=-1,
     )
     np.testing.assert_allclose(
         get_values_matching_node_indices(node_indices, input_values),
         expected_output,
     )
 
-    # 2D arrays -> no time axis
-    input_values = np.array([[1, 4], [2, 5], [3, 6]])
+    # 3D arrays -> no time axis
+    input_values = np.array([[[1], [4]], [[2], [5]], [[3], [6]]])
     np.testing.assert_allclose(
         get_values_matching_node_indices(node_indices, input_values),
         expected_output[:, 0],
@@ -526,12 +530,12 @@ def test_get_predictions_matching_observations(max_obs_time, expected_output) ->
     )
 
     # generate synthetic data
-    model.tr_model.lmob.append(np.ones((2, 20, 20)) * 2.0)
-    model.tr_model.lmob.append(np.ones((2, 20, 20)) * 3.0)
+    model.tr_model.lmob.append(np.ones((2, 20, 20, 1)) * 2.0)
+    model.tr_model.lmob.append(np.ones((2, 20, 20, 1)) * 3.0)
     model.time_params.save_dt()
     model.time_params.save_dt()
 
-    model.tr_model.porosity[:, :] = np.arange(20 * 20).reshape((20, 20), order="F")
+    model.tr_model.porosity[:, :] = np.arange(20 * 20).reshape((20, 20, 1), order="F")
 
     obs1 = Observable(
         StateVariable.CONCENTRATION,
@@ -601,15 +605,15 @@ def test_get_adjoint_sources_for_obs(max_obs_time, mean_type) -> None:
 
     # generate synthetic data
     model.tr_model.lmob.append(
-        np.random.default_rng(2023).random((2, grid.nx, grid.ny)) + 2.0
+        np.random.default_rng(2023).random((2, grid.nx, grid.ny, grid.nz)) + 2.0
     )
     model.tr_model.lmob.append(
-        np.random.default_rng(2023).random((2, grid.nx, grid.ny)) + 3.0
+        np.random.default_rng(2023).random((2, grid.nx, grid.ny, grid.nz)) + 3.0
     )
     model.time_params.save_dt()
     model.time_params.save_dt()
 
-    model.fl_model.permeability = np.random.default_rng(2023).random((grid.nx, grid.ny))
+    model.fl_model.permeability = np.random.default_rng(2023).random(grid.shape)
 
     obs1 = Observable(
         StateVariable.CONCENTRATION,
@@ -639,7 +643,7 @@ def test_get_adjoint_sources_for_obs(max_obs_time, mean_type) -> None:
 
     def wrapper_conc(arr: NDArrayFloat) -> float:
         for i in range(arr.shape[-1]):
-            model.tr_model.lmob[i][0] = arr[:, :, i]
+            model.tr_model.lmob[i][0] = arr[:, :, :, i]
         return eval_model_loss_ls(model, [obs1], max_obs_time)
 
     np.testing.assert_allclose(

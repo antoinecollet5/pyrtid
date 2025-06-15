@@ -542,7 +542,7 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
         # but log scaling if needed.
         s_change = 0
         for p in self.inv_model.parameters_to_adjust:
-            s_change += p.get_values_change(ord=2)
+            s_change += p.get_values_change(is_use_pcd=True, ord=np.inf)
         logging.getLogger("L-BFGS-B").info(f"Callback - s_change = {s_change}\n")
         return s_change < self.solver_config.stol
 

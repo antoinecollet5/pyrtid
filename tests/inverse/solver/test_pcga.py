@@ -95,11 +95,11 @@ def test_large_medium_scale(
     )
     cholQ_ref = sparse_cholesky(Q_ref)
     # Non conditional simulation -> change the random state to obtain a different field
-    simu_ = spde.simu_nc(cholQ_ref, random_state=2026).reshape(ny, nx).T
+    simu_ = spde.simu_nc(cholQ_ref, random_state=2026).reshape(nx, ny, order="F")
     s_ref = np.abs(simu_ + mean)
 
     # Initial guess
-    simu_ = spde.simu_nc(cholQ_ref, random_state=15653).reshape(ny, nx).T
+    simu_ = spde.simu_nc(cholQ_ref, random_state=15653).reshape(nx, ny, order="F")
     s_init = np.abs(simu_)
 
     d_ref = forward_model(s_ref)

@@ -18,7 +18,7 @@ from pyrtid.utils.types import NDArrayFloat
 # algorithms used in GSTools. The new package uses the language Rust and it should be
 # faster (in some cases by orders of magnitude), safer, and it will potentially
 # completely replace the current standard implementation in Cython.
-gs.config.USE_RUST = True
+# gs.config.USE_RUST = True
 
 
 def gen_random_ensemble(
@@ -35,42 +35,44 @@ def gen_random_ensemble(
     model_kwargs: Optional[Dict[str, Any]] = None,
 ) -> NDArrayFloat:
     r"""
-    Generate a (ne, nx, ny, nz) ensemble of 3D random fields.
+        Generate a (ne, nx, ny, nz) ensemble of 3D random fields.
 
-    Parameters
-    ----------
-    model: CovModel
-        Covariance Model class object related to the field.
-    n_ensemble : int
-        Number of members in the ensemble.
-    var : float
-        Variance of the model (the nugget is not included in “this” variance).
-    len_scale : Union[float, List[float], NDArrayFloat]
-        Length scale of the model. If a single value is given, the same length-scale
-        will be used for every direction. If multiple values (for main and transversal
-        directions) are given, anis will be recalculated accordingly.
-        If only two values are given in 3D, the latter one will be used for both
-        transversal directions.
-    mean: float
-        Mean of the field.
-    nx : int
-        x size of the members.
-    ny : int, optional
-        y size of the members (if members are 2D). The default is 1 (if members are 1D).
-    nz : int, optional
-        z size of the members (if members are 3D). The default is 1 (if members are 1D).
-    seed : int, optional
-        Specifying a seed, we make sure to create reproducible results.
-        The default is 20170519.
-    normalizer: Optional[Normalized]
-        Normalizer to be applied to the field. The default is None.
-    model_kwargs: Dict[str, Any]
-        additional parameters for the model.
+        Parameters
+        ----------
+        model: CovModel
+            Covariance Model class object related to the field.
+        n_ensemble : int
+            Number of members in the ensemble.
+        var : float
+            Variance of the model (the nugget is not included in “this” variance).
+        len_scale : Union[float, List[float], NDArrayFloat]
+            Length scale of the model. If a single value is given, the same length-scale
+            will be used for every direction. If multiple values (for main and
+            transversal directions) are given, anis will be recalculated accordingly.
+            If only two values are given in 3D, the latter one will be used for both
+            transversal directions.
+        mean: float
+            Mean of the field.
+        nx : int
+            x size of the members.
+        ny : int, optional
+            y size of the members (if members are 2D). The default is 1
+    (if members are 1D).
+        nz : int, optional
+            z size of the members (if members are 3D). The default is 1
+    (if members are 1D).
+        seed : int, optional
+            Specifying a seed, we make sure to create reproducible results.
+            The default is 20170519.
+        normalizer: Optional[Normalized]
+            Normalizer to be applied to the field. The default is None.
+        model_kwargs: Dict[str, Any]
+            additional parameters for the model.
 
-    Returns
-    -------
-    ens : np.ndarray
-        Ensemble members. Dimensions are (ne, nx, ny, nz)
+        Returns
+        -------
+        ens : np.ndarray
+            Ensemble members. Dimensions are (ne, nx, ny, nz)
 
     """
     if model_kwargs is None:

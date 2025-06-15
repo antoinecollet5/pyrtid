@@ -511,12 +511,12 @@ def get_values_matching_node_indices(
     NDArrayFloat
         Simulated values at the observation location
     """
-    nx, ny = input_values.shape[:2]
-    X, Y, _ = node_number_to_indices(node_indices, nx=nx, ny=ny)
-    if len(input_values.shape) == 3:
-        return input_values[X, Y, :]
+    nx, ny, nz = input_values.shape[:3]
+    X, Y, Z = node_number_to_indices(node_indices, nx=nx, ny=ny)
+    if len(input_values.shape) == 4:
+        return input_values[X, Y, Z, :]
     # state variable constant within time
-    return input_values[X, Y]
+    return input_values[X, Y, Z]
 
 
 def get_interp_simu_values_matching_obs_times(
@@ -596,7 +596,7 @@ def get_simulated_values_matching_obs(
     field = get_array_from_state_variable(model, obs.state_variable, obs.sp)
     obs_times = get_sorted_observable_times(obs, max_obs_time)
 
-    if len(field.shape) == 2:
+    if len(field.shape) == 3:
         _field = field.reshape((*field.shape, 1))
     else:
         _field = field
@@ -606,7 +606,7 @@ def get_simulated_values_matching_obs(
         weights=None,
     )
     # control parameter -> not varying in time
-    if len(field.shape) == 2:
+    if len(field.shape) == 3:
         # The interpolated value is the same for all time
         return np.repeat(_simu_values, obs_times.size)
     # state variable varying in time
@@ -717,7 +717,7 @@ def get_adjoint_sources_for_obs(
     adj_src = np.zeros(field.shape)
 
     # Location in the grid
-    X, Y, _ = node_number_to_indices(
+    X, Y, Z = node_number_to_indices(
         obs.node_indices, nx=model.grid.nx, ny=model.grid.ny
     )
 
@@ -726,9 +726,9 @@ def get_adjoint_sources_for_obs(
 
     # no time dimension, so normally, the adj_src are for the parameter at t=0
     # (ex: permeability)
-    if len(adj_src.shape) == 2:
+    if len(adj_src.shape) == 3:
         for n in range(len(obs_times)):
-            adj_src[X, Y] += (
+            adj_src[X, Y, Z] += (
                 _averaging_derivative  # in this case
                 * (simu_values - obs_values)[n]
                 / (obs_std[n] ** 2)
@@ -741,13 +741,13 @@ def get_adjoint_sources_for_obs(
         )
         for n in range(len(obs_times)):
             # Note: ici, on a simu_values = w1 * av(c(n+1)) + w2 * av(c(n))
-            adj_src[X, Y, idx_before[n]] += (
+            adj_src[X, Y, Z, idx_before[n]] += (
                 _averaging_derivative[:, idx_before[n]].ravel("F")
                 * weights_before[n]
                 * (simu_values - obs_values)[n]
                 / (obs_std[n] ** 2)
             )
-            adj_src[X, Y, idx_after[n]] += (
+            adj_src[X, Y, Z, idx_after[n]] += (
                 _averaging_derivative[:, idx_after[n]].ravel("F")
                 * weights_after[n]
                 * (simu_values - obs_values)[n]

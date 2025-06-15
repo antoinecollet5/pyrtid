@@ -29,14 +29,21 @@ def get_drhomean(
     time_index: int,
     is_flatten: bool = True,
 ) -> NDArrayFloat:
-    drhomean: NDArrayFloat = np.zeros((grid.nx, grid.ny), dtype=np.float64)
+    drhomean: NDArrayFloat = np.zeros(grid.shape, dtype=np.float64)
     if axis == 0:
         drhomean[:-1, :] = dxi_arithmetic_mean(
-            tr_model.ldensity[time_index][:-1, :], tr_model.ldensity[time_index][1:, :]
+            tr_model.ldensity[time_index][:-1, :, :],
+            tr_model.ldensity[time_index][1:, :, :],
+        )
+    elif axis == 1:
+        drhomean[:, :-1, :] = dxi_arithmetic_mean(
+            tr_model.ldensity[time_index][:, :-1, :],
+            tr_model.ldensity[time_index][:, 1:, :],
         )
     else:
-        drhomean[:, :-1] = dxi_arithmetic_mean(
-            tr_model.ldensity[time_index][:, :-1], tr_model.ldensity[time_index][:, 1:]
+        drhomean[:, :, :-1] = dxi_arithmetic_mean(
+            tr_model.ldensity[time_index][:, :, :-1],
+            tr_model.ldensity[time_index][:, :, 1:],
         )
 
     if is_flatten:
@@ -57,7 +64,7 @@ def solve_adj_density(
     shape = tr_model.ldensity[0].shape
 
     # Add the density observations derivative (adjoint source term)
-    a_tr_model.a_density[:, :, time_index] -= (
+    a_tr_model.a_density[:, :, :, time_index] -= (
         a_tr_model.a_density_sources[:, [time_index]]
         .todense()
         .reshape(shape, order="F")
@@ -91,8 +98,8 @@ def _add_head_equation_contribution(
     a_tr_model: AdjointTransportModel,
     time_index: int,
 ) -> None:
-    a_tr_model.a_density[:, :, time_index] -= (
-        a_fl_model.a_head[:, :, time_index + 1]
+    a_tr_model.a_density[:, :, :, time_index] -= (
+        a_fl_model.a_head[:, :, :, time_index + 1]
         * fl_model.lpressure[time_index + 1]
         / (tr_model.ldensity[time_index] ** 2)
         / GRAVITY
@@ -109,30 +116,30 @@ def _add_darcy_contribution(
 ) -> None:
     # X contribution
     if fl_model.vertical_axis == VerticalAxis.X:
-        kij = get_kmean(grid, fl_model, axis=0, is_flatten=False)[:-1, :]
+        kij = get_kmean(grid, fl_model, axis=0, is_flatten=False)[:-1, :, :]
         a_u_darcy_x_old = (
-            a_fl_model.a_u_darcy_x[1:-1, :, time_index + 1] * kij / WATER_DENSITY
+            a_fl_model.a_u_darcy_x[1:-1, :, :, time_index + 1] * kij / WATER_DENSITY
         )
         drhomean = get_drhomean(
             grid, tr_model, axis=0, time_index=time_index, is_flatten=False
-        )[:-1, :]
+        )[:-1, :, :]
         # Left
-        a_tr_model.a_density[:-1, :, time_index] -= a_u_darcy_x_old * drhomean
+        a_tr_model.a_density[:-1, :, :, time_index] -= a_u_darcy_x_old * drhomean
         # Right
-        a_tr_model.a_density[1:, :, time_index] -= a_u_darcy_x_old * drhomean
+        a_tr_model.a_density[1:, :, :, time_index] -= a_u_darcy_x_old * drhomean
     # Y Contribution
     elif fl_model.vertical_axis == VerticalAxis.Y:
-        kij = get_kmean(grid, fl_model, axis=1, is_flatten=False)[:, :-1]
+        kij = get_kmean(grid, fl_model, axis=1, is_flatten=False)[:, :-1, :]
         a_u_darcy_y_old = (
-            a_fl_model.a_u_darcy_y[:, 1:-1, time_index + 1] * kij / WATER_DENSITY
+            a_fl_model.a_u_darcy_y[:, 1:-1, :, time_index + 1] * kij / WATER_DENSITY
         )
         drhomean = get_drhomean(
             grid, tr_model, axis=1, time_index=time_index, is_flatten=False
-        )[:, :-1]
+        )[:, :-1, :]
         # Up
-        a_tr_model.a_density[:, :-1, time_index] -= a_u_darcy_y_old * drhomean
+        a_tr_model.a_density[:, :-1, :, time_index] -= a_u_darcy_y_old * drhomean
         # Down
-        a_tr_model.a_density[:, 1:, time_index] -= a_u_darcy_y_old * drhomean
+        a_tr_model.a_density[:, 1:, :, time_index] -= a_u_darcy_y_old * drhomean
 
 
 def _add_diffusivity_contribution(
@@ -154,25 +161,25 @@ def _add_diffusivity_contribution(
     else:
         crank_flow = a_fl_model.crank_nicolson
 
-    shape = (grid.nx, grid.ny)
+    shape = grid.shape
     permeability = fl_model.permeability
     free_head_indices = fl_model.free_head_indices
 
     # add the storgae coefficient to ma_apressure
-    apressure = a_fl_model.a_pressure[:, :, time_index + 1]
+    apressure = a_fl_model.a_pressure[:, :, :, time_index + 1]
 
     # Mask the adjoint pressure for the constant head nodes
     ma_apressure = np.zeros(apressure.shape)
-    ma_apressure[free_head_indices[0], free_head_indices[1]] = apressure[
-        free_head_indices[0], free_head_indices[1]
-    ]
+    ma_apressure[free_head_indices[0], free_head_indices[1], free_head_indices[2]] = (
+        apressure[free_head_indices[0], free_head_indices[1], free_head_indices[2]]
+    )
     # add the storgae coefficient to ma_apressure
     ma_apressure_sc = ma_apressure / (
-        fl_model.storage_coefficient[:, :] * grid.grid_cell_volume
+        fl_model.storage_coefficient[:, :, :] * grid.grid_cell_volume
     )
 
-    pprev = fl_model.pressure[:, :, time_index + 1]
-    pnext = fl_model.pressure[:, :, time_index]
+    pprev = fl_model.pressure[:, :, :, time_index + 1]
+    pnext = fl_model.pressure[:, :, :, time_index]
 
     contrib = np.zeros(shape)
 
@@ -184,7 +191,7 @@ def _add_diffusivity_contribution(
             axis=0,
             time_index=time_index,
             is_flatten=False,
-        )[:-1, :]
+        )[:-1, :, :]
         tmp = np.zeros_like(drhomean_x)
         if fl_model.vertical_axis == VerticalAxis.X:
             rhomean_x = get_rhomean(
@@ -193,27 +200,27 @@ def _add_diffusivity_contribution(
                 axis=0,
                 time_index=time_index,
                 is_flatten=False,
-            )[:-1, :]
+            )[:-1, :, :]
             tmp = GRAVITY * 2.0 * drhomean_x * rhomean_x
 
         # Forward scheme
         dpressure_fx = (
             (
                 (
-                    crank_flow * (pprev[1:, :] - pprev[:-1, :])
-                    + (1.0 - crank_flow) * (pnext[1:, :] - pnext[:-1, :])
+                    crank_flow * (pprev[1:, :, :] - pprev[:-1, :, :])
+                    + (1.0 - crank_flow) * (pnext[1:, :, :] - pnext[:-1, :, :])
                 )
                 / grid.dx
                 * drhomean_x
                 + tmp
             )
-            * harmonic_mean(permeability[:-1, :], permeability[1:, :])
+            * harmonic_mean(permeability[:-1, :, :], permeability[1:, :, :])
             / WATER_DENSITY
         )
 
-        contrib[:-1, :] += (
+        contrib[:-1, :, :] += (
             dpressure_fx
-            * (ma_apressure_sc[:-1, :] - ma_apressure_sc[1:, :])
+            * (ma_apressure_sc[:-1, :, :] - ma_apressure_sc[1:, :, :])
             * grid.gamma_ij_x
         )
 
@@ -221,20 +228,20 @@ def _add_diffusivity_contribution(
         dpressure_bx = (
             (
                 (
-                    crank_flow * (pprev[:-1, :] - pprev[1:, :])
-                    + (1.0 - crank_flow) * (pnext[:-1, :] - pnext[1:, :])
+                    crank_flow * (pprev[:-1, :, :] - pprev[1:, :, :])
+                    + (1.0 - crank_flow) * (pnext[:-1, :, :] - pnext[1:, :, :])
                 )
                 / grid.dx
                 * drhomean_x
                 - tmp
             )
-            * harmonic_mean(permeability[1:, :], permeability[:-1, :])
+            * harmonic_mean(permeability[1:, :, :], permeability[:-1, :, :])
             / WATER_DENSITY
         )
 
-        contrib[1:, :] += (
+        contrib[1:, :, :] += (
             dpressure_bx
-            * (ma_apressure_sc[1:, :] - ma_apressure_sc[:-1, :])
+            * (ma_apressure_sc[1:, :, :] - ma_apressure_sc[:-1, :, :])
             * grid.gamma_ij_x
         )
 
@@ -246,7 +253,7 @@ def _add_diffusivity_contribution(
             axis=1,
             time_index=time_index,
             is_flatten=False,
-        )[:, :-1]
+        )[:, :-1, :]
         tmp = np.zeros_like(drhomean_y)
         if fl_model.vertical_axis == VerticalAxis.Y:
             rhomean_y = get_rhomean(
@@ -255,27 +262,27 @@ def _add_diffusivity_contribution(
                 axis=1,
                 time_index=time_index,
                 is_flatten=False,
-            )[:, :-1]
+            )[:, :-1, :]
             tmp = GRAVITY * 2.0 * drhomean_y * rhomean_y
 
         # Forward scheme
         dpressure_fy = (
             (
                 (
-                    crank_flow * (pprev[:, 1:] - pprev[:, :-1])
-                    + (1.0 - crank_flow) * (pnext[:, 1:] - pnext[:, :-1])
+                    crank_flow * (pprev[:, 1:, :] - pprev[:, :-1, :])
+                    + (1.0 - crank_flow) * (pnext[:, 1:, :] - pnext[:, :-1, :])
                 )
                 / grid.dy
                 * drhomean_y
                 + tmp
             )
-            * harmonic_mean(permeability[:, :-1], permeability[:, 1:])
+            * harmonic_mean(permeability[:, :-1, :], permeability[:, 1:, :])
             / WATER_DENSITY
         )
 
-        contrib[:, :-1] += (
+        contrib[:, :-1, :] += (
             dpressure_fy
-            * (ma_apressure_sc[:, :-1] - ma_apressure_sc[:, 1:])
+            * (ma_apressure_sc[:, :-1, :] - ma_apressure_sc[:, 1:, :])
             * grid.gamma_ij_y
         )
 
@@ -283,27 +290,27 @@ def _add_diffusivity_contribution(
         dpressure_by = (
             (
                 (
-                    crank_flow * (pprev[:, :-1] - pprev[:, 1:])
-                    + (1.0 - crank_flow) * (pnext[:, :-1] - pnext[:, 1:])
+                    crank_flow * (pprev[:, :-1, :] - pprev[:, 1:, :])
+                    + (1.0 - crank_flow) * (pnext[:, :-1, :] - pnext[:, 1:, :])
                 )
                 / grid.dy
                 * drhomean_y
                 - tmp
             )
-            * harmonic_mean(permeability[:, 1:], permeability[:, :-1])
+            * harmonic_mean(permeability[:, 1:, :], permeability[:, :-1, :])
             / WATER_DENSITY
         )
 
-        contrib[:, 1:] += (
+        contrib[:, 1:, :] += (
             dpressure_by
-            * (ma_apressure_sc[:, 1:] - ma_apressure_sc[:, :-1])
+            * (ma_apressure_sc[:, 1:, :] - ma_apressure_sc[:, :-1, :])
             * grid.gamma_ij_y
         )
 
-    a_tr_model.a_density[:, :, time_index] += contrib.reshape(grid.shape2d, order="F")
+    a_tr_model.a_density[:, :, :, time_index] += contrib.reshape(grid.shape, order="F")
 
     # 3) Add unitflow: only for free head nodes
-    a_tr_model.a_density[:, :, time_index] += (
+    a_tr_model.a_density[:, :, :, time_index] += (
         ma_apressure
         * GRAVITY
         * (

@@ -173,8 +173,7 @@ def test_sparse_precision_matrix() -> None:
     tmp = []
     for i in range(n_fields):
         _field = np.abs(
-            spde.simu_nc(cholQ_ref, random_state=i).reshape(ny, nx).T.reshape(ny, nx).T
-            + mean
+            spde.simu_nc(cholQ_ref, random_state=i).reshape(nx, ny, order="F") + mean
         )
 
         tmp.append(np.where(_field < 0.0, 0.0, _field).ravel("F"))

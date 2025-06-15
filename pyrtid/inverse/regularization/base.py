@@ -254,7 +254,7 @@ def make_spatial_gradient_matrices(
     Tuple[csc_array, csc_array]
         Spatial gradient matrices for x and y axes.
     """
-    dim = grid.nx * grid.ny
+    dim = grid.n_grid_cells
     # matrix for the spatial gradient along the x axis
     mat_grad_x = lil_array((dim, dim), dtype=np.float64)
     # matrix for the spatial gradient along the y axis
@@ -347,7 +347,7 @@ def make_spatial_permutation_matrices(
     Tuple[csc_array, csc_array]
         Spatial permutation matrices for x and y axes.
     """
-    dim = grid.nx * grid.ny
+    dim = grid.n_grid_cells
     # matrix for the spatial permutation along the x axis
     mat_perm_x = lil_array((dim, dim), dtype=np.float64)
     # matrix for the spatial permutation along the y axis

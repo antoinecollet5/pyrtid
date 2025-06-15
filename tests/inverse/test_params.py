@@ -160,8 +160,8 @@ def test_get_bounds(example_kwargs) -> None:
 @pytest.mark.parametrize(
     "span, expected",
     (
-        [slice(None), np.ones([5, 5]) * np.log(2.0)],
-        [(slice(2, 4), slice(1, 4)), np.ones([2, 3]) * np.log(2.0)],
+        [slice(None), np.ones([5, 5, 1]) * np.log(2.0)],
+        [(slice(2, 4), slice(1, 4)), np.ones([2, 3, 1]) * np.log(2.0)],
     ),
 )
 def test_transform_slicing(example_kwargs, span, expected) -> None:

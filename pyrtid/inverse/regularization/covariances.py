@@ -16,7 +16,6 @@ from typing import Callable, List, Optional, Sequence, Tuple, Union
 import numpy as np
 import scipy as sp
 from numpy.random import Generator, RandomState
-from scipy._lib._util import check_random_state  # To handle random_state
 from scipy.linalg import solve
 from scipy.sparse import csc_array, csr_array
 from scipy.sparse.linalg import LinearOperator, eigsh, gmres, lgmres
@@ -32,6 +31,7 @@ from pyrtid.inverse.regularization.toeplitz import (
 from pyrtid.utils import (
     NDArrayFloat,
     NDArrayInt,
+    check_random_state,
     get_pts_coords_regular_grid,
     sparse_cholesky,
 )

@@ -34,8 +34,8 @@ def solve_adj_geochem(
 
     # A) Variables at time step n+1
     if time_index != time_params.nts:
-        a_immob_prev = a_tr_model.a_immob[:, :, :, time_index + 1]
-        a_mob_prev = a_tr_model.a_mob[:, :, :, time_index + 1]
+        a_immob_prev = a_tr_model.a_immob[:, :, :, :, time_index + 1]
+        a_mob_prev = a_tr_model.a_mob[:, :, :, :, time_index + 1]
         tr_model.limmob[time_index + 1]
         tr_model.lmob[time_index + 1]
         dt_prev = time_params.ldt[time_index]
@@ -44,12 +44,10 @@ def solve_adj_geochem(
         # or adjoint state initialization
         a_immob_prev = np.zeros((1))
         a_mob_prev = np.zeros((1))
-        np.zeros((1))
-        np.zeros((1))
         dt_prev = 1.0  # should be zero but we avoid a zero division here
 
     # B) Variables at time step n
-    a_mob_next = a_tr_model.a_mob[:, :, :, time_index]
+    a_mob_next = a_tr_model.a_mob[:, :, :, :, time_index]
     tr_model.lmob[time_index]
     dt_next = time_params.ldt[time_index - 1]
 
@@ -59,13 +57,15 @@ def solve_adj_geochem(
     ## Part 2) Compute \lambda \overline{c}_1 et \overline{c}_2
 
     # 2.1) Reset all to zero for the next time step (n).
-    a_tr_model.a_immob[:, :, :, time_index] = 0.0
+    a_tr_model.a_immob[:, :, :, :, time_index] = 0.0
 
     # 2.2) Add the sources from the LS objective function
     for sp in range(tr_model.n_sp):
-        a_tr_model.a_immob[sp, :, :, time_index] -= a_tr_model.a_grade_sources[sp][
-            :, [time_index]
-        ].reshape(grid.nx, grid.ny, order="F")
+        a_tr_model.a_immob[sp, :, :, :, time_index] -= (
+            a_tr_model.a_grade_sources[sp][:, [time_index]]
+            .todense()
+            .reshape(*grid.shape, order="F")
+        )
 
     # 2.3) Add the contributions from the transport equation
     # + deal with the adjoint numerical acceleration
@@ -79,25 +79,25 @@ def solve_adj_geochem(
         # I don't known if this is an excellent idea yet -> probably need to do
         # something like in HYTEC, i.e., start again the iterations if it fails.
         # Variables at n+2 and n+1 for the time
-        a_mob_prev_prev = a_tr_model.a_mob[:, :, :, time_index + 2]
+        a_mob_prev_prev = a_tr_model.a_mob[:, :, :, :, time_index + 2]
         dt_prev_prev = time_params.ldt[time_index + 1]
         d_a_mob_ddt = a_mob_prev / dt_prev - a_mob_prev_prev / dt_prev_prev
     else:
         # No numerical acceleration, we use
         d_a_mob_ddt = a_mob_next / dt_next - a_mob_prev / dt_prev
 
-    a_tr_model.a_immob[:, :, :, time_index] -= d_a_mob_ddt * tr_model.porosity
+    a_tr_model.a_immob[:, :, :, :, time_index] -= d_a_mob_ddt * tr_model.porosity
 
     # Up to now, the formulations were equivalent, no matter what species was treated.
     # This won't be the case in the following.
-    a_tr_model.a_immob[:, :, :, time_index] += a_immob_prev
+    a_tr_model.a_immob[:, :, :, :, time_index] += a_immob_prev
 
     # 2.4) Update the derivative of d[M](n, i) -> Only for species 1.
     # First we need to compute the d[M](n, i)
     # and its derivative w.r.t. \overbar{c}_1
     if time_index != time_params.nts:
         # Update mineral value
-        a_tr_model.a_immob[0, :, :, time_index] += (
+        a_tr_model.a_immob[0, :, :, :, time_index] += (
             a_immob_prev[0] - gch_params.stocoef * a_immob_prev[1]
         ) * (ddMdimmobprev(tr_model, gch_params, time_index, dt_prev))
 
@@ -105,15 +105,15 @@ def solve_adj_geochem(
     # 2.5) Compute the adjoint geochem source term: it is computed here to mimic the
     # splitting operator approach in which the chemical parameters might not be
     # available in the transport operator - and consequently its adjoint.
-    a_tr_model.a_gch_src_term[:, :, :] = 0.0
+    a_tr_model.a_gch_src_term[:, :, :, :] = 0.0
     if time_index != 0:
         a_tr_model.a_gch_src_term[0] = (
-            a_tr_model.a_grade[0, :, :, time_index]
-            - gch_params.stocoef * a_tr_model.a_grade[1, :, :, time_index]
+            a_tr_model.a_grade[0, :, :, :, time_index]
+            - gch_params.stocoef * a_tr_model.a_grade[1, :, :, :, time_index]
         ) * ddMdmobnext(tr_model, gch_params, time_index, dt_next, 0)
         a_tr_model.a_gch_src_term[1] = (
-            a_tr_model.a_grade[0, :, :, time_index]
-            - gch_params.stocoef * a_tr_model.a_grade[1, :, :, time_index]
+            a_tr_model.a_grade[0, :, :, :, time_index]
+            - gch_params.stocoef * a_tr_model.a_grade[1, :, :, :, time_index]
         ) * ddMdmobnext(tr_model, gch_params, time_index, dt_next, 1)
 
 

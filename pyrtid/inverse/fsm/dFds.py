@@ -307,7 +307,7 @@ def dFpdKv(
 
         # Handle the stationary case for n == 0
         elif fwd_model.fl_model.regime == FlowRegime.STATIONARY:
-            z = fwd_model.fl_model._get_mesh_center_vertical_pos().T[:, :, np.newaxis]
+            z = fwd_model.fl_model._get_mesh_center_vertical_pos()[:, :, np.newaxis]
             lhs = (
                 (
                     (pressure[1:, :] - pressure[:-1, :])[:, :, np.newaxis]
@@ -379,7 +379,7 @@ def dFpdKv(
 
         # Handle the stationary case for n == 0
         elif fwd_model.fl_model.regime == FlowRegime.STATIONARY:
-            z = fwd_model.fl_model._get_mesh_center_vertical_pos().T[:, :, np.newaxis]
+            z = fwd_model.fl_model._get_mesh_center_vertical_pos()[:, :, np.newaxis]
             lhs = (
                 (
                     (pressure[:, 1:] - pressure[:, :-1])[:, :, np.newaxis]

@@ -28,7 +28,8 @@ Provide utilities to work with regular grids.
     node_number_to_indices
     span_to_node_numbers_2d
     span_to_node_numbers_3d
-    get_array_borders_selection
+    get_array_borders_selection_2d
+    get_array_borders_selection_3d
     get_a_not_in_b_1d
     get_pts_coords_regular_grid
     create_selections_array_2d
@@ -154,6 +155,7 @@ Other functions
     object_or_object_sequence_to_list
     get_super_ilu_preconditioner
     show_versions
+    check_random_state
 
 Types
 ^^^^^
@@ -180,6 +182,8 @@ Helpers to work with sparse matrices and sparse arrays.
 
 """
 
+from scipy._lib._util import check_random_state  # To handle random_state
+
 from pyrtid.utils.callbacks import Callback
 from pyrtid.utils.dataclass import default_field
 from pyrtid.utils.enum import StrEnum
@@ -194,7 +198,8 @@ from pyrtid.utils.grid import (
     RectilinearGrid,
     create_selections_array_2d,
     get_a_not_in_b_1d,
-    get_array_borders_selection,
+    get_array_borders_selection_2d,
+    get_array_borders_selection_3d,
     get_polygon_selection_with_dilation_2d,
     get_pts_coords_regular_grid,
     indices_to_node_number,
@@ -278,7 +283,8 @@ __all__ = [
     "object_or_object_sequence_to_list",
     "span_to_node_numbers_2d",
     "span_to_node_numbers_3d",
-    "get_array_borders_selection",
+    "get_array_borders_selection_2d",
+    "get_array_borders_selection_3d",
     "get_pts_coords_regular_grid",
     "NDArrayFloat",
     "NDArrayInt",
@@ -293,4 +299,5 @@ __all__ = [
     "assert_allclose_sparse",
     "Callback",
     "np_cache",
+    "check_random_state",
 ]

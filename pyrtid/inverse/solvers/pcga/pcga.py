@@ -20,7 +20,6 @@ from typing import Any, Callable, Generator, Iterator, List, Optional, Tuple, Un
 
 import numpy as np
 import scipy as sp
-from scipy._lib._util import check_random_state  # To handle random_state
 from scipy.sparse.linalg import LinearOperator, gmres, minres
 
 from pyrtid.inverse.regularization import (
@@ -30,7 +29,7 @@ from pyrtid.inverse.regularization import (
     EigenFactorizedCovarianceMatrix,
     eigen_factorize_cov_mat,
 )
-from pyrtid.utils import NDArrayBool, NDArrayFloat
+from pyrtid.utils import NDArrayBool, NDArrayFloat, check_random_state
 
 VERY_LARGE_NUMBER = 1.0e20
 
