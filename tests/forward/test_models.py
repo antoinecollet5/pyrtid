@@ -149,8 +149,8 @@ def test_minimal_model_init() -> None:
 def model() -> ForwardModel:
     source_terms = get_source_term()
     boundary_conditions = (
-        ConstantHead(slice(None)),
-        ConstantConcentration(slice(None)),
+        ConstantHead(slice(None), values=0.0),
+        ConstantConcentration(slice(None), values=0.0),
         ZeroConcGradient(slice(None)),
     )
     return ForwardModel(
@@ -194,8 +194,8 @@ def test_wrong_source_term(model) -> None:
 @pytest.mark.parametrize(
     "condition,expected_exception",
     [
-        (ConstantHead(span=slice(None)), does_not_raise()),
-        (ConstantConcentration(span=slice(None)), does_not_raise()),
+        (ConstantHead(span=slice(None), values=0.0), does_not_raise()),
+        (ConstantConcentration(span=slice(None), values=0.0), does_not_raise()),
         (ZeroConcGradient(span=slice(None)), does_not_raise()),
         ("some random object", pytest.raises(ValueError)),
     ],
@@ -209,8 +209,11 @@ def test_add_model_boundary_conditions(model, condition, expected_exception) -> 
 @pytest.mark.parametrize(
     "condition,expected_exception",
     [
-        (ConstantHead(span=slice(None)), does_not_raise()),
-        (ConstantConcentration(span=slice(None)), pytest.raises(ValueError)),
+        (ConstantHead(span=slice(None), values=0.0), does_not_raise()),
+        (
+            ConstantConcentration(span=slice(None), values=0.0),
+            pytest.raises(ValueError),
+        ),
         (ZeroConcGradient(span=slice(None)), pytest.raises(ValueError)),
     ],
 )
@@ -223,8 +226,8 @@ def test_add_flow_boundary_conditions(model, condition, expected_exception) -> N
 @pytest.mark.parametrize(
     "condition,expected_exception",
     [
-        (ConstantHead(span=slice(None)), pytest.raises(ValueError)),
-        (ConstantConcentration(span=slice(None)), does_not_raise()),
+        (ConstantHead(span=slice(None), values=0.0), pytest.raises(ValueError)),
+        (ConstantConcentration(span=slice(None), values=0.0), does_not_raise()),
         (ZeroConcGradient(span=slice(None)), does_not_raise()),
     ],
 )
@@ -490,10 +493,12 @@ def test_get_sources(
     model = ForwardModel(grid, time_params, fl_params, tr_params, gch_params)
 
     model.add_boundary_conditions(
-        ConstantConcentration((slice(0, 1), slice(1, 2), slice(None)))
+        ConstantConcentration((slice(0, 1), slice(1, 2), slice(None)), values=0.0)
     )
 
-    model.add_boundary_conditions(ConstantHead((slice(0, 1), slice(2, 3), slice(None))))
+    model.add_boundary_conditions(
+        ConstantHead((slice(0, 1), slice(2, 3), slice(None)), values=0.0)
+    )
 
     model.add_src_term(
         SourceTerm(
@@ -533,19 +538,23 @@ def test_get_sources(
     "boundary_conditions, expected_cst_head_nn, expected_free_head_nn",
     [
         ((), [], np.array([0, 1, 2, 3, 4, 5, 6, 7, 8])),
-        (ConstantHead(slice(None)), [0, 1, 2, 3, 4, 5, 6, 7, 8], np.array([])),
         (
-            ConstantHead((slice(0, 3), slice(0, 3), slice(None))),
+            ConstantHead(slice(None), values=0.0),
+            [0, 1, 2, 3, 4, 5, 6, 7, 8],
+            np.array([]),
+        ),
+        (
+            ConstantHead((slice(0, 3), slice(0, 3), slice(None)), values=0.0),
             np.array([0, 1, 2, 3, 4, 5, 6, 7, 8]),
             [],
         ),
         (
-            ConstantHead((slice(0, 3), slice(0, 1), slice(None))),
+            ConstantHead((slice(0, 3), slice(0, 1), slice(None)), values=0.0),
             np.array([0, 1, 2]),
             [3, 4, 5, 6, 7, 8],
         ),
         (
-            ConstantHead((slice(0, 2), slice(0, 1), slice(None))),
+            ConstantHead((slice(0, 2), slice(0, 1), slice(None)), values=0.0),
             np.array([0, 1]),
             [2, 3, 4, 5, 6, 7, 8],
         ),

@@ -90,13 +90,15 @@ def get_forward_and_obs(
 
     # Boundary conditions
     base_model.add_boundary_conditions(
-        dmfwd.ConstantHead(span=(slice(0, 1), slice(None), slice(None)))
+        dmfwd.ConstantHead(
+            span=(slice(0, 1), slice(None), slice(None)), values=cst_head_left
+        )
     )
-    base_model.fl_model.lhead[0][0, :, :] = cst_head_left
     base_model.add_boundary_conditions(
-        dmfwd.ConstantHead(span=(slice(nx - 1, nx), slice(None), slice(None)))
+        dmfwd.ConstantHead(
+            span=(slice(nx - 1, nx), slice(None), slice(None)), values=cst_head_right
+        )
     )
-    base_model.fl_model.lhead[0][-1, :, :] = cst_head_right
 
     day = 0
     prod_flw = -8.0 / 3600  # 8 m3/h

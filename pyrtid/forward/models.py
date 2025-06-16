@@ -541,7 +541,7 @@ class ConstantConcentration(BoundaryCondition):
     """
 
     span: Union[NDArrayInt, Tuple[slice, slice, slice], slice]
-    value: Union[float, NDArrayFloat]
+    values: Union[float, NDArrayFloat]
 
 
 @dataclass
