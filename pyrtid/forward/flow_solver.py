@@ -317,61 +317,47 @@ def get_zj_zi_rhs(grid: RectilinearGrid, fl_model: FlowModel) -> NDArrayFloat:
     rhs_z = np.zeros((grid.n_grid_cells), dtype=np.float64)
     z = fl_model._get_mesh_center_vertical_pos().ravel("F")
 
-    # X contribution
-    if grid.nx >= 2 and fl_model.vertical_axis == VerticalAxis.X:
-        kmean = get_kmean(grid, fl_model, 0)
+    if fl_model.vertical_axis == VerticalAxis.X:
+        if grid.nx < 2:
+            return rhs_z
+        axis = 0
+    if fl_model.vertical_axis == VerticalAxis.Y:
+        if grid.ny < 2:
+            return rhs_z
+        axis = 1
+    if fl_model.vertical_axis == VerticalAxis.Z:
+        if grid.nz < 2:
+            return rhs_z
+        axis = 2
 
-        tmp = grid.gamma_ij_x / grid.dx / grid.grid_cell_volume
+    fwd_slicer = get_slicer_forward(grid, axis)
+    bwd_slicer = get_slicer_backward(grid, axis)
 
-        # Forward scheme:
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            grid,
-            (slice(0, grid.nx - 1), slice(None), slice(None)),
-            (slice(1, grid.nx), slice(None), slice(None)),
-            owner_indices_to_keep=fl_model.free_head_nn,
-        )
+    kmean = get_kmean(grid, fl_model, axis)
 
-        rhs_z[idc_owner] += kmean[idc_owner] * tmp * z[idc_neigh]  # type: ignore
-        rhs_z[idc_owner] -= kmean[idc_owner] * tmp * z[idc_owner]  # type: ignore
+    tmp = grid.gamma_ij(axis) / grid.pipj(axis) / grid.grid_cell_volume
 
-        # Backward scheme
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            grid,
-            (slice(1, grid.nx), slice(None), slice(None)),
-            (slice(0, grid.nx - 1), slice(None), slice(None)),
-            owner_indices_to_keep=fl_model.free_head_nn,
-        )
+    # Forward scheme:
+    idc_owner, idc_neigh = get_owner_neigh_indices(
+        grid,
+        fwd_slicer,
+        bwd_slicer,
+        owner_indices_to_keep=fl_model.free_head_nn,
+    )
 
-        rhs_z[idc_owner] += kmean[idc_neigh] * tmp * z[idc_neigh]  # type: ignore
-        rhs_z[idc_owner] -= kmean[idc_neigh] * tmp * z[idc_owner]  # type: ignore
+    rhs_z[idc_owner] += kmean[idc_owner] * tmp * z[idc_neigh]  # type: ignore
+    rhs_z[idc_owner] -= kmean[idc_owner] * tmp * z[idc_owner]  # type: ignore
 
-    # Y contribution
-    if grid.ny >= 2 and fl_model.vertical_axis == VerticalAxis.Y:
-        kmean = get_kmean(grid, fl_model, 1)
+    # Backward scheme
+    idc_owner, idc_neigh = get_owner_neigh_indices(
+        grid,
+        bwd_slicer,
+        fwd_slicer,
+        owner_indices_to_keep=fl_model.free_head_nn,
+    )
 
-        tmp = grid.gamma_ij_y / grid.dy / grid.grid_cell_volume
-
-        # Forward scheme:
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            grid,
-            (slice(None), slice(0, grid.ny - 1), slice(None)),
-            (slice(None), slice(1, grid.ny), slice(None)),
-            owner_indices_to_keep=fl_model.free_head_nn,
-        )
-
-        rhs_z[idc_owner] += kmean[idc_owner] * tmp * z[idc_neigh]  # type: ignore
-        rhs_z[idc_owner] -= kmean[idc_owner] * tmp * z[idc_owner]  # type: ignore
-
-        # Backward scheme
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            grid,
-            (slice(None), slice(1, grid.ny), slice(None)),
-            (slice(None), slice(0, grid.ny - 1), slice(None)),
-            owner_indices_to_keep=fl_model.free_head_nn,
-        )
-
-        rhs_z[idc_owner] += kmean[idc_neigh] * tmp * z[idc_neigh]  # type: ignore
-        rhs_z[idc_owner] -= kmean[idc_neigh] * tmp * z[idc_owner]  # type: ignore
+    rhs_z[idc_owner] += kmean[idc_neigh] * tmp * z[idc_neigh]  # type: ignore
+    rhs_z[idc_owner] -= kmean[idc_neigh] * tmp * z[idc_owner]  # type: ignore
 
     return rhs_z
 
@@ -457,8 +443,32 @@ def solve_flow_stationary(
     return exit_code
 
 
+def get_slicer_forward(grid: RectilinearGrid, axis: int) -> Tuple[slice, slice, slice]:
+    if axis == 0:
+        return (slice(0, grid.nx - 1), slice(None), slice(None))
+    if axis == 1:
+        return (slice(None), slice(0, grid.ny - 1), slice(None))
+    if axis == 2:
+        return (slice(None), slice(None), slice(0, grid.nz - 1))
+    raise ValueError("axis should be in [0, 1, 2]")
+
+
+def get_slicer_backward(grid: RectilinearGrid, axis: int) -> Tuple[slice, slice, slice]:
+    if axis == 0:
+        return (slice(1, grid.nx), slice(None), slice(None))
+    if axis == 1:
+        return (slice(None), slice(1, grid.ny), slice(None))
+    if axis == 2:
+        return (slice(None), slice(None), slice(1, grid.nz))
+    raise ValueError("axis should be in [0, 1, 2]")
+
+
 def find_u(
-    fl_model: FlowModel, grid: RectilinearGrid, time_index: int, axis: int
+    fl_model: FlowModel,
+    tr_model: TransportModel,
+    grid: RectilinearGrid,
+    time_index: int,
+    axis: int,
 ) -> NDArrayFloat:
     """
     Compute the darcy velocities at the mesh boundaries along the x axis.
@@ -475,213 +485,43 @@ def find_u(
     _type_
         _description_
     """
-    out = np.zeros((grid.nx + 1, grid.ny, grid.nz))
-    return out
+    dim = list(grid.shape)
+    dim[axis] += 1
+    out = np.zeros(tuple(dim))
+    fwd_slicer = get_slicer_forward(grid, axis)
+    bwd_slicer = get_slicer_backward(grid, axis)
+    kmean = get_kmean(grid, fl_model, axis=axis, is_flatten=False)[fwd_slicer]
 
+    if fl_model.is_gravity:
+        pressure = fl_model.lpressure[time_index]
+        out[bwd_slicer] = (pressure[bwd_slicer] - pressure[fwd_slicer]) / grid.pipj(
+            axis
+        )
 
-def find_ux_boundary(
-    fl_model: FlowModel, grid: RectilinearGrid, time_index: int
-) -> NDArrayFloat:
-    """
-    Compute the darcy velocities at the mesh boundaries along the x axis.
+        rhomean = get_rhomean(
+            grid, tr_model, axis=axis, time_index=time_index - 1, is_flatten=False
+        )[fwd_slicer]
 
-    U = - k grad(h)
+        if (
+            (fl_model.vertical_axis == VerticalAxis.X and axis == 0)
+            or (fl_model.vertical_axis == VerticalAxis.Y and axis == 1)
+            or (fl_model.vertical_axis == VerticalAxis.Z and axis == 2)
+        ):
+            if time_index == 0:
+                out[bwd_slicer] += WATER_DENSITY * GRAVITY
+            else:
+                out[bwd_slicer] += rhomean * GRAVITY
+        else:
+            pass
 
-    Parameters
-    ----------
-    fl_model : FlowModel
-        The
+        # Apply the front factor
+        out[bwd_slicer] *= -kmean / WATER_DENSITY / GRAVITY
 
-    Returns
-    -------
-    _type_
-        _description_
-    """
-    out = np.zeros((grid.nx + 1, grid.ny, grid.nz))
-    head = fl_model.lhead[time_index]
-    kmean = get_kmean(grid, fl_model, axis=0, is_flatten=False)[:-1, :, :]
-    out[1:-1, :, :] = -kmean * (head[1:, :, :] - head[:-1, :, :]) / grid.dx
-    return out
-
-
-def find_uy_boundary(
-    fl_model: FlowModel, grid: RectilinearGrid, time_index: int
-) -> NDArrayFloat:
-    """
-    Compute the darcy velocities at the mesh boundaries along the y axis.
-
-    U = - k grad(h)
-
-    Parameters
-    ----------
-    fl_model : FlowModel
-        _description_
-
-    Returns
-    -------
-    _type_
-        _description_
-    """
-    out = np.zeros((grid.nx, grid.ny + 1, grid.nz))
-    head = fl_model.lhead[time_index]
-    kmean = get_kmean(grid, fl_model, axis=1, is_flatten=False)[:, :-1, :]
-    out[:, 1:-1, :] = -kmean * (head[:, 1:, :] - head[:, :-1, :]) / grid.dy
-    return out
-
-
-def find_uz_boundary(
-    fl_model: FlowModel, grid: RectilinearGrid, time_index: int
-) -> NDArrayFloat:
-    """
-    Compute the darcy velocities at the mesh boundaries along the z axis.
-
-    U = - k grad(h)
-
-    Parameters
-    ----------
-    fl_model : FlowModel
-        _description_
-
-    Returns
-    -------
-    _type_
-        _description_
-    """
-    out = np.zeros((grid.nx, grid.ny, grid.nz + 1))
-    head = fl_model.lhead[time_index]
-    kmean = get_kmean(grid, fl_model, axis=1, is_flatten=False)[:, :, :-1]
-    out[:, :, 1:-1] = -kmean * (head[:, :, 1:] - head[:, :, :-1]) / grid.dz
-    return out
-
-
-def find_ux_boundary_density(
-    fl_model: FlowModel,
-    tr_model: TransportModel,
-    grid: RectilinearGrid,
-    time_index: int,
-) -> NDArrayFloat:
-    """
-    Compute the darcy velocities at the mesh boundaries along the x axis.
-
-    U = - k grad(h)
-
-    Parameters
-    ----------
-    fl_model : FlowModel
-        The
-
-    Returns
-    -------
-    _type_
-        _description_
-    """
-    out = np.zeros((grid.nx + 1, grid.ny, grid.nz))
-    pressure = fl_model.lpressure[time_index]
-    kmean = get_kmean(grid, fl_model, axis=0, is_flatten=False)[:-1, :, :]
-    rhomean = get_rhomean(
-        grid, tr_model, axis=0, time_index=time_index - 1, is_flatten=False
-    )[:-1, :, :]
-    if fl_model.vertical_axis == VerticalAxis.X:
-        rho_ij_g = rhomean * GRAVITY
-        if time_index == 0:
-            rho_ij_g[:, :, :] = WATER_DENSITY * GRAVITY
     else:
-        rho_ij_g = np.zeros_like(rhomean)
-
-    out[1:-1, :, :] = (
-        -kmean
-        / WATER_DENSITY
-        / GRAVITY
-        * ((pressure[1:, :, :] - pressure[:-1, :, :]) / grid.dx + rho_ij_g)
-    )
-    return out
-
-
-def find_uy_boundary_density(
-    fl_model: FlowModel,
-    tr_model: TransportModel,
-    grid: RectilinearGrid,
-    time_index: int,
-) -> NDArrayFloat:
-    """
-    Compute the darcy velocities at the mesh boundaries along the y axis.
-
-    U = - k grad(h)
-
-    Parameters
-    ----------
-    fl_model : FlowModel
-        _description_
-
-    Returns
-    -------
-    _type_
-        _description_
-    """
-    out = np.zeros((grid.nx, grid.ny + 1, grid.nz))
-    pressure = fl_model.lpressure[time_index]
-    kmean = get_kmean(grid, fl_model, axis=1, is_flatten=False)[:, :-1, :]
-    rhomean = get_rhomean(
-        grid, tr_model, axis=1, time_index=time_index - 1, is_flatten=False
-    )[:, :-1, :]
-
-    if fl_model.vertical_axis == VerticalAxis.Y:
-        rho_ij_g = rhomean * GRAVITY
-        if time_index == 0:
-            rho_ij_g[:, :, :] = WATER_DENSITY * GRAVITY
-    else:
-        rho_ij_g = np.zeros_like(rhomean)
-
-    out[:, 1:-1, :] = (
-        -kmean
-        / WATER_DENSITY
-        / GRAVITY
-        * ((pressure[:, 1:, :] - pressure[:, :-1, :]) / grid.dy + rho_ij_g)
-    )
-    return out
-
-
-def find_uz_boundary_density(
-    fl_model: FlowModel,
-    tr_model: TransportModel,
-    grid: RectilinearGrid,
-    time_index: int,
-) -> NDArrayFloat:
-    """
-    Compute the darcy velocities at the mesh boundaries along the z axis.
-
-    U = - k grad(h)
-
-    Parameters
-    ----------
-    fl_model : FlowModel
-        _description_
-
-    Returns
-    -------
-    _type_
-        _description_
-    """
-    out = np.zeros((grid.nx, grid.ny, grid.nz + 1))
-    pressure = fl_model.lpressure[time_index]
-    kmean = get_kmean(grid, fl_model, axis=1, is_flatten=False)[:, :, :-1]
-    rhomean = get_rhomean(
-        grid, tr_model, axis=1, time_index=time_index - 1, is_flatten=False
-    )[:, :, :-1]
-
-    if fl_model.vertical_axis == VerticalAxis.Z:
-        rho_ij_g = rhomean * GRAVITY
-        if time_index == 0:
-            rho_ij_g[:, :, :] = WATER_DENSITY * GRAVITY
-    else:
-        rho_ij_g = np.zeros_like(rhomean)
-
-    out[:, :, 1:-1] = (
-        -kmean
-        / WATER_DENSITY
-        / GRAVITY
-        * ((pressure[:, :, 1:] - pressure[:, :, :-1]) / grid.dz + rho_ij_g)
-    )
+        head = fl_model.lhead[time_index]
+        out[bwd_slicer] = (
+            -kmean * (head[bwd_slicer] - head[fwd_slicer]) / grid.pipj(axis)
+        )
     return out
 
 
@@ -692,20 +532,10 @@ def compute_u_darcy(
     time_index: int,
 ) -> None:
     """Update the darcy velocities at the node boundaries."""
-    if fl_model.is_gravity:
-        fl_model.lu_darcy_x.append(
-            find_ux_boundary_density(fl_model, tr_model, grid, time_index)
-        )
-        fl_model.lu_darcy_y.append(
-            find_uy_boundary_density(fl_model, tr_model, grid, time_index)
-        )
-        fl_model.lu_darcy_z.append(
-            find_uz_boundary_density(fl_model, tr_model, grid, time_index)
-        )
-    else:
-        fl_model.lu_darcy_x.append(find_ux_boundary(fl_model, grid, time_index))
-        fl_model.lu_darcy_y.append(find_uy_boundary(fl_model, grid, time_index))
-        fl_model.lu_darcy_z.append(find_uz_boundary(fl_model, grid, time_index))
+    fl_model.lu_darcy_x.append(find_u(fl_model, tr_model, grid, time_index, axis=0))
+    fl_model.lu_darcy_y.append(find_u(fl_model, tr_model, grid, time_index, axis=1))
+    fl_model.lu_darcy_z.append(find_u(fl_model, tr_model, grid, time_index, axis=2))
+
     # Handle constant head
     update_unitflow_cst_head_nodes(fl_model, grid, time_index)
 
@@ -918,84 +748,59 @@ def get_gravity_gradient(
     sc = fl_model.storage_coefficient.ravel("F")
 
     if fl_model.vertical_axis == VerticalAxis.X:
-        kmean = get_kmean(grid, fl_model, axis=0)
-        rhomean = get_rhomean(grid, tr_model, axis=0, time_index=time_index - 1)
+        if grid.nx < 2:
+            return tmp
+        axis = 0
+    if fl_model.vertical_axis == VerticalAxis.Y:
+        if grid.ny < 2:
+            return tmp
+        axis = 1
+    if fl_model.vertical_axis == VerticalAxis.Z:
+        if grid.nz < 2:
+            return tmp
+        axis = 2
 
-        # Forward scheme:
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            grid,
-            (slice(0, grid.nx - 1), slice(None), slice(None)),
-            (slice(1, grid.nx), slice(None), slice(None)),
-            owner_indices_to_keep=fl_model.free_head_nn,
-        )
+    fwd_slicer = get_slicer_forward(grid, axis)
+    bwd_slicer = get_slicer_backward(grid, axis)
 
-        tmp[idc_owner] += (
-            grid.gamma_ij_x
-            * rhomean[idc_owner] ** 2
-            * GRAVITY
-            / WATER_DENSITY
-            * kmean[idc_owner]
-            / grid.grid_cell_volume
-            / sc[idc_owner]
-        )
+    kmean = get_kmean(grid, fl_model, axis=axis)
+    rhomean = get_rhomean(grid, tr_model, axis=axis, time_index=time_index - 1)
 
-        # Backward scheme
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            grid,
-            (slice(1, grid.nx), slice(None), slice(None)),
-            (slice(0, grid.nx - 1), slice(None), slice(None)),
-            owner_indices_to_keep=fl_model.free_head_nn,
-        )
+    # Forward scheme:
+    idc_owner, idc_neigh = get_owner_neigh_indices(
+        grid,
+        fwd_slicer,
+        bwd_slicer,
+        owner_indices_to_keep=fl_model.free_head_nn,
+    )
 
-        tmp[idc_owner] -= (
-            grid.gamma_ij_x
-            * (rhomean[idc_neigh] ** 2)
-            * GRAVITY
-            / WATER_DENSITY
-            * kmean[idc_neigh]
-            / sc[idc_owner]
-            / grid.grid_cell_volume
-        )
+    tmp[idc_owner] += (
+        grid.gamma_ij(axis)
+        * rhomean[idc_owner] ** 2
+        * GRAVITY
+        / WATER_DENSITY
+        * kmean[idc_owner]
+        / grid.grid_cell_volume
+        / sc[idc_owner]
+    )
 
-    elif fl_model.vertical_axis == VerticalAxis.Y:
-        kmean = get_kmean(grid, fl_model, axis=1)
-        rhomean = get_rhomean(grid, tr_model, axis=1, time_index=time_index - 1)
+    # Backward scheme
+    idc_owner, idc_neigh = get_owner_neigh_indices(
+        grid,
+        bwd_slicer,
+        fwd_slicer,
+        owner_indices_to_keep=fl_model.free_head_nn,
+    )
 
-        # Forward scheme:
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            grid,
-            (slice(None), slice(0, grid.ny - 1), slice(None)),
-            (slice(None), slice(1, grid.ny), slice(None)),
-            owner_indices_to_keep=fl_model.free_head_nn,
-        )
-
-        tmp[idc_owner] += (
-            grid.gamma_ij_y
-            * (rhomean[idc_owner] ** 2)
-            * GRAVITY
-            / WATER_DENSITY
-            * kmean[idc_owner]
-            / sc[idc_owner]
-            / grid.grid_cell_volume
-        )
-
-        # Backward scheme
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            grid,
-            (slice(None), slice(1, grid.ny), slice(None)),
-            (slice(None), slice(0, grid.ny - 1), slice(None)),
-            owner_indices_to_keep=fl_model.free_head_nn,
-        )
-
-        tmp[idc_owner] -= (
-            grid.gamma_ij_y
-            * (rhomean[idc_neigh] ** 2)
-            * GRAVITY
-            / WATER_DENSITY
-            * kmean[idc_neigh]
-            / sc[idc_owner]
-            / grid.grid_cell_volume
-        )
+    tmp[idc_owner] -= (
+        grid.gamma_ij(axis)
+        * (rhomean[idc_neigh] ** 2)
+        * GRAVITY
+        / WATER_DENSITY
+        * kmean[idc_neigh]
+        / sc[idc_owner]
+        / grid.grid_cell_volume
+    )
 
     return tmp
 

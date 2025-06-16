@@ -413,6 +413,15 @@ class RectilinearGrid:
             raise (ValueError("nz should be >= 1!)"))
         self._nz = value
 
+    def pipj(self, axis: int) -> float:
+        if axis == 0:
+            return self.dx
+        if axis == 1:
+            return self.dy
+        if axis == 2:
+            return self.dz
+        raise ValueError("`axis` should be among [0, 1, 2]")
+
     @property
     def n_grid_cells(self) -> int:
         """Return the number of grid cells."""
@@ -452,6 +461,16 @@ class RectilinearGrid:
     def gamma_ij_z(self) -> float:
         """Return the surface of the frontiers along the z axis in m2"""
         return self.dx * self.dy
+
+    def gamma_ij(self, axis: int) -> float:
+        """Return the surface of the frontiers along the z axis in m2"""
+        if axis == 0:
+            return self.gamma_ij_x
+        elif axis == 1:
+            return self.gamma_ij_y
+        elif axis == 2:
+            return self.gamma_ij_z
+        raise ValueError("`axis` should be among [0, 1, 2]")
 
     @property
     def indices(self) -> NDArrayInt:
