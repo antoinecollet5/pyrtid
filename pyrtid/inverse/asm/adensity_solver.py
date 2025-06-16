@@ -116,30 +116,31 @@ def _add_darcy_contribution(
 ) -> None:
     # X contribution
     if fl_model.vertical_axis == VerticalAxis.X:
-        kij = get_kmean(grid, fl_model, axis=0, is_flatten=False)[:-1, :, :]
-        a_u_darcy_x_old = (
-            a_fl_model.a_u_darcy_x[1:-1, :, :, time_index + 1] * kij / WATER_DENSITY
-        )
-        drhomean = get_drhomean(
-            grid, tr_model, axis=0, time_index=time_index, is_flatten=False
-        )[:-1, :, :]
-        # Left
-        a_tr_model.a_density[:-1, :, :, time_index] -= a_u_darcy_x_old * drhomean
-        # Right
-        a_tr_model.a_density[1:, :, :, time_index] -= a_u_darcy_x_old * drhomean
+        axis = 0
+        a_u_darcy = a_fl_model.a_u_darcy_x
     # Y Contribution
     elif fl_model.vertical_axis == VerticalAxis.Y:
-        kij = get_kmean(grid, fl_model, axis=1, is_flatten=False)[:, :-1, :]
-        a_u_darcy_y_old = (
-            a_fl_model.a_u_darcy_y[:, 1:-1, :, time_index + 1] * kij / WATER_DENSITY
-        )
-        drhomean = get_drhomean(
-            grid, tr_model, axis=1, time_index=time_index, is_flatten=False
-        )[:, :-1, :]
-        # Up
-        a_tr_model.a_density[:, :-1, :, time_index] -= a_u_darcy_y_old * drhomean
-        # Down
-        a_tr_model.a_density[:, 1:, :, time_index] -= a_u_darcy_y_old * drhomean
+        axis = 1
+        a_u_darcy = a_fl_model.a_u_darcy_y
+    # Y Contribution
+    elif fl_model.vertical_axis == VerticalAxis.Z:
+        axis = 2
+        a_u_darcy = a_fl_model.a_u_darcy_z
+    else:
+        raise ValueError()
+
+    fwd_slicer = grid.get_slicer_forward(axis)
+    bwd_slicer = grid.get_slicer_backward(axis)
+
+    kij = get_kmean(grid, fl_model, axis=axis, is_flatten=False)[fwd_slicer]
+    a_u_darcy_old = a_u_darcy[*bwd_slicer, time_index + 1] * kij / WATER_DENSITY
+    drhomean = get_drhomean(
+        grid, tr_model, axis=1, time_index=time_index, is_flatten=False
+    )[fwd_slicer]
+    # Up
+    a_tr_model.a_density[*fwd_slicer, time_index] -= a_u_darcy_old * drhomean
+    # Down
+    a_tr_model.a_density[*bwd_slicer, time_index] -= a_u_darcy_old * drhomean
 
 
 def _add_diffusivity_contribution(
@@ -183,128 +184,77 @@ def _add_diffusivity_contribution(
 
     contrib = np.zeros(shape)
 
-    # Consider the y axis for 2D cases
-    if grid.nx > 1:
-        drhomean_x = get_drhomean(
+    # iterate the axes (x, y, z)
+    for n, axis in zip(grid.shape, (0, 1, 2)):
+        if n < 2:
+            continue
+
+        fwd_slicer = grid.get_slicer_forward(axis)
+        bwd_slicer = grid.get_slicer_backward(axis)
+
+        drhomean = get_drhomean(
             grid,
             tr_model,
-            axis=0,
+            axis=axis,
             time_index=time_index,
             is_flatten=False,
-        )[:-1, :, :]
-        tmp = np.zeros_like(drhomean_x)
-        if fl_model.vertical_axis == VerticalAxis.X:
-            rhomean_x = get_rhomean(
+        )[fwd_slicer]
+        tmp = np.zeros_like(drhomean)
+
+        if (
+            (fl_model.vertical_axis == VerticalAxis.X and axis == 1)
+            or (fl_model.vertical_axis == VerticalAxis.Y and axis == 1)
+            or (fl_model.vertical_axis == VerticalAxis.Z and axis == 2)
+        ):
+            rhomean = get_rhomean(
                 grid,
                 tr_model,
-                axis=0,
+                axis=axis,
                 time_index=time_index,
                 is_flatten=False,
-            )[:-1, :, :]
-            tmp = GRAVITY * 2.0 * drhomean_x * rhomean_x
+            )[fwd_slicer]
+            tmp = GRAVITY * 2.0 * drhomean * rhomean
 
         # Forward scheme
         dpressure_fx = (
             (
                 (
-                    crank_flow * (pprev[1:, :, :] - pprev[:-1, :, :])
-                    + (1.0 - crank_flow) * (pnext[1:, :, :] - pnext[:-1, :, :])
+                    crank_flow * (pprev[bwd_slicer] - pprev[fwd_slicer])
+                    + (1.0 - crank_flow) * (pnext[bwd_slicer] - pnext[fwd_slicer])
                 )
-                / grid.dx
-                * drhomean_x
+                / grid.pipj(axis)
+                * drhomean
                 + tmp
             )
-            * harmonic_mean(permeability[:-1, :, :], permeability[1:, :, :])
+            * harmonic_mean(permeability[fwd_slicer], permeability[bwd_slicer])
             / WATER_DENSITY
         )
 
-        contrib[:-1, :, :] += (
+        contrib[fwd_slicer] += (
             dpressure_fx
-            * (ma_apressure_sc[:-1, :, :] - ma_apressure_sc[1:, :, :])
-            * grid.gamma_ij_x
+            * (ma_apressure_sc[fwd_slicer] - ma_apressure_sc[bwd_slicer])
+            * grid.gamma_ij(axis)
         )
 
         # Backward scheme
         dpressure_bx = (
             (
                 (
-                    crank_flow * (pprev[:-1, :, :] - pprev[1:, :, :])
-                    + (1.0 - crank_flow) * (pnext[:-1, :, :] - pnext[1:, :, :])
+                    crank_flow * (pprev[fwd_slicer] - pprev[bwd_slicer])
+                    + (1.0 - crank_flow) * (pnext[fwd_slicer] - pnext[bwd_slicer])
                 )
-                / grid.dx
-                * drhomean_x
+                / grid.pipj(axis)
+                * drhomean
                 - tmp
             )
-            * harmonic_mean(permeability[1:, :, :], permeability[:-1, :, :])
+            * harmonic_mean(permeability[bwd_slicer], permeability[fwd_slicer])
             / WATER_DENSITY
         )
 
-        contrib[1:, :, :] += (
+        contrib[bwd_slicer] += (
             dpressure_bx
-            * (ma_apressure_sc[1:, :, :] - ma_apressure_sc[:-1, :, :])
-            * grid.gamma_ij_x
-        )
-
-    # Consider the y axis for 2D cases
-    if grid.ny > 1:
-        drhomean_y = get_drhomean(
-            grid,
-            tr_model,
-            axis=1,
-            time_index=time_index,
-            is_flatten=False,
-        )[:, :-1, :]
-        tmp = np.zeros_like(drhomean_y)
-        if fl_model.vertical_axis == VerticalAxis.Y:
-            rhomean_y = get_rhomean(
-                grid,
-                tr_model,
-                axis=1,
-                time_index=time_index,
-                is_flatten=False,
-            )[:, :-1, :]
-            tmp = GRAVITY * 2.0 * drhomean_y * rhomean_y
-
-        # Forward scheme
-        dpressure_fy = (
-            (
-                (
-                    crank_flow * (pprev[:, 1:, :] - pprev[:, :-1, :])
-                    + (1.0 - crank_flow) * (pnext[:, 1:, :] - pnext[:, :-1, :])
-                )
-                / grid.dy
-                * drhomean_y
-                + tmp
-            )
-            * harmonic_mean(permeability[:, :-1, :], permeability[:, 1:, :])
-            / WATER_DENSITY
-        )
-
-        contrib[:, :-1, :] += (
-            dpressure_fy
-            * (ma_apressure_sc[:, :-1, :] - ma_apressure_sc[:, 1:, :])
-            * grid.gamma_ij_y
-        )
-
-        # Backward scheme
-        dpressure_by = (
-            (
-                (
-                    crank_flow * (pprev[:, :-1, :] - pprev[:, 1:, :])
-                    + (1.0 - crank_flow) * (pnext[:, :-1, :] - pnext[:, 1:, :])
-                )
-                / grid.dy
-                * drhomean_y
-                - tmp
-            )
-            * harmonic_mean(permeability[:, 1:, :], permeability[:, :-1, :])
-            / WATER_DENSITY
-        )
-
-        contrib[:, 1:, :] += (
-            dpressure_by
-            * (ma_apressure_sc[:, 1:, :] - ma_apressure_sc[:, :-1, :])
-            * grid.gamma_ij_y
+            * (ma_apressure_sc[bwd_slicer] - ma_apressure_sc[fwd_slicer])
+            * grid.gamma_ij(axis)
         )
 
     a_tr_model.a_density[:, :, :, time_index] += contrib.reshape(grid.shape, order="F")
