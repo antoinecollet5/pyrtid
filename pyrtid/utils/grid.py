@@ -662,6 +662,28 @@ class RectilinearGrid:
         """Return the z extent in meters."""
         return self.zmax - self.zmin
 
+    def get_slicer_forward(
+        self, axis: int, shift: int = 0
+    ) -> Tuple[slice, slice, slice]:
+        if axis == 0:
+            return (slice(0, self.nx - 1 + shift), slice(None), slice(None))
+        if axis == 1:
+            return (slice(None), slice(0, self.ny - 1 + shift), slice(None))
+        if axis == 2:
+            return (slice(None), slice(None), slice(0, self.nz - 1 + shift))
+        raise ValueError("axis should be in [0, 1, 2]")
+
+    def get_slicer_backward(
+        self, axis: int, shift: int = 0
+    ) -> Tuple[slice, slice, slice]:
+        if axis == 0:
+            return (slice(1, self.nx + shift), slice(None), slice(None))
+        if axis == 1:
+            return (slice(None), slice(1, self.ny + shift), slice(None))
+        if axis == 2:
+            return (slice(None), slice(None), slice(1, self.nz + shift))
+        raise ValueError("axis should be in [0, 1, 2]")
+
 
 def get_vertices_centroid(
     vertices: Union[NDArrayFloat, List[Tuple[float, float]]],

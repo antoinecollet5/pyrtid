@@ -33,18 +33,12 @@ def get_kmean(
     grid: RectilinearGrid, fl_model: FlowModel, axis: int, is_flatten=True
 ) -> NDArrayFloat:
     kmean: NDArrayFloat = np.zeros(grid.shape, dtype=np.float64)
-    if axis == 0:
-        kmean[:-1, :, :] = harmonic_mean(
-            fl_model.permeability[:-1, :, :], fl_model.permeability[1:, :, :]
-        )
-    elif axis == 1:
-        kmean[:, :-1, :] = harmonic_mean(
-            fl_model.permeability[:, :-1, :], fl_model.permeability[:, 1:, :]
-        )
-    else:
-        kmean[:, :, :-1] = harmonic_mean(
-            fl_model.permeability[:, :, :-1], fl_model.permeability[:, :, 1:]
-        )
+    fwd_slicer = grid.get_slicer_forward(axis)
+    bwd_slicer = grid.get_slicer_backward(axis)
+    kmean[fwd_slicer] = harmonic_mean(
+        fl_model.permeability[fwd_slicer], fl_model.permeability[bwd_slicer]
+    )
+
     if is_flatten:
         return kmean.flatten(order="F")
     return kmean
@@ -59,41 +53,54 @@ def get_rhomean(
 ) -> NDArrayFloat:
     # get the density -> 2D or 3D array
     density = np.array(tr_model.ldensity[time_index])
-
+    fwd_slicer = grid.get_slicer_forward(axis)
+    bwd_slicer = grid.get_slicer_backward(axis)
     if density.ndim == 3:
         rhomean: NDArrayFloat = np.zeros(grid.shape, dtype=np.float64)
-        if axis == 0:
-            rhomean[:-1, :, :] = arithmetic_mean(density[:-1, :, :], density[1:, :, :])
-        elif axis == 1:
-            rhomean[:, :-1, :] = arithmetic_mean(density[:, :-1, :], density[:, 1:, :])
-        elif axis == 2:
-            rhomean[:, :, :-1] = arithmetic_mean(density[:, :, :-1], density[:, :, 1:])
-        else:
-            raise NotImplementedError("axis should be 0, 1 or 2")
     else:
         rhomean: NDArrayFloat = np.zeros(
             (*grid.shape, density.shape[0]), dtype=np.float64
         )
-        if axis == 0:
-            rhomean[:-1, :, :, :] = np.transpose(
-                arithmetic_mean(density[:, :-1, :, :], density[:, 1:, :, :]),
-                axes=(1, 2, 3, 0),
-            )
-        elif axis == 1:
-            rhomean[:, :-1, :, :] = np.transpose(
-                arithmetic_mean(density[:, :, :-1, :], density[:, :, 1:, :]),
-                axes=(1, 2, 3, 0),
-            )
-        elif axis == 2:
-            rhomean[:, :, :-1, :] = np.transpose(
-                arithmetic_mean(density[:, :, :, :-1], density[:, :, :, 1:]),
-                axes=(1, 2, 3, 0),
-            )
-        else:
-            raise NotImplementedError("axis should be 0, 1 or 2")
+        density = np.transpose(density, axes=(1, 2, 3, 0))
+    rhomean[fwd_slicer] = arithmetic_mean(density[fwd_slicer], density[bwd_slicer])
+
     if is_flatten:
         return rhomean.flatten(order="F")
     return rhomean
+
+
+def fill_stationary_flmat_for_axis(
+    grid: RectilinearGrid, fl_model: FlowModel, q_next: lil_array, axis: int
+) -> None:
+    kmean = get_kmean(grid, fl_model, axis)
+    tmp = grid.gamma_ij(axis) / grid.pipj(axis) / grid.grid_cell_volume
+    fwd_slicer = grid.get_slicer_forward(axis)
+    bwd_slicer = grid.get_slicer_backward(axis)
+
+    if fl_model.is_gravity:
+        tmp /= GRAVITY * WATER_DENSITY
+
+    # Forward scheme:
+    idc_owner, idc_neigh = get_owner_neigh_indices(
+        grid,
+        fwd_slicer,
+        bwd_slicer,
+        owner_indices_to_keep=fl_model.free_head_nn,
+    )
+
+    q_next[idc_owner, idc_neigh] -= kmean[idc_owner] * tmp  # type: ignore
+    q_next[idc_owner, idc_owner] += kmean[idc_owner] * tmp  # type: ignore
+
+    # Backward scheme
+    idc_owner, idc_neigh = get_owner_neigh_indices(
+        grid,
+        bwd_slicer,
+        fwd_slicer,
+        owner_indices_to_keep=fl_model.free_head_nn,
+    )
+
+    q_next[idc_owner, idc_neigh] -= kmean[idc_neigh] * tmp  # type: ignore
+    q_next[idc_owner, idc_owner] += kmean[idc_neigh] * tmp  # type: ignore
 
 
 def make_stationary_flow_matrices(
@@ -111,72 +118,70 @@ def make_stationary_flow_matrices(
     dim = grid.n_grid_cells
     q_next = lil_array((dim, dim), dtype=np.float64)
 
-    # X contribution
-    if grid.nx >= 2:
-        kmean = get_kmean(grid, fl_model, 0)
-
-        tmp = grid.gamma_ij_x / grid.dx / grid.grid_cell_volume
-
-        if fl_model.is_gravity:
-            tmp /= GRAVITY * WATER_DENSITY
-
-        # Forward scheme:
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            grid,
-            (slice(0, grid.nx - 1), slice(None), slice(None)),
-            (slice(1, grid.nx), slice(None), slice(None)),
-            owner_indices_to_keep=fl_model.free_head_nn,
-        )
-
-        q_next[idc_owner, idc_neigh] -= kmean[idc_owner] * tmp  # type: ignore
-        q_next[idc_owner, idc_owner] += kmean[idc_owner] * tmp  # type: ignore
-
-        # Backward scheme
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            grid,
-            (slice(1, grid.nx), slice(None), slice(None)),
-            (slice(0, grid.nx - 1), slice(None), slice(None)),
-            owner_indices_to_keep=fl_model.free_head_nn,
-        )
-
-        q_next[idc_owner, idc_neigh] -= kmean[idc_neigh] * tmp  # type: ignore
-        q_next[idc_owner, idc_owner] += kmean[idc_neigh] * tmp  # type: ignore
-
-    # Y contribution
-    if grid.ny >= 2:
-        kmean = get_kmean(grid, fl_model, 1)
-
-        tmp = grid.gamma_ij_y / grid.dy / grid.grid_cell_volume
-
-        if fl_model.is_gravity:
-            tmp /= GRAVITY * WATER_DENSITY
-
-        # Forward scheme:
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            grid,
-            (slice(None), slice(0, grid.ny - 1), slice(None)),
-            (slice(None), slice(1, grid.ny), slice(None)),
-            owner_indices_to_keep=fl_model.free_head_nn,
-        )
-
-        q_next[idc_owner, idc_neigh] -= kmean[idc_owner] * tmp  # type: ignore
-        q_next[idc_owner, idc_owner] += kmean[idc_owner] * tmp  # type: ignore
-
-        # Backward scheme
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            grid,
-            (slice(None), slice(1, grid.ny), slice(None)),
-            (slice(None), slice(0, grid.ny - 1), slice(None)),
-            owner_indices_to_keep=fl_model.free_head_nn,
-        )
-
-        q_next[idc_owner, idc_neigh] -= kmean[idc_neigh] * tmp  # type: ignore
-        q_next[idc_owner, idc_owner] += kmean[idc_neigh] * tmp  # type: ignore
+    for n, axis in zip(grid.shape, (0, 1, 2)):
+        if n >= 2:
+            fill_stationary_flmat_for_axis(grid, fl_model, q_next, axis)
 
     # Take constant head into account
     q_next[fl_model.cst_head_nn, fl_model.cst_head_nn] = 1.0
 
     return q_next
+
+
+def fill_transient_flmat_for_axis(
+    grid: RectilinearGrid,
+    fl_model: FlowModel,
+    tr_model: TransportModel,
+    q_next: lil_array,
+    q_prev: lil_array,
+    time_index: int,
+    axis: int,
+) -> None:
+    kmean = get_kmean(grid, fl_model, axis)
+    rhomean = get_rhomean(grid, tr_model, axis=axis, time_index=time_index - 1)
+    sc = fl_model.storage_coefficient.ravel("F")
+
+    _tmp: float = grid.gamma_ij(axis) / grid.pipj(axis) / grid.grid_cell_volume
+    fwd_slicer = grid.get_slicer_forward(axis)
+    bwd_slicer = grid.get_slicer_backward(axis)
+
+    # Forward scheme:
+    idc_owner, idc_neigh = get_owner_neigh_indices(
+        grid,
+        fwd_slicer,
+        bwd_slicer,
+        owner_indices_to_keep=fl_model.free_head_nn,
+    )
+
+    tmp = _tmp / sc[idc_owner] * kmean[idc_owner]
+
+    # Add gravity effect
+    if fl_model.is_gravity:
+        tmp *= rhomean[idc_owner] / WATER_DENSITY
+
+    q_next[idc_owner, idc_neigh] -= fl_model.crank_nicolson * tmp  # type: ignore
+    q_next[idc_owner, idc_owner] += fl_model.crank_nicolson * tmp  # type: ignore
+    q_prev[idc_owner, idc_neigh] += (1.0 - fl_model.crank_nicolson) * tmp  # type: ignore
+    q_prev[idc_owner, idc_owner] -= (1.0 - fl_model.crank_nicolson) * tmp  # type: ignore
+
+    # Backward scheme
+    idc_owner, idc_neigh = get_owner_neigh_indices(
+        grid,
+        bwd_slicer,
+        fwd_slicer,
+        owner_indices_to_keep=fl_model.free_head_nn,
+    )
+
+    tmp = _tmp / sc[idc_owner] * kmean[idc_neigh]
+
+    # Add gravity effect
+    if fl_model.is_gravity:
+        tmp *= rhomean[idc_neigh] / WATER_DENSITY
+
+    q_next[idc_owner, idc_neigh] -= fl_model.crank_nicolson * tmp  # type: ignore
+    q_next[idc_owner, idc_owner] += fl_model.crank_nicolson * tmp  # type: ignore
+    q_prev[idc_owner, idc_neigh] += (1.0 - fl_model.crank_nicolson) * tmp  # type: ignore
+    q_prev[idc_owner, idc_owner] -= (1.0 - fl_model.crank_nicolson) * tmp  # type: ignore
 
 
 def make_transient_flow_matrices(
@@ -198,117 +203,11 @@ def make_transient_flow_matrices(
     q_prev = lil_array((dim, dim), dtype=np.float64)
     q_next = lil_array((dim, dim), dtype=np.float64)
 
-    sc = fl_model.storage_coefficient.ravel("F")
-
-    # X contribution
-    if grid.nx > 1:
-        kmean = get_kmean(grid, fl_model, 0)
-        rhomean = get_rhomean(grid, tr_model, axis=0, time_index=time_index - 1)
-
-        # Forward scheme:
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            grid,
-            (slice(0, grid.nx - 1), slice(None), slice(None)),
-            (slice(1, grid.nx), slice(None), slice(None)),
-            owner_indices_to_keep=fl_model.free_head_nn,
-        )
-
-        tmp = (
-            grid.gamma_ij_x
-            / grid.dx
-            / grid.grid_cell_volume
-            / sc[idc_owner]
-            * kmean[idc_owner]
-        )
-
-        # Add gravity effect
-        if fl_model.is_gravity:
-            tmp *= rhomean[idc_owner] / WATER_DENSITY
-
-        q_next[idc_owner, idc_neigh] -= fl_model.crank_nicolson * tmp  # type: ignore
-        q_next[idc_owner, idc_owner] += fl_model.crank_nicolson * tmp  # type: ignore
-        q_prev[idc_owner, idc_neigh] += (1.0 - fl_model.crank_nicolson) * tmp  # type: ignore
-        q_prev[idc_owner, idc_owner] -= (1.0 - fl_model.crank_nicolson) * tmp  # type: ignore
-
-        # Backward scheme
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            grid,
-            (slice(1, grid.nx), slice(None), slice(None)),
-            (slice(0, grid.nx - 1), slice(None), slice(None)),
-            owner_indices_to_keep=fl_model.free_head_nn,
-        )
-
-        tmp = (
-            grid.gamma_ij_x
-            / grid.dx
-            / grid.grid_cell_volume
-            / sc[idc_owner]
-            * kmean[idc_neigh]
-        )
-
-        # Add gravity effect
-        if fl_model.is_gravity:
-            tmp *= rhomean[idc_neigh] / WATER_DENSITY
-
-        q_next[idc_owner, idc_neigh] -= fl_model.crank_nicolson * tmp  # type: ignore
-        q_next[idc_owner, idc_owner] += fl_model.crank_nicolson * tmp  # type: ignore
-        q_prev[idc_owner, idc_neigh] += (1.0 - fl_model.crank_nicolson) * tmp  # type: ignore
-        q_prev[idc_owner, idc_owner] -= (1.0 - fl_model.crank_nicolson) * tmp  # type: ignore
-
-    # Y contribution
-    if grid.ny > 1:
-        kmean = get_kmean(grid, fl_model, 1)
-        rhomean = get_rhomean(grid, tr_model, axis=1, time_index=time_index - 1)
-
-        # Forward scheme:
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            grid,
-            (slice(None), slice(0, grid.ny - 1), slice(None)),
-            (slice(None), slice(1, grid.ny), slice(None)),
-            owner_indices_to_keep=fl_model.free_head_nn,
-        )
-
-        tmp = (
-            grid.gamma_ij_y
-            / grid.dy
-            / grid.grid_cell_volume
-            / sc[idc_owner]
-            * kmean[idc_owner]
-        )
-
-        # Add gravity effect
-        if fl_model.is_gravity:
-            tmp *= rhomean[idc_owner] / WATER_DENSITY
-
-        q_next[idc_owner, idc_neigh] -= fl_model.crank_nicolson * tmp  # type: ignore
-        q_next[idc_owner, idc_owner] += fl_model.crank_nicolson * tmp  # type: ignore
-        q_prev[idc_owner, idc_neigh] += (1.0 - fl_model.crank_nicolson) * tmp  # type: ignore
-        q_prev[idc_owner, idc_owner] -= (1.0 - fl_model.crank_nicolson) * tmp  # type: ignore
-
-        # Backward scheme
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            grid,
-            (slice(None), slice(1, grid.ny), slice(None)),
-            (slice(None), slice(0, grid.ny - 1), slice(None)),
-            owner_indices_to_keep=fl_model.free_head_nn,
-        )
-
-        tmp = (
-            grid.gamma_ij_y
-            / grid.dy
-            / grid.grid_cell_volume
-            / sc[idc_owner]
-            * kmean[idc_neigh]
-        )
-
-        # Add gravity effect
-        if fl_model.is_gravity:
-            tmp *= rhomean[idc_neigh] / WATER_DENSITY
-
-        q_next[idc_owner, idc_neigh] -= fl_model.crank_nicolson * tmp  # type: ignore
-        q_next[idc_owner, idc_owner] += fl_model.crank_nicolson * tmp  # type: ignore
-        q_prev[idc_owner, idc_neigh] += (1.0 - fl_model.crank_nicolson) * tmp  # type: ignore
-        q_prev[idc_owner, idc_owner] -= (1.0 - fl_model.crank_nicolson) * tmp  # type: ignore
+    for n, axis in zip(grid.shape, (0, 1, 2)):
+        if n >= 2:
+            fill_transient_flmat_for_axis(
+                grid, fl_model, tr_model, q_next, q_prev, time_index, axis
+            )
 
     return q_next, q_prev
 
@@ -330,8 +229,8 @@ def get_zj_zi_rhs(grid: RectilinearGrid, fl_model: FlowModel) -> NDArrayFloat:
             return rhs_z
         axis = 2
 
-    fwd_slicer = get_slicer_forward(grid, axis)
-    bwd_slicer = get_slicer_backward(grid, axis)
+    fwd_slicer = grid.get_slicer_forward(axis)
+    bwd_slicer = grid.get_slicer_backward(axis)
 
     kmean = get_kmean(grid, fl_model, axis)
 
@@ -443,26 +342,6 @@ def solve_flow_stationary(
     return exit_code
 
 
-def get_slicer_forward(grid: RectilinearGrid, axis: int) -> Tuple[slice, slice, slice]:
-    if axis == 0:
-        return (slice(0, grid.nx - 1), slice(None), slice(None))
-    if axis == 1:
-        return (slice(None), slice(0, grid.ny - 1), slice(None))
-    if axis == 2:
-        return (slice(None), slice(None), slice(0, grid.nz - 1))
-    raise ValueError("axis should be in [0, 1, 2]")
-
-
-def get_slicer_backward(grid: RectilinearGrid, axis: int) -> Tuple[slice, slice, slice]:
-    if axis == 0:
-        return (slice(1, grid.nx), slice(None), slice(None))
-    if axis == 1:
-        return (slice(None), slice(1, grid.ny), slice(None))
-    if axis == 2:
-        return (slice(None), slice(None), slice(1, grid.nz))
-    raise ValueError("axis should be in [0, 1, 2]")
-
-
 def find_u(
     fl_model: FlowModel,
     tr_model: TransportModel,
@@ -488,8 +367,8 @@ def find_u(
     dim = list(grid.shape)
     dim[axis] += 1
     out = np.zeros(tuple(dim))
-    fwd_slicer = get_slicer_forward(grid, axis)
-    bwd_slicer = get_slicer_backward(grid, axis)
+    fwd_slicer = grid.get_slicer_forward(axis)
+    bwd_slicer = grid.get_slicer_backward(axis)
     kmean = get_kmean(grid, fl_model, axis=axis, is_flatten=False)[fwd_slicer]
 
     if fl_model.is_gravity:
@@ -760,8 +639,8 @@ def get_gravity_gradient(
             return tmp
         axis = 2
 
-    fwd_slicer = get_slicer_forward(grid, axis)
-    bwd_slicer = get_slicer_backward(grid, axis)
+    fwd_slicer = grid.get_slicer_forward(axis)
+    bwd_slicer = grid.get_slicer_backward(axis)
 
     kmean = get_kmean(grid, fl_model, axis=axis)
     rhomean = get_rhomean(grid, tr_model, axis=axis, time_index=time_index - 1)

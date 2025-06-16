@@ -19,6 +19,105 @@ from pyrtid.utils import NDArrayFloat, RectilinearGrid, harmonic_mean
 from pyrtid.utils.operators import get_super_ilu_preconditioner
 
 
+def fill_trmat_for_axis(
+    grid: RectilinearGrid,
+    fl_model: FlowModel,
+    tr_model: TransportModel,
+    q_next: lil_array,
+    q_prev: lil_array,
+    disp: NDArrayFloat,
+    time_index: int,
+    axis: int,
+) -> None:
+    if axis == 0:
+        u_darcy = fl_model.u_darcy_x
+    elif axis == 1:
+        u_darcy = fl_model.u_darcy_y
+    elif axis == 2:
+        u_darcy = fl_model.u_darcy_z
+    else:
+        raise ValueError()
+
+    crank_adv: float = tr_model.crank_nicolson_advection
+    crank_diff: float = tr_model.crank_nicolson_diffusion
+    fwd_slicer = grid.get_slicer_forward(axis)
+    bwd_slicer = grid.get_slicer_backward(axis)
+
+    dmean: NDArrayFloat = np.zeros(grid.shape, dtype=np.float64)
+    dmean[fwd_slicer] = harmonic_mean(disp[fwd_slicer], disp[bwd_slicer])
+    dmean = dmean.flatten(order="F")
+
+    tmp_diff: float = grid.gamma_ij(axis) / grid.pipj(axis) / grid.grid_cell_volume
+
+    tmp_un = np.zeros(grid.shape)
+    tmp_un[fwd_slicer] = u_darcy[*bwd_slicer, time_index]
+    tmp_un_old = np.zeros(grid.shape)
+    tmp_un_old[fwd_slicer] = u_darcy[*bwd_slicer, time_index - 1]
+
+    un = tmp_un.flatten(order="F")
+    un_old = tmp_un_old.flatten(order="F")
+
+    tmp_adv = grid.gamma_ij(axis) / grid.grid_cell_volume
+
+    # Forward scheme:
+    normal = 1.0
+    idc_owner, idc_neigh = get_owner_neigh_indices(
+        grid,
+        fwd_slicer,
+        bwd_slicer,
+        owner_indices_to_keep=tr_model.free_conc_nn,
+    )
+
+    q_next[idc_owner, idc_owner] += crank_diff * dmean[idc_owner] * tmp_diff + (
+        crank_adv * np.where(normal * un > 0.0, normal * un, 0.0)[idc_owner] * tmp_adv
+    )  # type: ignore
+    q_next[idc_owner, idc_neigh] += -(crank_diff * dmean[idc_owner] * tmp_diff) + (
+        crank_adv * np.where(normal * un <= 0.0, normal * un, 0.0)[idc_owner] * tmp_adv
+    )  # type: ignore
+
+    q_prev[idc_owner, idc_owner] -= (1.0 - crank_diff) * dmean[idc_owner] * tmp_diff + (
+        (1 - crank_adv)
+        * np.where(normal * un_old > 0.0, normal * un_old, 0.0)[idc_owner]
+        * tmp_adv
+    )  # type: ignore
+    q_prev[idc_owner, idc_neigh] -= -(
+        (1.0 - crank_diff) * dmean[idc_owner] * tmp_diff
+    ) + (
+        (1 - crank_adv)
+        * np.where(normal * un_old <= 0.0, normal * un_old, 0.0)[idc_owner]
+        * tmp_adv
+    )  # type: ignore
+
+    # Backward scheme
+    normal = -1.0
+    idc_owner, idc_neigh = get_owner_neigh_indices(
+        grid,
+        bwd_slicer,
+        fwd_slicer,
+        owner_indices_to_keep=tr_model.free_conc_nn,
+    )
+
+    q_next[idc_owner, idc_owner] += crank_diff * dmean[idc_neigh] * tmp_diff + (
+        crank_adv * np.where(normal * un > 0.0, normal * un, 0.0)[idc_neigh] * tmp_adv
+    )  # type: ignore
+    q_next[idc_owner, idc_neigh] += -(crank_diff * dmean[idc_neigh] * tmp_diff) + (
+        crank_adv * np.where(normal * un <= 0.0, normal * un, 0.0)[idc_neigh] * tmp_adv
+    )  # type: ignore
+    q_prev[idc_owner, idc_owner] -= (1.0 - crank_diff) * dmean[idc_neigh] * tmp_diff + (
+        (1.0 - crank_adv)
+        * np.where(normal * un_old > 0.0, normal * un_old, 0.0)[idc_neigh]
+        * tmp_adv
+    )  # type: ignore
+
+    q_prev[idc_owner, idc_neigh] -= -(1.0 - crank_diff) * dmean[
+        idc_neigh
+    ] * tmp_diff + (
+        (1.0 - crank_adv)
+        * np.where(normal * un_old <= 0.0, normal * un_old, 0.0)[idc_neigh]
+        * tmp_adv
+    )  # type: ignore
+
+
 def make_transport_matrices(
     grid: RectilinearGrid,
     tr_model: TransportModel,
@@ -40,267 +139,16 @@ def make_transport_matrices(
     q_next = lil_array((dim, dim), dtype=np.float64)
 
     # diffusion + dispersivity
-    d = (
+    disp = (
         tr_model.effective_diffusion
         + tr_model.dispersivity * fl_model.get_u_darcy_norm_sample(time_index)
     )
 
-    # X contribution
-    if grid.nx >= 2:
-        dmean: NDArrayFloat = np.zeros(grid.shape, dtype=np.float64)
-        dmean[:-1, :, :] = harmonic_mean(d[:-1, :, :], d[1:, :, :])
-        dmean = dmean.flatten(order="F")
-
-        tmp = grid.gamma_ij_x / grid.dx / grid.grid_cell_volume
-
-        # Forward scheme:
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            grid,
-            (slice(0, grid.nx - 1), slice(None), slice(None)),
-            (slice(1, grid.nx), slice(None), slice(None)),
-            owner_indices_to_keep=tr_model.free_conc_nn,
-        )
-
-        q_next[idc_owner, idc_owner] += (
-            tr_model.crank_nicolson_diffusion * dmean[idc_owner] * tmp
-        )  # type: ignore
-        q_prev[idc_owner, idc_owner] -= (
-            (1.0 - tr_model.crank_nicolson_diffusion) * dmean[idc_owner] * tmp
-        )  # type: ignore
-        q_next[idc_owner, idc_neigh] -= (
-            tr_model.crank_nicolson_diffusion * dmean[idc_owner] * tmp
-        )  # type: ignore
-        q_prev[idc_owner, idc_neigh] += (
-            (1.0 - tr_model.crank_nicolson_diffusion) * dmean[idc_owner] * tmp
-        )  # type: ignore
-
-        # Backward scheme
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            grid,
-            (slice(1, grid.nx), slice(None), slice(None)),
-            (slice(0, grid.nx - 1), slice(None), slice(None)),
-            owner_indices_to_keep=tr_model.free_conc_nn,
-        )
-
-        q_next[idc_owner, idc_owner] += (
-            tr_model.crank_nicolson_diffusion * dmean[idc_neigh] * tmp
-        )  # type: ignore
-        q_prev[idc_owner, idc_owner] -= (
-            (1.0 - tr_model.crank_nicolson_diffusion) * dmean[idc_neigh] * tmp
-        )  # type: ignore
-        q_next[idc_owner, idc_neigh] -= (
-            tr_model.crank_nicolson_diffusion * dmean[idc_neigh] * tmp
-        )  # type: ignore
-        q_prev[idc_owner, idc_neigh] += (
-            (1.0 - tr_model.crank_nicolson_diffusion) * dmean[idc_neigh] * tmp
-        )  # type: ignore
-
-    # Y contribution
-    if grid.ny >= 2:
-        dmean: NDArrayFloat = np.zeros(grid.shape, dtype=np.float64)
-        dmean[:, :-1, :] = harmonic_mean(d[:, :-1, :], d[:, 1:, :])
-        dmean = dmean.flatten(order="F")
-
-        tmp = grid.gamma_ij_y / grid.dy / grid.grid_cell_volume
-
-        # Forward scheme:
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            grid,
-            (slice(None), slice(0, grid.ny - 1), slice(None)),
-            (slice(None), slice(1, grid.ny), slice(None)),
-            owner_indices_to_keep=tr_model.free_conc_nn,
-        )
-
-        q_next[idc_owner, idc_owner] += (
-            tr_model.crank_nicolson_diffusion * dmean[idc_owner] * tmp
-        )  # type: ignore
-        q_prev[idc_owner, idc_owner] -= (
-            (1.0 - tr_model.crank_nicolson_diffusion) * dmean[idc_owner] * tmp
-        )  # type: ignore
-        q_next[idc_owner, idc_neigh] -= (
-            tr_model.crank_nicolson_diffusion * dmean[idc_owner] * tmp
-        )  # type: ignore
-        q_prev[idc_owner, idc_neigh] += (
-            (1.0 - tr_model.crank_nicolson_diffusion) * dmean[idc_owner] * tmp
-        )  # type: ignore
-
-        # Backward scheme
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            grid,
-            (slice(None), slice(1, grid.ny), slice(None)),
-            (slice(None), slice(0, grid.ny - 1), slice(None)),
-            owner_indices_to_keep=tr_model.free_conc_nn,
-        )
-
-        q_next[idc_owner, idc_owner] += (
-            tr_model.crank_nicolson_diffusion * dmean[idc_neigh] * tmp
-        )  # type: ignore
-        q_prev[idc_owner, idc_owner] -= (
-            (1.0 - tr_model.crank_nicolson_diffusion) * dmean[idc_neigh] * tmp
-        )  # type: ignore
-        q_next[idc_owner, idc_neigh] -= (
-            tr_model.crank_nicolson_diffusion * dmean[idc_neigh] * tmp
-        )  # type: ignore
-        q_prev[idc_owner, idc_neigh] += (
-            (1.0 - tr_model.crank_nicolson_diffusion) * dmean[idc_neigh] * tmp
-        )  # type: ignore
-
-    return q_next, q_prev
-
-
-def _add_advection_to_transport_matrices(
-    grid: RectilinearGrid,
-    fl_model: FlowModel,
-    tr_model: TransportModel,
-    q_next: lil_array,
-    q_prev: lil_array,
-    time_index: int,
-) -> None:
-    crank_adv: float = tr_model.crank_nicolson_advection
-
-    # X contribution
-    if grid.nx >= 2:
-        tmp_x = np.zeros(grid.shape)
-        tmp_x[:-1, :, :] = fl_model.u_darcy_x[1:-1, :, :, time_index]
-        tmp_x_old = np.zeros(grid.shape)
-        tmp_x_old[:-1, :, :] = fl_model.u_darcy_x[1:-1, :, :, time_index - 1]
-
-        un_x = tmp_x.flatten(order="F")
-        un_x_old = tmp_x_old.flatten(order="F")
-
-        tmp = grid.gamma_ij_x / grid.grid_cell_volume
-
-        # Forward scheme:
-        normal = 1.0
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            grid,
-            (slice(0, grid.nx - 1), slice(None), slice(None)),
-            (slice(1, grid.nx), slice(None), slice(None)),
-            owner_indices_to_keep=tr_model.free_conc_nn,
-        )
-
-        q_next[idc_owner, idc_neigh] += (
-            crank_adv
-            * np.where(normal * un_x <= 0.0, normal * un_x, 0.0)[idc_owner]
-            * tmp
-        )  # type: ignore
-        q_next[idc_owner, idc_owner] += (
-            crank_adv
-            * np.where(normal * un_x > 0.0, normal * un_x, 0.0)[idc_owner]
-            * tmp
-        )  # type: ignore
-        q_prev[idc_owner, idc_neigh] -= (
-            (1 - crank_adv)
-            * np.where(normal * un_x_old <= 0.0, normal * un_x_old, 0.0)[idc_owner]
-            * tmp
-        )  # type: ignore
-        q_prev[idc_owner, idc_owner] -= (
-            (1 - crank_adv)
-            * np.where(normal * un_x_old > 0.0, normal * un_x_old, 0.0)[idc_owner]
-            * tmp
-        )  # type: ignore
-
-        # Backward scheme
-        normal = -1.0
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            grid,
-            (slice(1, grid.nx), slice(None), slice(None)),
-            (slice(0, grid.nx - 1), slice(None), slice(None)),
-            owner_indices_to_keep=tr_model.free_conc_nn,
-        )
-
-        q_next[idc_owner, idc_neigh] += (
-            crank_adv
-            * np.where(normal * un_x <= 0.0, normal * un_x, 0.0)[idc_neigh]
-            * tmp
-        )  # type: ignore
-        q_next[idc_owner, idc_owner] += (
-            crank_adv
-            * np.where(normal * un_x > 0.0, normal * un_x, 0.0)[idc_neigh]
-            * tmp
-        )  # type: ignore
-        q_prev[idc_owner, idc_neigh] -= (
-            (1.0 - crank_adv)
-            * np.where(normal * un_x_old <= 0.0, normal * un_x_old, 0.0)[idc_neigh]
-            * tmp
-        )  # type: ignore
-        q_prev[idc_owner, idc_owner] -= (
-            (1.0 - crank_adv)
-            * np.where(normal * un_x_old > 0.0, normal * un_x_old, 0.0)[idc_neigh]
-            * tmp
-        )  # type: ignore
-
-    # Y contribution
-    if grid.ny >= 2:
-        tmp_y = np.zeros(grid.shape)
-        tmp_y[:, :-1, :] = fl_model.u_darcy_y[:, 1:-1, :, time_index]
-        tmp_y_old = np.zeros(grid.shape)
-        tmp_y_old[:, :-1, :] = fl_model.u_darcy_y[:, 1:-1, :, time_index - 1]
-
-        un_y = tmp_y.flatten(order="F")
-        un_y_old = tmp_y_old.flatten(order="F")
-
-        # Forward scheme:
-        normal = 1.0
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            grid,
-            (slice(None), slice(0, grid.ny - 1), slice(None)),
-            (slice(None), slice(1, grid.ny), slice(None)),
-            owner_indices_to_keep=tr_model.free_conc_nn,
-        )
-
-        tmp = grid.gamma_ij_y / grid.grid_cell_volume
-
-        q_next[idc_owner, idc_neigh] += (
-            crank_adv
-            * np.where(normal * un_y <= 0.0, normal * un_y, 0.0)[idc_owner]
-            * tmp
-        )  # type: ignore
-        q_next[idc_owner, idc_owner] += (
-            crank_adv
-            * np.where(normal * un_y > 0.0, normal * un_y, 0.0)[idc_owner]
-            * tmp
-        )  # type: ignore
-        q_prev[idc_owner, idc_neigh] -= (
-            (1.0 - crank_adv)
-            * np.where(normal * un_y_old <= 0.0, normal * un_y_old, 0.0)[idc_owner]
-            * tmp
-        )  # type: ignore
-        q_prev[idc_owner, idc_owner] -= (
-            (1.0 - crank_adv)
-            * np.where(normal * un_y_old > 0.0, normal * un_y_old, 0.0)[idc_owner]
-            * tmp
-        )  # type: ignore
-
-        # Backward scheme
-        normal: float = -1.0
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            grid,
-            (slice(None), slice(1, grid.ny), slice(None)),
-            (slice(None), slice(0, grid.ny - 1), slice(None)),
-            owner_indices_to_keep=tr_model.free_conc_nn,
-        )
-
-        q_next[idc_owner, idc_neigh] += (
-            crank_adv
-            * np.where(normal * un_y <= 0.0, normal * un_y, 0.0)[idc_neigh]
-            * tmp
-        )  # type: ignore
-        q_next[idc_owner, idc_owner] += (
-            crank_adv
-            * np.where(normal * un_y > 0.0, normal * un_y, 0.0)[idc_neigh]
-            * tmp
-        )  # type: ignore
-        q_prev[idc_owner, idc_neigh] -= (
-            (1.0 - crank_adv)
-            * np.where(normal * un_y_old <= 0.0, normal * un_y_old, 0.0)[idc_neigh]
-            * tmp
-        )  # type: ignore
-        q_prev[idc_owner, idc_owner] -= (
-            (1.0 - crank_adv)
-            * np.where(normal * un_y_old > 0.0, normal * un_y_old, 0.0)[idc_neigh]
-            * tmp
-        )  # type: ignore
+    for n, axis in zip(grid.shape, (0, 1, 2)):
+        if n >= 2:
+            fill_trmat_for_axis(
+                grid, fl_model, tr_model, q_next, q_prev, disp, time_index, axis
+            )
 
     _apply_transport_sink_term(fl_model, tr_model, q_next, q_prev, time_index)
 
@@ -310,6 +158,8 @@ def _add_advection_to_transport_matrices(
     _add_transport_boundary_conditions(
         grid, fl_model, tr_model, q_next, q_prev, time_index
     )
+
+    return q_next, q_prev
 
 
 def _apply_transport_sink_term(
@@ -352,6 +202,63 @@ def _apply_divergence_effect(
     )
 
 
+def _add_transport_boundary_conditions_for_axis(
+    grid: RectilinearGrid,
+    fl_model: FlowModel,
+    tr_model: TransportModel,
+    q_next: lil_array,
+    q_prev: lil_array,
+    time_index: int,
+    axis: int,
+) -> None:
+    if axis == 0:
+        u_darcy = fl_model.u_darcy_x
+        bd1_slicer = (slice(0, 1), slice(None), slice(None))
+        bd2_slicer = (slice(grid.nx - 1, grid.nx), slice(None), slice(None))
+    elif axis == 1:
+        u_darcy = fl_model.u_darcy_y
+        bd1_slicer = (slice(None), slice(0, 1), slice(None))
+        bd2_slicer = (slice(None), slice(grid.ny - 1, grid.ny), slice(None))
+    elif axis == 2:
+        u_darcy = fl_model.u_darcy_z
+        bd1_slicer = (slice(None), slice(None), slice(0, 1))
+        bd2_slicer = (slice(None), slice(None), slice(grid.nz - 1, grid.nz))
+    else:
+        raise ValueError()
+
+    fwd_slicer = grid.get_slicer_forward(axis, shift=1)
+    bwd_slicer = grid.get_slicer_backward(axis, shift=1)
+
+    idc_left_border, idc_right_border = get_owner_neigh_indices(
+        grid,
+        bd1_slicer,
+        bd2_slicer,
+    )
+    tmp = grid.gamma_ij(axis) / grid.grid_cell_volume
+
+    # left border
+    _un = u_darcy[*fwd_slicer, time_index].ravel("F")[idc_left_border]
+    _un_old = u_darcy[*fwd_slicer, time_index - 1].ravel("F")[idc_left_border]
+    normal = -1.0
+    q_next[idc_left_border, idc_left_border] += (
+        tr_model.crank_nicolson_advection * _un * tmp * normal
+    )  # type: ignore
+    q_prev[idc_left_border, idc_left_border] -= (
+        (1 - tr_model.crank_nicolson_advection) * _un_old * tmp * normal
+    )  # type: ignore
+
+    # right border
+    _un = u_darcy[*bwd_slicer, time_index].ravel("F")[idc_right_border]
+    _un_old = u_darcy[*bwd_slicer, time_index - 1].ravel("F")[idc_right_border]
+    normal = 1.0
+    q_next[idc_right_border, idc_right_border] += (
+        tr_model.crank_nicolson_advection * _un * tmp * normal
+    )  # type: ignore
+    q_prev[idc_right_border, idc_right_border] -= (
+        (1 - tr_model.crank_nicolson_advection) * _un_old * tmp * normal
+    )  # type: ignore
+
+
 def _add_transport_boundary_conditions(
     grid: RectilinearGrid,
     fl_model: FlowModel,
@@ -363,70 +270,11 @@ def _add_transport_boundary_conditions(
     """Add the boundary conditions to the matrix."""
     # We get the indices of the four borders and we apply a zero gradient.
 
-    if grid.nx > 1:
-        idc_left_border, idc_right_border = get_owner_neigh_indices(
-            grid,
-            (slice(0, 1), slice(None), slice(None)),
-            (slice(grid.nx - 1, grid.nx), slice(None), slice(None)),
-        )
-        tmp = grid.gamma_ij_x / grid.grid_cell_volume
-
-        # left border
-        _un = fl_model.u_darcy_x[:-1, :, :, time_index].ravel("F")[idc_left_border]
-        _un_old = fl_model.u_darcy_x[:-1, :, :, time_index - 1].ravel("F")[
-            idc_left_border
-        ]
-        normal = -1.0
-
-        q_next[idc_left_border, idc_left_border] += (
-            tr_model.crank_nicolson_advection * _un * tmp * normal
-        )  # type: ignore
-        q_prev[idc_left_border, idc_left_border] -= (
-            (1 - tr_model.crank_nicolson_advection) * _un_old * tmp * normal
-        )  # type: ignore
-
-        # right border
-        _un = fl_model.u_darcy_x[1:, :, :, time_index].ravel("F")[idc_right_border]
-        _un_old = fl_model.u_darcy_x[1:, :, :, time_index - 1].ravel("F")[
-            idc_right_border
-        ]
-        normal = 1.0
-        q_next[idc_right_border, idc_right_border] += (
-            tr_model.crank_nicolson_advection * _un * tmp * normal
-        )  # type: ignore
-        q_prev[idc_right_border, idc_right_border] -= (
-            (1 - tr_model.crank_nicolson_advection) * _un_old * tmp * normal
-        )  # type: ignore
-
-    # # Y contribution
-    if grid.ny > 1:
-        # We get the indices of the four borders and we apply a zero-conc gradient.
-        idc_left, idc_right = get_owner_neigh_indices(
-            grid,
-            (slice(None), slice(0, 1), slice(None)),
-            (slice(None), slice(grid.ny - 1, grid.ny), slice(None)),
-        )
-        tmp = grid.gamma_ij_y / grid.grid_cell_volume
-
-        _un = fl_model.u_darcy_y[:, :-1, :, time_index].ravel("F")[idc_left]
-        _un_old = fl_model.u_darcy_y[:, :-1, :, time_index - 1].ravel("F")[idc_left]
-        normal = -1.0
-        q_next[idc_left, idc_left] += (
-            tr_model.crank_nicolson_advection * _un * tmp * normal
-        )  # type: ignore
-        q_prev[idc_left, idc_left] -= (
-            (1 - tr_model.crank_nicolson_advection) * _un_old * tmp * normal
-        )  # type: ignore
-
-        _un = fl_model.u_darcy_y[:, 1:, :, time_index].ravel("F")[idc_right]
-        _un_old = fl_model.u_darcy_y[:, 1:, :, time_index - 1].ravel("F")[idc_right]
-        normal = 1.0
-        q_next[idc_right, idc_right] += (
-            tr_model.crank_nicolson_advection * _un * tmp * normal
-        )  # type: ignore
-        q_prev[idc_right, idc_right] -= (
-            (1 - tr_model.crank_nicolson_advection) * _un_old * tmp * normal
-        )  # type: ignore
+    for n, axis in zip(grid.shape, (0, 1, 2)):
+        if n >= 2:
+            _add_transport_boundary_conditions_for_axis(
+                grid, fl_model, tr_model, q_next, q_prev, time_index, axis
+            )
 
 
 def solve_transport_semi_implicit(
@@ -463,17 +311,6 @@ def solve_transport_semi_implicit(
     if nfpi == 1:
         q_next, q_prev = make_transport_matrices(grid, tr_model, fl_model, time_index)
 
-        # Update q_next and q_prev with the advection term (must be copied)
-        # Note that this is required at the first fixed point iteration only,
-        # afterwards, only the chemical source term varies.
-        _add_advection_to_transport_matrices(
-            grid,
-            fl_model,
-            tr_model,
-            q_next,
-            q_prev,
-            time_index,
-        )
         # Add 1/dt for the left term contribution
         q_next.setdiag(
             q_next.diagonal() + tr_model.porosity.flatten("F") / time_params.dt
