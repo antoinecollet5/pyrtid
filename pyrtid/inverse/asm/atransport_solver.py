@@ -69,6 +69,7 @@ def make_transient_adj_transport_matrices(
     dim = grid.n_grid_cells
     q_prev = lil_array((dim, dim), dtype=np.float64)
     q_next = lil_array((dim, dim), dtype=np.float64)
+    crank_adv = tr_model.crank_nicolson_advection
 
     # diffusion + dispersivity
     d = (
@@ -89,6 +90,15 @@ def make_transient_adj_transport_matrices(
         if n < 2:
             continue
 
+        if axis == 0:
+            u_darcy = fl_model.u_darcy_x
+        elif axis == 1:
+            u_darcy = fl_model.u_darcy_y
+        elif axis == 2:
+            u_darcy = fl_model.u_darcy_z
+        else:
+            raise ValueError()
+
         fwd_slicer = grid.get_slicer_forward(axis)
         bwd_slicer = grid.get_slicer_backward(axis)
 
@@ -103,88 +113,13 @@ def make_transient_adj_transport_matrices(
         else:
             dmean_old = np.zeros_like(dmean)
 
-        # Forward scheme:
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            grid,
-            fwd_slicer,
-            bwd_slicer,
-            owner_indices_to_keep=tr_model.free_conc_nn,
-        )
-
-        tmp = grid.gamma_ij(axis) / grid.pipj(axis) / grid.grid_cell_volume
-
-        q_next[idc_owner, idc_neigh] -= (
-            tr_model.crank_nicolson_diffusion * dmean[idc_owner] * tmp
-        )  # type: ignore
-        q_next[idc_owner, idc_owner] += (
-            tr_model.crank_nicolson_diffusion * dmean[idc_owner] * tmp
-        )  # type: ignore
-        q_prev[idc_owner, idc_neigh] += (
-            (1.0 - tr_model.crank_nicolson_diffusion) * dmean_old[idc_owner] * tmp
-        )  # type: ignore
-        q_prev[idc_owner, idc_owner] -= (
-            (1.0 - tr_model.crank_nicolson_diffusion) * dmean_old[idc_owner] * tmp
-        )  # type: ignore
-
-        # Backward scheme
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            grid,
-            bwd_slicer,
-            fwd_slicer,
-            owner_indices_to_keep=tr_model.free_conc_nn,
-        )
-
-        q_next[idc_owner, idc_neigh] -= (
-            tr_model.crank_nicolson_diffusion * dmean[idc_neigh] * tmp
-        )  # type: ignore
-        q_next[idc_owner, idc_owner] += (
-            tr_model.crank_nicolson_diffusion * dmean[idc_neigh] * tmp
-        )  # type: ignore
-        q_prev[idc_owner, idc_neigh] += (
-            (1.0 - tr_model.crank_nicolson_diffusion) * dmean_old[idc_neigh] * tmp
-        )  # type: ignore
-        q_prev[idc_owner, idc_owner] -= (
-            (1.0 - tr_model.crank_nicolson_diffusion) * dmean_old[idc_neigh] * tmp
-        )  # type: ignore
-
-    return q_next, q_prev
-
-
-def _add_advection_to_adj_transport_matrices(
-    grid: RectilinearGrid,
-    fl_model: FlowModel,
-    tr_model: TransportModel,
-    a_tr_model: AdjointTransportModel,
-    q_next: lil_array,
-    q_prev: lil_array,
-    time_index: int,
-) -> None:
-    crank_adv = tr_model.crank_nicolson_advection
-
-    for n, axis in zip(grid.shape, (0, 1, 2)):
-        if n < 2:
-            continue
-
-        if axis == 0:
-            u_darcy = fl_model.u_darcy_x
-        elif axis == 1:
-            u_darcy = fl_model.u_darcy_y
-        elif axis == 2:
-            u_darcy = fl_model.u_darcy_z
-        else:
-            raise ValueError()
-
-        fwd_slicer = grid.get_slicer_forward(axis)
-        bwd_slicer = grid.get_slicer_backward(axis)
-
-        tmp: float = grid.gamma_ij(axis) / grid.grid_cell_volume
-
         tmp_un = np.zeros(grid.shape, dtype=np.float64)
         tmp_un[fwd_slicer] = u_darcy[*bwd_slicer, time_index]
         un = tmp_un.flatten(order="F")
 
         # Forward scheme:
         normal = 1.0
+
         idc_owner, idc_neigh = get_owner_neigh_indices(
             grid,
             fwd_slicer,
@@ -192,15 +127,29 @@ def _add_advection_to_adj_transport_matrices(
             owner_indices_to_keep=tr_model.free_conc_nn,
         )
 
-        tmp_un_pos = np.where(normal * un > 0.0, normal * un, 0.0)[idc_owner]
+        tmp_diff = grid.gamma_ij(axis) / grid.pipj(axis) / grid.grid_cell_volume
+        tmp_un_pos = (
+            np.where(normal * un > 0.0, normal * un, 0.0)[idc_owner]
+            * grid.gamma_ij(axis)
+            / grid.grid_cell_volume
+        )
 
-        q_next[idc_owner, idc_owner] += crank_adv * tmp_un_pos * tmp  # type: ignore
-        q_next[idc_owner, idc_neigh] -= crank_adv * tmp_un_pos * tmp  # type: ignore
-        q_prev[idc_owner, idc_owner] -= (1 - crank_adv) * tmp_un_pos * tmp  # type: ignore
-        q_prev[idc_owner, idc_neigh] += (1 - crank_adv) * tmp_un_pos * tmp  # type: ignore
+        q_next[idc_owner, idc_neigh] -= (
+            tr_model.crank_nicolson_diffusion * dmean[idc_owner] * tmp_diff
+        ) + crank_adv * tmp_un_pos  # type: ignore
+        q_next[idc_owner, idc_owner] += (
+            tr_model.crank_nicolson_diffusion * dmean[idc_owner] * tmp_diff
+        ) + crank_adv * tmp_un_pos  # type: ignore
+        q_prev[idc_owner, idc_neigh] += (
+            (1.0 - tr_model.crank_nicolson_diffusion) * dmean_old[idc_owner] * tmp_diff
+        ) + (1 - crank_adv) * tmp_un_pos  # type: ignore
+        q_prev[idc_owner, idc_owner] -= (
+            (1.0 - tr_model.crank_nicolson_diffusion) * dmean_old[idc_owner] * tmp_diff
+        ) + (1 - crank_adv) * tmp_un_pos  # type: ignore
 
         # Backward scheme
         normal = -1.0
+
         idc_owner, idc_neigh = get_owner_neigh_indices(
             grid,
             bwd_slicer,
@@ -208,12 +157,24 @@ def _add_advection_to_adj_transport_matrices(
             owner_indices_to_keep=tr_model.free_conc_nn,
         )
 
-        tmp_un_pos = np.where(normal * un > 0.0, normal * un, 0.0)[idc_neigh]
+        tmp_un_pos = (
+            np.where(normal * un > 0.0, normal * un, 0.0)[idc_neigh]
+            * grid.gamma_ij(axis)
+            / grid.grid_cell_volume
+        )
 
-        q_next[idc_owner, idc_owner] += crank_adv * tmp_un_pos * tmp  # type: ignore
-        q_next[idc_owner, idc_neigh] -= crank_adv * tmp_un_pos * tmp  # type: ignore
-        q_prev[idc_owner, idc_owner] -= (1 - crank_adv) * tmp_un_pos * tmp  # type: ignore
-        q_prev[idc_owner, idc_neigh] += (1 - crank_adv) * tmp_un_pos * tmp  # type: ignore
+        q_next[idc_owner, idc_neigh] -= (
+            tr_model.crank_nicolson_diffusion * dmean[idc_neigh] * tmp_diff
+        ) + crank_adv * tmp_un_pos  # type: ignore
+        q_next[idc_owner, idc_owner] += (
+            tr_model.crank_nicolson_diffusion * dmean[idc_neigh] * tmp_diff
+        ) + crank_adv * tmp_un_pos  # type: ignore
+        q_prev[idc_owner, idc_neigh] += (
+            (1.0 - tr_model.crank_nicolson_diffusion) * dmean_old[idc_neigh] * tmp_diff
+        ) + (1 - crank_adv) * tmp_un_pos  # type: ignore
+        q_prev[idc_owner, idc_owner] -= (
+            (1.0 - tr_model.crank_nicolson_diffusion) * dmean_old[idc_neigh] * tmp_diff
+        ) + (1 - crank_adv) * tmp_un_pos  # type: ignore
 
     _apply_adj_transport_sink_term(fl_model, tr_model, q_next, q_prev, time_index)
 
@@ -223,6 +184,8 @@ def _add_advection_to_adj_transport_matrices(
     _add_adj_transport_boundary_conditions(
         grid, fl_model, tr_model, q_next, q_prev, time_index
     )
+
+    return q_next, q_prev
 
 
 def _apply_adj_transport_sink_term(
@@ -334,13 +297,6 @@ def solve_adj_transport_transient_semi_implicit(
     if nafpi == 1:
         q_next, q_prev = make_transient_adj_transport_matrices(
             grid, fl_model, tr_model, time_params, time_index
-        )
-
-        # Update q_next and q_prev with the advection term (must be copied)
-        # Note that this is required at the first fixed point iteration only,
-        # afterwards, only the chemical source term varies.
-        _add_advection_to_adj_transport_matrices(
-            grid, fl_model, tr_model, a_tr_model, q_next, q_prev, time_index
         )
 
         # # Add 1/dt for the left term contribution: only for free head
