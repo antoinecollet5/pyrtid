@@ -34,6 +34,7 @@ class AdjointFlowModel(ABC):
         "a_pressure",
         "a_u_darcy_x",
         "a_u_darcy_y",
+        "a_u_darcy_z",
         "a_head_sources",
         "a_pressure_sources",
         "a_permeability_sources",
@@ -75,6 +76,9 @@ class AdjointFlowModel(ABC):
         )
         self.a_u_darcy_y = np.zeros(
             (grid.nx, grid.ny + 1, grid.nz, time_params.nt), dtype=np.float64
+        )
+        self.a_u_darcy_z = np.zeros(
+            (grid.nx, grid.ny, grid.nz + 1, time_params.nt), dtype=np.float64
         )
         # Generally, not so many observations, so only a few adjoint variable,
         # so use a sparse matrix instead of a dense array
@@ -130,6 +134,7 @@ class AdjointFlowModel(ABC):
         self.a_pressure = np.zeros_like(self.a_pressure)
         self.a_u_darcy_x = np.zeros_like(self.a_u_darcy_x)
         self.a_u_darcy_y = np.zeros_like(self.a_u_darcy_y)
+        self.a_u_darcy_z = np.zeros_like(self.a_u_darcy_z)
         self.l_q_next = []
         self.l_q_prev = []
 

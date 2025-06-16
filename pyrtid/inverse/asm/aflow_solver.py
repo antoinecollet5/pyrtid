@@ -26,8 +26,61 @@ from pyrtid.utils import (
     assert_allclose_sparse,
     dxi_harmonic_mean,
     get_super_ilu_preconditioner,
-    harmonic_mean,
 )
+
+
+def add_adj_stationary_flow_to_q_next_for_axis(
+    grid: RectilinearGrid, fl_model: FlowModel, q_next: lil_array, axis: int
+) -> None:
+    kmean = get_kmean(grid, fl_model, axis)
+    fwd_slicer = grid.get_slicer_forward(axis)
+    bwd_slicer = grid.get_slicer_backward(axis)
+    _tmp = grid.gamma_ij(axis) / grid.pipj(axis) / grid.grid_cell_volume
+    if fl_model.is_gravity:
+        _tmp /= WATER_DENSITY * GRAVITY
+
+    # 1.1) Forward scheme:
+    # 1.1.1) For free head nodes only
+    idc_owner, idc_neigh = get_owner_neigh_indices(
+        grid,
+        fwd_slicer,
+        bwd_slicer,
+        owner_indices_to_keep=fl_model.free_head_nn,
+    )
+    tmp = _tmp * kmean[idc_owner]
+    q_next[idc_owner, idc_owner] += tmp  # type: ignore
+
+    # 1.1.2) For all nodes but with free head neighbors only
+    idc_owner, idc_neigh = get_owner_neigh_indices(
+        grid,
+        fwd_slicer,
+        bwd_slicer,
+        neigh_indices_to_keep=fl_model.free_head_nn,
+    )
+    tmp = _tmp * kmean[idc_owner]
+    q_next[idc_owner, idc_neigh] -= tmp
+
+    # 1.2) Backward scheme
+
+    # 1.2.1) For free head nodes only
+    idc_owner, idc_neigh = get_owner_neigh_indices(
+        grid,
+        bwd_slicer,
+        fwd_slicer,
+        owner_indices_to_keep=fl_model.free_head_nn,
+    )
+    tmp = _tmp * kmean[idc_neigh]
+    q_next[idc_owner, idc_owner] += tmp
+
+    # 1.2.2) For all nodes but with free head neighbors only
+    idc_owner, idc_neigh = get_owner_neigh_indices(
+        grid,
+        bwd_slicer,
+        fwd_slicer,
+        neigh_indices_to_keep=fl_model.free_head_nn,
+    )
+    tmp = _tmp * kmean[idc_neigh]
+    q_next[idc_owner, idc_neigh] -= tmp
 
 
 def add_adj_stationary_flow_to_q_next(
@@ -43,109 +96,122 @@ def add_adj_stationary_flow_to_q_next(
     Since the permeability and the storage coefficient does not vary with time,
     matrices q_prev and q_next are the same.
     """
-    # 1) X contribution
-    if grid.nx >= 2:
-        kmean = get_kmean(grid, fl_model, 0)
-
-        _tmp = grid.gamma_ij_x / grid.dx / grid.grid_cell_volume
-        if fl_model.is_gravity:
-            _tmp /= WATER_DENSITY * GRAVITY
-
-        # 1.1) Forward scheme:
-        # 1.1.1) For free head nodes only
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            grid,
-            (slice(0, grid.nx - 1), slice(None), slice(None)),
-            (slice(1, grid.nx), slice(None), slice(None)),
-            owner_indices_to_keep=fl_model.free_head_nn,
-        )
-        tmp = _tmp * kmean[idc_owner]
-        q_next[idc_owner, idc_owner] += tmp  # type: ignore
-
-        # 1.1.2) For all nodes but with free head neighbors only
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            grid,
-            (slice(0, grid.nx - 1), slice(None), slice(None)),
-            (slice(1, grid.nx), slice(None), slice(None)),
-            neigh_indices_to_keep=fl_model.free_head_nn,
-        )
-        tmp = _tmp * kmean[idc_owner]
-        q_next[idc_owner, idc_neigh] -= tmp
-
-        # 1.2) Backward scheme
-
-        # 1.2.1) For free head nodes only
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            grid,
-            (slice(1, grid.nx), slice(None), slice(None)),
-            (slice(0, grid.nx - 1), slice(None), slice(None)),
-            owner_indices_to_keep=fl_model.free_head_nn,
-        )
-        tmp = _tmp * kmean[idc_neigh]
-        q_next[idc_owner, idc_owner] += tmp
-
-        # 1.2.2) For all nodes but with free head neighbors only
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            grid,
-            (slice(1, grid.nx), slice(None), slice(None)),
-            (slice(0, grid.nx - 1), slice(None), slice(None)),
-            neigh_indices_to_keep=fl_model.free_head_nn,
-        )
-        tmp = _tmp * kmean[idc_neigh]
-        q_next[idc_owner, idc_neigh] -= tmp
-
-    # 2) Y contribution
-    if grid.ny >= 2:
-        kmean = get_kmean(grid, fl_model, 1)
-
-        # 2.1) Forward scheme:
-        _tmp = grid.gamma_ij_y / grid.dy / grid.grid_cell_volume
-        if fl_model.is_gravity:
-            _tmp /= WATER_DENSITY * GRAVITY
-
-        # 2.1.1) For free head nodes only
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            grid,
-            (slice(None), slice(0, grid.ny - 1), slice(None)),
-            (slice(None), slice(1, grid.ny), slice(None)),
-            owner_indices_to_keep=fl_model.free_head_nn,
-        )
-        tmp = _tmp * kmean[idc_owner]
-        q_next[idc_owner, idc_owner] += tmp
-
-        # 2.1.2) For all nodes but with free head neighbors only
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            grid,
-            (slice(None), slice(0, grid.ny - 1), slice(None)),
-            (slice(None), slice(1, grid.ny), slice(None)),
-            neigh_indices_to_keep=fl_model.free_head_nn,
-        )
-        tmp = _tmp * kmean[idc_owner]
-        q_next[idc_owner, idc_neigh] -= tmp
-
-        # 2.2) Backward scheme
-
-        # 2.2.1) For free head nodes only
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            grid,
-            (slice(None), slice(1, grid.ny), slice(None)),
-            (slice(None), slice(0, grid.ny - 1), slice(None)),
-            owner_indices_to_keep=fl_model.free_head_nn,
-        )
-        tmp = _tmp * kmean[idc_neigh]
-        q_next[idc_owner, idc_owner] += tmp
-
-        # 2.2.2) For all nodes but with free head neighbors only
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            grid,
-            (slice(None), slice(1, grid.ny), slice(None)),
-            (slice(None), slice(0, grid.ny - 1), slice(None)),
-            neigh_indices_to_keep=fl_model.free_head_nn,
-        )
-        tmp = _tmp * kmean[idc_neigh]
-        q_next[idc_owner, idc_neigh] -= tmp
-
+    for n, axis in zip(grid.shape, (0, 1, 2)):
+        if n >= 2:
+            add_adj_stationary_flow_to_q_next_for_axis(grid, fl_model, q_next, axis)
     return q_next
+
+
+def fill_transient_adj_flow_matrices_for_axis(
+    grid: RectilinearGrid,
+    fl_model: FlowModel,
+    tr_model: TransportModel,
+    a_fl_model: AdjointFlowModel,
+    time_params: TimeParameters,
+    time_index: int,
+    q_next: lil_array,
+    q_prev: lil_array,
+    axis: int,
+) -> None:
+    """
+    Make matrices for the initial time step with a potential stationary flow.
+
+    Note
+    ----
+    Since the permeability and the storage coefficient does not vary with time,
+    matrices q_prev and q_next are the same.
+    """
+    if a_fl_model.crank_nicolson is None:
+        fl_crank: float = fl_model.crank_nicolson
+    else:
+        fl_crank = a_fl_model.crank_nicolson
+
+    sc = fl_model.storage_coefficient.ravel("F")
+
+    kmean = get_kmean(grid, fl_model, axis)
+    fwd_slicer = grid.get_slicer_forward(axis)
+    bwd_slicer = grid.get_slicer_backward(axis)
+    _tmp = grid.gamma_ij(axis) / grid.pipj(axis) / grid.grid_cell_volume
+
+    # at n - 1
+    rhomean_next = get_rhomean(grid, tr_model, axis=axis, time_index=time_index - 1)
+    # at n
+    rhomean_prev = get_rhomean(grid, tr_model, axis=axis, time_index=time_index)
+    # 1.1) Forward scheme:
+
+    # 1.1.1) For free head nodes only
+    idc_owner, idc_neigh = get_owner_neigh_indices(
+        grid,
+        fwd_slicer,
+        bwd_slicer,
+        owner_indices_to_keep=fl_model.free_head_nn,
+    )
+    # Add the storage coefficient with respect to the owner mesh
+    tmp_next = _tmp / sc[idc_owner] * kmean[idc_owner]
+    tmp_prev = tmp_next.copy()
+
+    if fl_model.is_gravity:
+        tmp_next *= rhomean_next[idc_owner] / WATER_DENSITY
+        tmp_prev *= rhomean_prev[idc_owner] / WATER_DENSITY
+
+    q_next[idc_owner, idc_owner] += fl_crank * tmp_next  # type: ignore
+    q_prev[idc_owner, idc_owner] -= (1.0 - fl_crank) * tmp_prev  # type: ignore
+
+    # 1.1.2) For all nodes but with free head neighbors only
+    idc_owner, idc_neigh = get_owner_neigh_indices(
+        grid,
+        fwd_slicer,
+        bwd_slicer,
+        neigh_indices_to_keep=fl_model.free_head_nn,
+    )
+    # Add the storage coefficient with respect to the owner mesh
+    tmp_next = _tmp / sc[idc_owner] * kmean[idc_owner]
+    tmp_prev = tmp_next.copy()
+
+    if fl_model.is_gravity:
+        tmp_next *= rhomean_next[idc_owner] / WATER_DENSITY
+        tmp_prev *= rhomean_prev[idc_owner] / WATER_DENSITY
+
+    q_next[idc_owner, idc_neigh] -= fl_crank * tmp_next  # type: ignore
+    q_prev[idc_owner, idc_neigh] += (1.0 - fl_crank) * tmp_prev  # type: ignore
+
+    # 1.2) Backward scheme
+
+    # 1.2.1) For free head nodes only
+    idc_owner, idc_neigh = get_owner_neigh_indices(
+        grid,
+        bwd_slicer,
+        fwd_slicer,
+        owner_indices_to_keep=fl_model.free_head_nn,
+    )
+    # Add the storage coefficient with respect to the owner mesh
+    tmp_next = _tmp / sc[idc_owner] * kmean[idc_neigh]
+    tmp_prev = tmp_next.copy()
+
+    if fl_model.is_gravity:
+        tmp_next *= rhomean_next[idc_neigh] / WATER_DENSITY
+        tmp_prev *= rhomean_prev[idc_neigh] / WATER_DENSITY
+
+    q_next[idc_owner, idc_owner] += fl_crank * tmp_next  # type: ignore
+    q_prev[idc_owner, idc_owner] -= (1.0 - fl_crank) * tmp_prev  # type: ignore
+
+    # 1.2.2) For all nodes but with free head neighbors only
+    idc_owner, idc_neigh = get_owner_neigh_indices(
+        grid,
+        bwd_slicer,
+        fwd_slicer,
+        neigh_indices_to_keep=fl_model.free_head_nn,
+    )
+    # Add the storage coefficient with respect to the owner mesh
+    tmp_next = _tmp / sc[idc_owner] * kmean[idc_neigh]
+    tmp_prev = tmp_next.copy()
+
+    if fl_model.is_gravity:
+        tmp_next *= rhomean_next[idc_neigh] / WATER_DENSITY
+        tmp_prev *= rhomean_prev[idc_neigh] / WATER_DENSITY
+
+    q_next[idc_owner, idc_neigh] -= fl_crank * tmp_next  # type: ignore
+    q_prev[idc_owner, idc_neigh] += (1.0 - fl_crank) * tmp_prev  # type: ignore
 
 
 def make_transient_adj_flow_matrices(
@@ -164,186 +230,23 @@ def make_transient_adj_flow_matrices(
     Since the permeability and the storage coefficient does not vary with time,
     matrices q_prev and q_next are the same.
     """
-
     dim = grid.n_grid_cells
     q_prev = lil_array((dim, dim), dtype=np.float64)
     q_next = lil_array((dim, dim), dtype=np.float64)
-    sc = fl_model.storage_coefficient.ravel("F")
-    if a_fl_model.crank_nicolson is None:
-        fl_crank: float = fl_model.crank_nicolson
-    else:
-        fl_crank = a_fl_model.crank_nicolson
 
-    # 1) X contribution
-    if grid.nx >= 2:
-        _tmp = grid.gamma_ij_x / grid.dx / grid.grid_cell_volume
-
-        kmean = get_kmean(grid, fl_model, 0)
-        # at n - 1
-        rhomean_next = get_rhomean(grid, tr_model, axis=0, time_index=time_index - 1)
-        # at n
-        rhomean_prev = get_rhomean(grid, tr_model, axis=0, time_index=time_index)
-        # 1.1) Forward scheme:
-
-        # 1.1.1) For free head nodes only
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            grid,
-            (slice(0, grid.nx - 1), slice(None), slice(None)),
-            (slice(1, grid.nx), slice(None), slice(None)),
-            owner_indices_to_keep=fl_model.free_head_nn,
-        )
-        # Add the storage coefficient with respect to the owner mesh
-        tmp_next = _tmp / sc[idc_owner] * kmean[idc_owner]
-        tmp_prev = tmp_next.copy()
-
-        if fl_model.is_gravity:
-            tmp_next *= rhomean_next[idc_owner] / WATER_DENSITY
-            tmp_prev *= rhomean_prev[idc_owner] / WATER_DENSITY
-
-        q_next[idc_owner, idc_owner] += fl_crank * tmp_next  # type: ignore
-        q_prev[idc_owner, idc_owner] -= (1.0 - fl_crank) * tmp_prev  # type: ignore
-
-        # 1.1.2) For all nodes but with free head neighbors only
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            grid,
-            (slice(0, grid.nx - 1), slice(None), slice(None)),
-            (slice(1, grid.nx), slice(None), slice(None)),
-            neigh_indices_to_keep=fl_model.free_head_nn,
-        )
-        # Add the storage coefficient with respect to the owner mesh
-        tmp_next = _tmp / sc[idc_owner] * kmean[idc_owner]
-        tmp_prev = tmp_next.copy()
-
-        if fl_model.is_gravity:
-            tmp_next *= rhomean_next[idc_owner] / WATER_DENSITY
-            tmp_prev *= rhomean_prev[idc_owner] / WATER_DENSITY
-
-        q_next[idc_owner, idc_neigh] -= fl_crank * tmp_next  # type: ignore
-        q_prev[idc_owner, idc_neigh] += (1.0 - fl_crank) * tmp_prev  # type: ignore
-
-        # 1.2) Backward scheme
-
-        # 1.2.1) For free head nodes only
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            grid,
-            (slice(1, grid.nx), slice(None), slice(None)),
-            (slice(0, grid.nx - 1), slice(None), slice(None)),
-            owner_indices_to_keep=fl_model.free_head_nn,
-        )
-        # Add the storage coefficient with respect to the owner mesh
-        tmp_next = _tmp / sc[idc_owner] * kmean[idc_neigh]
-        tmp_prev = tmp_next.copy()
-
-        if fl_model.is_gravity:
-            tmp_next *= rhomean_next[idc_neigh] / WATER_DENSITY
-            tmp_prev *= rhomean_prev[idc_neigh] / WATER_DENSITY
-
-        q_next[idc_owner, idc_owner] += fl_crank * tmp_next  # type: ignore
-        q_prev[idc_owner, idc_owner] -= (1.0 - fl_crank) * tmp_prev  # type: ignore
-
-        # 1.2.2) For all nodes but with free head neighbors only
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            grid,
-            (slice(1, grid.nx), slice(None), slice(None)),
-            (slice(0, grid.nx - 1), slice(None), slice(None)),
-            neigh_indices_to_keep=fl_model.free_head_nn,
-        )
-        # Add the storage coefficient with respect to the owner mesh
-        tmp_next = _tmp / sc[idc_owner] * kmean[idc_neigh]
-        tmp_prev = tmp_next.copy()
-
-        if fl_model.is_gravity:
-            tmp_next *= rhomean_next[idc_neigh] / WATER_DENSITY
-            tmp_prev *= rhomean_prev[idc_neigh] / WATER_DENSITY
-
-        q_next[idc_owner, idc_neigh] -= fl_crank * tmp_next  # type: ignore
-        q_prev[idc_owner, idc_neigh] += (1.0 - fl_crank) * tmp_prev  # type: ignore
-
-    # 2) Y contribution
-    if grid.ny >= 2:
-        kmean = get_kmean(grid, fl_model, 1)
-
-        # at n - 1
-        rhomean_next = get_rhomean(grid, tr_model, axis=1, time_index=time_index - 1)
-        # at n
-        rhomean_prev = get_rhomean(grid, tr_model, axis=1, time_index=time_index)
-        # 2.1) Forward scheme:
-        _tmp = grid.gamma_ij_y / grid.dy / grid.grid_cell_volume
-
-        # 2.1.1) For free head nodes only
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            grid,
-            (slice(None), slice(0, grid.ny - 1), slice(None)),
-            (slice(None), slice(1, grid.ny), slice(None)),
-            owner_indices_to_keep=fl_model.free_head_nn,
-        )
-        # Add the storage coefficient with respect to the owner mesh
-        tmp_next = _tmp / sc[idc_owner] * kmean[idc_owner]
-        tmp_prev = tmp_next.copy()
-
-        if fl_model.is_gravity:
-            tmp_next *= rhomean_next[idc_owner] / WATER_DENSITY
-            tmp_prev *= rhomean_prev[idc_owner] / WATER_DENSITY
-
-        q_next[idc_owner, idc_owner] += fl_crank * tmp_next  # type: ignore
-        q_prev[idc_owner, idc_owner] -= (1.0 - fl_crank) * tmp_prev  # type: ignore
-
-        # 2.1.2) For all nodes but with free head neighbors only
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            grid,
-            (slice(None), slice(0, grid.ny - 1), slice(None)),
-            (slice(None), slice(1, grid.ny), slice(None)),
-            neigh_indices_to_keep=fl_model.free_head_nn,
-        )
-        # Add the storage coefficient with respect to the owner mesh
-        tmp_next = _tmp / sc[idc_owner] * kmean[idc_owner]
-        tmp_prev = tmp_next.copy()
-
-        if fl_model.is_gravity:
-            tmp_next *= rhomean_next[idc_owner] / WATER_DENSITY
-            tmp_prev *= rhomean_prev[idc_owner] / WATER_DENSITY
-
-        q_next[idc_owner, idc_neigh] -= fl_crank * tmp_next  # type: ignore
-
-        q_prev[idc_owner, idc_neigh] += (1.0 - fl_crank) * tmp_prev  # type: ignore
-
-        # 2.2) Backward scheme
-
-        # 2.2.1) For free head nodes only
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            grid,
-            (slice(None), slice(1, grid.ny), slice(None)),
-            (slice(None), slice(0, grid.ny - 1), slice(None)),
-            owner_indices_to_keep=fl_model.free_head_nn,
-        )
-        # Add the storage coefficient with respect to the owner mesh
-        tmp_next = _tmp / sc[idc_owner] * kmean[idc_neigh]
-        tmp_prev = tmp_next.copy()
-
-        if fl_model.is_gravity:
-            tmp_next *= rhomean_next[idc_neigh] / WATER_DENSITY
-            tmp_prev *= rhomean_prev[idc_neigh] / WATER_DENSITY
-
-        q_next[idc_owner, idc_owner] += fl_crank * tmp_next  # type: ignore
-        q_prev[idc_owner, idc_owner] -= (1.0 - fl_crank) * tmp_prev  # type: ignore
-
-        # 2.2.2) For all nodes but with free head neighbors only
-        idc_owner, idc_neigh = get_owner_neigh_indices(
-            grid,
-            (slice(None), slice(1, grid.ny), slice(None)),
-            (slice(None), slice(0, grid.ny - 1), slice(None)),
-            neigh_indices_to_keep=fl_model.free_head_nn,
-        )
-        # Add the storage coefficient with respect to the owner mesh
-        tmp_next = _tmp / sc[idc_owner] * kmean[idc_neigh]
-        tmp_prev = tmp_next.copy()
-
-        if fl_model.is_gravity:
-            tmp_next *= rhomean_next[idc_neigh] / WATER_DENSITY
-            tmp_prev *= rhomean_prev[idc_neigh] / WATER_DENSITY
-
-        q_next[idc_owner, idc_neigh] -= fl_crank * tmp_next  # type: ignore
-        q_prev[idc_owner, idc_neigh] += (1.0 - fl_crank) * tmp_prev  # type: ignore
+    for n, axis in zip(grid.shape, (0, 1, 2)):
+        if n >= 2:
+            fill_transient_adj_flow_matrices_for_axis(
+                grid,
+                fl_model,
+                tr_model,
+                a_fl_model,
+                time_params,
+                time_index,
+                q_next,
+                q_prev,
+                axis,
+            )
 
     return q_next, q_prev
 
@@ -444,39 +347,59 @@ def update_adjoint_u_darcy(
             mob_next = np.zeros_like(mob)
             a_mob = np.zeros_like(mob)
 
-        # X contribution
-        if grid.nx > 1:
-            un_x = fl_model.u_darcy_x[1:-1, :, :, time_index]
+        for n, axis in zip(grid.shape, (0, 1, 2)):
+            if n < 2:
+                continue
 
-            mob_ij_x = np.where(
-                un_x > 0.0, mob[:-1, :, :], mob[1:, :, :]
+            if axis == 0:
+                u_darcy = fl_model.u_darcy_x
+                a_u_darcy = a_fl_model.a_u_darcy_x
+            elif axis == 1:
+                u_darcy = fl_model.u_darcy_y
+                a_u_darcy = a_fl_model.a_u_darcy_y
+            elif axis == 2:
+                u_darcy = fl_model.u_darcy_z
+                a_u_darcy = a_fl_model.a_u_darcy_z
+            else:
+                raise ValueError()
+
+            fwd_slicer = grid.get_slicer_forward(axis)
+            bwd_slicer = grid.get_slicer_backward(axis)
+
+            un = u_darcy[*bwd_slicer, time_index]
+
+            mob_ij = np.where(
+                un > 0.0, mob[fwd_slicer], mob[bwd_slicer]
             )  # take the mob depending on the forward flow direction
-            mob_ij_x[un_x == 0] = 0
+            mob_ij[un == 0] = 0
 
             # 1) advective term
-            a_fl_model.a_u_darcy_x[1:-1, :, :, time_index] += (
-                grid.gamma_ij_x
+            a_u_darcy[*bwd_slicer, time_index] += (
+                grid.gamma_ij(axis)
                 * (
                     (
-                        crank_adv * (a_mob[1:, :, :] - a_mob[:-1, :, :])
+                        crank_adv * (a_mob[bwd_slicer] - a_mob[fwd_slicer])
                         + (1.0 - crank_adv)
-                        * (a_mob_old[1:, :, :] - a_mob_old[:-1, :, :])
+                        * (a_mob_old[bwd_slicer] - a_mob_old[fwd_slicer])
                     )
-                    * mob_ij_x
+                    * mob_ij
                 )
                 / grid.grid_cell_volume
             )
 
             # 2) U divergence term
-            a_fl_model.a_u_darcy_x[1:-1, :, :, time_index] += (
-                grid.gamma_ij_x
+            a_u_darcy[*bwd_slicer, time_index] += (
+                grid.gamma_ij(axis)
                 * (
                     crank_adv
-                    * (a_mob[:-1, :, :] * mob[:-1, :, :] - a_mob[1:, :, :] * mob[1:, :])
+                    * (
+                        a_mob[fwd_slicer] * mob[fwd_slicer]
+                        - a_mob[bwd_slicer] * mob[bwd_slicer]
+                    )
                     + (1.0 - crank_adv)
                     * (
-                        a_mob_old[:-1, :, :] * mob[:-1, :, :]
-                        - a_mob_old[1:, :, :] * mob[1:, :, :]
+                        a_mob_old[fwd_slicer] * mob[fwd_slicer]
+                        - a_mob_old[bwd_slicer] * mob[bwd_slicer]
                     )
                 )
                 / grid.grid_cell_volume
@@ -484,105 +407,34 @@ def update_adjoint_u_darcy(
 
             # 3) Dispersivity term -> \lmabda *
             # forward in space
-            lhs[:-1, :, :] += (
-                grid.gamma_ij_x
-                / grid.dx
+            lhs[fwd_slicer] += (
+                grid.gamma_ij(axis)
+                / grid.pipj(axis)
                 / grid.grid_cell_volume
                 * (
                     (
-                        crank_diff * (mob[1:, :, :] - mob[:-1, :, :])
+                        crank_diff * (mob[bwd_slicer] - mob[fwd_slicer])
                         + (1.0 - crank_diff)
-                        * (mob_next[1:, :, :] - mob_next[:-1, :, :])
+                        * (mob_next[bwd_slicer] - mob_next[fwd_slicer])
                     )
-                    * (a_mob[:-1, :, :] - a_mob[1:, :, :])
+                    * (a_mob[fwd_slicer] - a_mob[bwd_slicer])
                 )
-                * dxi_harmonic_mean(d[:-1, :, :], d[1:, :, :])
+                * dxi_harmonic_mean(d[fwd_slicer], d[bwd_slicer])
             )
             # backward in space
-            lhs[1:, :, :] += (
-                grid.gamma_ij_x
-                / grid.dx
+            lhs[bwd_slicer] += (
+                grid.gamma_ij(axis)
+                / grid.pipj(axis)
                 / grid.grid_cell_volume
                 * (
                     (
-                        crank_diff * (mob[:-1, :, :] - mob[1:, :, :])
+                        crank_diff * (mob[fwd_slicer] - mob[bwd_slicer])
                         + (1.0 - crank_diff)
-                        * (mob_next[:-1, :, :] - mob_next[1:, :, :])
+                        * (mob_next[fwd_slicer] - mob_next[bwd_slicer])
                     )
-                    * (a_mob[1:, :, :] - a_mob[:-1, :, :])
+                    * (a_mob[bwd_slicer] - a_mob[fwd_slicer])
                 )
-                * dxi_harmonic_mean(d[1:, :, :], d[:-1, :, :])
-            )
-
-        # Y contribution
-        if grid.ny > 1:
-            un_y = fl_model.u_darcy_y[:, 1:-1, :, time_index]
-            mob_ij_y = np.where(
-                un_y > 0.0, mob[:, :-1, :], mob[:, 1:, :]
-            )  # take the mob depending on the forward flow direction
-            mob_ij_y[un_y == 0] = 0
-
-            # 1) advective term
-            a_fl_model.a_u_darcy_y[:, 1:-1, :, time_index] += (
-                grid.gamma_ij_y
-                * (
-                    (
-                        crank_adv * (a_mob[:, 1:, :] - a_mob[:, :-1, :])
-                        + (1.0 - crank_adv)
-                        * (a_mob_old[:, 1:, :] - a_mob_old[:, :-1, :])
-                    )
-                    * mob_ij_y
-                )
-                / grid.grid_cell_volume
-            )
-            # 2) U divergence term
-            a_fl_model.a_u_darcy_y[:, 1:-1, :, time_index] += (
-                grid.gamma_ij_y
-                * (
-                    crank_adv
-                    * (
-                        a_mob[:, :-1, :] * mob[:, :-1, :]
-                        - a_mob[:, 1:, :] * mob[:, 1:, :]
-                    )
-                    + (1.0 - crank_adv)
-                    * (
-                        a_mob_old[:, :-1, :] * mob[:, :-1, :]
-                        - a_mob_old[:, 1:, :] * mob[:, 1:, :]
-                    )
-                )
-                / grid.grid_cell_volume
-            )
-
-            # 3) Dispersivity term
-            # forward in space
-            lhs[:, :-1, :] += (
-                grid.gamma_ij_y
-                / grid.dy
-                / grid.grid_cell_volume
-                * (
-                    (
-                        crank_diff * (mob[:, 1:, :] - mob[:, :-1, :])
-                        + (1.0 - crank_diff)
-                        * (mob_next[:, 1:, :] - mob_next[:, :-1, :])
-                    )
-                    * (a_mob[:, :-1, :] - a_mob[:, 1:, :])
-                )
-                * dxi_harmonic_mean(d[:, :-1, :], d[:, 1:, :])
-            )
-            # backward in space
-            lhs[:, 1:, :] += (
-                grid.gamma_ij_y
-                / grid.dy
-                / grid.grid_cell_volume
-                * (
-                    (
-                        crank_diff * (mob[:, :-1, :] - mob[:, 1:, :])
-                        + (1.0 - crank_diff)
-                        * (mob_next[:, :-1, :] - mob_next[:, 1:, :])
-                    )
-                    * (a_mob[:, 1:, :] - a_mob[:, :-1, :])
-                )
-                * dxi_harmonic_mean(d[:, 1:, :], d[:, :-1, :])
+                * dxi_harmonic_mean(d[bwd_slicer], d[fwd_slicer])
             )
 
     # End dispersivity term
@@ -590,6 +442,8 @@ def update_adjoint_u_darcy(
     a_fl_model.a_u_darcy_x[1:, :, :, time_index] += dUx * lhs * tr_model.dispersivity
     a_fl_model.a_u_darcy_y[:, :-1, :, time_index] += dUy * lhs * tr_model.dispersivity
     a_fl_model.a_u_darcy_y[:, 1:, :, time_index] += dUy * lhs * tr_model.dispersivity
+    a_fl_model.a_u_darcy_z[:, :, :-1, time_index] += dUz * lhs * tr_model.dispersivity
+    a_fl_model.a_u_darcy_z[:, :, 1:, time_index] += dUz * lhs * tr_model.dispersivity
 
 
 def solve_adj_flow(
@@ -793,42 +647,37 @@ def get_adjoint_transport_src_terms(
     """
     src = np.zeros(grid.shape, dtype=np.float64)
     tmp = 1.0
+
     # Handle density flow
     if fl_model.is_gravity:
         tmp = 1.0 / GRAVITY / WATER_DENSITY
 
-    # x contribution
-    if grid.nx > 1:
-        # Get the permeability between nodes
-        kmean_x = harmonic_mean(
-            fl_model.permeability[:-1, :, :], fl_model.permeability[1:, :, :]
-        )
+    for n, axis in zip(grid.shape, (0, 1, 2)):
+        if n < 2:
+            continue
+
+        fwd_slicer = grid.get_slicer_forward(axis)
+        bwd_slicer = grid.get_slicer_backward(axis)
+
+        if axis == 0:
+            a_u_darcy = a_fl_model.a_u_darcy_x
+        elif axis == 1:
+            a_u_darcy = a_fl_model.a_u_darcy_y
+        elif axis == 2:
+            a_u_darcy = a_fl_model.a_u_darcy_z
+        else:
+            raise ValueError()
+
+        kmean = get_kmean(grid, fl_model, axis, is_flatten=False)[fwd_slicer]
 
         # Forward
-        src[:-1, :, :] += (
-            kmean_x * a_fl_model.a_u_darcy_x[1:-1, :, :, time_index] / grid.dx
+        src[fwd_slicer] += (
+            kmean * a_u_darcy[*bwd_slicer, time_index] / grid.pipj(axis)
         ) * tmp
 
         # Backward
-        src[1:, :, :] -= (
-            kmean_x * a_fl_model.a_u_darcy_x[1:-1, :, :, time_index] / grid.dx
-        ) * tmp
-
-    # y contribution
-    if grid.ny > 1:
-        # Get the permeability between nodes
-        kmean_y = harmonic_mean(
-            fl_model.permeability[:, :-1, :], fl_model.permeability[:, 1:, :]
-        )
-
-        # Forward
-        src[:, :-1, :] += (
-            kmean_y * a_fl_model.a_u_darcy_y[:, 1:-1, :, time_index] / grid.dy
-        ) * tmp
-
-        # Backward
-        src[:, 1:, :] -= (
-            kmean_y * a_fl_model.a_u_darcy_y[:, 1:-1, :, time_index] / grid.dy
+        src[bwd_slicer] -= (
+            kmean * a_u_darcy[*bwd_slicer, time_index] / grid.pipj(axis)
         ) * tmp
 
     return src.ravel("F")
