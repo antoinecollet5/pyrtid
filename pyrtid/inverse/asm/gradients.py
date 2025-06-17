@@ -82,72 +82,45 @@ def get_diffusion_term_adjoint_gradient(
         # mob = fwd_model.tr_model.mob_post_tr
         amob = adj_model.a_tr_model.a_mob[sp]
 
-        # X axis contribution
-        if shape[0] > 1:
+        for n, axis in zip(fwd_model.grid.shape, (0, 1, 2)):
+            if n < 2:
+                continue
+
             # Consider the x axis
+            fwd_slicer = fwd_model.grid.get_slicer_forward(axis)
+            bwd_slicer = fwd_model.grid.get_slicer_backward(axis)
+
             # Forward scheme
-            dconc_fx = np.zeros(shape)
-            dconc_fx[:-1, :, :, 1:] += (
-                crank_diff * (mob[1:, :, :, 1:] - mob[:-1, :, :, 1:])
-                + (1.0 - crank_diff) * (mob[1:, :, :, :-1] - mob[:-1, :, :, :-1])
+            dconc_f = np.zeros(shape)
+            dconc_f[*fwd_slicer, 1:] += (
+                crank_diff * (mob[*bwd_slicer, 1:] - mob[*fwd_slicer, 1:])
+                + (1.0 - crank_diff) * (mob[*bwd_slicer, :-1] - mob[*fwd_slicer, :-1])
             ) * (
-                dxi_harmonic_mean(d[:-1, :, :], d[1:, :, :])
-                * term_in_d_deriv[:-1, :, :]
+                dxi_harmonic_mean(d[fwd_slicer], d[bwd_slicer])
+                * term_in_d_deriv[fwd_slicer]
             )
 
-            damob_fx = np.zeros(shape)
-            damob_fx[:-1, :, :, :] += amob[1:, :, :, :] - amob[:-1, :, :, :]
+            damob_f = np.zeros(shape)
+            damob_f[*fwd_slicer, :] += amob[*bwd_slicer, :] - amob[*fwd_slicer, :]
 
             # Backward scheme
-            dconc_bx = np.zeros(shape)
-            dconc_bx[1:, :, :, 1:] += (
-                crank_diff * (mob[:-1, :, :, 1:] - mob[1:, :, :, 1:])
-                + (1.0 - crank_diff) * (mob[:-1, :, :, :-1] - mob[1:, :, :, :-1])
+            dconc_b = np.zeros(shape)
+            dconc_b[*bwd_slicer, 1:] += (
+                crank_diff * (mob[*fwd_slicer, 1:] - mob[*bwd_slicer, 1:])
+                + (1.0 - crank_diff) * (mob[*fwd_slicer, :-1] - mob[*bwd_slicer, :-1])
             ) * (
-                dxi_harmonic_mean(d[1:, :, :], d[:-1, :, :]) * term_in_d_deriv[1:, :, :]
+                dxi_harmonic_mean(d[bwd_slicer], d[fwd_slicer])
+                * term_in_d_deriv[bwd_slicer]
             )
 
-            damob_bx = np.zeros(shape)
-            damob_bx[1:, :, :, :] += amob[:-1, :, :, :] - amob[1:, :, :, :]
+            damob_b = np.zeros(shape)
+            damob_b[*bwd_slicer, :] += amob[*fwd_slicer, :] - amob[*bwd_slicer, :]
 
             # Gather the two schemes
             grad += (
-                (dconc_fx * damob_fx + dconc_bx * damob_bx)
-                * fwd_model.grid.gamma_ij_x
-                / fwd_model.grid.dx
-                / fwd_model.grid.grid_cell_volume
-            )
-
-        # Y axis contribution
-        if shape[1] > 1:
-            # Forward scheme
-            dconc_fy = np.zeros(shape)
-            dconc_fy[:, :-1, :, 1:] += (
-                crank_diff * (mob[:, 1:, :, 1:] - mob[:, :-1, :, 1:])
-                + (1.0 - crank_diff) * (mob[:, 1:, :, :-1] - mob[:, :-1, :, :-1])
-            ) * (
-                dxi_harmonic_mean(d[:, :-1, :], d[:, 1:, :])
-                * term_in_d_deriv[:, :-1, :]
-            )
-            damob_fy = np.zeros(shape)
-            damob_fy[:, :-1, :, :] += amob[:, 1:, :, :] - amob[:, :-1, :, :]
-
-            # Bconckward scheme
-            dconc_by = np.zeros(shape)
-            dconc_by[:, 1:, :, 1:] += (
-                crank_diff * (mob[:, :-1, :, 1:] - mob[:, 1:, :, 1:])
-                + (1.0 - crank_diff) * (mob[:, :-1, :, :-1] - mob[:, 1:, :, :-1])
-            ) * (
-                dxi_harmonic_mean(d[:, 1:, :], d[:, :-1, :]) * term_in_d_deriv[:, 1:, :]
-            )
-            damob_by = np.zeros(shape)
-            damob_by[:, 1:, :, :] += amob[:, :-1, :, :] - amob[:, 1:, :, :]
-
-            # Gather the two schemes
-            grad += (
-                (dconc_fy * damob_fy + dconc_by * damob_by)
-                * fwd_model.grid.gamma_ij_y
-                / fwd_model.grid.dy
+                (dconc_f * damob_f + dconc_b * damob_b)
+                * fwd_model.grid.gamma_ij(axis)
+                / fwd_model.grid.pipj(axis)
                 / fwd_model.grid.grid_cell_volume
             )
 
@@ -235,9 +208,14 @@ def get_porosity_adjoint_gradient(
         amob = adj_model.a_tr_model.a_mob[sp]
 
         grad += (
-            (mob[:, :, :, 1:] - mob[:, :, :, :-1] + immob[:, :, 1:] - immob[:, :, :-1])
+            (
+                mob[:, :, :, 1:]
+                - mob[:, :, :, :-1]
+                + immob[:, :, :, 1:]
+                - immob[:, :, :, :-1]
+            )
             / fwd_model.time_params.ldt
-            * amob[:, :, 1:]
+            * amob[:, :, :, 1:]
         )
 
     # We sum along the temporal axis + get the diffusion gradient
@@ -328,100 +306,65 @@ def _get_perm_gradient_from_diffusivity_eq_saturated(
     )
     grad = np.zeros(shape)
 
-    # Consider the x axis
-    if shape[0] > 1:
-        tmp = fwd_model.grid.gamma_ij_x / fwd_model.grid.dx
+    for n, axis in zip(fwd_model.grid.shape, (0, 1, 2)):
+        if n < 2:
+            continue
+
+        fwd_slicer = fwd_model.grid.get_slicer_forward(axis)
+        bwd_slicer = fwd_model.grid.get_slicer_backward(axis)
+
+        tmp = fwd_model.grid.gamma_ij(axis) / fwd_model.grid.pipj(axis)
 
         # Forward scheme
-        dhead_fx = np.zeros(shape)
-        dhead_fx = (
-            crank_flow * (head[1:, :, :, 1:] - head[:-1, :, :, 1:])
-            + (1.0 - crank_flow) * (head[1:, :, :, :-1] - head[:-1, :, :, :-1])
-        ) * dxi_harmonic_mean(permeability[:-1, :, :], permeability[1:, :, :])[
+        dhead_f = np.zeros(shape)
+        dhead_f = (
+            crank_flow * (head[*bwd_slicer, 1:] - head[*fwd_slicer, 1:])
+            + (1.0 - crank_flow) * (head[*bwd_slicer, :-1] - head[*fwd_slicer, :-1])
+        ) * dxi_harmonic_mean(permeability[fwd_slicer], permeability[bwd_slicer])[
             :, :, :, np.newaxis
         ]
-        grad[:-1, :, :, 1:] += (
-            dhead_fx * (ma_ahead_sc[1:, :, :, 1:] - ma_ahead_sc[:-1, :, :, 1:]) * tmp
+        grad[*fwd_slicer, 1:] += (
+            dhead_f
+            * (ma_ahead_sc[*bwd_slicer, 1:] - ma_ahead_sc[*fwd_slicer, 1:])
+            * tmp
         )
 
         # Handle the stationary case
         if fwd_model.fl_model.regime == FlowRegime.STATIONARY:
-            dhead_fx = (head[1:, :, :, :1] - head[:-1, :, :, :1]) * dxi_harmonic_mean(
-                permeability[:-1, :, :], permeability[1:, :, :]
-            )[:, :, :, np.newaxis]
-            grad[:-1, :, :, :1] += (
-                dhead_fx
-                * (ma_ahead[1:, :, :, :1] - ma_ahead[:-1, :, :, :1])
+            dhead_f = (
+                head[*bwd_slicer, :1] - head[*fwd_slicer, :1]
+            ) * dxi_harmonic_mean(permeability[fwd_slicer], permeability[bwd_slicer])[
+                :, :, :, np.newaxis
+            ]
+            grad[*fwd_slicer, :1] += (
+                dhead_f
+                * (ma_ahead[*bwd_slicer, :1] - ma_ahead[*fwd_slicer, :1])
                 / fwd_model.grid.grid_cell_volume
             ) * tmp
 
         # Backward scheme
-        dhead_bx = (
-            crank_flow * (head[:-1, :, :, 1:] - head[1:, :, :, 1:])
-            + (1.0 - crank_flow) * (head[:-1, :, :, :-1] - head[1:, :, :, :-1])
-        ) * dxi_harmonic_mean(permeability[1:, :, :], permeability[:-1, :, :])[
+        dhead_b = (
+            crank_flow * (head[*fwd_slicer, 1:] - head[*bwd_slicer, 1:])
+            + (1.0 - crank_flow) * (head[*fwd_slicer, :-1] - head[*bwd_slicer, :-1])
+        ) * dxi_harmonic_mean(permeability[bwd_slicer], permeability[fwd_slicer])[
             :, :, :, np.newaxis
         ]
-        grad[1:, :, :, 1:] += (
-            dhead_bx * (ma_ahead_sc[:-1, :, :, 1:] - ma_ahead_sc[1:, :, :, 1:]) * tmp
+        grad[*bwd_slicer, 1:] += (
+            dhead_b
+            * (ma_ahead_sc[*fwd_slicer, 1:] - ma_ahead_sc[*bwd_slicer, 1:])
+            * tmp
         )
 
         # Handle the stationary case
         if fwd_model.fl_model.regime == FlowRegime.STATIONARY:
-            dhead_bx = (head[:-1, :, :, :1] - head[1:, :, :, :1]) * dxi_harmonic_mean(
-                permeability[1:, :, :], permeability[:-1, :, :]
-            )[:, :, :, np.newaxis]
-            grad[1:, :, :, :1] += (
-                dhead_bx
-                * (ma_ahead[:-1, :, :, :1] - ma_ahead[1:, :, :, :1])
-                / fwd_model.grid.grid_cell_volume
-            ) * tmp
-
-    # Consider the y axis for 2D cases
-    if shape[1] > 1:
-        tmp = fwd_model.grid.gamma_ij_y / fwd_model.grid.dy
-
-        # Forward scheme
-        dhead_fy = (
-            crank_flow * (head[:, 1:, :, 1:] - head[:, :-1, :, 1:])
-            + (1.0 - crank_flow) * (head[:, 1:, :, :-1] - head[:, :-1, :, :-1])
-        ) * dxi_harmonic_mean(permeability[:, :-1, :], permeability[:, 1:, :])[
-            :, :, :, np.newaxis
-        ]
-        grad[:, :-1, :, 1:] += (
-            dhead_fy * (ma_ahead_sc[:, 1:, :, 1:] - ma_ahead_sc[:, :-1, :, 1:]) * tmp
-        )
-
-        # Handle the stationary case
-        if fwd_model.fl_model.regime == FlowRegime.STATIONARY:
-            dhead_fy = (head[:, 1:, :1] - head[:, :-1, :, :1]) * dxi_harmonic_mean(
-                permeability[:, :-1, :], permeability[:, 1:, :]
-            )[:, :, :, np.newaxis]
-            grad[:, :-1, :, :1] += (
-                dhead_fy
-                * (ma_ahead[:, 1:, :, :1] - ma_ahead[:, :-1, :, :1])
-                / fwd_model.grid.grid_cell_volume
-            ) * tmp
-
-        # Backward scheme
-        dhead_by = (
-            crank_flow * (head[:, :-1, :, 1:] - head[:, 1:, :, 1:])
-            + (1.0 - crank_flow) * (head[:, :-1, :, :-1] - head[:, 1:, :, :-1])
-        ) * dxi_harmonic_mean(permeability[:, 1:, :], permeability[:, :-1, :])[
-            :, :, np.newaxis
-        ]
-        grad[:, 1:, :, 1:] += (
-            dhead_by * (ma_ahead_sc[:, :-1, :, 1:] - ma_ahead_sc[:, 1:, :, 1:]) * tmp
-        )
-
-        # Handle the stationary case
-        if fwd_model.fl_model.regime == FlowRegime.STATIONARY:
-            dhead_by = (head[:, :-1, :, :1] - head[:, 1:, :, :1]) * dxi_harmonic_mean(
-                permeability[:, 1:, :], permeability[:, :-1, :]
-            )[:, :, :, np.newaxis]
-            grad[:, 1:, :, :1] += (
-                dhead_by
-                * (ma_ahead[:, :-1, :, :1] - ma_ahead[:, 1:, :, :1])
+            dhead_b = (
+                head[*fwd_slicer, :1] - head[*bwd_slicer, :1]
+            ) * dxi_harmonic_mean(permeability[bwd_slicer], permeability[fwd_slicer])[
+                :, :, :, np.newaxis
+            ]
+            grad[*bwd_slicer, :1] += (
+                dhead_b
+                * (ma_ahead[*fwd_slicer, :1] - ma_ahead[*bwd_slicer, :1])
                 / fwd_model.grid.grid_cell_volume
             ) * tmp
 
@@ -474,201 +417,112 @@ def _get_perm_gradient_from_diffusivity_eq_density(
 
     vp = fwd_model.fl_model._get_mesh_center_vertical_pos()
 
-    # Consider the x axis
-    if fwd_model.grid.nx > 1:
-        rhomean_x = get_rhomean(
+    for n, axis in zip(fwd_model.grid.shape, (0, 1, 2)):
+        if n < 2:
+            continue
+
+        fwd_slicer = fwd_model.grid.get_slicer_forward(axis)
+        bwd_slicer = fwd_model.grid.get_slicer_backward(axis)
+
+        rhomean = get_rhomean(
             fwd_model.grid,
             fwd_model.tr_model,
-            axis=0,
+            axis=axis,
             time_index=slice(0, -1),
             is_flatten=False,
-        )[:-1, :, :]
+        )[fwd_slicer]
         tmp = 0.0
-        if fwd_model.fl_model.vertical_axis == VerticalAxis.X:
-            tmp = GRAVITY * rhomean_x**2
+
+        if (
+            (fwd_model.fl_model.vertical_axis == VerticalAxis.X and axis == 0)
+            or (fwd_model.fl_model.vertical_axis == VerticalAxis.Y and axis == 1)
+            or (fwd_model.fl_model.vertical_axis == VerticalAxis.Z and axis == 2)
+        ):
+            tmp = GRAVITY * rhomean**2
 
         # Forward scheme
-        dpressure_fx = (
+        dpressure_f = (
             (
                 (
-                    crank_flow * (pressure[1:, :, :, 1:] - pressure[:-1, :, :, 1:])
+                    crank_flow * (pressure[*bwd_slicer, 1:] - pressure[*fwd_slicer, 1:])
                     + (1.0 - crank_flow)
-                    * (pressure[1:, :, :, :-1] - pressure[:-1, :, :, :-1])
+                    * (pressure[*bwd_slicer, :-1] - pressure[*fwd_slicer, :-1])
                 )
-                / fwd_model.grid.dx
-                * rhomean_x
+                / fwd_model.grid.pipj(axis)
+                * rhomean
                 + tmp
             )
-            * dxi_harmonic_mean(permeability[:-1, :, :], permeability[1:, :, :])[
+            * dxi_harmonic_mean(permeability[fwd_slicer], permeability[bwd_slicer])[
                 :, :, :, np.newaxis
             ]
             / WATER_DENSITY
         )
 
-        grad[:-1, :, :, 1:] += (
-            dpressure_fx
-            * (ma_apressure_sc[1:, :, :, 1:] - ma_apressure_sc[:-1, :, :, 1:])
-            * fwd_model.grid.gamma_ij_x
+        grad[*fwd_slicer, 1:] += (
+            dpressure_f
+            * (ma_apressure_sc[*bwd_slicer, 1:] - ma_apressure_sc[*fwd_slicer, 1:])
+            * fwd_model.grid.gamma_ij(axis)
         )
 
         # Handle the stationary case
         if fwd_model.fl_model.regime == FlowRegime.STATIONARY:
-            grad[:-1, :, :, :1] += (
+            grad[*fwd_slicer, :1] += (
                 (
-                    (pressure[1:, :, :, :1] - pressure[:-1, :, :, :1])
+                    (pressure[*bwd_slicer, :1] - pressure[*fwd_slicer, :1])
                     / WATER_DENSITY
                     / GRAVITY
-                    + vp[1:, :, :, np.newaxis]
-                    - vp[:-1, :, :, np.newaxis]
+                    + vp[*bwd_slicer, np.newaxis]
+                    - vp[*fwd_slicer, np.newaxis]
                 )
-                * dxi_harmonic_mean(permeability[:-1, :, :], permeability[1:, :, :])[
+                * dxi_harmonic_mean(permeability[fwd_slicer], permeability[bwd_slicer])[
                     :, :, :, np.newaxis
                 ]
-                * fwd_model.grid.gamma_ij_x
-                / fwd_model.grid.dx
-                * (ma_apressure[1:, :, :, :1] - ma_apressure[:-1, :, :, :1])
+                * fwd_model.grid.gamma_ij(axis)
+                / fwd_model.grid.pipj(axis)
+                * (ma_apressure[*bwd_slicer, :1] - ma_apressure[*fwd_slicer, :1])
                 / fwd_model.grid.grid_cell_volume
             )
 
         # Backward scheme
-        dpressure_bx = (
+        dpressure_b = (
             (
                 (
-                    crank_flow * (pressure[:-1, :, :, 1:] - pressure[1:, :, :, 1:])
+                    crank_flow * (pressure[*fwd_slicer, 1:] - pressure[*bwd_slicer, 1:])
                     + (1.0 - crank_flow)
-                    * (pressure[:-1, :, :, :-1] - pressure[1:, :, :, :-1])
+                    * (pressure[*fwd_slicer, :-1] - pressure[*bwd_slicer, :-1])
                 )
-                / fwd_model.grid.dx
-                * rhomean_x
+                / fwd_model.grid.pipj(axis)
+                * rhomean
                 - tmp
             )
-            * dxi_harmonic_mean(permeability[1:, :, :], permeability[:-1, :, :])[
+            * dxi_harmonic_mean(permeability[bwd_slicer], permeability[fwd_slicer])[
                 :, :, :, np.newaxis
             ]
             / WATER_DENSITY
         )
 
-        grad[1:, :, :, 1:] += (
-            dpressure_bx
-            * (ma_apressure_sc[:-1, :, :, 1:] - ma_apressure_sc[1:, :, :, 1:])
-            * fwd_model.grid.gamma_ij_x
+        grad[*bwd_slicer, 1:] += (
+            dpressure_b
+            * (ma_apressure_sc[*fwd_slicer, 1:] - ma_apressure_sc[*bwd_slicer, 1:])
+            * fwd_model.grid.gamma_ij(axis)
         )
 
         # Handle the stationary case
         if fwd_model.fl_model.regime == FlowRegime.STATIONARY:
-            grad[1:, :, :, :1] += (
+            grad[*bwd_slicer, :1] += (
                 (
-                    (pressure[:-1, :, :, :1] - pressure[1:, :, :, :1])
+                    (pressure[*fwd_slicer, :1] - pressure[*bwd_slicer, :1])
                     / WATER_DENSITY
                     / GRAVITY
-                    + vp[:-1, :, :, np.newaxis]
-                    - vp[1:, :, :, np.newaxis]
+                    + vp[*fwd_slicer, np.newaxis]
+                    - vp[*bwd_slicer, np.newaxis]
                 )
-                * dxi_harmonic_mean(permeability[1:, :, :], permeability[:-1, :, :])[
+                * dxi_harmonic_mean(permeability[bwd_slicer], permeability[fwd_slicer])[
                     :, :, :, np.newaxis
                 ]
-                * fwd_model.grid.gamma_ij_x
-                / fwd_model.grid.dx
-                * (ma_apressure[:-1, :, :, :1] - ma_apressure[1:, :, :, :1])
-                / fwd_model.grid.grid_cell_volume
-            )
-
-    # Consider the y axis for 2D cases
-    if fwd_model.grid.ny > 1:
-        rhomean_y = get_rhomean(
-            fwd_model.grid,
-            fwd_model.tr_model,
-            axis=1,
-            time_index=slice(0, -1),
-            is_flatten=False,
-        )[:, :-1, :]
-        tmp = 0.0
-        if fwd_model.fl_model.vertical_axis == VerticalAxis.Y:
-            tmp = rhomean_y**2 * GRAVITY
-
-        # Forward scheme
-        dpressure_fy = (
-            (
-                (
-                    crank_flow * (pressure[:, 1:, :, 1:] - pressure[:, :-1, :, 1:])
-                    + (1.0 - crank_flow)
-                    * (pressure[:, 1:, :, :-1] - pressure[:, :-1, :, :-1])
-                )
-                / fwd_model.grid.dy
-                * rhomean_y
-                + tmp
-            )
-            * dxi_harmonic_mean(permeability[:, :-1, :], permeability[:, 1:, :])[
-                :, :, :, np.newaxis
-            ]
-            / WATER_DENSITY
-        )
-
-        grad[:, :-1, :, 1:] += (
-            dpressure_fy
-            * (ma_apressure_sc[:, 1:, :, 1:] - ma_apressure_sc[:, :-1, :, 1:])
-            * fwd_model.grid.gamma_ij_y
-        )
-
-        # Handle the stationary case
-        if fwd_model.fl_model.regime == FlowRegime.STATIONARY:
-            grad[:, :-1, :, :1] += (
-                (
-                    (pressure[:, 1:, :, :1] - pressure[:, :-1, :, :1])
-                    / WATER_DENSITY
-                    / GRAVITY
-                    + vp[:, 1:, :, np.newaxis]
-                    - vp[:, :-1, :, np.newaxis]
-                )
-                * dxi_harmonic_mean(permeability[:, :-1, :], permeability[:, 1:, :])[
-                    :, :, :, np.newaxis
-                ]
-                * fwd_model.grid.gamma_ij_y
-                / fwd_model.grid.dy
-                * (apressure[:, 1:, :, :1] - ma_apressure[:, :-1, :, :1])
-                / fwd_model.grid.grid_cell_volume
-            )
-
-        # Backward scheme
-        dpressure_by = (
-            (
-                (
-                    crank_flow * (pressure[:, :-1, :, 1:] - pressure[:, 1:, :, 1:])
-                    + (1.0 - crank_flow)
-                    * (pressure[:, :-1, :, :-1] - pressure[:, 1:, :, :-1])
-                )
-                / fwd_model.grid.dy
-                * rhomean_y
-                - tmp
-            )
-            * dxi_harmonic_mean(permeability[:, 1:, :], permeability[:, :-1, :])[
-                :, :, :, np.newaxis
-            ]
-            / WATER_DENSITY
-        )
-
-        grad[:, 1:, :, 1:] += (
-            dpressure_by
-            * (ma_apressure_sc[:, :-1, :, 1:] - ma_apressure_sc[:, 1:, :, 1:])
-            * fwd_model.grid.gamma_ij_y
-        )
-
-        # Handle the stationary case
-        if fwd_model.fl_model.regime == FlowRegime.STATIONARY:
-            grad[:, 1:, :, :1] += (
-                (
-                    (pressure[:, :-1, :, :1] - pressure[:, 1:, :, :1])
-                    / WATER_DENSITY
-                    / GRAVITY
-                    + vp[:, :-1, :, np.newaxis]
-                    - vp[:, 1:, :, np.newaxis]
-                )
-                * dxi_harmonic_mean(permeability[:, 1:, :], permeability[:, :-1, :])[
-                    :, :, :, np.newaxis
-                ]
-                * fwd_model.grid.gamma_ij_y
-                / fwd_model.grid.dy
-                * (apressure[:, :-1, :, :1] - ma_apressure[:, 1:, :, :1])
+                * fwd_model.grid.gamma_ij(axis)
+                / fwd_model.grid.pipj(axis)
+                * (ma_apressure[*fwd_slicer, :1] - ma_apressure[*bwd_slicer, :1])
                 / fwd_model.grid.grid_cell_volume
             )
 
@@ -703,57 +557,47 @@ def _get_perm_gradient_from_darcy_eq_saturated(
 
     grad = np.zeros_like(head)
 
-    if fwd_model.grid.nx > 1:
-        a_u_darcy_x = adj_model.a_fl_model.a_u_darcy_x[1:-1, :, :]
+    for n, axis in zip(fwd_model.grid.shape, (0, 1, 2)):
+        if n < 2:
+            continue
+
+        fwd_slicer = fwd_model.grid.get_slicer_forward(axis)
+        bwd_slicer = fwd_model.grid.get_slicer_backward(axis)
+
+        if axis == 0:
+            a_u_darcy = adj_model.a_fl_model.a_u_darcy_x
+        elif axis == 1:
+            a_u_darcy = adj_model.a_fl_model.a_u_darcy_y
+        elif axis == 2:
+            a_u_darcy = adj_model.a_fl_model.a_u_darcy_z
+        else:
+            raise ValueError()
+
+        a_u_darcy = a_u_darcy[bwd_slicer]
 
         # Consider the x axis
         # Forward scheme
-        dhead_fx = np.zeros(shape)
-        dhead_fx[:-1, :, :, :] += (
-            (head[1:, :, :, :] - head[:-1, :, :, :])
-            * dxi_harmonic_mean(permeability[:-1, :, :], permeability[1:, :, :])[
+        dhead_f = np.zeros(shape)
+        dhead_f[*fwd_slicer, :] += (
+            (head[*bwd_slicer, :] - head[*fwd_slicer, :])
+            * dxi_harmonic_mean(permeability[fwd_slicer], permeability[bwd_slicer])[
                 :, :, :, np.newaxis
             ]
-            * a_u_darcy_x
+            * a_u_darcy
         )
 
-        # Bconckward scheme
-        dhead_bx = np.zeros(shape)
-        dhead_bx[1:, :, :, :] -= (
-            (head[:-1, :, :, :] - head[1:, :, :, :])
-            * dxi_harmonic_mean(permeability[1:, :, :], permeability[:-1, :, :])[
+        # Backward scheme
+        dhead_b = np.zeros(shape)
+        dhead_b[*bwd_slicer, :] -= (
+            (head[*fwd_slicer, :] - head[*bwd_slicer, :])
+            * dxi_harmonic_mean(permeability[bwd_slicer], permeability[fwd_slicer])[
                 :, :, :, np.newaxis
             ]
-            * a_u_darcy_x
+            * a_u_darcy
         )
 
         # Gather the two schemes
-        grad += (dhead_fx + dhead_bx) / fwd_model.grid.dx
-
-    # Consider the y axis for 2D cases
-    if fwd_model.grid.ny > 1:
-        a_u_darcy_y = adj_model.a_fl_model.a_u_darcy_y[:, 1:-1, :]
-        # Forward scheme
-        dhead_fy = np.zeros(shape)
-        dhead_fy[:, :-1, :, :] += (
-            (head[:, 1:, :, :] - head[:, :-1, :, :])
-            * dxi_harmonic_mean(permeability[:, :-1, :], permeability[:, 1:, :])[
-                :, :, :, np.newaxis
-            ]
-            * a_u_darcy_y
-        )
-
-        # Bconckward scheme
-        dhead_by = np.zeros(shape)
-        dhead_by[:, 1:, :, :] -= (
-            (head[:, :-1, :, :] - head[:, 1:, :, :])
-            * dxi_harmonic_mean(permeability[:, 1:, :], permeability[:, :-1, :])[
-                :, :, :, np.newaxis
-            ]
-            * a_u_darcy_y
-        )
-        # Gather the two schemes
-        grad += (dhead_fy + dhead_by) / fwd_model.grid.dy
+        grad += (dhead_f + dhead_b) / fwd_model.grid.pipj(axis)
 
     # We sum along the temporal axis
     return np.sum(grad, axis=-1)
@@ -787,103 +631,76 @@ def _get_perm_gradient_from_darcy_eq_density(
     pressure = fwd_model.fl_model.pressure[:, :, :, time_slice]
     grad = np.zeros_like(pressure)
 
-    if fwd_model.grid.nx > 1:
-        a_u_darcy_x = adj_model.a_fl_model.a_u_darcy_x[1:-1, :, :, time_slice]
+    for n, axis in zip(fwd_model.grid.shape, (0, 1, 2)):
+        if n < 2:
+            continue
 
-        if fwd_model.fl_model.vertical_axis == VerticalAxis.X:
-            rho_ij_g_x = (
+        fwd_slicer = fwd_model.grid.get_slicer_forward(axis)
+        bwd_slicer = fwd_model.grid.get_slicer_backward(axis)
+
+        if axis == 0:
+            a_u_darcy = adj_model.a_fl_model.a_u_darcy_x
+        elif axis == 1:
+            a_u_darcy = adj_model.a_fl_model.a_u_darcy_y
+        elif axis == 2:
+            a_u_darcy = adj_model.a_fl_model.a_u_darcy_z
+        else:
+            raise ValueError()
+
+        a_u_darcy = a_u_darcy[*bwd_slicer, time_slice]
+
+        if (
+            (fwd_model.fl_model.vertical_axis == VerticalAxis.X and axis == 0)
+            or (fwd_model.fl_model.vertical_axis == VerticalAxis.Y and axis == 1)
+            or (fwd_model.fl_model.vertical_axis == VerticalAxis.Z and axis == 2)
+        ):
+            rho_ij_g = (
                 get_rhomean(
                     fwd_model.grid,
                     fwd_model.tr_model,
-                    axis=0,
+                    axis=axis,
                     time_index=slice(None),
                     is_flatten=False,
-                )[:-1, :, :]
+                )[fwd_slicer]
                 * GRAVITY
             )
 
             # shift
-            rho_ij_g_x = rho_ij_g_x[:, :, :, :-1]
+            rho_ij_g = rho_ij_g[:, :, :, :-1]
         else:
-            rho_ij_g_x = 0.0
+            rho_ij_g = 0.0
 
         # Consider the x axis
         # Forward scheme
-        dpressure_fx = np.zeros(shape)
-        dpressure_fx[:-1, :, :] += (
+        dpressure_f = np.zeros(shape)
+        dpressure_f[fwd_slicer] += (
             (
-                (pressure[1:, :, :] - pressure[:-1, :, :]) / fwd_model.grid.dx
-                + rho_ij_g_x
+                (pressure[bwd_slicer] - pressure[fwd_slicer])
+                / fwd_model.grid.pipj(axis)
+                + rho_ij_g
             )
-            * dxi_harmonic_mean(permeability[:-1, :, :], permeability[1:, :, :])[
+            * dxi_harmonic_mean(permeability[fwd_slicer], permeability[bwd_slicer])[
                 :, :, :, np.newaxis
             ]
-            * a_u_darcy_x
-        )
-
-        # Bconckward scheme
-        dpressure_bx = np.zeros(shape)
-        dpressure_bx[1:, :, :] -= (
-            (
-                (pressure[:-1, :, :] - pressure[1:, :, :]) / fwd_model.grid.dx
-                - rho_ij_g_x
-            )
-            * dxi_harmonic_mean(permeability[1:, :, :], permeability[:-1, :, :])[
-                :, :, :, np.newaxis
-            ]
-            * a_u_darcy_x
-        )
-
-        # Gather the two schemes
-        grad += (dpressure_fx + dpressure_bx) / GRAVITY / WATER_DENSITY
-
-    # Consider the y axis for 2D cases
-    if fwd_model.grid.ny > 1:
-        a_u_darcy_y = adj_model.a_fl_model.a_u_darcy_y[:, 1:-1, :, time_slice]
-
-        if fwd_model.fl_model.vertical_axis == VerticalAxis.Y:
-            rho_ij_g_y = (
-                get_rhomean(
-                    fwd_model.grid,
-                    fwd_model.tr_model,
-                    axis=1,
-                    time_index=slice(None),
-                    is_flatten=False,
-                )[:, :-1, :]
-                * GRAVITY
-            )
-            # shift
-            rho_ij_g_y = rho_ij_g_y[:, :, :, :-1]
-        else:
-            rho_ij_g_y = 0.0
-
-        # Forward scheme
-        dpressure_fy = np.zeros(shape)
-        dpressure_fy[:, :-1, :] += (
-            (
-                (pressure[:, 1:, :] - pressure[:, :-1, :]) / fwd_model.grid.dy
-                + rho_ij_g_y
-            )
-            * dxi_harmonic_mean(permeability[:, :-1, :], permeability[:, 1:, :])[
-                :, :, :, np.newaxis
-            ]
-            * a_u_darcy_y
+            * a_u_darcy
         )
 
         # Backward scheme
-        dpressure_by = np.zeros(shape)
-        dpressure_by[:, 1:, :] -= (
+        dpressure_b = np.zeros(shape)
+        dpressure_b[bwd_slicer] -= (
             (
-                (pressure[:, :-1, :] - pressure[:, 1:, :]) / fwd_model.grid.dy
-                - rho_ij_g_y
+                (pressure[fwd_slicer] - pressure[bwd_slicer])
+                / fwd_model.grid.pipj(axis)
+                - rho_ij_g
             )
-            * dxi_harmonic_mean(permeability[:, 1:, :], permeability[:, :-1, :])[
+            * dxi_harmonic_mean(permeability[bwd_slicer], permeability[fwd_slicer])[
                 :, :, :, np.newaxis
             ]
-            * a_u_darcy_y
+            * a_u_darcy
         )
+
         # Gather the two schemes
-        grad += (dpressure_fy + dpressure_by) / GRAVITY / WATER_DENSITY
+        grad += (dpressure_f + dpressure_b) / GRAVITY / WATER_DENSITY
 
     # We sum along the temporal axis
     return np.sum(grad, axis=-1)
@@ -1122,35 +939,25 @@ def get_initial_conc_adjoint_gradient(
     crank_diff = fwd_model.tr_model.crank_nicolson_diffusion
     a_mob = adj_model.a_tr_model.a_mob[sp, :, :, :, 1]
 
-    # X axis contribution
-    if fwd_model.grid.nx > 1:
-        dmean = harmonic_mean(
-            tr_model.effective_diffusion[:-1, :], tr_model.effective_diffusion[1:, :, :]
-        )
-        tmp = fwd_model.grid.gamma_ij_x / fwd_model.grid.dx
-        # Forward scheme
-        grad[:-1, :, :] += (
-            +(1.0 - crank_diff) * (a_mob[1:, :, :] - a_mob[:-1, :, :]) * dmean
-        ) * tmp
-        # Backward scheme
-        grad[1:, :, :] += (
-            +(1.0 - crank_diff) * (a_mob[:-1, :, :] - a_mob[1:, :, :]) * dmean
-        ) * tmp
+    for n, axis in zip(fwd_model.grid.shape, (0, 1, 2)):
+        if n < 2:
+            continue
 
-    # Y axis contribution
-    if fwd_model.grid.ny > 1:
+        fwd_slicer = fwd_model.grid.get_slicer_forward(axis)
+        bwd_slicer = fwd_model.grid.get_slicer_backward(axis)
+
         dmean = harmonic_mean(
-            tr_model.effective_diffusion[:, :-1, :],
-            tr_model.effective_diffusion[:, 1:, :],
+            tr_model.effective_diffusion[fwd_slicer],
+            tr_model.effective_diffusion[bwd_slicer],
         )
-        tmp = fwd_model.grid.gamma_ij_y / fwd_model.grid.dy
+        tmp = fwd_model.grid.gamma_ij(axis) / fwd_model.grid.pipj(axis)
         # Forward scheme
-        grad[:, :-1, :] += (
-            +(1.0 - crank_diff) * (a_mob[:, 1:, :] - a_mob[:, :-1, :]) * dmean
+        grad[fwd_slicer] += (
+            +(1.0 - crank_diff) * (a_mob[bwd_slicer] - a_mob[fwd_slicer]) * dmean
         ) * tmp
         # Backward scheme
-        grad[:, 1:, :] += (
-            +(1.0 - crank_diff) * (a_mob[:, :-1, :] - a_mob[:, 1:, :]) * dmean
+        grad[bwd_slicer] += (
+            +(1.0 - crank_diff) * (a_mob[fwd_slicer] - a_mob[bwd_slicer]) * dmean
         ) * tmp
 
     return -grad + adj_model.a_tr_model.a_conc_sources[sp][:, 0].todense().reshape(
