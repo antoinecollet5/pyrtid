@@ -36,9 +36,9 @@ from pyrtid.inverse.params import (
     get_parameters_bounds,
     get_parameters_values_from_model,
 )
-from pyrtid.inverse.preconditioner import get_factor_enforcing_grad_inf_norm, scale_pcd
 from pyrtid.inverse.regularization import ConstantRegWeight
 from pyrtid.utils import NDArrayFloat
+from pyrtid.utils.preconditioner import get_factor_enforcing_grad_inf_norm, scale_pcd
 
 lbfgsb_solver_config_params_ds = r"""
     ftol_linesearch: float

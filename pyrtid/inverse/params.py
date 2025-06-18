@@ -16,11 +16,6 @@ import scipy as sp
 
 from pyrtid.forward import ForwardModel
 from pyrtid.inverse.obs import StateVariable, get_array_from_state_variable
-from pyrtid.inverse.preconditioner import (
-    GradientScalerConfig,
-    NoTransform,
-    Preconditioner,
-)
 from pyrtid.inverse.regularization import (
     ConstantRegWeight,
     Regularizator,
@@ -31,6 +26,11 @@ from pyrtid.utils import (
     NDArrayInt,
     StrEnum,
     object_or_object_sequence_to_list,
+)
+from pyrtid.utils.preconditioner import (
+    GradientScalerConfig,
+    NoTransform,
+    Preconditioner,
 )
 from pyrtid.utils.spatial_filters import Filter
 

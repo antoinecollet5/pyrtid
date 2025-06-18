@@ -10,9 +10,9 @@ import numpy as np
 from scipy.sparse import csc_array, lil_array
 
 from pyrtid.forward.models import get_owner_neigh_indices
-from pyrtid.inverse.preconditioner import NoTransform, Preconditioner
 from pyrtid.utils import NDArrayFloat, NDArrayInt, RectilinearGrid
 from pyrtid.utils.finite_differences import finite_gradient
+from pyrtid.utils.preconditioner import NoTransform, Preconditioner
 
 
 class RegWeightUpdateStrategy(ABC):

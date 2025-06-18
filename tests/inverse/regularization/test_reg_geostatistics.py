@@ -3,7 +3,6 @@ from typing import Tuple
 import numpy as np
 import pyrtid.utils.spde as spde
 import pytest
-from pyrtid.inverse.preconditioner import LinearTransform
 from pyrtid.inverse.regularization import (  # DriftMatrix,; LinearDriftMatrix,
     ConstantPriorTerm,
     EnsembleCovarianceMatrix,
@@ -18,6 +17,7 @@ from pyrtid.inverse.regularization import (  # DriftMatrix,; LinearDriftMatrix,
     generate_dense_matrix,
 )
 from pyrtid.utils import NDArrayFloat, sparse_cholesky
+from pyrtid.utils.preconditioner import LinearTransform
 
 # For now we use the exact parameters, we will complexify a bit later
 prior_std = 1.0

@@ -11,7 +11,6 @@ from typing import Optional
 
 import numpy as np
 
-from pyrtid.inverse.preconditioner import NoTransform, Preconditioner
 from pyrtid.inverse.regularization.base import (
     Regularizator,
     make_spatial_gradient_matrices,
@@ -19,6 +18,7 @@ from pyrtid.inverse.regularization.base import (
 )
 from pyrtid.utils import NDArrayFloat, NDArrayInt, RectilinearGrid
 from pyrtid.utils.operators import gradient_ffd, hessian_cfd
+from pyrtid.utils.preconditioner import NoTransform, Preconditioner
 
 
 @dataclass

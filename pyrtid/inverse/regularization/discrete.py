@@ -8,9 +8,9 @@ from typing import List, Literal
 
 import numpy as np
 
-from pyrtid.inverse.preconditioner import NoTransform, Preconditioner
 from pyrtid.inverse.regularization.base import Regularizator
 from pyrtid.utils import NDArrayFloat
+from pyrtid.utils.preconditioner import NoTransform, Preconditioner
 
 
 def get_clostest_mode(x: NDArrayFloat, modes: NDArrayFloat) -> NDArrayFloat:

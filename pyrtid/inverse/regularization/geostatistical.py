@@ -6,12 +6,12 @@ TODO: add the formulas.
 
 import numpy as np
 
-from pyrtid.inverse.preconditioner import NoTransform, Preconditioner
 from pyrtid.inverse.regularization.base import Regularizator
 from pyrtid.inverse.regularization.covariances import CovarianceMatrix
 from pyrtid.inverse.regularization.priors import NullPriorTerm, PriorTerm
 from pyrtid.utils import NDArrayFloat
 from pyrtid.utils.finite_differences import finite_gradient
+from pyrtid.utils.preconditioner import NoTransform, Preconditioner
 
 
 def identify_function(x: NDArrayFloat) -> NDArrayFloat:

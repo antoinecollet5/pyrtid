@@ -11,13 +11,13 @@ from typing import Optional
 
 import numpy as np
 
-from pyrtid.inverse.preconditioner import NoTransform, Preconditioner
 from pyrtid.inverse.regularization.base import (
     Regularizator,
     make_spatial_gradient_matrices,
     make_spatial_permutation_matrices,
 )
 from pyrtid.utils import NDArrayFloat, NDArrayInt, RectilinearGrid, gradient_ffd
+from pyrtid.utils.preconditioner import NoTransform, Preconditioner
 
 
 @dataclass

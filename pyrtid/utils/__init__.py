@@ -35,6 +35,7 @@ Provide utilities to work with regular grids.
     create_selections_array_2d
     RectilinearGrid
     get_polygon_selection_with_dilation_2d
+    get_extended_grid_shape
 
 
 .. currentmodule:: pyrtid.utils.wellfield
@@ -200,6 +201,7 @@ from pyrtid.utils.grid import (
     get_a_not_in_b_1d,
     get_array_borders_selection_2d,
     get_array_borders_selection_3d,
+    get_extended_grid_shape,
     get_polygon_selection_with_dilation_2d,
     get_pts_coords_regular_grid,
     indices_to_node_number,
@@ -294,6 +296,7 @@ __all__ = [
     "get_a_not_in_b_1d",
     "create_selections_array_2d",
     "RectilinearGrid",
+    "get_extended_grid_shape",
     "get_polygon_selection_with_dilation_2d",
     "sparse_cholesky",
     "assert_allclose_sparse",

@@ -7,7 +7,15 @@ import numpy as np
 import pyrtid.inverse as dminv
 import pyrtid.utils.spde as spde
 import pytest
-from pyrtid.inverse.preconditioner import (
+from pyrtid.utils import (
+    NDArrayFloat,
+    NDArrayInt,
+    RectilinearGrid,
+    check_random_state,
+    indices_to_node_number,
+    sparse_cholesky,
+)
+from pyrtid.utils.preconditioner import (
     GradientScalerConfig,
     arctanh_wrapper,
     darctanh_wrapper,
@@ -24,14 +32,6 @@ from pyrtid.inverse.preconditioner import (
     tanh_wrapper,
     to_new_range,
     to_new_range_derivative,
-)
-from pyrtid.utils import (
-    NDArrayFloat,
-    NDArrayInt,
-    RectilinearGrid,
-    check_random_state,
-    indices_to_node_number,
-    sparse_cholesky,
 )
 
 logger = logging.getLogger("ROOT")

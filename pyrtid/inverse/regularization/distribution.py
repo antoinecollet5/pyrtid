@@ -5,9 +5,9 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 from scipy.stats._stats_py import _validate_distribution
 
-from pyrtid.inverse.preconditioner import NoTransform, Preconditioner
 from pyrtid.inverse.regularization.base import Regularizator
 from pyrtid.utils import NDArrayFloat, NDArrayInt
+from pyrtid.utils.preconditioner import NoTransform, Preconditioner
 
 
 def ffill(arr: NDArray) -> NDArray:
