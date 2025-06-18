@@ -860,3 +860,15 @@ def get_polygon_selection_with_dilation_2d(
                 binary_dilation(_selection == sel_id, mask=mask, iterations=1)
             ] = sel_id
     return _selection
+
+
+def get_extended_grid_shape(
+    grid: RectilinearGrid, axis: int, extend: int
+) -> Tuple[int, int, int]:
+    if axis == 0:
+        return (grid.nx + extend, grid.ny, grid.nz)
+    if axis == 1:
+        return (grid.nx, grid.ny + extend, grid.nz)
+    if axis == 2:
+        return (grid.nx, grid.ny, grid.nz + extend)
+    raise ValueError()
