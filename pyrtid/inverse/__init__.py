@@ -146,7 +146,7 @@ from pyrtid.inverse.params import (
     get_parameters_values_from_model,
     update_model_with_parameters_values,
 )
-from pyrtid.inverse.preconditioner import (
+from pyrtid.utils.preconditioner import (
     GDPCS,
     GDPNCS,
     BoundsClipper,
