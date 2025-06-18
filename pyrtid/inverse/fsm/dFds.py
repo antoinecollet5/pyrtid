@@ -10,7 +10,13 @@ import numpy as np
 
 from pyrtid.forward.flow_solver import GRAVITY, WATER_DENSITY, get_rhomean
 from pyrtid.forward.models import FlowRegime, ForwardModel, VerticalAxis
-from pyrtid.utils import NDArrayFloat, dxi_harmonic_mean, harmonic_mean, np_cache
+from pyrtid.utils import (
+    NDArrayFloat,
+    dxi_harmonic_mean,
+    get_extended_grid_shape,
+    harmonic_mean,
+    np_cache,
+)
 
 
 def dFhdKv(
@@ -23,8 +29,9 @@ def dFhdKv(
     ----------
     fwd_model : ForwardModel
         The forward model which contains all forward variables and parameters.
-    adj_model : AdjointModel
-        The adjoint model which contains all adjoint variables and parameters.
+    time_index: int
+
+    vecs: NDArrayFloat
 
     Returns
     -------
@@ -50,99 +57,62 @@ def dFhdKv(
 
     out = np.zeros(shape)
 
-    # Consider the x axis
-    if shape[0] > 1:
+    for n, axis in zip(fwd_model.grid.shape, (0, 1, 2)):
+        if n < 2:
+            continue
+
+        fwd_slicer = fwd_model.grid.get_slicer_forward(axis)
+        bwd_slicer = fwd_model.grid.get_slicer_backward(axis)
+
         dKijdKxv = (
-            dxi_harmonic_mean(permeability[1:, :], permeability[:-1, :])[
+            dxi_harmonic_mean(permeability[bwd_slicer], permeability[fwd_slicer])[
                 :, :, np.newaxis
             ]
-            * vecs[1:, :, :]
-            + dxi_harmonic_mean(permeability[:-1, :], permeability[1:, :])[
+            * vecs[*bwd_slicer, :]
+            + dxi_harmonic_mean(permeability[fwd_slicer], permeability[bwd_slicer])[
                 :, :, np.newaxis
             ]
-            * vecs[:-1, :, :]
+            * vecs[*fwd_slicer, :]
         )
-        tmp = fwd_model.grid.gamma_ij_x / fwd_model.grid.dx
+        tmp = fwd_model.grid.gamma_ij(axis) / fwd_model.grid.pipj(axis)
 
         # For all n != 0
         if time_index != 0:
             lhs = (
                 (
-                    crank_flow * (head[1:, :] - head[:-1, :])
-                    + (1.0 - crank_flow) * (head_prev[1:, :] - head_prev[:-1, :])
+                    crank_flow * (head[bwd_slicer] - head[fwd_slicer])
+                    + (1.0 - crank_flow)
+                    * (head_prev[bwd_slicer] - head_prev[fwd_slicer])
                 )
                 * tmp
                 / fwd_model.grid.grid_cell_volume
             )
             # Forward
-            out[:-1, :, :] -= (lhs / fwd_model.fl_model.storage_coefficient[:-1, :])[
-                :, :, np.newaxis
-            ] * dKijdKxv
+            out[*fwd_slicer, :] -= (
+                lhs / fwd_model.fl_model.storage_coefficient[fwd_slicer]
+            )[:, :, :, np.newaxis] * dKijdKxv
             # Backward scheme
-            out[1:, :, :] += (lhs / fwd_model.fl_model.storage_coefficient[1:, :])[
-                :, :, np.newaxis
-            ] * dKijdKxv
+            out[*bwd_slicer, :] += (
+                lhs / fwd_model.fl_model.storage_coefficient[bwd_slicer]
+            )[:, :, :, :, np.newaxis] * dKijdKxv
 
         # Handle the stationary case for n == 0
         elif fwd_model.fl_model.regime == FlowRegime.STATIONARY:
             # Forward
             lhs = (
-                (head[1:, :] - head[:-1, :])[:, :, np.newaxis]
+                (head[bwd_slicer] - head[fwd_slicer])[:, :, :, np.newaxis]
                 * tmp
                 / fwd_model.grid.grid_cell_volume
                 * dKijdKxv
             )
-            out[:-1, :, :] -= lhs
-            out[1:, :, :] += lhs
-
-    # Consider the y axis for 2D cases
-    # Consider the x axis
-    if shape[1] > 1:
-        dKijdKyv = (
-            dxi_harmonic_mean(permeability[:, 1:], permeability[:, :-1])[
-                :, :, np.newaxis
-            ]
-            * vecs[:, 1:, :]
-            + dxi_harmonic_mean(permeability[:, :-1], permeability[:, 1:])[
-                :, :, np.newaxis
-            ]
-            * vecs[:, :-1, :]
-        )
-        tmp = fwd_model.grid.gamma_ij_y / fwd_model.grid.dy
-
-        # For all n != 0
-        if time_index != 0:
-            lhs = (
-                (
-                    crank_flow * (head[:, 1:] - head[:, :-1])
-                    + (1.0 - crank_flow) * (head_prev[:, 1:] - head_prev[:, :-1])
-                )
-                * tmp
-                / fwd_model.grid.grid_cell_volume
-            )
-            # Forward
-            out[:, :-1, :] -= (lhs / fwd_model.fl_model.storage_coefficient[:, :-1])[
-                :, :, np.newaxis
-            ] * dKijdKyv
-            # Backward scheme
-            out[:, 1:, :] += (lhs / fwd_model.fl_model.storage_coefficient[:, 1:])[
-                :, :, np.newaxis
-            ] * dKijdKyv
-
-        # Handle the stationary case for n == 0
-        elif fwd_model.fl_model.regime == FlowRegime.STATIONARY:
-            # Forward
-            lhs = (
-                (head[:, 1:] - head[:, :-1])[:, :, np.newaxis]
-                * tmp
-                / fwd_model.grid.grid_cell_volume
-                * dKijdKyv
-            )
-            out[:, :-1, :] -= lhs
-            out[:, 1:, :] += lhs
+            out[*fwd_slicer, :] -= lhs
+            out[*bwd_slicer, :] += lhs
 
     out[
-        fwd_model.fl_model.cst_head_indices[0], fwd_model.fl_model.cst_head_indices[1]
+        fwd_model.fl_model.cst_head_indices[0],
+        fwd_model.fl_model.cst_head_indices[1],
+        fwd_model.fl_model.cst_head_indices[2],
+        :,
     ] = 0
 
     return out
@@ -173,60 +143,46 @@ def dFhdSsv(
     out = np.zeros(shape)
 
     dinvSsV = (
-        -1.0 / (fwd_model.fl_model.storage_coefficient**2)[:, :, np.newaxis] * vecs
+        -1.0 / (fwd_model.fl_model.storage_coefficient**2)[:, :, :, np.newaxis] * vecs
     )
 
-    # Consider the x axis
-    if shape[0] > 1:
-        Kij = harmonic_mean(permeability[1:, :], permeability[:-1, :])
-        tmp = fwd_model.grid.gamma_ij_x / fwd_model.grid.dx
+    for n, axis in zip(fwd_model.grid.shape, (0, 1, 2)):
+        if n < 2:
+            continue
+
+        fwd_slicer = fwd_model.grid.get_slicer_forward(axis)
+        bwd_slicer = fwd_model.grid.get_slicer_backward(axis)
+
+        Kij = harmonic_mean(permeability[bwd_slicer], permeability[fwd_slicer])
+        tmp = fwd_model.grid.gamma_ij(axis) / fwd_model.grid.pipj(axis)
 
         # For all n != 0
         if time_index != 0:
             lhs = (
                 (
-                    crank_flow * (head[1:, :] - head[:-1, :])
-                    + (1.0 - crank_flow) * (head_prev[1:, :] - head_prev[:-1, :])
+                    crank_flow * (head[bwd_slicer] - head[fwd_slicer])
+                    + (1.0 - crank_flow)
+                    * (head_prev[bwd_slicer] - head_prev[fwd_slicer])
                 )
                 * tmp
                 * Kij
                 / fwd_model.grid.grid_cell_volume
             )
             # Forward
-            out[:-1, :, :] -= lhs[:, :, np.newaxis] * dinvSsV[:-1, :, :]
+            out[*fwd_slicer, :] -= lhs[:, :, :, np.newaxis] * dinvSsV[*fwd_slicer, :]
             # Backward scheme
-            out[1:, :, :] += lhs[:, :, np.newaxis] * dinvSsV[1:, :, :]
-
-    # Consider the y axis for 2D cases
-    # Consider the x axis
-    if shape[1] > 1:
-        Kij = harmonic_mean(permeability[:, 1:], permeability[:, :-1])
-        tmp = fwd_model.grid.gamma_ij_y / fwd_model.grid.dy
-
-        # For all n != 0
-        if time_index != 0:
-            lhs = (
-                (
-                    crank_flow * (head[:, 1:] - head[:, :-1])
-                    + (1.0 - crank_flow) * (head_prev[:, 1:] - head_prev[:, :-1])
-                )
-                * tmp
-                * Kij
-                / fwd_model.grid.grid_cell_volume
-            )
-            # Forward
-            out[:, :-1, :] -= lhs[:, :, np.newaxis] * dinvSsV[:, :-1, :]
-            # Backward scheme
-            out[:, 1:, :] += lhs[:, :, np.newaxis] * dinvSsV[:, 1:, :]
+            out[*bwd_slicer, :] += lhs[:, :, :, np.newaxis] * dinvSsV[*bwd_slicer, :]
 
     out -= (
         fwd_model.fl_model.crank_nicolson * fwd_model.fl_model.lunitflow[time_index]
         + (1.0 - fwd_model.fl_model.crank_nicolson)
         * fwd_model.fl_model.lunitflow[time_index - 1]
-    )[:, :, np.newaxis] * dinvSsV
+    )[:, :, :, np.newaxis] * dinvSsV
 
     out[
-        fwd_model.fl_model.cst_head_indices[0], fwd_model.fl_model.cst_head_indices[1]
+        fwd_model.fl_model.cst_head_indices[0],
+        fwd_model.fl_model.cst_head_indices[1],
+        fwd_model.fl_model.cst_head_indices[2],
     ] = 0
 
     return out
@@ -255,17 +211,22 @@ def dFpdKv(
 
     out = np.zeros(shape)
 
-    # Consider the x axis
-    if shape[0] > 1:
+    for n, axis in zip(fwd_model.grid.shape, (0, 1, 2)):
+        if n < 2:
+            continue
+
+        fwd_slicer = fwd_model.grid.get_slicer_forward(axis)
+        bwd_slicer = fwd_model.grid.get_slicer_backward(axis)
+
         dKijdKxv = (
-            dxi_harmonic_mean(permeability[1:, :], permeability[:-1, :])[
-                :, :, np.newaxis
+            dxi_harmonic_mean(permeability[bwd_slicer], permeability[fwd_slicer])[
+                :, :, :, np.newaxis
             ]
-            * vecs[1:, :, :]
-            + dxi_harmonic_mean(permeability[:-1, :], permeability[1:, :])[
-                :, :, np.newaxis
+            * vecs[*bwd_slicer, :]
+            + dxi_harmonic_mean(permeability[fwd_slicer], permeability[bwd_slicer])[
+                :, :, :, np.newaxis
             ]
-            * vecs[:-1, :, :]
+            * vecs[*fwd_slicer, :]
         )
 
         # For all n != 0
@@ -273,131 +234,65 @@ def dFpdKv(
             rhoij = get_rhomean(
                 fwd_model.grid,
                 fwd_model.tr_model,
-                axis=0,
+                axis=axis,
                 time_index=time_index - 1,
                 is_flatten=False,
-            )[:-1, :]
-            if fwd_model.fl_model.vertical_axis == VerticalAxis.X:
+            )[fwd_slicer]
+            if (
+                (fwd_model.fl_model.vertical_axis == VerticalAxis.X and axis == 0)
+                or (fwd_model.fl_model.vertical_axis == VerticalAxis.Y and axis == 1)
+                or (fwd_model.fl_model.vertical_axis == VerticalAxis.Z and axis == 2)
+            ):
                 rhoijg = rhoij * GRAVITY
             else:
                 rhoijg = 0.0
             lhs = (
                 (
                     (
-                        crank_flow * (pressure[1:, :] - pressure[:-1, :])
+                        crank_flow * (pressure[bwd_slicer] - pressure[fwd_slicer])
                         + (1.0 - crank_flow)
-                        * (pressure_prev[1:, :] - pressure_prev[:-1, :])
+                        * (pressure_prev[bwd_slicer] - pressure_prev[fwd_slicer])
                     )
-                    / fwd_model.grid.dx
+                    / fwd_model.grid.pipj(axis)
                     + rhoijg
                 )
-                * fwd_model.grid.gamma_ij_x
+                * fwd_model.grid.gamma_ij(axis)
                 * rhoij
                 / WATER_DENSITY
                 / fwd_model.grid.grid_cell_volume
             )
             # Forward
-            out[:-1, :, :] -= (lhs / fwd_model.fl_model.storage_coefficient[:-1, :])[
-                :, :, np.newaxis
-            ] * dKijdKxv
+            out[*fwd_slicer, :] -= (
+                lhs / fwd_model.fl_model.storage_coefficient[fwd_slicer]
+            )[:, :, :, np.newaxis] * dKijdKxv
             # Backward scheme
-            out[1:, :, :] += (lhs / fwd_model.fl_model.storage_coefficient[1:, :])[
-                :, :, np.newaxis
-            ] * dKijdKxv
+            out[*bwd_slicer, :] += (
+                lhs / fwd_model.fl_model.storage_coefficient[bwd_slicer]
+            )[:, :, :, np.newaxis] * dKijdKxv
 
         # Handle the stationary case for n == 0
         elif fwd_model.fl_model.regime == FlowRegime.STATIONARY:
-            z = fwd_model.fl_model._get_mesh_center_vertical_pos()[:, :, np.newaxis]
+            z = fwd_model.fl_model._get_mesh_center_vertical_pos()[:, :, :, np.newaxis]
             lhs = (
                 (
-                    (pressure[1:, :] - pressure[:-1, :])[:, :, np.newaxis]
+                    (pressure[bwd_slicer] - pressure[fwd_slicer])[:, :, :, np.newaxis]
                     / GRAVITY
                     / WATER_DENSITY
-                    - z[:-1, :]
-                    + z[1:, :]
+                    - z[fwd_slicer]
+                    + z[bwd_slicer]
                 )
-                * fwd_model.grid.gamma_ij_x
-                / fwd_model.grid.dx
+                * fwd_model.grid.gamma_ij(axis)
+                / fwd_model.grid.pipj(axis)
                 / fwd_model.grid.grid_cell_volume
             ) * dKijdKxv
 
-            out[:-1, :, :] -= lhs
-            out[1:, :, :] += lhs
-
-    # Consider the y axis for 2D cases
-    # Consider the x axis
-    if shape[1] > 1:
-        dKijdKyv = (
-            dxi_harmonic_mean(permeability[:, 1:], permeability[:, :-1])[
-                :, :, np.newaxis
-            ]
-            * vecs[:, 1:, :]
-            + dxi_harmonic_mean(permeability[:, :-1], permeability[:, 1:])[
-                :, :, np.newaxis
-            ]
-            * vecs[:, :-1, :]
-        )
-
-        # For all n != 0
-        if time_index != 0:
-            rhoij = get_rhomean(
-                fwd_model.grid,
-                fwd_model.tr_model,
-                axis=1,
-                time_index=time_index - 1,
-                is_flatten=False,
-            )[:, :-1]
-
-            if fwd_model.fl_model.vertical_axis == VerticalAxis.Y:
-                rhoijg = rhoij * GRAVITY
-            else:
-                rhoijg = 0.0
-
-            lhs = (
-                (
-                    (
-                        crank_flow * (pressure[:, 1:] - pressure[:, :-1])
-                        + (1.0 - crank_flow)
-                        * (pressure_prev[:, 1:] - pressure_prev[:, :-1])
-                    )
-                    / fwd_model.grid.dy
-                    + rhoijg
-                )
-                * fwd_model.grid.gamma_ij_y
-                * rhoij
-                / WATER_DENSITY
-                / fwd_model.grid.grid_cell_volume
-            )
-            # Forward
-            out[:, :-1, :] -= (lhs / fwd_model.fl_model.storage_coefficient[:, :-1])[
-                :, :, np.newaxis
-            ] * dKijdKyv
-            # Backward scheme
-            out[:, 1:, :] += (lhs / fwd_model.fl_model.storage_coefficient[:, 1:])[
-                :, :, np.newaxis
-            ] * dKijdKyv
-
-        # Handle the stationary case for n == 0
-        elif fwd_model.fl_model.regime == FlowRegime.STATIONARY:
-            z = fwd_model.fl_model._get_mesh_center_vertical_pos()[:, :, np.newaxis]
-            lhs = (
-                (
-                    (pressure[:, 1:] - pressure[:, :-1])[:, :, np.newaxis]
-                    / GRAVITY
-                    / WATER_DENSITY
-                    - z[:, :-1]
-                    + z[:, 1:]
-                )
-                * fwd_model.grid.gamma_ij_y
-                / fwd_model.grid.dy
-                / fwd_model.grid.grid_cell_volume
-            ) * dKijdKyv
-
-            out[:, :-1, :] -= lhs
-            out[:, 1:, :] += lhs
+            out[*fwd_slicer, :] -= lhs
+            out[*bwd_slicer, :] += lhs
 
     out[
-        fwd_model.fl_model.cst_head_indices[0], fwd_model.fl_model.cst_head_indices[1]
+        fwd_model.fl_model.cst_head_indices[0],
+        fwd_model.fl_model.cst_head_indices[1],
+        fwd_model.fl_model.cst_head_indices[2],
     ] = 0
 
     return out
@@ -427,84 +322,54 @@ def dFpdSsv(
     out = np.zeros(shape)
 
     dinvSsV = (
-        -1.0 / (fwd_model.fl_model.storage_coefficient**2)[:, :, np.newaxis] * vecs
+        -1.0 / (fwd_model.fl_model.storage_coefficient**2)[:, :, :, np.newaxis] * vecs
     )
 
-    # Consider the x axis
-    if shape[0] > 1:
-        Kij = harmonic_mean(permeability[1:, :], permeability[:-1, :])
+    for n, axis in zip(fwd_model.grid.shape, (0, 1, 2)):
+        if n < 2:
+            continue
+
+        fwd_slicer = fwd_model.grid.get_slicer_forward(axis)
+        bwd_slicer = fwd_model.grid.get_slicer_backward(axis)
+
+        Kij = harmonic_mean(permeability[bwd_slicer], permeability[fwd_slicer])
         rhoij = get_rhomean(
             fwd_model.grid,
             fwd_model.tr_model,
-            axis=0,
+            axis=axis,
             time_index=time_index - 1,
             is_flatten=False,
-        )[:-1, :]
+        )[fwd_slicer]
         # For all n != 0
         if time_index != 0:
-            if fwd_model.fl_model.vertical_axis == VerticalAxis.X:
+            if (
+                (fwd_model.fl_model.vertical_axis == VerticalAxis.X and axis == 0)
+                or (fwd_model.fl_model.vertical_axis == VerticalAxis.Y and axis == 1)
+                or (fwd_model.fl_model.vertical_axis == VerticalAxis.Z and axis == 2)
+            ):
                 rhoijg = rhoij * GRAVITY
             else:
                 rhoijg = 0.0
             lhs = (
                 (
                     (
-                        crank_flow * (pressure[1:, :] - pressure[:-1, :])
+                        crank_flow * (pressure[bwd_slicer] - pressure[fwd_slicer])
                         + (1.0 - crank_flow)
-                        * (pressure_prev[1:, :] - pressure_prev[:-1, :])
+                        * (pressure_prev[bwd_slicer] - pressure_prev[fwd_slicer])
                     )
-                    / fwd_model.grid.dx
+                    / fwd_model.grid.pipj(axis)
                     + rhoijg
                 )
-                * fwd_model.grid.gamma_ij_x
+                * fwd_model.grid.gamma_ij(axis)
                 * rhoij
                 * Kij
                 / WATER_DENSITY
                 / fwd_model.grid.grid_cell_volume
             )
             # Forward
-            out[:-1, :, :] -= lhs[:, :, np.newaxis] * dinvSsV[:-1, :, :]
+            out[*fwd_slicer, :] -= lhs[:, :, :, np.newaxis] * dinvSsV[*fwd_slicer, :]
             # Backward scheme
-            out[1:, :, :] += lhs[:, :, np.newaxis] * dinvSsV[1:, :, :]
-
-    # Consider the y axis for 2D cases
-    if shape[1] > 1:
-        Kij = harmonic_mean(permeability[:, 1:], permeability[:, :-1])
-        rhoij = get_rhomean(
-            fwd_model.grid,
-            fwd_model.tr_model,
-            axis=1,
-            time_index=time_index - 1,
-            is_flatten=False,
-        )[:, :-1]
-
-        # For all n != 0
-        if time_index != 0:
-            if fwd_model.fl_model.vertical_axis == VerticalAxis.Y:
-                rhoijg = rhoij * GRAVITY
-            else:
-                rhoijg = 0.0
-
-            lhs = (
-                (
-                    (
-                        crank_flow * (pressure[:, 1:] - pressure[:, :-1])
-                        + (1.0 - crank_flow)
-                        * (pressure_prev[:, 1:] - pressure_prev[:, :-1])
-                    )
-                    / fwd_model.grid.dy
-                    + rhoijg
-                )
-                * fwd_model.grid.gamma_ij_y
-                * Kij
-                * rhoij
-                / WATER_DENSITY
-                / fwd_model.grid.grid_cell_volume
-            )
-            # Forward
-            out[:, :-1, :] -= lhs[:, :, np.newaxis] * dinvSsV[:, :-1, :]
-            # Backward scheme
-            out[:, 1:, :] += lhs[:, :, np.newaxis] * dinvSsV[:, 1:, :]
+            out[*bwd_slicer, :] += lhs[:, :, :, np.newaxis] * dinvSsV[*bwd_slicer, :]
 
     out -= (
         (
@@ -514,39 +379,75 @@ def dFpdSsv(
         )
         * fwd_model.tr_model.ldensity[time_index - 1]
         * GRAVITY
-    )[:, :, np.newaxis] * dinvSsV
+    )[:, :, :, np.newaxis] * dinvSsV
 
     out[
-        fwd_model.fl_model.cst_head_indices[0], fwd_model.fl_model.cst_head_indices[1]
+        fwd_model.fl_model.cst_head_indices[0],
+        fwd_model.fl_model.cst_head_indices[1],
+        fwd_model.fl_model.cst_head_indices[2],
     ] = 0
 
     return out
 
 
-def dFUxdKv(
-    fwd_model: ForwardModel, time_index: int, vecs: NDArrayFloat
+def dFUdKv(
+    fwd_model: ForwardModel, time_index: int, vecs: NDArrayFloat, axis: int
 ) -> NDArrayFloat:
+    """_summary_
+
+    Parameters
+    ----------
+    fwd_model : ForwardModel
+        _description_
+    time_index : int
+        _description_
+    vecs : NDArrayFloat
+        _description_
+    axis : int
+        _description_
+
+    Returns
+    -------
+    NDArrayFloat
+        _description_
+    """
     permeability = fwd_model.fl_model.permeability
+
+    # TODO: update this
     out = np.zeros(
-        (fwd_model.grid.nx + 1, fwd_model.grid.ny, vecs.shape[-1]),
+        (*get_extended_grid_shape(fwd_model.grid, axis=axis, extend=1), vecs.shape[-1]),
         dtype=np.float64,
     )
+
+    fwd_slicer = fwd_model.grid.get_slicer_forward(axis)
+    bwd_slicer = fwd_model.grid.get_slicer_backward(axis)
+
     dKijdKxv = (
-        dxi_harmonic_mean(permeability[1:, :], permeability[:-1, :])[:, :, np.newaxis]
-        * vecs[1:, :, :]
-        + dxi_harmonic_mean(permeability[:-1, :], permeability[1:, :])[:, :, np.newaxis]
-        * vecs[:-1, :, :]
+        dxi_harmonic_mean(permeability[bwd_slicer], permeability[fwd_slicer])[
+            :, :, np.newaxis
+        ]
+        * vecs[*bwd_slicer, :]
+        + dxi_harmonic_mean(permeability[fwd_slicer], permeability[bwd_slicer])[
+            :, :, :, np.newaxis
+        ]
+        * vecs[*fwd_slicer, :]
     )
 
     if fwd_model.fl_model.is_gravity:
         rhomean = get_rhomean(
             fwd_model.grid,
             fwd_model.tr_model,
-            axis=0,
+            axis=axis,
             time_index=time_index - 1,
             is_flatten=False,
         )[:, :-1]
-        if fwd_model.fl_model.vertical_axis == VerticalAxis.X:
+        # TODO review this [:, :-1]
+
+        if (
+            (fwd_model.fl_model.vertical_axis == VerticalAxis.X and axis == 0)
+            or (fwd_model.fl_model.vertical_axis == VerticalAxis.Y and axis == 1)
+            or (fwd_model.fl_model.vertical_axis == VerticalAxis.Z and axis == 2)
+        ):
             rho_ij_g = rhomean * GRAVITY
             if time_index == 0:
                 rho_ij_g[:, :] = WATER_DENSITY * GRAVITY
@@ -554,67 +455,25 @@ def dFUxdKv(
             rho_ij_g = np.zeros_like(rhomean)
 
         pressure = fwd_model.fl_model.lpressure[time_index]
-        out[1:-1, :, :] += (
+        out[*bwd_slicer, :] += (
             dKijdKxv
             * (
-                ((pressure[1:, :] - pressure[:-1, :]) / fwd_model.grid.dx + rho_ij_g)
+                (
+                    (pressure[bwd_slicer] - pressure[fwd_slicer])
+                    / fwd_model.grid.pipj(axis)
+                    + rho_ij_g
+                )
                 / WATER_DENSITY
                 / GRAVITY
-            )[:, :, np.newaxis]
+            )[:, :, :, np.newaxis]
         )
     else:
         head = fwd_model.fl_model.lhead[time_index]
-        out[1:-1, :, :] += (
+        out[*bwd_slicer, :] += (
             dKijdKxv
-            * ((head[1:, :] - head[:-1, :]) / fwd_model.grid.dx)[:, :, np.newaxis]
-        )
-    return out
-
-
-def dFUydKv(
-    fwd_model: ForwardModel, time_index: int, vecs: NDArrayFloat
-) -> NDArrayFloat:
-    permeability = fwd_model.fl_model.permeability
-    out = np.zeros(
-        (fwd_model.grid.nx, fwd_model.grid.ny + 1, vecs.shape[-1]),
-        dtype=np.float64,
-    )
-    dKijdKyv = (
-        dxi_harmonic_mean(permeability[:, 1:], permeability[:, :-1])[:, :, np.newaxis]
-        * vecs[:, 1:, :]
-        + dxi_harmonic_mean(permeability[:, :-1], permeability[:, 1:])[:, :, np.newaxis]
-        * vecs[:, :-1, :]
-    )
-
-    if fwd_model.fl_model.is_gravity:
-        rhomean = get_rhomean(
-            fwd_model.grid,
-            fwd_model.tr_model,
-            axis=1,
-            time_index=time_index - 1,
-            is_flatten=False,
-        )[:-1, :]
-        if fwd_model.fl_model.vertical_axis == VerticalAxis.X:
-            rho_ij_g = rhomean * GRAVITY
-            if time_index == 0:
-                rho_ij_g[:, :] = WATER_DENSITY * GRAVITY
-        else:
-            rho_ij_g = np.zeros_like(rhomean)
-
-        pressure = fwd_model.fl_model.lpressure[time_index]
-        out[:, 1:-1, :] += (
-            dKijdKyv
-            * (
-                ((pressure[:, 1:] - pressure[:, :-1]) / fwd_model.grid.dy + rho_ij_g)
-                / WATER_DENSITY
-                / GRAVITY
-            )[:, :, np.newaxis]
-        )
-    else:
-        head = fwd_model.fl_model.lhead[time_index]
-        out[:, 1:-1, :] += (
-            dKijdKyv
-            * ((head[:, 1:] - head[:, :-1]) / fwd_model.grid.dy)[:, :, np.newaxis]
+            * ((head[bwd_slicer] - head[fwd_slicer]) / fwd_model.grid.pipj(axis))[
+                :, :, :, np.newaxis
+            ]
         )
     return out
 
@@ -622,6 +481,22 @@ def dFUydKv(
 def dFhdhimp(
     fwd_model: ForwardModel, time_index: int, vecs: NDArrayFloat
 ) -> NDArrayFloat:
+    """_summary_
+
+    Parameters
+    ----------
+    fwd_model : ForwardModel
+        _description_
+    time_index : int
+        _description_
+    vecs : NDArrayFloat
+        _description_
+
+    Returns
+    -------
+    NDArrayFloat
+        _description_
+    """
     # no impact in the density case
     if fwd_model.fl_model.is_gravity:
         return np.zeros(
@@ -637,6 +512,22 @@ def dFhdhimp(
 def dFpdpimp(
     fwd_model: ForwardModel, time_index: int, vecs: NDArrayFloat
 ) -> NDArrayFloat:
+    """_summary_
+
+    Parameters
+    ----------
+    fwd_model : ForwardModel
+        _description_
+    time_index : int
+        _description_
+    vecs : NDArrayFloat
+        _description_
+
+    Returns
+    -------
+    NDArrayFloat
+        _description_
+    """
     # no impact in the density case
     if not fwd_model.fl_model.is_gravity:
         return np.zeros(
@@ -651,19 +542,20 @@ def dFpdpimp(
 
 @np_cache(pos=1)
 def dFDdwv(fwd_model: ForwardModel, vecs: NDArrayFloat) -> NDArrayFloat:
-    return fwd_model.tr_model.diffusion[:, :, np.newaxis] * vecs
+    return fwd_model.tr_model.diffusion[:, :, :, np.newaxis] * vecs
 
 
 @np_cache(pos=1)
 def dFDdDv(fwd_model: ForwardModel, vecs: NDArrayFloat) -> NDArrayFloat:
-    return fwd_model.tr_model.porosity[:, :, np.newaxis] * vecs
+    return fwd_model.tr_model.porosity[:, :, :, np.newaxis] * vecs
 
 
 def dFDddispv(
     fwd_model: ForwardModel, time_index: int, vecs: NDArrayFloat
 ) -> NDArrayFloat:
     return (
-        fwd_model.fl_model.get_u_darcy_norm_sample(time_index)[:, :, np.newaxis] * vecs
+        fwd_model.fl_model.get_u_darcy_norm_sample(time_index)[:, :, :, np.newaxis]
+        * vecs
     )
 
 
@@ -675,7 +567,7 @@ def dFcdwv(
     return (
         (fwd_model.tr_model.lmob[time_index] - fwd_model.tr_model.lmob[time_index - 1])
         / fwd_model.time_params.dt
-    )[:, :, :, np.newaxis] * vecs[np.newaxis, :, :, :]
+    )[:, :, :, :, np.newaxis] * vecs[np.newaxis, :, :, :, :]
 
 
 def dFcdcimp(

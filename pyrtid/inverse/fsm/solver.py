@@ -23,8 +23,7 @@ from pyrtid.inverse.fsm.dFds import (
     dFpdKv,
     dFpdpimp,
     dFpdSsv,
-    dFUxdKv,
-    dFUydKv,
+    dFUdKv,
 )
 from pyrtid.inverse.obs import (
     Observables,
@@ -265,8 +264,9 @@ def update_dFdsv(
         if param.name == ParameterName.PERMEABILITY:
             fsm_vecs.dFhdsv += dFhdKv(model, time_index, fsm_vecs.vecs)
             fsm_vecs.dFpdsv += dFpdKv(model, time_index, fsm_vecs.vecs)
-            fsm_vecs.dFUxdsv += dFUxdKv(model, time_index, fsm_vecs.vecs)
-            fsm_vecs.dFUydsv += dFUydKv(model, time_index, fsm_vecs.vecs)
+            fsm_vecs.dFUxdsv += dFUdKv(model, time_index, fsm_vecs.vecs, axis=0)
+            fsm_vecs.dFUydsv += dFUdKv(model, time_index, fsm_vecs.vecs, axis=1)
+            fsm_vecs.dFUzdsv += dFUdKv(model, time_index, fsm_vecs.vecs, axis=2)
         if param.name == ParameterName.STORAGE_COEFFICIENT:
             fsm_vecs.dFhdsv += dFhdSsv(model, time_index, fsm_vecs.vecs)
             fsm_vecs.dFpdsv += dFpdSsv(model, time_index, fsm_vecs.vecs)
