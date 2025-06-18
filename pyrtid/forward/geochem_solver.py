@@ -23,6 +23,28 @@ from pyrtid.utils import NDArrayFloat, RectilinearGrid
 from pyrtid.utils.preconditioner import NoTransform, Preconditioner
 
 
+def solve_geochem(
+    grid: RectilinearGrid,
+    tr_model: TransportModel,
+    gch_params: GeochemicalParameters,
+    time_params: TimeParameters,
+    time_index: int,
+) -> None:
+    r"""
+    Compute the mineral dissolution.
+
+    The equation reads:
+
+    .. math::
+        \overline{c}_{i}^{n+1} = \overline{c}_{i}^{n} + \Delta t^{n} k_{v} A_{s}
+        \overline{c}_{i}^{n} \left( 1 - \dfrac{c_{i}^{n+1}}{K_{s}}\right)
+    """
+    if gch_params.use_explicit_formulation:
+        solve_geochem_explicit(tr_model, gch_params, time_params, time_index)
+    else:
+        solve_geochem_implicit(grid, tr_model, gch_params, time_params, time_index)
+
+
 def solve_geochem_explicit(
     tr_model: TransportModel,
     gch_params: GeochemicalParameters,

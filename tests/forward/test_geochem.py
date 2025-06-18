@@ -1,15 +1,9 @@
 from typing import List  # For type annotations
 
-import matplotlib  # Matplotlib for plotting
-import matplotlib.pyplot as plt  # Matplotlib's pyplot for creating plots
 import numdifftools as nd
 import numpy as np  # NumPy for numerical operations
-from lbfgsb.scalar_function import ScalarFunction
 from lbfgsb.types import NDArrayFloat
-from scipy.optimize import minimize
-
 from pyrtid.forward.geochem_solver import F, Jacobian
-from pyrtid.forward.geochem_utils import newton
 from pyrtid.forward.models import GeochemicalParameters
 
 

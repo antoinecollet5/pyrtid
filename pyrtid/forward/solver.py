@@ -14,7 +14,7 @@ from .flow_solver import (
     solve_flow_stationary,
     solve_flow_transient_semi_implicit,
 )
-from .geochem_solver import solve_geochem_explicit, solve_geochem_implicit
+from .geochem_solver import solve_geochem
 from .models import (
     H_PLUS_CONC,
     TDS_LINEAR_COEFFICIENT,
@@ -236,21 +236,13 @@ class ForwardSolver:
             )
 
             # Solve the chemistry
-            solve_geochem_explicit(
-                self.model.tr_model,
-                self.model.gch_params,
-                self.model.time_params,
-                time_index,
-            )
-
-            solve_geochem_implicit(
+            solve_geochem(
                 self.model.grid,
                 self.model.tr_model,
                 self.model.gch_params,
                 self.model.time_params,
                 time_index,
             )
-
             if is_verbose:
                 logging.info(
                     f"max-coupling error at it = {time_index}"

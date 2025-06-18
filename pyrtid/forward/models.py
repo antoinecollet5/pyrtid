@@ -386,6 +386,7 @@ class GeochemicalParameters:
         Ms: float = 270,
         Ms2: float = 270,
         stocoef: float = 1.0,
+        use_explicit_formulation: bool = True,
     ) -> None:
         """Initialize the instance."""
         self.conc: float = conc
@@ -398,6 +399,7 @@ class GeochemicalParameters:
         self.Ms: float = Ms
         self.Ms2: float = Ms2
         self.stocoef: float = stocoef
+        self.use_explicit_formulation = use_explicit_formulation
 
 
 class SourceTerm:
