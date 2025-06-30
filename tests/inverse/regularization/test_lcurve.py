@@ -1,5 +1,5 @@
 import pytest
-from pyrtid.inverse.regularization import get_l_curvature
+from pyrtid.regularization import get_l_curvature
 
 
 @pytest.mark.parametrize(

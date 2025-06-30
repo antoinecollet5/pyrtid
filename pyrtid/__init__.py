@@ -13,10 +13,11 @@ Submodules
     inverse
     utils
     plot
+    regularization
 
 """
 
-from pyrtid import forward, inverse, plot, utils
+from pyrtid import forward, inverse, plot, regularization, utils
 from pyrtid.__about__ import __author__, __email__, __version__
 
 __all__ = [
@@ -27,4 +28,5 @@ __all__ = [
     "inverse",
     "utils",
     "plot",
+    "regularization",
 ]

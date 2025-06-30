@@ -22,7 +22,7 @@ import numpy as np
 import scipy as sp
 from scipy.sparse.linalg import LinearOperator, gmres, minres
 
-from pyrtid.inverse.regularization import (
+from pyrtid.regularization import (
     ConstantDriftMatrix,
     CovarianceMatrix,
     DriftMatrix,

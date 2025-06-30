@@ -38,8 +38,6 @@ class InverseModel:
         by finite difference. Note: the values are not scaled.
     list_d_pred: List[NDArrayFloat]
         List of the successive predicted vectors computed while optimizing.
-    adj_conc: np.ndarray
-        Adjoint concentrations.
     parameters_to_adjust: List[AdjustableParameter]
         List of adjustable parameters considered in the inversion.
     is_first_loss_function_call_in_round: bool

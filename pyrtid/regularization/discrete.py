@@ -8,7 +8,7 @@ from typing import List, Literal
 
 import numpy as np
 
-from pyrtid.inverse.regularization.base import Regularizator
+from pyrtid.regularization.base import Regularizator
 from pyrtid.utils import NDArrayFloat
 from pyrtid.utils.preconditioner import NoTransform, Preconditioner
 

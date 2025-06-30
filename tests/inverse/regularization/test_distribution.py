@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
-from pyrtid.inverse.regularization import ProbDistFitting
-from pyrtid.inverse.regularization.distribution import (
+from pyrtid.regularization import ProbDistFitting
+from pyrtid.regularization.distribution import (
     cdf_distance,
     cdf_distance_gradient,
     get_cdfs,

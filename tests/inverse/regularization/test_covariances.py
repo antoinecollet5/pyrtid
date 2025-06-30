@@ -2,7 +2,7 @@
 
 import numpy as np
 import pytest
-from pyrtid.inverse.regularization import (
+from pyrtid.regularization import (
     DenseCovarianceMatrix,
     EnsembleCovarianceMatrix,
     FFTCovarianceMatrix,

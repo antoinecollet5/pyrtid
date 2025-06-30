@@ -93,7 +93,7 @@ Sub module providing preconditioners and parametrization tools.
 
 from pyesmda import ESMDAInversionType
 
-import pyrtid.inverse.regularization as regularization
+import pyrtid.regularization as regularization
 from pyrtid.inverse.asm.amain_solver import AdjointSolver
 from pyrtid.inverse.asm.amodels import AdjointModel
 from pyrtid.inverse.executors import (

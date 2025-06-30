@@ -5,7 +5,7 @@ from typing import List, Optional
 
 import numpy as np
 
-from pyrtid.inverse.regularization.aca import ACApp, GenerateDenseMatrix
+from pyrtid.regularization.aca import ACApp, GenerateDenseMatrix
 
 __all__ = ["Cluster", "BlockCluster"]
 

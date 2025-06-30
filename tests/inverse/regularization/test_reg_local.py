@@ -3,7 +3,7 @@
 import numpy as np
 import pyrtid.inverse as dminv
 import pytest
-from pyrtid.inverse.regularization import (
+from pyrtid.regularization import (
     DiscreteRegularizator,
     TikhonovFVMRegularizator,
     TikhonovMatRegularizator,

@@ -242,14 +242,10 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
 
         Parameters
         ----------
-        model : ForwardModel
+        fwd_model : ForwardModel
             The reactive transport model to optimize.
-        parameters_to_adjust: Sequence[AdjustableParameter]
-            List of `Param` that the user wants to adjust. The availability
-            is checked on the fly and an exception in raised if some are
-            not available.
-        observables : Union[Observable, List[Observable]]
-            Observable instances defining the data to match.
+        inv_model : InverseModel
+            The inverse model.
         solver_config : _BaseSolverConfig
             Configuration for the solver and the inversion.
         pre_run_transformation : Optional[Callable], optional

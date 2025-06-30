@@ -36,7 +36,7 @@ from pyrtid.inverse.params import (
     get_parameters_bounds,
     get_parameters_values_from_model,
 )
-from pyrtid.inverse.regularization import ConstantRegWeight
+from pyrtid.regularization import ConstantRegWeight
 from pyrtid.utils import NDArrayFloat
 from pyrtid.utils.preconditioner import get_factor_enforcing_grad_inf_norm, scale_pcd
 

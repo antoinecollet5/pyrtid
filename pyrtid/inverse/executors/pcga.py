@@ -63,8 +63,8 @@ from pyrtid.inverse.executors.base import (
     register_params_ds,
 )
 from pyrtid.inverse.params import update_model_with_parameters_values
-from pyrtid.inverse.regularization import DriftMatrix, EigenFactorizedCovarianceMatrix
 from pyrtid.inverse.solvers import PCGA
+from pyrtid.regularization import DriftMatrix, EigenFactorizedCovarianceMatrix
 from pyrtid.utils import NDArrayFloat
 
 pcga_solver_config_params_ds = (

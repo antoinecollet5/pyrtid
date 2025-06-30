@@ -3,7 +3,7 @@ PyRTID invsere sub module providing regularization tools.
 
 The following functionalities are directly provided on module-level.
 
-.. currentmodule:: pyrtid.inverse.regularization
+.. currentmodule:: pyrtid.regularization
 
 Abstract classes
 ================
@@ -162,17 +162,17 @@ Evaluate curvature of a L-curve
 
 """
 
-from pyrtid.inverse.regularization.adaptive import (
+from pyrtid.regularization.adaptive import (
     AdaptiveGradientNormRegweight,
     AdaptiveRegweight,
     AdaptiveUCRegweight,
 )
-from pyrtid.inverse.regularization.base import (
+from pyrtid.regularization.base import (
     ConstantRegWeight,
     Regularizator,
     RegWeightUpdateStrategy,
 )
-from pyrtid.inverse.regularization.covariances import (
+from pyrtid.regularization.covariances import (
     CovarianceMatrix,
     DenseCovarianceMatrix,
     EigenFactorizedCovarianceMatrix,
@@ -186,14 +186,14 @@ from pyrtid.inverse.regularization.covariances import (
     get_matrix_eigen_factorization,
     sample_from_sparse_cov_factor,
 )
-from pyrtid.inverse.regularization.discrete import DiscreteRegularizator
-from pyrtid.inverse.regularization.distribution import ProbDistFitting
-from pyrtid.inverse.regularization.geostatistical import (
+from pyrtid.regularization.discrete import DiscreteRegularizator
+from pyrtid.regularization.distribution import ProbDistFitting
+from pyrtid.regularization.geostatistical import (
     EnsembleRegularizator,
     GeostatisticalRegularizator,
 )
-from pyrtid.inverse.regularization.lcurve import get_l_curvature
-from pyrtid.inverse.regularization.priors import (
+from pyrtid.regularization.lcurve import get_l_curvature
+from pyrtid.regularization.priors import (
     ConstantDriftMatrix,
     ConstantPriorTerm,
     DriftMatrix,
@@ -203,12 +203,12 @@ from pyrtid.inverse.regularization.priors import (
     NullPriorTerm,
     PriorTerm,
 )
-from pyrtid.inverse.regularization.tikhonov import (
+from pyrtid.regularization.tikhonov import (
     TikhonovFVMRegularizator,
     TikhonovMatRegularizator,
     TikhonovRegularizator,
 )
-from pyrtid.inverse.regularization.tv import (
+from pyrtid.regularization.tv import (
     TVFVMRegularizator,
     TVMatRegularizator,
     TVRegularizator,

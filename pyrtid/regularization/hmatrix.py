@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from pyrtid.inverse.regularization.tree import BlockCluster, Cluster
+from pyrtid.regularization.tree import BlockCluster, Cluster
 
 
 class Hmatrix:

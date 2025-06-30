@@ -3,11 +3,8 @@ import logging
 
 import numpy as np
 import pytest
-from pyrtid.inverse.regularization import (
-    SparseInvCovarianceMatrix,
-    eigen_factorize_cov_mat,
-)
 from pyrtid.inverse.solvers import PCGA
+from pyrtid.regularization import SparseInvCovarianceMatrix, eigen_factorize_cov_mat
 from pyrtid.utils import NDArrayFloat, sparse_cholesky, spde
 from scipy.ndimage import gaussian_filter
 

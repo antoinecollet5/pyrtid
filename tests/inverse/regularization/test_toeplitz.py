@@ -1,9 +1,6 @@
 import numpy as np
 import pytest
-from pyrtid.inverse.regularization.toeplitz import (
-    create_toepliz_first_row,
-    toeplitz_product,
-)
+from pyrtid.regularization.toeplitz import create_toepliz_first_row, toeplitz_product
 from pyrtid.utils import NDArrayFloat, get_pts_coords_regular_grid
 
 

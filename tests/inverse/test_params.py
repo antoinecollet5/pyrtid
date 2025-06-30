@@ -6,7 +6,7 @@ from typing import Any, Dict
 import numpy as np
 import pytest
 from pyrtid.inverse import AdjustableParameter
-from pyrtid.inverse.regularization import TikhonovRegularizator, TVRegularizator
+from pyrtid.regularization import TikhonovRegularizator, TVRegularizator
 from pyrtid.utils import RectilinearGrid
 from pyrtid.utils.preconditioner import ChainedTransforms, LogTransform, Slicer
 

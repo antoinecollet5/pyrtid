@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from pyrtid.inverse.regularization.adaptive import (
+from pyrtid.regularization.adaptive import (
     get_minima_indices,
     get_optimal_reg_param,
     make_convex_around_min_uc,

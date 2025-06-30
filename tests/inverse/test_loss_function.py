@@ -9,7 +9,7 @@ from pyrtid.inverse.loss_function import (
 )
 from pyrtid.inverse.obs import Observable, StateVariable
 from pyrtid.inverse.params import eval_weighted_loss_reg
-from pyrtid.inverse.regularization import TikhonovRegularizator
+from pyrtid.regularization import TikhonovRegularizator
 from pyrtid.utils import RectilinearGrid
 
 

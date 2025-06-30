@@ -11,7 +11,7 @@ from typing import Optional
 
 import numpy as np
 
-from pyrtid.inverse.regularization.base import (
+from pyrtid.regularization.base import (
     Regularizator,
     make_spatial_gradient_matrices,
     make_spatial_permutation_matrices,

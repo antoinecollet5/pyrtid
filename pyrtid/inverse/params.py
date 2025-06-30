@@ -16,7 +16,7 @@ import scipy as sp
 
 from pyrtid.forward import ForwardModel
 from pyrtid.inverse.obs import StateVariable, get_array_from_state_variable
-from pyrtid.inverse.regularization import (
+from pyrtid.regularization import (
     ConstantRegWeight,
     Regularizator,
     RegWeightUpdateStrategy,

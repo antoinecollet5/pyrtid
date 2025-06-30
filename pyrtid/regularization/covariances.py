@@ -23,11 +23,8 @@ from scipy.spatial import cKDTree, distance_matrix
 from scipy.spatial.distance import cdist
 from sksparse.cholmod import Factor
 
-from pyrtid.inverse.regularization.hmatrix import Hmatrix
-from pyrtid.inverse.regularization.toeplitz import (
-    create_toepliz_first_row,
-    toeplitz_product,
-)
+from pyrtid.regularization.hmatrix import Hmatrix
+from pyrtid.regularization.toeplitz import create_toepliz_first_row, toeplitz_product
 from pyrtid.utils import (
     NDArrayFloat,
     NDArrayInt,

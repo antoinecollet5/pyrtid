@@ -7,7 +7,7 @@ import numpy as np
 import scipy as sp
 from lbfgsb.base import get_bounds
 
-from pyrtid.inverse.regularization.base import RegWeightUpdateStrategy
+from pyrtid.regularization.base import RegWeightUpdateStrategy
 from pyrtid.utils import NDArrayFloat
 
 

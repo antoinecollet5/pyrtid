@@ -3,7 +3,7 @@ from typing import Tuple
 import numpy as np
 import pyrtid.utils.spde as spde
 import pytest
-from pyrtid.inverse.regularization import (  # DriftMatrix,; LinearDriftMatrix,
+from pyrtid.regularization import (  # DriftMatrix,; LinearDriftMatrix,
     ConstantPriorTerm,
     EnsembleCovarianceMatrix,
     EnsembleMeanPriorTerm,

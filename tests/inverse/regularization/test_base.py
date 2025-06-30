@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from pyrtid.inverse.regularization.base import (
+from pyrtid.regularization.base import (
     make_spatial_gradient_matrices,
     make_spatial_permutation_matrices,
 )
