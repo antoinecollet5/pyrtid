@@ -141,6 +141,7 @@ Provide some spatial filters
 .. autosummary::
    :toctree: _autosummary
 
+    Filter
     GaussianFilter
 
 .. currentmodule:: pyrtid.utils
@@ -238,7 +239,7 @@ from pyrtid.utils.random_field import (
     get_normalized_std_from_lognormal_params,
 )
 from pyrtid.utils.sparse_helpers import assert_allclose_sparse, sparse_cholesky
-from pyrtid.utils.spatial_filters import GaussianFilter
+from pyrtid.utils.spatial_filters import Filter, GaussianFilter
 from pyrtid.utils.types import (
     Int,
     NDArrayBool,
@@ -257,6 +258,7 @@ __all__ = [
     "hessian_cfd",
     "get_angle_btw_vectors_deg",
     "get_angle_btw_vectors_rad",
+    "Filter",
     "GaussianFilter",
     "StrEnum",
     "finite_jacobian",
