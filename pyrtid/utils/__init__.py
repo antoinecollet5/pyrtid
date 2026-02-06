@@ -247,7 +247,6 @@ from pyrtid.utils.types import (
     NDArrayInt,
     object_or_object_sequence_to_list,
 )
-from pyrtid.utils.versions import show_versions
 from pyrtid.utils.wellfield import gen_wells_coordinates
 
 __all__ = [
@@ -294,7 +293,6 @@ __all__ = [
     "NDArrayInt",
     "NDArrayBool",
     "Int",
-    "show_versions",
     "get_a_not_in_b_1d",
     "create_selections_array_2d",
     "RectilinearGrid",

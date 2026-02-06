@@ -16,29 +16,60 @@ keywords = [
     "Adjoint State",
     "Demonstrator",
 ]
-license = { text = "MIT license" }
+license = { file = "LICENSE" }
 dependencies = [
-    "numpy>=1.2,<2.0",
-    "scipy>=1.12.2",
-    "scikit-sparse",
-    "numdifftools",
+    "numpy",
+    "scipy",
     "gstools",
     "typing_extensions",
-    "pyesmda@git+https://gitlab.com/antoinecollet5/pyesmda.git@features/imp_inversions",
+    # "pyesmda@git+https://gitlab.com/antoinecollet5/pyesmda.git@features/imp_inversions",
     "stochopy",
-    "iterative_ensemble_smoother~=0.2.6",
-    "typing_extensions",
-    "matplotlib>=3.5.1",
+    "iterative_ensemble_smoother",
+    "matplotlib",
     "joblib",
-    "gstools",
     "nested_grid_plotter",
-    "lbfgsb@git+https://github.com/antoinecollet5/lbfgsb",
+    "lbfgsb",
+    "numba",
+    "scooby",
 ]
+[project.optional-dependencies]
+all = ['lbfgsb[install, lint, tests, examples, docs]']
+sparse = ["suitesparse", "scikit-sparse"]
+docs = [
+    "sphinx<9",
+    "nbsphinx",
+    "nbsphinx-link>=1.3.1",
+    "jupyter_sphinx>=0.3.2",
+    "sphinx-jsonschema>=1.15",
+    "pygments>=2.11.1",
+    "pydata-sphinx-theme",
+    "sphinxcontrib-bibtex",
+]
+tests = [
+    "twine==1.14.0",
+    "pytest",
+    "pytest-runner",
+    "pytest-cov",
+    "pytest-cookies",
+    "coverage",
+    "numdifftools",
+]
+examples = [
+    "numdifftools",
+    "gstlearn",
+    "pyvista[all]",
+    "ipykernel",
+    "shapely",
+    "tomli",
+]
+
+lint = ["pre-commit", "codespell>=2.1.0", "ruff", "ty"]
+install = ["pip", "wheel"]
+
 requires-python = ">=3.9"
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Natural Language :: English",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
@@ -46,6 +77,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
 ]
 
 [project.urls]

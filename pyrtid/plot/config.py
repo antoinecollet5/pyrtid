@@ -1,17 +1,41 @@
 import matplotlib.pyplot as plt
+from pathlib import Path
+import matplotlib.font_manager as font_manager
+
+def register_default_fonts(path_to_font_files: Path) -> None:
+    font_defs = (
+        ("TeXGyreHeros", "TeXGyreHeros", "TeXGyreHeros", "TeXGyreHeros"),
+        ("normal", "bold", "normal", "bold"),
+        ("normal", "normal", "italic", "italic"),
+        (
+            "texgyreheros/texgyreheros-regular.otf",
+            "texgyreheros/texgyreheros-bold.otf",
+            "texgyreheros/texgyreheros-italic.otf",
+            "texgyreheros/texgyreheros-bolditalic.otf",
+        ),
+    )
+
+    for name, weight, style, path in zip(*font_defs):
+        _path = path_to_font_files.joinpath(path)
+        assert _path.is_file()
+        font_entry = font_manager.FontEntry(
+            fname=str(_path),
+            name=name,
+            weight=weight,
+            style=style,
+        )
+        font_manager.fontManager.ttflist.insert(0, font_entry)
 
 
 def apply_default_rc_params() -> None:
-    """Default parameters to obtain nice plots."""
     plt.plot()
     plt.close()  # required for the plot to update
     plt.rcParams.update(
         {
-            "font.family": "sans-serif",
-            "font.sans-serif": ["Helvetica", "DejaVu Sans"],
+            "font.sans-serif": ["TeXGyreHeros", "DejaVu Sans"],
             "font.size": 16,
-            "mathtext.fontset": "cm",
             "text.usetex": False,
+            "mathtext.fontset": "cm",
             "savefig.format": "svg",
             "svg.fonttype": "none",  # to store text as text, not as path
             "savefig.facecolor": "w",
