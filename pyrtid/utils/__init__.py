@@ -156,7 +156,6 @@ Other functions
 
     object_or_object_sequence_to_list
     get_super_ilu_preconditioner
-    show_versions
     check_random_state
 
 Types

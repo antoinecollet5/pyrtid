@@ -1,7 +1,7 @@
 import logging
 
-from pyrtid.utils import show_versions
+from pyrtid import Report
 
 
 def test_show_versions() -> None:
-    show_versions(logging.getLogger())
+    Report(additional=[])
