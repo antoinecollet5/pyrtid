@@ -47,6 +47,9 @@ jobs:
 
   tests:
     runs-on: ubuntu-22.04
+    needs:
+      - static_analysis
+
     strategy:
       fail-fast: false
       matrix:
