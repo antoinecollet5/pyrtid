@@ -80,11 +80,12 @@ jobs:
         env:
           COVERAGE_FILE: .coverage.${{ matrix.python-version }}
         run: |
-          uv run pytest \
-            --cov=pyrtid \
-            --cov-config=.coveragerc \
-            --cov-report= \
-            --color=yes
+          uv run pytest --color=yes
+          # uv run pytest \
+          #   --cov=pyrtid \
+          #   --cov-config=.coveragerc \
+          #   --cov-report= \
+          #   --color=yes
 
       - name: Upload coverage artifact
         if: always()
