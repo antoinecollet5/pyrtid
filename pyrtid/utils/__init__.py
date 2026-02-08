@@ -307,5 +307,5 @@ __all__ = [
     "Callback",
     "np_cache",
     "check_random_state",
-    "SparseFactor"
+    "SparseFactor",
 ]
