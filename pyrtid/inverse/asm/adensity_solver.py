@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2024-2026 Antoine COLLET
+
 """Implement the adjoint density computation."""
 
 from __future__ import annotations
@@ -133,14 +136,16 @@ def _add_darcy_contribution(
     bwd_slicer = grid.get_slicer_backward(axis)
 
     kij = get_kmean(grid, fl_model, axis=axis, is_flatten=False)[fwd_slicer]
-    a_u_darcy_old = a_u_darcy[*bwd_slicer, time_index + 1] * kij / WATER_DENSITY
+    a_u_darcy_old = (
+        a_u_darcy[tuple(bwd_slicer) + (time_index + 1,)] * kij / WATER_DENSITY
+    )
     drhomean = get_drhomean(
         grid, tr_model, axis=1, time_index=time_index, is_flatten=False
     )[fwd_slicer]
     # Up
-    a_tr_model.a_density[*fwd_slicer, time_index] -= a_u_darcy_old * drhomean
+    a_tr_model.a_density[tuple(fwd_slicer) + (time_index,)] -= a_u_darcy_old * drhomean
     # Down
-    a_tr_model.a_density[*bwd_slicer, time_index] -= a_u_darcy_old * drhomean
+    a_tr_model.a_density[tuple(bwd_slicer) + (time_index,)] -= a_u_darcy_old * drhomean
 
 
 def _add_diffusivity_contribution(

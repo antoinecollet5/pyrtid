@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2024-2026 Antoine COLLET
+
 """
 Toeplitz matrix-vector multiplication adapted from Arvind Saibaba's code
 https://github.com/arvindks/kle/blob/master/covariance/toeplitz/toeplitz.py

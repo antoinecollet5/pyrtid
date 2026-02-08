@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2024-2026 Antoine COLLET
+
 """Provide covariance matrix representation.
 
 Note: add some notes about:
@@ -21,13 +24,13 @@ from scipy.sparse import csc_array, csr_array
 from scipy.sparse.linalg import LinearOperator, eigsh, gmres, lgmres
 from scipy.spatial import cKDTree, distance_matrix
 from scipy.spatial.distance import cdist
-from sksparse.cholmod import Factor
 
 from pyrtid.regularization.hmatrix import Hmatrix
 from pyrtid.regularization.toeplitz import create_toepliz_first_row, toeplitz_product
 from pyrtid.utils import (
     NDArrayFloat,
     NDArrayInt,
+    SparseFactor,
     check_random_state,
     get_pts_coords_regular_grid,
     sparse_cholesky,
@@ -644,7 +647,7 @@ class SparseInvCovarianceMatrix(CovarianceMatrix):
     def __init__(
         self,
         inv_mat: csc_array,
-        inv_mat_cho_factor: Optional[Factor] = None,
+        inv_mat_cho_factor: Optional[SparseFactor] = None,
     ) -> None:
         """
         Initialize the instance.
@@ -653,16 +656,16 @@ class SparseInvCovarianceMatrix(CovarianceMatrix):
         ----------
         inv_mat : csc_array
             Sparse precision matrix (inverse of the covariance matrix).
-        inv_mat_cho_factor: Optional[Factor]
+        inv_mat_cho_factor: Optional[SparseFactor]
             inv_mat CHOLMOD Factor. If not provided, the factorization is performed
             at the instance initialization. The default is None.
         """
         self.inv_mat: csc_array = csc_array(inv_mat)
 
         if inv_mat_cho_factor is None:
-            self.inv_mat_cho_factor: Factor = sparse_cholesky(self.inv_mat)
+            self.inv_mat_cho_factor: SparseFactor = sparse_cholesky(self.inv_mat)
         else:
-            self.inv_mat_cho_factor: Factor = inv_mat_cho_factor
+            self.inv_mat_cho_factor: SparseFactor = inv_mat_cho_factor
         super().__init__(inv_mat.shape)
 
     def _matvec(self, x: NDArrayFloat) -> NDArrayFloat:

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2024-2026 Antoine COLLET
+
 """Provide an adjoint solver for the transport operator."""
 
 from __future__ import annotations
@@ -114,7 +117,7 @@ def make_transient_adj_transport_matrices(
             dmean_old = np.zeros_like(dmean)
 
         tmp_un = np.zeros(grid.shape, dtype=np.float64)
-        tmp_un[fwd_slicer] = u_darcy[*bwd_slicer, time_index]
+        tmp_un[fwd_slicer] = u_darcy[tuple(bwd_slicer) + (time_index,)]
         un = tmp_un.flatten(order="F")
 
         # Forward scheme:
@@ -260,7 +263,7 @@ def _add_adj_transport_boundary_conditions(
         )
         tmp = grid.gamma_ij(axis) / grid.grid_cell_volume
 
-        _un = u_darcy[*fwd_slicer, time_index].ravel("F")[idc_left_border]
+        _un = u_darcy[(fwd_slicer) + (time_index,)].ravel("F")[idc_left_border]
         normal = -1.0
         q_next[idc_left_border, idc_left_border] += (
             tr_model.crank_nicolson_advection * _un * tmp * normal
@@ -269,7 +272,7 @@ def _add_adj_transport_boundary_conditions(
             (1 - tr_model.crank_nicolson_advection) * _un * tmp * normal
         )  # type: ignore
 
-        _un = u_darcy[*bwd_slicer, time_index].ravel("F")[idc_right_border]
+        _un = u_darcy[tuple(bwd_slicer) + (time_index,)].ravel("F")[idc_right_border]
         normal = 1.0
         q_next[idc_right_border, idc_right_border] += (
             tr_model.crank_nicolson_advection * _un * tmp * normal

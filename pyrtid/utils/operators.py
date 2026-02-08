@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2024-2026 Antoine COLLET
+
 """Provide some derivative operators."""
 
 # pylint: disable=C0103 # doesn't conform to snake_case naming style

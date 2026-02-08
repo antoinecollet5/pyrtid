@@ -5,9 +5,8 @@ from contextlib import nullcontext as does_not_raise
 import numpy as np
 import pyrtid.utils.spde as spde
 import pytest
-from pyrtid.utils import sparse_cholesky
+from pyrtid.utils import SparseFactor, sparse_cholesky
 from scipy.sparse import csc_array
-from sksparse.cholmod import Factor
 
 
 def test_matern_kernel() -> None:
@@ -33,7 +32,7 @@ def _get_precision_matrix(alpha) -> csc_array:
     )
 
 
-def _get_cholQ(alpha) -> Factor:
+def _get_cholQ(alpha) -> SparseFactor:
     """Return a cholesky factorization of the precision matrix."""
     return sparse_cholesky(_get_precision_matrix(alpha).tocsc())
 

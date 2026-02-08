@@ -1,6 +1,5 @@
-"""
-@author: acollet
-"""
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2024-2026 Antoine COLLET
 
 import logging
 from abc import ABC, abstractmethod

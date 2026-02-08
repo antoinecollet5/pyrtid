@@ -1,6 +1,11 @@
-import matplotlib.pyplot as plt
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2024-2026 Antoine COLLET
+
 from pathlib import Path
+
 import matplotlib.font_manager as font_manager
+import matplotlib.pyplot as plt
+
 
 def register_default_fonts(path_to_font_files: Path) -> None:
     font_defs = (

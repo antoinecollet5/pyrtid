@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2024-2026 Antoine COLLET
+
+
 class Callback:
     """Implement callbacks for gmres or other solvers."""
 

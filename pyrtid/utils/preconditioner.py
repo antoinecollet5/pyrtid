@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2024-2026 Antoine COLLET
+
 """
 Provides preconditioners for the adjusted (updated values).
 
@@ -103,7 +106,6 @@ import numdifftools as nd
 import numpy as np
 import scipy as sp
 from scipy.sparse import csc_array, lil_array
-from sksparse.cholmod import Factor
 
 import pyrtid.utils.spde as spde
 from pyrtid.utils import (
@@ -111,6 +113,7 @@ from pyrtid.utils import (
     NDArrayFloat,
     NDArrayInt,
     RectilinearGrid,
+    SparseFactor,
     check_random_state,
     object_or_object_sequence_to_list,
     sparse_cholesky,
@@ -2060,7 +2063,7 @@ class GDPNCS(Preconditioner):
         Q_nc: csc_array,
         estimated_mean: float = 0.0,
         theta: Optional[NDArrayFloat] = None,
-        cholQ_nc: Optional[Factor] = None,
+        cholQ_nc: Optional[SparseFactor] = None,
         random_state: Optional[
             Union[int, np.random.Generator, np.random.RandomState]
         ] = None,
@@ -2260,8 +2263,8 @@ class GDPCS(GDPNCS):
         dat_val: NDArrayFloat,
         dat_var: NDArrayFloat,
         theta: Optional[NDArrayFloat] = None,
-        cholQ_nc: Optional[Factor] = None,
-        cholQ_c: Optional[Factor] = None,
+        cholQ_nc: Optional[SparseFactor] = None,
+        cholQ_c: Optional[SparseFactor] = None,
         random_state: Optional[
             Union[int, np.random.Generator, np.random.RandomState]
         ] = None,

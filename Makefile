@@ -10,8 +10,8 @@ webbrowser.open("file://" + pathname2url(os.path.abspath(sys.argv[1])))
 endef
 export BROWSER_PYSCRIPT
 
-NUMBA_DISABLE_JIT := 1
-export NUMBA_DISABLE_JIT
+# need to deactivate jit so that coverage accounts for numba jitted code
+export NUMBA_DISABLE_JIT := 1
 
 define PRINT_HELP_PYSCRIPT
 import re, sys
@@ -29,7 +29,7 @@ BROWSER := python -c "$$BROWSER_PYSCRIPT"
 help:
 	@python -c "$$PRINT_HELP_PYSCRIPT" < $(MAKEFILE_LIST)
 
-clean: clean-build clean-pyc clean-test clean-lint ## remove all build, test, coverage and Python artifacts
+clean: clean-build clean-pyc clean-test ## remove all build, test, coverage and Python artifacts
 
 clean-build: ## remove build artifacts
 	rm -fr build/
@@ -46,16 +46,11 @@ clean-pyc: ## remove Python file artifacts
 	find . -name '__pycache__' -exec rm -fr {} +
 
 clean-test: ## remove test and coverage artifacts
-	rm -rf .tox/
-	rm -rf .coverage
-	rm -rf htmlcov/
-	rm -rf .pytest_cache
-	rm -rf test-output.xml
-	rm -rf coverage.xml
-
-clean-lint: ## remove test and coverage artifacts
-	find . -name '.ruff_cache' -exec rm -fr {} +
-	find . -name '.mypy_cache' -exec rm -fr {} +
+	rm -fr .tox/
+	rm -f .coverage
+	rm -fr htmlcov/
+	rm -fr .pytest_cache
+	rm -fr .ruff_cache
 
 lint: ## check style with flake8
 	ruff check pyrtid tests
@@ -67,7 +62,8 @@ test-all: ## run tests on every Python version with tox
 	tox
 
 coverage: ## check code coverage quickly with the default Python
-	coverage run --source pyrtid -m pytest
+	tox
+	coverage combine
 	coverage report -m
 	coverage html
 	$(BROWSER) htmlcov/index.html

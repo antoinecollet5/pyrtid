@@ -17,12 +17,27 @@ keywords = [
     "Demonstrator",
 ]
 license = { file = "LICENSE" }
+
+requires-python=">=3.9"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Natural Language :: English",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
+
 dependencies = [
     "numpy",
     "scipy",
     "gstools",
     "typing_extensions",
-    # "pyesmda@git+https://gitlab.com/antoinecollet5/pyesmda.git@features/imp_inversions",
+    "pyesmda@git+https://gitlab.com/antoinecollet5/pyesmda.git@features/imp_inversions",
     "stochopy",
     "iterative_ensemble_smoother",
     "matplotlib",
@@ -30,11 +45,11 @@ dependencies = [
     "nested_grid_plotter",
     "lbfgsb",
     "numba",
-    "scooby",
+    "scooby; python_version>='3.10'",
 ]
 [project.optional-dependencies]
-all = ['lbfgsb[install, lint, tests, examples, docs]']
-sparse = ["suitesparse", "scikit-sparse"]
+all = ['pyrtid[sparse, install, lint, tests, examples, docs]']
+sparse = ["scikit-sparse"]
 docs = [
     "sphinx<9",
     "nbsphinx",
@@ -65,20 +80,6 @@ examples = [
 
 lint = ["pre-commit", "codespell>=2.1.0", "ruff", "ty"]
 install = ["pip", "wheel"]
-
-requires-python = ">=3.9"
-classifiers = [
-    "Development Status :: 4 - Beta",
-    "Intended Audience :: Developers",
-    "Natural Language :: English",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
-    "Programming Language :: Python :: 3.14",
-]
 
 [project.urls]
 Homepage = "https://pypi.org/project/pyrtid/"

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2024-2026 Antoine COLLET
+
 """
 Purpose
 =======
@@ -17,12 +20,27 @@ Submodules
 
 """
 
-import scooby
+# Make scooby a soft dependency:
+try:
+    from scooby import Report as ScoobyReport
+except ImportError:
+
+    class ScoobyReport:
+        def __init__(self, *args, **kwargs):
+            message = (
+                "\n  *ERROR*: `Report` requires `scooby`."
+                "\n           Install it via `pip install scooby` or"
+                "\n           `conda install -c conda-forge scooby`."
+                "\n           `Note that python >= 3.10 is required!\n"
+            )
+            raise ImportError(message)
+
+
 from pyrtid import forward, inverse, plot, regularization, utils
 from pyrtid.__about__ import __author__, __email__, __version__
 
 
-class Report(scooby.Report):
+class Report(ScoobyReport):
     def __init__(self, additional=None, ncol=3, text_width=80, sort=False):
         """Initiate a scooby.Report instance."""
 
@@ -44,9 +62,7 @@ class Report(scooby.Report):
 
         # Optional packages.
         optional = ["suitesparse", "scikit-sparse"]
-
-        scooby.Report.__init__(
-            self,
+        ScoobyReport().__init__(
             additional=additional,
             core=core,
             optional=optional,
