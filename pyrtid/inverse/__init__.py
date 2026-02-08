@@ -43,7 +43,7 @@ Sub module providing an adjoint operator and the associated gradients.
 .. autosummary::
    :toctree: _autosummary
 
-    adjoint
+    asm
 
 .. currentmodule:: pyrtid.inverse
 
@@ -79,18 +79,6 @@ Loss functions
     eval_model_loss_function
     eval_model_loss_ls
     get_theoretical_noise_level
-
-Preconditioners
-^^^^^^^^^^^^^^^
-
-Sub module providing preconditioners and parametrization tools.
-
-.. autosummary::
-   :toctree: _autosummary
-
-    preconditioner
-
-.. currentmodule:: pyrtid.inverse
 
 """
 

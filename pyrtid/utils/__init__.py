@@ -185,6 +185,18 @@ Helpers to work with sparse matrices and sparse arrays.
     sparse_cholesky
     assert_allclose_sparse
 
+Preconditioners
+^^^^^^^^^^^^^^^
+
+Sub module providing preconditioners and parametrization tools.
+
+.. autosummary::
+   :toctree: _autosummary
+
+    preconditioner
+
+.. currentmodule:: pyrtid.utils
+
 """
 
 from scipy._lib._util import check_random_state  # To handle random_state
