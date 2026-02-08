@@ -114,7 +114,7 @@ def make_transient_adj_transport_matrices(
             dmean_old = np.zeros_like(dmean)
 
         tmp_un = np.zeros(grid.shape, dtype=np.float64)
-        tmp_un[fwd_slicer] = u_darcy[*bwd_slicer, time_index]
+        tmp_un[fwd_slicer] = u_darcy[tuple(bwd_slicer) + (time_index,)]
         un = tmp_un.flatten(order="F")
 
         # Forward scheme:
@@ -142,10 +142,14 @@ def make_transient_adj_transport_matrices(
         ) + crank_adv * tmp_un_pos  # type: ignore
         q_prev[idc_owner, idc_neigh] += (
             (1.0 - tr_model.crank_nicolson_diffusion) * dmean_old[idc_owner] * tmp_diff
-        ) + (1 - crank_adv) * tmp_un_pos  # type: ignore
+        ) + (
+            1 - crank_adv
+        ) * tmp_un_pos  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
             (1.0 - tr_model.crank_nicolson_diffusion) * dmean_old[idc_owner] * tmp_diff
-        ) + (1 - crank_adv) * tmp_un_pos  # type: ignore
+        ) + (
+            1 - crank_adv
+        ) * tmp_un_pos  # type: ignore
 
         # Backward scheme
         normal = -1.0
@@ -171,10 +175,14 @@ def make_transient_adj_transport_matrices(
         ) + crank_adv * tmp_un_pos  # type: ignore
         q_prev[idc_owner, idc_neigh] += (
             (1.0 - tr_model.crank_nicolson_diffusion) * dmean_old[idc_neigh] * tmp_diff
-        ) + (1 - crank_adv) * tmp_un_pos  # type: ignore
+        ) + (
+            1 - crank_adv
+        ) * tmp_un_pos  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
             (1.0 - tr_model.crank_nicolson_diffusion) * dmean_old[idc_neigh] * tmp_diff
-        ) + (1 - crank_adv) * tmp_un_pos  # type: ignore
+        ) + (
+            1 - crank_adv
+        ) * tmp_un_pos  # type: ignore
 
     _apply_adj_transport_sink_term(fl_model, tr_model, q_next, q_prev, time_index)
 
@@ -260,7 +268,7 @@ def _add_adj_transport_boundary_conditions(
         )
         tmp = grid.gamma_ij(axis) / grid.grid_cell_volume
 
-        _un = u_darcy[*fwd_slicer, time_index].ravel("F")[idc_left_border]
+        _un = u_darcy[(fwd_slicer) + (time_index,)].ravel("F")[idc_left_border]
         normal = -1.0
         q_next[idc_left_border, idc_left_border] += (
             tr_model.crank_nicolson_advection * _un * tmp * normal
@@ -269,7 +277,7 @@ def _add_adj_transport_boundary_conditions(
             (1 - tr_model.crank_nicolson_advection) * _un * tmp * normal
         )  # type: ignore
 
-        _un = u_darcy[*bwd_slicer, time_index].ravel("F")[idc_right_border]
+        _un = u_darcy[tuple(bwd_slicer) + (time_index,)].ravel("F")[idc_right_border]
         normal = 1.0
         q_next[idc_right_border, idc_right_border] += (
             tr_model.crank_nicolson_advection * _un * tmp * normal

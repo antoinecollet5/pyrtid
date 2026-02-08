@@ -68,11 +68,11 @@ def dFhdKv(
             dxi_harmonic_mean(permeability[bwd_slicer], permeability[fwd_slicer])[
                 :, :, np.newaxis
             ]
-            * vecs[*bwd_slicer, :]
+            * vecs[(bwd_slicer) + (slice(None),)]
             + dxi_harmonic_mean(permeability[fwd_slicer], permeability[bwd_slicer])[
                 :, :, np.newaxis
             ]
-            * vecs[*fwd_slicer, :]
+            * vecs[(fwd_slicer) + (slice(None),)]
         )
         tmp = fwd_model.grid.gamma_ij(axis) / fwd_model.grid.pipj(axis)
 
@@ -88,11 +88,11 @@ def dFhdKv(
                 / fwd_model.grid.grid_cell_volume
             )
             # Forward
-            out[*fwd_slicer, :] -= (
+            out[(fwd_slicer) + (slice(None),)] -= (
                 lhs / fwd_model.fl_model.storage_coefficient[fwd_slicer]
             )[:, :, :, np.newaxis] * dKijdKxv
             # Backward scheme
-            out[*bwd_slicer, :] += (
+            out[(bwd_slicer) + (slice(None),)] += (
                 lhs / fwd_model.fl_model.storage_coefficient[bwd_slicer]
             )[:, :, :, :, np.newaxis] * dKijdKxv
 
@@ -105,8 +105,8 @@ def dFhdKv(
                 / fwd_model.grid.grid_cell_volume
                 * dKijdKxv
             )
-            out[*fwd_slicer, :] -= lhs
-            out[*bwd_slicer, :] += lhs
+            out[(fwd_slicer) + (slice(None),)] -= lhs
+            out[(bwd_slicer) + (slice(None),)] += lhs
 
     out[
         fwd_model.fl_model.cst_head_indices[0],
@@ -169,9 +169,9 @@ def dFhdSsv(
                 / fwd_model.grid.grid_cell_volume
             )
             # Forward
-            out[*fwd_slicer, :] -= lhs[:, :, :, np.newaxis] * dinvSsV[*fwd_slicer, :]
+            out[(fwd_slicer) + (slice(None),)] -= lhs[:, :, :, np.newaxis] * dinvSsV[(fwd_slicer) + (slice(None),)]
             # Backward scheme
-            out[*bwd_slicer, :] += lhs[:, :, :, np.newaxis] * dinvSsV[*bwd_slicer, :]
+            out[(bwd_slicer) + (slice(None),)] += lhs[:, :, :, np.newaxis] * dinvSsV[(bwd_slicer) + (slice(None),)]
 
     out -= (
         fwd_model.fl_model.crank_nicolson * fwd_model.fl_model.lunitflow[time_index]
@@ -222,11 +222,11 @@ def dFpdKv(
             dxi_harmonic_mean(permeability[bwd_slicer], permeability[fwd_slicer])[
                 :, :, :, np.newaxis
             ]
-            * vecs[*bwd_slicer, :]
+            * vecs[(bwd_slicer) + (slice(None),)]
             + dxi_harmonic_mean(permeability[fwd_slicer], permeability[bwd_slicer])[
                 :, :, :, np.newaxis
             ]
-            * vecs[*fwd_slicer, :]
+            * vecs[(fwd_slicer) + (slice(None),)]
         )
 
         # For all n != 0
@@ -262,11 +262,11 @@ def dFpdKv(
                 / fwd_model.grid.grid_cell_volume
             )
             # Forward
-            out[*fwd_slicer, :] -= (
+            out[(fwd_slicer) + (slice(None),)] -= (
                 lhs / fwd_model.fl_model.storage_coefficient[fwd_slicer]
             )[:, :, :, np.newaxis] * dKijdKxv
             # Backward scheme
-            out[*bwd_slicer, :] += (
+            out[(bwd_slicer) + (slice(None),)] += (
                 lhs / fwd_model.fl_model.storage_coefficient[bwd_slicer]
             )[:, :, :, np.newaxis] * dKijdKxv
 
@@ -286,8 +286,8 @@ def dFpdKv(
                 / fwd_model.grid.grid_cell_volume
             ) * dKijdKxv
 
-            out[*fwd_slicer, :] -= lhs
-            out[*bwd_slicer, :] += lhs
+            out[(fwd_slicer) + (slice(None),)] -= lhs
+            out[(bwd_slicer) + (slice(None),)] += lhs
 
     out[
         fwd_model.fl_model.cst_head_indices[0],
@@ -367,9 +367,9 @@ def dFpdSsv(
                 / fwd_model.grid.grid_cell_volume
             )
             # Forward
-            out[*fwd_slicer, :] -= lhs[:, :, :, np.newaxis] * dinvSsV[*fwd_slicer, :]
+            out[(fwd_slicer) + (slice(None),)] -= lhs[:, :, :, np.newaxis] * dinvSsV[(fwd_slicer) + (slice(None),)]
             # Backward scheme
-            out[*bwd_slicer, :] += lhs[:, :, :, np.newaxis] * dinvSsV[*bwd_slicer, :]
+            out[(bwd_slicer) + (slice(None),)] += lhs[:, :, :, np.newaxis] * dinvSsV[(bwd_slicer) + (slice(None),)]
 
     out -= (
         (
@@ -426,11 +426,11 @@ def dFUdKv(
         dxi_harmonic_mean(permeability[bwd_slicer], permeability[fwd_slicer])[
             :, :, np.newaxis
         ]
-        * vecs[*bwd_slicer, :]
+        * vecs[(bwd_slicer) + (slice(None),)]
         + dxi_harmonic_mean(permeability[fwd_slicer], permeability[bwd_slicer])[
             :, :, :, np.newaxis
         ]
-        * vecs[*fwd_slicer, :]
+        * vecs[(fwd_slicer) + (slice(None),)]
     )
 
     if fwd_model.fl_model.is_gravity:
@@ -455,7 +455,7 @@ def dFUdKv(
             rho_ij_g = np.zeros_like(rhomean)
 
         pressure = fwd_model.fl_model.lpressure[time_index]
-        out[*bwd_slicer, :] += (
+        out[(bwd_slicer) + (slice(None),)] += (
             dKijdKxv
             * (
                 (
@@ -469,7 +469,7 @@ def dFUdKv(
         )
     else:
         head = fwd_model.fl_model.lhead[time_index]
-        out[*bwd_slicer, :] += (
+        out[(bwd_slicer) + (slice(None),)] += (
             dKijdKxv
             * ((head[bwd_slicer] - head[fwd_slicer]) / fwd_model.grid.pipj(axis))[
                 :, :, :, np.newaxis

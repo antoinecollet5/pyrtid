@@ -50,9 +50,9 @@ def fill_trmat_for_axis(
     tmp_diff: float = grid.gamma_ij(axis) / grid.pipj(axis) / grid.grid_cell_volume
 
     tmp_un = np.zeros(grid.shape)
-    tmp_un[fwd_slicer] = u_darcy[*bwd_slicer, time_index]
+    tmp_un[fwd_slicer] = u_darcy[tuple(bwd_slicer) + (time_index,)]
     tmp_un_old = np.zeros(grid.shape)
-    tmp_un_old[fwd_slicer] = u_darcy[*bwd_slicer, time_index - 1]
+    tmp_un_old[fwd_slicer] = u_darcy[tuple(bwd_slicer) + (time_index - 1,)]
 
     un = tmp_un.flatten(order="F")
     un_old = tmp_un_old.flatten(order="F")
@@ -237,8 +237,8 @@ def _add_transport_boundary_conditions_for_axis(
     tmp = grid.gamma_ij(axis) / grid.grid_cell_volume
 
     # left border
-    _un = u_darcy[*fwd_slicer, time_index].ravel("F")[idc_left_border]
-    _un_old = u_darcy[*fwd_slicer, time_index - 1].ravel("F")[idc_left_border]
+    _un = u_darcy[tuple(fwd_slicer) + (time_index,)].ravel("F")[idc_left_border]
+    _un_old = u_darcy[tuple(fwd_slicer) + (time_index - 1,)].ravel("F")[idc_left_border]
     normal = -1.0
     q_next[idc_left_border, idc_left_border] += (
         tr_model.crank_nicolson_advection * _un * tmp * normal
@@ -248,8 +248,8 @@ def _add_transport_boundary_conditions_for_axis(
     )  # type: ignore
 
     # right border
-    _un = u_darcy[*bwd_slicer, time_index].ravel("F")[idc_right_border]
-    _un_old = u_darcy[*bwd_slicer, time_index - 1].ravel("F")[idc_right_border]
+    _un = u_darcy[tuple(bwd_slicer) + (time_index,)].ravel("F")[idc_right_border]
+    _un_old = u_darcy[tuple(bwd_slicer) + (time_index - 1,)].ravel("F")[idc_right_border]
     normal = 1.0
     q_next[idc_right_border, idc_right_border] += (
         tr_model.crank_nicolson_advection * _un * tmp * normal

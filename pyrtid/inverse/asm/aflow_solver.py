@@ -366,7 +366,7 @@ def update_adjoint_u_darcy(
             fwd_slicer = grid.get_slicer_forward(axis)
             bwd_slicer = grid.get_slicer_backward(axis)
 
-            un = u_darcy[*bwd_slicer, time_index]
+            un = u_darcy[tuple(bwd_slicer) + (time_index,)]
 
             mob_ij = np.where(
                 un > 0.0, mob[fwd_slicer], mob[bwd_slicer]
@@ -374,7 +374,7 @@ def update_adjoint_u_darcy(
             mob_ij[un == 0] = 0
 
             # 1) advective term
-            a_u_darcy[*bwd_slicer, time_index] += (
+            a_u_darcy[tuple(bwd_slicer) + (time_index,)] += (
                 grid.gamma_ij(axis)
                 * (
                     (
@@ -388,7 +388,7 @@ def update_adjoint_u_darcy(
             )
 
             # 2) U divergence term
-            a_u_darcy[*bwd_slicer, time_index] += (
+            a_u_darcy[tuple(bwd_slicer) + (time_index,)] += (
                 grid.gamma_ij(axis)
                 * (
                     crank_adv
@@ -672,12 +672,12 @@ def get_adjoint_transport_src_terms(
 
         # Forward
         src[fwd_slicer] += (
-            kmean * a_u_darcy[*bwd_slicer, time_index] / grid.pipj(axis)
+            kmean * a_u_darcy[tuple(bwd_slicer) + (time_index,)] / grid.pipj(axis)
         ) * tmp
 
         # Backward
         src[bwd_slicer] -= (
-            kmean * a_u_darcy[*bwd_slicer, time_index] / grid.pipj(axis)
+            kmean * a_u_darcy[tuple(bwd_slicer) + (time_index,)] / grid.pipj(axis)
         ) * tmp
 
     return src.ravel("F")
