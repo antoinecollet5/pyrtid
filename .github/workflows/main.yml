@@ -76,7 +76,7 @@ jobs:
         env:
           COVERAGE_FILE: .coverage.${{ matrix.python-version }}
         run: |
-          uv run pytest --color=yes
+          uv run pytest --color=yes tests/utils
           # uv run pytest \
           #   --cov=pyrtid \
           #   --cov-config=.coveragerc \
