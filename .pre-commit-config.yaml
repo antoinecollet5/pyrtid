@@ -30,7 +30,7 @@ repos:
     language: python
     types_or: [ python, pyi]
     args: [--fix, --exit-non-zero-on-fix]
-  - id: ruff-format
+  - id: ruff-format --check
     name: ruff format
     entry: ruff format
     language: python
