@@ -34,4 +34,4 @@ repos:
     name: ruff format
     entry: ruff format
     language: python
-    types_or: [ python, pyi, jupyter ]
+    types_or: [ python, pyi]
