@@ -7,7 +7,7 @@ import pyrtid.utils.spde as spde
 import pytest
 from pyrtid.utils import sparse_cholesky
 from scipy.sparse import csc_array
-from sksparse.cholmod import Factor
+from pyrtid.utils import SparseFactor
 
 
 def test_matern_kernel() -> None:
@@ -33,7 +33,7 @@ def _get_precision_matrix(alpha) -> csc_array:
     )
 
 
-def _get_cholQ(alpha) -> Factor:
+def _get_cholQ(alpha) -> SparseFactor:
     """Return a cholesky factorization of the precision matrix."""
     return sparse_cholesky(_get_precision_matrix(alpha).tocsc())
 

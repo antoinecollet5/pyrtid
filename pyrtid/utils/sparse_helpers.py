@@ -4,10 +4,35 @@ from typing import Union
 
 import numpy as np
 from scipy.sparse import csc_array, csc_matrix, find
-from sksparse.cholmod import Factor, cholesky
+
+try:
+    from sksparse.cholmod import Factor as SparseFactor
+    from sksparse.cholmod import cholesky
+except (ImportError, ModuleNotFoundError):
+    # warnings.warn(
+    #     "scikit-sparse could not be loaded. Consequently"
+    #     ", hytecio-inverse functionalities are limited."
+    # )
+
+    class SparseFactor:
+        def __init__(self, *args, **kwargs):
+            raise ModuleNotFoundError(
+                "sksparse could not be loaded. Please "
+                " install it to use SparseFactor (see "
+                "https://scikit-sparse.readthedocs.io/en/latest/overview.html#installation"
+                ")"
+            )
+
+    def cholesky(mat: csc_matrix) -> SparseFactor:
+        raise ModuleNotFoundError(
+            "sksparse could not be loaded. Please"
+            " install it to use sparse_cholesky (see "
+            "https://scikit-sparse.readthedocs.io/en/latest/overview.html#installation"
+            ")"
+        )
 
 
-def sparse_cholesky(arr: Union[csc_matrix, csc_array]) -> Factor:
+def sparse_cholesky(arr: Union[csc_matrix, csc_array]) -> SparseFactor:
     # see: https://github.com/scikit-sparse/scikit-sparse/issues/108
     # see: https://github.com/scikit-sparse/scikit-sparse/pull/102
     return cholesky(csc_matrix(arr))

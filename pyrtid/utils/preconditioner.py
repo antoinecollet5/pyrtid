@@ -103,7 +103,7 @@ import numdifftools as nd
 import numpy as np
 import scipy as sp
 from scipy.sparse import csc_array, lil_array
-from sksparse.cholmod import Factor
+from pyrtid.utils import SparseFactor
 
 import pyrtid.utils.spde as spde
 from pyrtid.utils import (
@@ -2060,7 +2060,7 @@ class GDPNCS(Preconditioner):
         Q_nc: csc_array,
         estimated_mean: float = 0.0,
         theta: Optional[NDArrayFloat] = None,
-        cholQ_nc: Optional[Factor] = None,
+        cholQ_nc: Optional[SparseFactor] = None,
         random_state: Optional[
             Union[int, np.random.Generator, np.random.RandomState]
         ] = None,
@@ -2260,8 +2260,8 @@ class GDPCS(GDPNCS):
         dat_val: NDArrayFloat,
         dat_var: NDArrayFloat,
         theta: Optional[NDArrayFloat] = None,
-        cholQ_nc: Optional[Factor] = None,
-        cholQ_c: Optional[Factor] = None,
+        cholQ_nc: Optional[SparseFactor] = None,
+        cholQ_c: Optional[SparseFactor] = None,
         random_state: Optional[
             Union[int, np.random.Generator, np.random.RandomState]
         ] = None,

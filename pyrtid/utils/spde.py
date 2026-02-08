@@ -6,7 +6,7 @@ from typing import Optional, Union
 import numpy as np
 import scipy as sp
 from scipy.sparse import csc_array, lil_array
-from sksparse.cholmod import Factor
+from pyrtid.utils import SparseFactor
 
 from pyrtid.utils import check_random_state
 from pyrtid.utils.grid import indices_to_node_number, span_to_node_numbers_3d
@@ -320,7 +320,7 @@ def get_precision_matrix(
 
 
 def simu_nc(
-    cholQ: Factor,
+    cholQ: SparseFactor,
     w: Optional[NDArrayFloat] = None,
     random_state: Optional[
         Union[int, np.random.Generator, np.random.RandomState]
@@ -331,7 +331,7 @@ def simu_nc(
 
     Parameters
     ----------
-    cholQ : Factor
+    cholQ : SparseFactor
         The cholesky factorization of precision matrix.
     w: Optional[NDArrayFloat]
         Gaussian white noise with mean zero and standard deviation 1.0. If not
@@ -376,7 +376,7 @@ def simu_nc(
 
 
 def simu_nc_t(
-    cholQ: Factor,
+    cholQ: SparseFactor,
     w: Optional[NDArrayFloat] = None,
     random_state: Optional[
         Union[int, np.random.Generator, np.random.RandomState]
@@ -387,7 +387,7 @@ def simu_nc_t(
 
     Parameters
     ----------
-    cholQ : Factor
+    cholQ : SparseFactor
         The cholesky factorization of precision matrix.
     w: Optional[NDArrayFloat]
         Gaussian white noise with mean zero and standard deviation 1.0. If not
@@ -424,7 +424,7 @@ def simu_nc_t(
 
 
 def simu_nc_t_inv(
-    cholQ: Factor,
+    cholQ: SparseFactor,
     z: NDArrayFloat,
 ) -> NDArrayFloat:
     """
@@ -432,7 +432,7 @@ def simu_nc_t_inv(
 
     Parameters
     ----------
-    cholQ : Factor
+    cholQ : SparseFactor
         The cholesky factorization of precision matrix Q.
     z: NDArrayFloat
         Input vector (results of :func:`simu_nc_t`.)
@@ -483,7 +483,7 @@ def kriging(
     Q_cond: csc_array,
     dat: NDArrayFloat,
     dat_indices: NDArrayInt,
-    cholQ_cond: Optional[Factor] = None,
+    cholQ_cond: Optional[SparseFactor] = None,
     dat_var: Optional[NDArrayFloat] = None,
 ) -> NDArrayFloat:
     """
@@ -497,7 +497,7 @@ def kriging(
         Conditional values.
     dat_indices : NDArrayInt
         Grid cell indices of the conditional values. The default is None.
-    cholQ_cond : Factor
+    cholQ_cond : SparseFactor
         Cholesky decomposition of the unconditional precision matrix.
     dat_var : NDArrayFloat
         Variance of the conditional data. The default is None.
@@ -529,13 +529,13 @@ def kriging(
     return _cholQ_cond(input)
 
 
-def d_simu_nc_mat_vec(cholQ: Factor, b: NDArrayFloat) -> NDArrayFloat:
+def d_simu_nc_mat_vec(cholQ: SparseFactor, b: NDArrayFloat) -> NDArrayFloat:
     """
     Return the product between the derivative of simu_nc and a vector.
 
     Parameters
     ----------
-    cholQ : Factor
+    cholQ : SparseFactor
         The cholesky factorization of unconditional precision matrix Q.
     b : NDArrayFloat
         Input vector b.
@@ -549,13 +549,13 @@ def d_simu_nc_mat_vec(cholQ: Factor, b: NDArrayFloat) -> NDArrayFloat:
     return simu_nc_t(cholQ, b)
 
 
-def d_simu_nc_mat_vec_inv(cholQ: Factor, b: NDArrayFloat) -> NDArrayFloat:
+def d_simu_nc_mat_vec_inv(cholQ: SparseFactor, b: NDArrayFloat) -> NDArrayFloat:
     """
     Return the product between the derivative of simu_nc and a vector.
 
     Parameters
     ----------
-    cholQ : Factor
+    cholQ : SparseFactor
         The cholesky factorization of unconditional precision matrix Q.
 
     b : NDArrayFloat
@@ -571,9 +571,9 @@ def d_simu_nc_mat_vec_inv(cholQ: Factor, b: NDArrayFloat) -> NDArrayFloat:
 
 
 def simu_c(
-    cholQ: Factor,
+    cholQ: SparseFactor,
     Q_cond: csc_array,
-    cholQ_cond: Factor,
+    cholQ_cond: SparseFactor,
     dat: NDArrayFloat,
     dat_indices: NDArrayInt,
     dat_var: NDArrayFloat,
@@ -587,11 +587,11 @@ def simu_c(
 
     Parameters
     ----------
-    cholQ : Factor
+    cholQ : SparseFactor
         Cholesky decomposition of the unconditional precision matrix.
     Q_cond : csc_array
         Conditional precision matrix.
-    cholQ_cond : Factor
+    cholQ_cond : SparseFactor
         Cholesky factorization of the conditional precision matrix.
     dat : NDArrayFloat
         Conditional values.
@@ -626,8 +626,8 @@ def simu_c(
 
 
 def d_simu_c_matvec(
-    cholQ: Factor,
-    cholQ_cond: Factor,
+    cholQ: SparseFactor,
+    cholQ_cond: SparseFactor,
     dat_indices: NDArrayInt,
     dat_var: NDArrayFloat,
     b: NDArrayFloat,
@@ -639,11 +639,11 @@ def d_simu_c_matvec(
 
     Parameters
     ----------
-    cholQ : Factor
+    cholQ : SparseFactor
         Cholesky decomposition of the unconditional precision matrix.
     Q_cond : csc_array
         Conditional precision matrix.
-    cholQ_cond : Factor
+    cholQ_cond : SparseFactor
         Cholesky factorization of the conditional precision matrix.
     dat_indices : NDArrayInt
         Grid cell indices of the conditional values.
@@ -671,7 +671,7 @@ def d_simu_c_matvec(
     return simu_nc_t(cholQ, Z @ (1 / dat_var * (Z.T @ cholQ_cond(b))) - b)
 
 
-def get_variance(Q: csc_array, cholQ: Optional[Factor]) -> NDArrayFloat:
+def get_variance(Q: csc_array, cholQ: Optional[SparseFactor]) -> NDArrayFloat:
     """
     Extract efficiently the diagonal of the covariance matrix from the precision matrix.
 
