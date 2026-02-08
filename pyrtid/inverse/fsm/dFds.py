@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2024-2026 Antoine COLLET
+
 """
 Provides the derivatives of the equations F with respect to the parameters s.
 

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2024-2026 Antoine COLLET
+
 """Provide a model representing the reactive transport system.
 
 Note: this part is handle with numba so it can be used in functions later on.

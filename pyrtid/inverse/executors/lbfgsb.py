@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2024-2026 Antoine COLLET
+
 """
 Implement an interface to solve the inverse problem with the L-BFGS-B from PyTRID.
 

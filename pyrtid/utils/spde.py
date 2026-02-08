@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2024-2026 Antoine COLLET
+
 """Implement functions to perform geostatistics from the spde approach."""
 
 import math

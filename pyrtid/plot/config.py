@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2024-2026 Antoine COLLET
+
 from pathlib import Path
 
 import matplotlib.font_manager as font_manager
