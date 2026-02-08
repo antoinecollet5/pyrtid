@@ -169,9 +169,13 @@ def dFhdSsv(
                 / fwd_model.grid.grid_cell_volume
             )
             # Forward
-            out[(fwd_slicer) + (slice(None),)] -= lhs[:, :, :, np.newaxis] * dinvSsV[(fwd_slicer) + (slice(None),)]
+            out[(fwd_slicer) + (slice(None),)] -= (
+                lhs[:, :, :, np.newaxis] * dinvSsV[(fwd_slicer) + (slice(None),)]
+            )
             # Backward scheme
-            out[(bwd_slicer) + (slice(None),)] += lhs[:, :, :, np.newaxis] * dinvSsV[(bwd_slicer) + (slice(None),)]
+            out[(bwd_slicer) + (slice(None),)] += (
+                lhs[:, :, :, np.newaxis] * dinvSsV[(bwd_slicer) + (slice(None),)]
+            )
 
     out -= (
         fwd_model.fl_model.crank_nicolson * fwd_model.fl_model.lunitflow[time_index]
@@ -367,9 +371,13 @@ def dFpdSsv(
                 / fwd_model.grid.grid_cell_volume
             )
             # Forward
-            out[(fwd_slicer) + (slice(None),)] -= lhs[:, :, :, np.newaxis] * dinvSsV[(fwd_slicer) + (slice(None),)]
+            out[(fwd_slicer) + (slice(None),)] -= (
+                lhs[:, :, :, np.newaxis] * dinvSsV[(fwd_slicer) + (slice(None),)]
+            )
             # Backward scheme
-            out[(bwd_slicer) + (slice(None),)] += lhs[:, :, :, np.newaxis] * dinvSsV[(bwd_slicer) + (slice(None),)]
+            out[(bwd_slicer) + (slice(None),)] += (
+                lhs[:, :, :, np.newaxis] * dinvSsV[(bwd_slicer) + (slice(None),)]
+            )
 
     out -= (
         (

@@ -103,7 +103,6 @@ import numdifftools as nd
 import numpy as np
 import scipy as sp
 from scipy.sparse import csc_array, lil_array
-from pyrtid.utils import SparseFactor
 
 import pyrtid.utils.spde as spde
 from pyrtid.utils import (
@@ -111,6 +110,7 @@ from pyrtid.utils import (
     NDArrayFloat,
     NDArrayInt,
     RectilinearGrid,
+    SparseFactor,
     check_random_state,
     object_or_object_sequence_to_list,
     sparse_cholesky,

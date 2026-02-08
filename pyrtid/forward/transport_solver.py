@@ -249,7 +249,9 @@ def _add_transport_boundary_conditions_for_axis(
 
     # right border
     _un = u_darcy[tuple(bwd_slicer) + (time_index,)].ravel("F")[idc_right_border]
-    _un_old = u_darcy[tuple(bwd_slicer) + (time_index - 1,)].ravel("F")[idc_right_border]
+    _un_old = u_darcy[tuple(bwd_slicer) + (time_index - 1,)].ravel("F")[
+        idc_right_border
+    ]
     normal = 1.0
     q_next[idc_right_border, idc_right_border] += (
         tr_model.crank_nicolson_advection * _un * tmp * normal

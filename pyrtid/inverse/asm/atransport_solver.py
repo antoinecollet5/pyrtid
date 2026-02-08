@@ -142,14 +142,10 @@ def make_transient_adj_transport_matrices(
         ) + crank_adv * tmp_un_pos  # type: ignore
         q_prev[idc_owner, idc_neigh] += (
             (1.0 - tr_model.crank_nicolson_diffusion) * dmean_old[idc_owner] * tmp_diff
-        ) + (
-            1 - crank_adv
-        ) * tmp_un_pos  # type: ignore
+        ) + (1 - crank_adv) * tmp_un_pos  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
             (1.0 - tr_model.crank_nicolson_diffusion) * dmean_old[idc_owner] * tmp_diff
-        ) + (
-            1 - crank_adv
-        ) * tmp_un_pos  # type: ignore
+        ) + (1 - crank_adv) * tmp_un_pos  # type: ignore
 
         # Backward scheme
         normal = -1.0
@@ -175,14 +171,10 @@ def make_transient_adj_transport_matrices(
         ) + crank_adv * tmp_un_pos  # type: ignore
         q_prev[idc_owner, idc_neigh] += (
             (1.0 - tr_model.crank_nicolson_diffusion) * dmean_old[idc_neigh] * tmp_diff
-        ) + (
-            1 - crank_adv
-        ) * tmp_un_pos  # type: ignore
+        ) + (1 - crank_adv) * tmp_un_pos  # type: ignore
         q_prev[idc_owner, idc_owner] -= (
             (1.0 - tr_model.crank_nicolson_diffusion) * dmean_old[idc_neigh] * tmp_diff
-        ) + (
-            1 - crank_adv
-        ) * tmp_un_pos  # type: ignore
+        ) + (1 - crank_adv) * tmp_un_pos  # type: ignore
 
     _apply_adj_transport_sink_term(fl_model, tr_model, q_next, q_prev, time_index)
 

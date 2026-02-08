@@ -49,12 +49,12 @@ We welcome contributions!
 📚 References
 =============
 
-[1] Antoine Collet. Assisted history matching in reactive transport : 
-Application to uranium in situ recovery. Environmental Engineering. 
+[1] Antoine Collet. Assisted history matching in reactive transport :
+Application to uranium in situ recovery. Environmental Engineering.
 Université Paris sciences et lettres, 2024. English. ⟨NNT : 2024UPSLM064⟩. ⟨tel-05097765⟩
 
 [2] Antoine Collet, Irina Sin, Hervé Chauris, Valérie Langlais, Olivier Regnault,
-Impact of time and spatial discretization on adjoint operators: 
+Impact of time and spatial discretization on adjoint operators:
 Example of stationary and transient saturated flows,
 Advances in Water Resources, Volume 205, 2025, 105070,
 ISSN 0309-1708, https://doi.org/10.1016/j.advwatres.2025.105070.

@@ -21,13 +21,13 @@ from scipy.sparse import csc_array, csr_array
 from scipy.sparse.linalg import LinearOperator, eigsh, gmres, lgmres
 from scipy.spatial import cKDTree, distance_matrix
 from scipy.spatial.distance import cdist
-from pyrtid.utils import SparseFactor
 
 from pyrtid.regularization.hmatrix import Hmatrix
 from pyrtid.regularization.toeplitz import create_toepliz_first_row, toeplitz_product
 from pyrtid.utils import (
     NDArrayFloat,
     NDArrayInt,
+    SparseFactor,
     check_random_state,
     get_pts_coords_regular_grid,
     sparse_cholesky,

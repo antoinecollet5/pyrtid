@@ -15,6 +15,7 @@ Functions to plot inversion results.
 """
 
 from pathlib import Path
+
 from pyrtid.plot.config import apply_default_rc_params, register_default_fonts
 from pyrtid.plot.plt_gradient import plot_2d_grad_res_adj_vs_fd
 from pyrtid.plot.plt_obs_vs_simu import plot_observed_vs_simulated

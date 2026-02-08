@@ -238,7 +238,11 @@ from pyrtid.utils.random_field import (
     get_normalized_mean_from_lognormal_params,
     get_normalized_std_from_lognormal_params,
 )
-from pyrtid.utils.sparse_helpers import assert_allclose_sparse, sparse_cholesky, SparseFactor
+from pyrtid.utils.sparse_helpers import (
+    SparseFactor,
+    assert_allclose_sparse,
+    sparse_cholesky,
+)
 from pyrtid.utils.spatial_filters import Filter, GaussianFilter
 from pyrtid.utils.types import (
     Int,
@@ -303,4 +307,5 @@ __all__ = [
     "Callback",
     "np_cache",
     "check_random_state",
+    "SparseFactor"
 ]

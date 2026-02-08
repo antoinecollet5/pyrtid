@@ -5,9 +5,8 @@ from contextlib import nullcontext as does_not_raise
 import numpy as np
 import pyrtid.utils.spde as spde
 import pytest
-from pyrtid.utils import sparse_cholesky
+from pyrtid.utils import SparseFactor, sparse_cholesky
 from scipy.sparse import csc_array
-from pyrtid.utils import SparseFactor
 
 
 def test_matern_kernel() -> None:

@@ -6,9 +6,8 @@ from typing import Optional, Union
 import numpy as np
 import scipy as sp
 from scipy.sparse import csc_array, lil_array
-from pyrtid.utils import SparseFactor
 
-from pyrtid.utils import check_random_state
+from pyrtid.utils import SparseFactor, check_random_state
 from pyrtid.utils.grid import indices_to_node_number, span_to_node_numbers_3d
 from pyrtid.utils.sparse_helpers import sparse_cholesky
 from pyrtid.utils.types import NDArrayFloat, NDArrayInt
