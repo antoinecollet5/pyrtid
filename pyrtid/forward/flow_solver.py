@@ -303,19 +303,21 @@ def solve_flow_stationary(
         fl_model.l_q_prev.append(fl_model.q_prev)
 
     # LU preconditioner
-    super_ilu, preconditioner = get_super_ilu_preconditioner(
-        fl_model.q_next.tocsc(), drop_tol=1e-10, fill_factor=100
-    )
+    try:
+        super_ilu, preconditioner = get_super_ilu_preconditioner(
+            fl_model.q_next.tocsc(), drop_tol=1e-10, fill_factor=100
+        )
+    except RuntimeError:
+        super_ilu, preconditioner = None, None
+        if super_ilu is None:
+            warnings.warn(
+                f"SuperILU: q_next is singular in stationary flow at it={time_index}!"
+            )
 
     # only useful when using the FSM
     if fl_model.is_save_spilu:
         fl_model.super_ilu = super_ilu
         fl_model.preconditioner = preconditioner
-
-    if super_ilu is None:
-        warnings.warn(
-            f"SuperILU: q_next is singular in stationary flow at it={time_index}!"
-        )
 
     # Solve Ax = b with A sparse using LU preconditioner
     res, exit_code = solve_fl_gmres(fl_model, rhs, super_ilu, preconditioner)
@@ -735,19 +737,20 @@ def solve_flow_transient_semi_implicit(
         fl_model.l_q_prev.append(fl_model.q_prev)
 
     # LU preconditioner
-    super_ilu, preconditioner = get_super_ilu_preconditioner(
-        fl_model.q_next.tocsc(), drop_tol=1e-10, fill_factor=100
-    )
+    try:
+        super_ilu, preconditioner = get_super_ilu_preconditioner(
+            fl_model.q_next.tocsc(), drop_tol=1e-10, fill_factor=100
+        )
+    except RuntimeError:
+        super_ilu, preconditioner = None, None
+        warnings.warn(
+            f"SuperILU: q_next is singular in transient flow at it={time_index}!"
+        )
 
     # only useful when using the FSM
     if fl_model.is_save_spilu:
         fl_model.super_ilu = super_ilu
         fl_model.preconditioner = preconditioner
-
-    if super_ilu is None:
-        warnings.warn(
-            f"SuperILU: q_next is singular in transient flow at it={time_index}!"
-        )
 
     # Add the source terms
     sources = (

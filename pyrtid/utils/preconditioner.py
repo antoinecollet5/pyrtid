@@ -506,7 +506,7 @@ class Preconditioner(ABC):
                 self.dbacktransform_vec(self.transform(test_data), gradient),
                 # Finite difference differentiation
                 nd.Jacobian(self.backtransform, step=eps)(self.transform(test_data)).T
-                @ gradient,  # type: ignore
+                @ gradient,
                 rtol=rtol,
             )
 

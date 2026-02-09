@@ -703,7 +703,7 @@ def get_vertices_centroid(
 def get_centroid_voxel_coords(
     vertices: Union[NDArrayFloat, List[Tuple[float, float]]],
     grid: RectilinearGrid,
-) -> Tuple[int, int]:
+) -> Tuple[Int, Int]:
     """
     For a given convex polygon an a 2D grid, give the centroid voxel.
 

@@ -5,7 +5,7 @@
 
 # pylint: disable=C0103 # doesn't conform to snake_case naming style
 import math
-from typing import Optional, Tuple, Union
+from typing import Tuple, Union
 
 import numpy as np
 import scipy as sp
@@ -146,7 +146,7 @@ def get_super_ilu_preconditioner(
     solution algorithm such as the conjugate gradient method or GMRES.
     """
     op = spilu(mat, **kwargs)
-    
+
     def super_ilu(_x: NDArrayFloat) -> NDArrayFloat:
         return op.solve(_x)
 

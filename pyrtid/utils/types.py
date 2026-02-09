@@ -18,9 +18,9 @@ _Object = TypeVar("_Object", bound=object)
 
 
 def object_or_object_sequence_to_list(
-    _input: Union[_Object, Sequence[_Object]],
+    _input: Union[_Object, Iterable[_Object]],
 ) -> List[_Object]:
     """Convert a singleton or an iterable of this object to a list of object."""
     if isinstance(_input, Iterable):
-        return [item for item in _input]
+        return list(_input)
     return [_input]
