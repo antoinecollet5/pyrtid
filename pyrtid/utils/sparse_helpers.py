@@ -26,8 +26,7 @@ except (ImportError, ModuleNotFoundError):
                 ")"
             )
 
-        def __call__(self, values: np.ndarray) -> np.ndarray:
-            ...
+        def __call__(self, values: np.ndarray) -> np.ndarray: ...
 
     def cholesky(mat: csc_matrix) -> SparseFactor:
         raise ModuleNotFoundError(
