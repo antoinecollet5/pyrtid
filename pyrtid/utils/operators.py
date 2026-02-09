@@ -124,7 +124,7 @@ def hessian_cfd(param: NDArrayFloat, dx: float, axis: int = 0) -> NDArrayFloat:
 
 def get_super_ilu_preconditioner(
     mat: Union[csc_array, csc_matrix], **kwargs
-) -> Tuple[Optional[SuperLU], Optional[LinearOperator]]:
+) -> Tuple[SuperLU, LinearOperator]:
     """
     Get an incomplete LU preconditioner for the given sparse matrix.
 
@@ -145,11 +145,8 @@ def get_super_ilu_preconditioner(
     we instead use the matrix M = L U M=LU as a preconditioner in another iterative
     solution algorithm such as the conjugate gradient method or GMRES.
     """
-    try:
-        op = spilu(mat, **kwargs)
-    except RuntimeError:  # The Factor is exactly singular
-        return None, None
-
+    op = spilu(mat, **kwargs)
+    
     def super_ilu(_x: NDArrayFloat) -> NDArrayFloat:
         return op.solve(_x)
 

@@ -332,16 +332,19 @@ def solve_transport_semi_implicit(
             tr_model.l_q_prev.append(q_prev)
 
         # Build the LU preconditioning -> to do only once.
-        super_ilu, preconditioner = get_super_ilu_preconditioner(
-            q_next.tocsc(), drop_tol=1e-10, fill_factor=100
-        )
-        tr_model.super_ilu = super_ilu
-        tr_model.preconditioner = preconditioner
-
-        if super_ilu is None:
+        try:
+            super_ilu, preconditioner = get_super_ilu_preconditioner(
+                q_next.tocsc(), drop_tol=1e-10, fill_factor=100
+            )
+        except RuntimeError:
+            super_ilu, preconditioner = None, None
             warnings.warn(
                 f"SuperILU: q_next is singular in transport at it={time_index}!"
             )
+
+        tr_model.super_ilu = super_ilu
+        tr_model.preconditioner = preconditioner
+
     else:
         q_next = tr_model.q_next
         q_prev = tr_model.q_prev
