@@ -305,12 +305,12 @@ def test_bad_preconditioner() -> None:
             return s_raw * gradient  # this does not match the transform
 
         def _dbacktransform_vec(
-            self, s_raw: NDArrayFloat, gradient: NDArrayFloat
+            self, s_cond: NDArrayFloat, gradient: NDArrayFloat
         ) -> NDArrayFloat:
             """
             Return the transform gradient of a function to match the new parameter.
             """
-            return s_raw * gradient  # this does not match the transform
+            return s_cond * gradient  # this does not match the transform
 
         def _dbacktransform_inv_vec(
             self, s_cond: NDArrayFloat, gradient: NDArrayFloat
