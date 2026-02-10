@@ -499,10 +499,12 @@ def solve_adj_flow_saturated(
     )
 
     # 3) Build LU preconditioner for Q_{next}
-    super_ilu, preconditioner = get_super_ilu_preconditioner(
-        _q_next, drop_tol=1e-10, fill_factor=100
-    )
-    if super_ilu is None:
+    try:
+        super_ilu, preconditioner = get_super_ilu_preconditioner(
+            _q_next, drop_tol=1e-10, fill_factor=100
+        )
+    except RuntimeError:
+        super_ilu, preconditioner = None, None
         warnings.warn(
             "SuperILU: q_next is singular in adjoint "
             f"saturated flow at it={time_index}!"
@@ -571,10 +573,12 @@ def solve_adj_flow_density(
     )
 
     # 3) Build LU preconditioner for Q_{next}
-    super_ilu, preconditioner = get_super_ilu_preconditioner(
-        _q_next, drop_tol=1e-10, fill_factor=100
-    )
-    if super_ilu is None:
+    try:
+        super_ilu, preconditioner = get_super_ilu_preconditioner(
+            _q_next, drop_tol=1e-10, fill_factor=100
+        )
+    except RuntimeError:
+        super_ilu, preconditioner = None, None
         warnings.warn(
             f"SuperILU: q_next is singular in adjoint density flow at it={time_index}!"
         )

@@ -402,12 +402,14 @@ def solve_adj_transport_transient_semi_implicit(
     )
 
     # Build the LU preconditioning
-    super_ilu, preconditioner = get_super_ilu_preconditioner(
-        q_next.tocsc(),
-        drop_tol=1e-10,
-        fill_factor=100,
-    )
-    if super_ilu is None:
+    try:
+        super_ilu, preconditioner = get_super_ilu_preconditioner(
+            q_next.tocsc(),
+            drop_tol=1e-10,
+            fill_factor=100,
+        )
+    except RuntimeError:
+        super_ilu, preconditioner = None, None
         warnings.warn(
             f"SuperILU: q_next is singular in adjoint transport at it={time_index}!"
         )
