@@ -8,6 +8,13 @@ The Python Reactive Transport Inversion Demonstrator.
 
 Reactive Transport Inversion is a reactive transport inversion demonstrator written in Python.
 
+Inversion process in 2D.
+
+.. figure:: https://raw.githubusercontent.com/antoinecollet5/pyrtid/master/_static/animation_example.gif
+   :alt: animation_example
+   :width: 100%
+   :align: center
+
 🏗️ Complete example with supporting paper coming Q1 2026.
 
 ===========
