@@ -42,7 +42,7 @@ dependencies = [
     "iterative_ensemble_smoother",
     "matplotlib",
     "joblib",
-    "nested_grid_plotter",
+    "nested_grid_plotter>=2.1.1",
     "lbfgsb",
     "numba",
     "scooby; python_version>='3.10'",
