@@ -42,7 +42,7 @@ dependencies = [
     "iterative_ensemble_smoother",
     "matplotlib",
     "joblib",
-    "nested_grid_plotter",
+    "nested_grid_plotter>=2.1.1",
     "lbfgsb",
     "numba",
     "scooby; python_version>='3.10'",
@@ -89,12 +89,12 @@ Issues = "https://github.com/antoinecollet5/pyrtid/issues"
 Changelog = "https://github.com/antoinecollet5/pyrtid/blob/master/CHANGELOG.rst"
 
 [tool.setuptools]
-# packages = ["pyrtid"]
+py-modules = []
+packages = ["pyrtid"]
 include-package-data = true
 
-[tool.setuptools.packages.find]
-include = ["pyrtid*"]
-exclude = ["docs*", "tests*"]
+[tool.setuptools.package-data]
+nested_grid_plotter = ["fonts/*", "*.rst"]
 
 [tool.setuptools.dynamic]
 version = { attr = "pyrtid.__about__.__version__" }
