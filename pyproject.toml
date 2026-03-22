@@ -36,7 +36,7 @@ dependencies = [
     "scipy",
     "gstools",
     "typing_extensions",
-    "pyesmda@git+https://github.com/antoinecollet5/pyesmda/tree/v1.0.0",
+    "pyesmda@git+https://github.com/antoinecollet5/pyesmda/",
     "stochopy",
     "iterative_ensemble_smoother",
     "matplotlib",
