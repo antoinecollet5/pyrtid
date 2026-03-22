@@ -29,7 +29,8 @@ WRR 50 (7), 5410-5427
 - PK Kitanidis, J Lee, Principal Component Geostatistical Approach for large‐dimensional
 inverse problems, WRR 50 (7), 5428-5443
 
-# Applications
+Applications
+------------
 
 - T. Kadeethum, D. O'Malley, JN Fuhg, Y. Choi, J. Lee, HS Viswanathan and N. Bouklas,
 A framework for data-driven solution and parameter estimation of PDEs using conditional
@@ -66,7 +67,7 @@ from pyrtid.inverse.executors.base import (
     register_params_ds,
 )
 from pyrtid.inverse.params import update_model_with_parameters_values
-from pyrtid.inverse.solvers import PCGA
+from pypcga import PCGA
 from pyrtid.regularization import DriftMatrix, EigenFactorizedCovarianceMatrix
 from pyrtid.utils import NDArrayFloat
 

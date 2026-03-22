@@ -18,13 +18,12 @@ keywords = [
 ]
 license = { file = "LICENSE" }
 
-requires-python=">=3.9"
+requires-python=">=3.10"
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Natural Language :: English",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -45,7 +44,9 @@ dependencies = [
     "nested_grid_plotter>=2.1.1",
     "lbfgsb",
     "numba",
-    "scooby; python_version>='3.10'",
+    "pypcga",
+    "covmats",
+    "scooby",
 ]
 [project.optional-dependencies]
 all = ['pyrtid[sparse, install, lint, tests, examples, docs]']

@@ -29,8 +29,14 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence
 
 import numpy as np
-from pyesmda import ESMDA, ESMDA_DMC, ESMDA_RS, ESMDAInversionType
-from pyesmda.localization import LocalizationStrategy, NoLocalization
+from pyesmda import (
+    ESMDA,
+    ESMDA_DMC,
+    ESMDA_RS,
+    ESMDAInversionType,
+    LocalizationStrategy,
+    NoLocalization,
+)
 
 from pyrtid.inverse.executors.base import (
     FSMInversionExecutor,
