@@ -45,8 +45,9 @@ dependencies = [
     "lbfgsb",
     "numba",
     "pypcga",
-    "covmats",
+    "covmats>0.2.2",
     "scooby",
+    "quickpaver>=0.2.0"
 ]
 [project.optional-dependencies]
 all = ['pyrtid[sparse, install, lint, tests, examples, docs]']
