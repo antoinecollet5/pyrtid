@@ -59,6 +59,8 @@ import multiprocessing
 from dataclasses import astuple, dataclass
 from typing import Callable, Optional, Tuple, Union
 
+from pypcga import PCGA
+
 from pyrtid.inverse.executors.base import (
     FSMInversionExecutor,
     FSMSolverConfig,
@@ -67,7 +69,6 @@ from pyrtid.inverse.executors.base import (
     register_params_ds,
 )
 from pyrtid.inverse.params import update_model_with_parameters_values
-from pypcga import PCGA
 from pyrtid.regularization import DriftMatrix, EigenFactorizedCovarianceMatrix
 from pyrtid.utils import NDArrayFloat
 

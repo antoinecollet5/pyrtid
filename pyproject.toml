@@ -45,7 +45,7 @@ dependencies = [
     "lbfgsb",
     "numba",
     "pypcga",
-    "covmats>0.2.2",
+    "covmats>=0.2.2",
     "scooby",
     "quickpaver>=0.2.0"
 ]
