@@ -280,7 +280,7 @@ def cdf_distance_gradient(
         ]
     )
 
-    # This is to hanbdle duplictaed values
+    # This is to handle duplictaed values
     out = np.zeros_like(u_values)
     out[:] = np.nan
     out[old_u_indices] = grad / new_u_weights
