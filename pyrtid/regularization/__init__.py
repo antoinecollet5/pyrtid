@@ -73,57 +73,6 @@ an ensemble of realizations.
     GeostatisticalRegularizator
     EnsembleRegularizator
 
-
-Covariance classes
-^^^^^^^^^^^^^^^^^^
-
-To represent covariance matrices.
-
-.. autosummary::
-   :toctree: _autosummary
-
-    CovarianceMatrix
-    DenseCovarianceMatrix
-    EnsembleCovarianceMatrix
-    FFTCovarianceMatrix
-    EigenFactorizedCovarianceMatrix
-    SparseInvCovarianceMatrix
-    HCovarianceMatrix
-    SparseInvCovarianceMatrix
-
-
-Covariance functions
-^^^^^^^^^^^^^^^^^^^^
-
-To work with covariance matrices and low rank approximations.
-
-.. autosummary::
-   :toctree: _autosummary
-
-    eigen_factorize_cov_mat
-    generate_dense_matrix
-    get_matrix_eigen_factorization
-    sample_from_sparse_cov_factor
-    get_explained_var
-
-
-Working with priors and trends
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-To represent trend through drift matrix. To use along with geostatistical regularizator.
-
-.. autosummary::
-   :toctree: _autosummary
-
-    PriorTerm
-    NullPriorTerm
-    ConstantPriorTerm
-    MeanPriorTerm
-    EnsembleMeanPriorTerm
-    DriftMatrix
-    ConstantDriftMatrix
-    LinearDriftMatrix
-
 Matrix compression
 ^^^^^^^^^^^^^^^^^^^
 
@@ -175,20 +124,6 @@ from pyrtid.regularization.base import (
     Regularizator,
     RegWeightUpdateStrategy,
 )
-from pyrtid.regularization.covariances import (
-    CovarianceMatrix,
-    DenseCovarianceMatrix,
-    EigenFactorizedCovarianceMatrix,
-    EnsembleCovarianceMatrix,
-    FFTCovarianceMatrix,
-    HCovarianceMatrix,
-    SparseInvCovarianceMatrix,
-    eigen_factorize_cov_mat,
-    generate_dense_matrix,
-    get_explained_var,
-    get_matrix_eigen_factorization,
-    sample_from_sparse_cov_factor,
-)
 from pyrtid.regularization.discrete import DiscreteRegularizator
 from pyrtid.regularization.distribution import ProbDistFitting
 from pyrtid.regularization.geostatistical import (
@@ -196,16 +131,6 @@ from pyrtid.regularization.geostatistical import (
     GeostatisticalRegularizator,
 )
 from pyrtid.regularization.lcurve import get_l_curvature
-from pyrtid.regularization.priors import (
-    ConstantDriftMatrix,
-    ConstantPriorTerm,
-    DriftMatrix,
-    EnsembleMeanPriorTerm,
-    LinearDriftMatrix,
-    MeanPriorTerm,
-    NullPriorTerm,
-    PriorTerm,
-)
 from pyrtid.regularization.tikhonov import (
     TikhonovFVMRegularizator,
     TikhonovMatRegularizator,
@@ -224,21 +149,6 @@ __all__ = [
     "TikhonovMatRegularizator",
     "TVRegularizator",
     "TVMatRegularizator",
-    "DenseCovarianceMatrix",
-    "EnsembleCovarianceMatrix",
-    "FFTCovarianceMatrix",
-    "HCovarianceMatrix",
-    "CovarianceMatrix",
-    "EigenFactorizedCovarianceMatrix",
-    "SparseInvCovarianceMatrix",
-    "PriorTerm",
-    "NullPriorTerm",
-    "ConstantPriorTerm",
-    "MeanPriorTerm",
-    "EnsembleMeanPriorTerm",
-    "DriftMatrix",
-    "ConstantDriftMatrix",
-    "LinearDriftMatrix",
     "GeostatisticalRegularizator",
     "EnsembleRegularizator",
     "get_matrix_eigen_factorization",

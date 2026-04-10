@@ -8,6 +8,7 @@ from __future__ import annotations
 import warnings
 from typing import Tuple
 
+import covmats
 import numpy as np
 from scipy.sparse import csc_matrix, lil_array
 from scipy.sparse.linalg import lgmres
@@ -26,7 +27,6 @@ from pyrtid.inverse.asm.amodels import AdjointFlowModel, AdjointTransportModel
 from pyrtid.utils import (
     NDArrayFloat,
     RectilinearGrid,
-    assert_allclose_sparse,
     dxi_harmonic_mean,
     get_super_ilu_preconditioner,
 )
@@ -303,10 +303,12 @@ def get_aflow_matrices(
 
         if time_index != time_params.nts:
             # q_prev (aka matrice B in the rhs) does not exists for the max timestep
-            assert_allclose_sparse(
+            covmats._sparse_helpers.assert_allclose_sparse(
                 _q_prev, fl_model.l_q_prev[time_index + 1].T, rtol=1e-8
             )
-        assert_allclose_sparse(_q_next, fl_model.l_q_next[time_index].T, rtol=1e-8)
+        covmats._sparse_helpers.assert_allclose_sparse(
+            _q_next, fl_model.l_q_next[time_index].T, rtol=1e-8
+        )
 
     # convert to csc format for efficiency
     return _q_next.tocsc(), _q_prev.tocsc()

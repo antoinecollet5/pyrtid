@@ -59,6 +59,7 @@ import multiprocessing
 from dataclasses import astuple, dataclass
 from typing import Callable, Optional, Tuple, Union
 
+import covmats
 from pypcga import PCGA
 
 from pyrtid.inverse.executors.base import (
@@ -69,7 +70,6 @@ from pyrtid.inverse.executors.base import (
     register_params_ds,
 )
 from pyrtid.inverse.params import update_model_with_parameters_values
-from pyrtid.regularization import DriftMatrix, EigenFactorizedCovarianceMatrix
 from pyrtid.utils import NDArrayFloat
 
 pcga_solver_config_params_ds = (
@@ -90,8 +90,8 @@ class PCGASolverConfig(FSMSolverConfig):
     ----------
     """
 
-    eig_cov: Optional[EigenFactorizedCovarianceMatrix] = None
-    drift: Optional[DriftMatrix] = None
+    eig_cov: Optional[covmats.CovViaEigenFactorization] = None
+    drift: Optional[covmats.DriftMatrix] = None
     prior_s_var: Optional[Union[float, NDArrayFloat]] = None
     callback: Optional[Callable] = None
     is_line_search: bool = False
@@ -125,18 +125,17 @@ class PCGAInversionExecutor(FSMInversionExecutor[PCGASolverConfig]):
         # Note: for regular grid you don't need to specify pts.
         if self.solver_config.eig_cov is not None:
             self.solver: PCGA = PCGA(
-                self.data_model.s_init.ravel(),  # Must be a vector
-                self.data_model.obs,
-                self.data_model.cov_obs,
-                self._map_forward_model,
-                self.solver_config.eig_cov,
+                s_init=self.data_model.s_init.ravel(),  # Must be a vector
+                obs=self.data_model.obs,
+                cov_obs=self.data_model.cov_obs,
+                forward_model=self._map_forward_model,
+                Q=self.solver_config.eig_cov,
                 drift=self.solver_config.drift,
                 prior_s_var=self.solver_config.prior_s_var,
                 callback=self.solver_config.callback,
                 is_line_search=self.solver_config.is_line_search,
                 is_lm=self.solver_config.is_lm,
                 is_direct_solve=self.solver_config.is_direct_solve,
-                is_use_preconditioner=self.solver_config.is_use_preconditioner,
                 random_state=self.solver_config.random_state,
                 is_objfun_exact=self.solver_config.is_objfun_exact,
                 max_it_lm=self.solver_config.max_it_lm,

@@ -8,6 +8,7 @@ from __future__ import annotations
 import warnings
 from typing import Tuple
 
+import covmats
 import numpy as np
 from scipy.sparse import lil_array
 from scipy.sparse.linalg import gmres
@@ -26,7 +27,6 @@ from pyrtid.inverse.asm.amodels import AdjointTransportModel
 from pyrtid.utils import (
     NDArrayFloat,
     RectilinearGrid,
-    assert_allclose_sparse,
     get_super_ilu_preconditioner,
     harmonic_mean,
 )
@@ -354,11 +354,11 @@ def solve_adj_transport_transient_semi_implicit(
 
             if time_index != time_params.nts:
                 # q_prev (aka matrice B in the rhs) does not exists for the max timestep
-                assert_allclose_sparse(
+                covmats._sparse_helpers.assert_allclose_sparse(
                     q_prev, tr_model.l_q_prev[time_index].T, rtol=1e-10
                 )
             if time_index != 0:
-                assert_allclose_sparse(
+                covmats._sparse_helpers.assert_allclose_sparse(
                     q_next, tr_model.l_q_next[time_index - 1].T, rtol=1e-10
                 )
     else:
