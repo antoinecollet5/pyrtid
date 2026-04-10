@@ -235,7 +235,7 @@ from pyrtid.utils.operators import (
     hessian_cfd,
 )
 from pyrtid.utils.random_field import (
-    # gen_random_ensemble,
+    gen_random_ensemble,
     get_log_normalized_mean_from_normal_params,
     get_log_normalized_std_from_normal_params,
     get_normalized_mean_from_lognormal_params,
