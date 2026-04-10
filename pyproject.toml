@@ -50,8 +50,7 @@ dependencies = [
     "quickpaver>=0.2.0"
 ]
 [project.optional-dependencies]
-all = ['pyrtid[sparse, install, lint, tests, examples, docs]']
-sparse = ["scikit-sparse"]
+all = ['pyrtid[install, lint, tests, examples, docs]']
 docs = [
     "sphinx<9",
     "nbsphinx",
@@ -79,8 +78,8 @@ examples = [
     "shapely",
     "tomli",
 ]
-
-lint = ["pre-commit", "codespell>=2.1.0", "ruff", "ty"]
+scikit_sparse_old = ["scikit-sparse<0.5.0"]
+lint = ["pre-commit", "pre-commit-hooks", "codespell>=2.1.0", "ruff", "ty"]
 install = ["pip", "wheel"]
 
 [project.urls]

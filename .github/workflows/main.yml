@@ -23,14 +23,14 @@ jobs:
         with:
           python-version: 3.13
 
-      - name: install libsuitesparse
+      - name: Install libsuitesparse
         run: sudo apt install -y libsuitesparse-dev
 
       - name: Install dependencies with uv
         run: |
           pip install uv
           uv venv
-          uv pip install -e ".[all]"
+          uv pip install -e ".[scikit_sparse_old,all]"
 
       - name: Run pre-commit hooks
         run: |
@@ -66,14 +66,15 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: install libsuitesparse
+      - name: Install libsuitesparse
         run: sudo apt install -y libsuitesparse-dev
 
-      - name: Install uv + deps
+      - name: Install dependencies with uv
         run: |
           pip install uv
           uv venv
-          uv pip install -e .[all]
+          uv pip install -e ".[scikit_sparse_old,all]"
+
 
       - name: Run tests with coverage
         env:
