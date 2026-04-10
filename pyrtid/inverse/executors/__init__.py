@@ -14,7 +14,7 @@ Classes
 Inversion executors
 ^^^^^^^^^^^^^^^^^^^
 
-Different executors are provided (scipy, stochopy, pyesmda, pypcga, l-bfgs-b, sies).
+Different executors are provided (scipy, stochopy, pyesmda, pypcga, l-bfgs-b).
 
 .. autosummary::
    :toctree: _autosummary
@@ -33,15 +33,12 @@ Different executors are provided (scipy, stochopy, pyesmda, pypcga, l-bfgs-b, si
     ScipySolverConfig
     StochopyInversionExecutor
     StochopySolverConfig
-    SIESInversionExecutor
-    SIESSolverConfig
 
 Other classes
 ^^^^^^^^^^^^^
 
 Classes to defined inner inversion strategies when using ensemble methods.
 
-    SIESInversionType
     ESMDAInversionType
 
 """
@@ -62,11 +59,6 @@ from pyrtid.inverse.executors.lbfgsb import (
 )
 from pyrtid.inverse.executors.pcga import PCGAInversionExecutor, PCGASolverConfig
 from pyrtid.inverse.executors.scipy import ScipyInversionExecutor, ScipySolverConfig
-from pyrtid.inverse.executors.sies import (
-    SIESInversionExecutor,
-    SIESInversionType,
-    SIESSolverConfig,
-)
 from pyrtid.inverse.executors.stochopy import (
     StochopyInversionExecutor,
     StochopySolverConfig,
@@ -88,7 +80,4 @@ __all__ = [
     "ScipySolverConfig",
     "StochopyInversionExecutor",
     "StochopySolverConfig",
-    "SIESInversionExecutor",
-    "SIESSolverConfig",
-    "SIESInversionType",
 ]

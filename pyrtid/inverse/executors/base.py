@@ -257,7 +257,7 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         s_init: Optional[NDArrayFloat]
             Initial preconditioned adjusted values.
             This is required by some solvers such
-            as ESMDA or SIES. In case of an ensemble, the expected shape
+            as ESMDA. In case of an ensemble, the expected shape
             is (Ne, Nm) with Ne the number of members in the ensemble and
             Nm the number of adjusted parameters. If None, it is retrieved
             from the model. The default is None.
