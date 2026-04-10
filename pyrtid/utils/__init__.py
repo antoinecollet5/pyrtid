@@ -173,18 +173,6 @@ Other functions
     NDArrayBool
     Int
 
-Sparse helpers
-^^^^^^^^^^^^^^
-
-Helpers to work with sparse matrices and sparse arrays.
-
-.. autosummary::
-   :toctree: _autosummary
-
-    SparseFactor
-    sparse_cholesky
-    assert_allclose_sparse
-
 Preconditioners
 ^^^^^^^^^^^^^^^
 
@@ -247,16 +235,11 @@ from pyrtid.utils.operators import (
     hessian_cfd,
 )
 from pyrtid.utils.random_field import (
-    gen_random_ensemble,
+    # gen_random_ensemble,
     get_log_normalized_mean_from_normal_params,
     get_log_normalized_std_from_normal_params,
     get_normalized_mean_from_lognormal_params,
     get_normalized_std_from_lognormal_params,
-)
-from pyrtid.utils.sparse_helpers import (
-    SparseFactor,
-    assert_allclose_sparse,
-    sparse_cholesky,
 )
 from pyrtid.utils.spatial_filters import Filter, GaussianFilter
 from pyrtid.utils.types import (
@@ -317,10 +300,7 @@ __all__ = [
     "RectilinearGrid",
     "get_extended_grid_shape",
     "get_polygon_selection_with_dilation_2d",
-    "sparse_cholesky",
-    "assert_allclose_sparse",
     "Callback",
     "np_cache",
     "check_random_state",
-    "SparseFactor",
 ]

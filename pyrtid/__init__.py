@@ -63,7 +63,7 @@ class Report(ScoobyReport):  # ty:ignore[unsupported-base]
         ]
 
         # Optional packages.
-        optional = ["suitesparse", "scikit-sparse"]
+        optional = []
         ScoobyReport().__init__(
             additional=additional,
             core=core,

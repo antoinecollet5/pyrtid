@@ -6,13 +6,12 @@
 import math
 from typing import Optional, Union
 
+import covmats
 import numpy as np
 import scipy as sp
 from scipy.sparse import csc_array, lil_array
 
-from pyrtid.utils import SparseFactor, check_random_state
 from pyrtid.utils.grid import indices_to_node_number, span_to_node_numbers_3d
-from pyrtid.utils.sparse_helpers import sparse_cholesky
 from pyrtid.utils.types import NDArrayFloat, NDArrayInt
 
 
@@ -322,7 +321,7 @@ def get_precision_matrix(
 
 
 def simu_nc(
-    cholQ: SparseFactor,
+    cov: covmats.CovarianceMatrix,
     w: Optional[NDArrayFloat] = None,
     random_state: Optional[
         Union[int, np.random.Generator, np.random.RandomState]
@@ -333,7 +332,7 @@ def simu_nc(
 
     Parameters
     ----------
-    cholQ : SparseFactor
+    cov: covmats.CovarianceMatrix
         The cholesky factorization of precision matrix.
     w: Optional[NDArrayFloat]
         Gaussian white noise with mean zero and standard deviation 1.0. If not
@@ -355,30 +354,12 @@ def simu_nc(
     """
     # Random state for v0 vector used by eigsh and svds
     if w is None:
-        if random_state is not None:
-            random_state = check_random_state(random_state)
-        else:
-            random_state = np.random.default_rng()
-        w = random_state.normal(size=cholQ.L().shape[0])  # white noise
-
-    # Note: https://scikit-sparse.readthedocs.io/en/latest/cholmod.html
-    # We want to solve A z = w  ==> z = A^{-1} w
-    # We use the cholesky factorization LDL' = PA'AP'
-    # with P' = P^{-1} the permutation that makes the decomposition unique.
-    # So LD^{1/2} = PA' and A = D^{1/2}L'P
-    # Finally z = P'L^{-T}D^{-1/2} w
-    # Possible to do it with gmres -> not efficient without preconditioner
-    # from scipy.sparse.linalg import gmres
-    # L, D = cholQ.L_D()
-    # z, _ = cholQ.apply_Pt(
-    #    gmres(L.T.tocsc(), 1.0 / np.sqrt(D.diagonal()) * w, tol=1e-12)
-    # )
-    # CHOLMOD is the most performant
-    return cholQ.apply_Pt(cholQ.solve_Lt(1.0 / np.sqrt(cholQ.D()) * w))
+        cov.sample_mvnormal(shape=(1,), random_state=random_state)
+    return cov.colorize(w)
 
 
 def simu_nc_t(
-    cholQ: SparseFactor,
+    cov: covmats.CovarianceMatrix,
     w: Optional[NDArrayFloat] = None,
     random_state: Optional[
         Union[int, np.random.Generator, np.random.RandomState]
@@ -389,7 +370,7 @@ def simu_nc_t(
 
     Parameters
     ----------
-    cholQ : SparseFactor
+    scf : covmats.SparseCholeskyFactor
         The cholesky factorization of precision matrix.
     w: Optional[NDArrayFloat]
         Gaussian white noise with mean zero and standard deviation 1.0. If not
@@ -409,24 +390,11 @@ def simu_nc_t(
         The non conditional simulation.
 
     """
-    # Random state for v0 vector used by eigsh and svds
-    if w is None:
-        if random_state is not None:
-            random_state = check_random_state(random_state)
-        else:
-            random_state = np.random.default_rng()
-        w = random_state.normal(size=cholQ.L().shape[0])  # white noise
-
-    # Note: https://scikit-sparse.readthedocs.io/en/latest/cholmod.html
-    # We want to solve z = A^{-T} w
-    # since A = D^{1/2}L'P  (see simu_nc)
-    # A^{-1} = P'L^{-T}D^{-1/2}
-    # z = D^{1/2}L^{-1} P w
-    return 1.0 / np.sqrt(cholQ.D()) * cholQ.solve_L(cholQ.apply_P(w))
+    return simu_nc(cov, w, random_state).T
 
 
 def simu_nc_t_inv(
-    cholQ: SparseFactor,
+    cov: covmats.CovarianceMatrix,
     z: NDArrayFloat,
 ) -> NDArrayFloat:
     """
@@ -434,7 +402,7 @@ def simu_nc_t_inv(
 
     Parameters
     ----------
-    cholQ : SparseFactor
+    cov: covmats.CovarianceMatrix
         The cholesky factorization of precision matrix Q.
     z: NDArrayFloat
         Input vector (results of :func:`simu_nc_t`.)
@@ -446,11 +414,7 @@ def simu_nc_t_inv(
 
 
     """
-    # Note: https://scikit-sparse.readthedocs.io/en/latest/cholmod.html
-    # We want to w = A^{T} z
-    # z = D^{1/2}L^{-1} P w (see simu_nc_t)
-    # So w = P^{-1}LD^{1/2} z
-    return cholQ.apply_Pt(cholQ.L_D()[0] @ (np.sqrt(cholQ.D()) * z))
+    return cov.whiten(z)
 
 
 def condition_precision_matrix(
@@ -482,62 +446,192 @@ def condition_precision_matrix(
 
 
 def kriging(
-    Q_cond: csc_array,
-    dat: NDArrayFloat,
-    dat_indices: NDArrayInt,
-    cholQ_cond: Optional[SparseFactor] = None,
-    dat_var: Optional[NDArrayFloat] = None,
-) -> NDArrayFloat:
+    cov,  # covmats.CovarianceMatrix
+    dat: np.ndarray,
+    dat_indices: np.ndarray,
+    dat_var: Optional[np.ndarray] = None,
+) -> np.ndarray:
     """
-    Return a krigging.
+    Matrix-free kriging using a covariance operator.
 
     Parameters
     ----------
-    Q_cond : csc_array
-        Conditional precision matrix.
-    dat : NDArrayFloat
-        Conditional values.
-    dat_indices : NDArrayInt
-        Grid cell indices of the conditional values. The default is None.
-    cholQ_cond : SparseFactor
-        Cholesky decomposition of the unconditional precision matrix.
-    dat_var : NDArrayFloat
-        Variance of the conditional data. The default is None.
+    cov : CovarianceMatrix
+        Must implement:
+            - cov.matvec(x): returns Σx
+            - cov.shape -> (n, n)
+    dat : (m,) array
+        Observed values
+    dat_indices : (m,) int array
+        Indices of observations
+    dat_var : (m,) array, optional
+        Observation noise variance. If None → exact kriging.
 
     Returns
     -------
-    NDArrayFloat
-        Krigging.
+    mu : (n,) array
+        Kriging posterior mean
     """
-    if cholQ_cond is None:
-        _cholQ_cond = sparse_cholesky((Q_cond.tocsc()))
-    else:
-        _cholQ_cond = cholQ_cond
+    n = cov.shape[0]
+    m = len(dat_indices)
 
-    input = np.zeros(Q_cond.shape[0])
-    input[dat_indices] = dat
-    if dat_var is not None:
-        input[dat_indices] /= dat_var
+    if dat_var is None:
+        dat_var = np.zeros(m)
 
-    # An alternative to build the input vector is to use a sparse matrix
-    # I write it there because it is required when transposing the krigging operator.
-    # Z = lil_array((Q.shape[0], dat_indices.size))
-    # Z[dat_indices, np.arange(dat_indices.size)] = 1
-    # input_bis = Z @ dat
-    # if dat_var is not None:
-    #     input_bis[dat_indices] /= dat_var
-    # checking the correctness
-    # np.testing.assert_allclose(input, input_bis)
-    return _cholQ_cond(input)
+    # --- Step 1: build K = H Σ H^T + R ---
+    E = np.zeros((n, m))
+    E[dat_indices, np.arange(m)] = 1.0
+
+    SE = np.column_stack([cov.matvec(E[:, j]) for j in range(m)])
+    K = SE[dat_indices, :] + np.diag(dat_var)
+
+    # --- Step 2: solve K alpha = dat ---
+    # Add tiny nugget for numerical stability if needed
+    # K += 1e-10 * np.eye(m)
+    # Works fine for a limited number of observations
+    L = np.linalg.cholesky(K)
+    alpha = np.linalg.solve(L.T, np.linalg.solve(L, dat))
+
+    # --- Step 3: compute μ = Σ H^T α ---
+    v = np.zeros(n)
+    v[dat_indices] = alpha
+
+    mu = cov.matvec(v)
+
+    # --- Variance ---
+    var = np.zeros(n)
+
+    for i in range(n):
+        # Compute k_i
+        e = np.zeros(n)
+        e[i] = 1.0
+        col = cov.matvec(e)
+
+        k_i = col[dat_indices]
+
+        # Solve K^{-1} k_i via Cholesky
+        tmp = np.linalg.solve(L, k_i)
+        v_i = np.linalg.solve(L.T, tmp)
+
+        # Σ_ii
+        sigma_ii = col[i]
+
+        var[i] = sigma_ii - k_i @ v_i
+
+    return mu
 
 
-def d_simu_nc_mat_vec(cholQ: SparseFactor, b: NDArrayFloat) -> NDArrayFloat:
+# def kriging(
+#     cov,
+#     dat: np.ndarray,
+#     dat_indices: np.ndarray,
+#     dat_var: np.ndarray,
+#     tol: float = 1e-6,
+#     maxiter: int = 1000,
+# ):
+#     """
+#     Scalable kriging using precision formulation + CG.
+
+#     Requirements on cov:
+#         - cov.solve(x): solves Σ z = x  → returns z
+#           OR
+#         - cov.precision_matvec(x): returns Qx = Σ^{-1}x
+
+#     Parameters
+#     ----------
+#     cov : CovarianceMatrix
+#     dat : (m,)
+#     dat_indices : (m,)
+#     dat_var : (m,)
+#     """
+
+#     n = cov.shape[0]
+
+#     inv_var = 1.0 / dat_var
+
+#     # --- RHS: b = H^T R^{-1} y ---
+#     b = np.zeros(n)
+#     b[dat_indices] = dat * inv_var
+
+#     # --- Define linear operator A x ---
+#     def matvec(x):
+#         # Σ^{-1} x
+#         if hasattr(cov, "precision_matvec"):
+#             y = cov.precision_matvec(x)
+#         else:
+#             # apply Σ^{-1} via solve
+#             y = cov.solve(x)
+
+#         # + H^T R^{-1} H x  (diagonal update)
+#         y[dat_indices] += inv_var * x[dat_indices]
+
+#         return y
+
+#     # --- Solve A x = b ---
+#     mu, info = cg(
+#         A=sp.sparse.linalg.LinearOperator((n, n), matvec=matvec),
+#         b=b,
+#         tol=tol,
+#         maxiter=maxiter,
+#     )
+
+#     if info != 0:
+#         raise RuntimeError(f"CG did not converge: info={info}")
+
+#     return mu
+
+
+# def kriging(
+#     cov: covmats.CovarianceMatrix,
+#     dat: NDArrayFloat,
+#     dat_indices: NDArrayInt,
+#     dat_var: Optional[NDArrayFloat] = None,
+# ) -> NDArrayFloat:
+#     """
+#     Return a krigging.
+
+#     Parameters
+#     ----------
+#     Q_cond : csc_array
+#         Conditional precision matrix.
+#     dat : NDArrayFloat
+#         Conditional values.
+#     dat_indices : NDArrayInt
+#         Grid cell indices of the conditional values. The default is None.
+#     scf_cond : covmats.SparseCholeskyFactor
+#         Cholesky decomposition of the unconditional precision matrix.
+#     dat_var : NDArrayFloat
+#         Variance of the conditional data. The default is None.
+
+#     Returns
+#     -------
+#     NDArrayFloat
+#         Krigging.
+#     """
+#     input = np.zeros(Q_cond.shape[0])
+#     input[dat_indices] = dat
+#     if dat_var is not None:
+#         input[dat_indices] /= dat_var
+
+#     # An alternative to build the input vector is to use a sparse matrix
+#     # I write it there because it is required when transposing the krigging operator.
+#     # Z = lil_array((Q.shape[0], dat_indices.size))
+#     # Z[dat_indices, np.arange(dat_indices.size)] = 1
+#     # input_bis = Z @ dat
+#     # if dat_var is not None:
+#     #     input_bis[dat_indices] /= dat_var
+#     # checking the correctness
+#     # np.testing.assert_allclose(input, input_bis)
+#     return scf_cond(input)
+
+
+def d_simu_nc_mat_vec(cov: covmats.CovarianceMatrix, b: NDArrayFloat) -> NDArrayFloat:
     """
     Return the product between the derivative of simu_nc and a vector.
 
     Parameters
     ----------
-    cholQ : SparseFactor
+    scf : covmats.SparseCholeskyFactor
         The cholesky factorization of unconditional precision matrix Q.
     b : NDArrayFloat
         Input vector b.
@@ -548,16 +642,18 @@ def d_simu_nc_mat_vec(cholQ: SparseFactor, b: NDArrayFloat) -> NDArrayFloat:
         Results of the transposed non-conditional simulation operator
         applied to the input vector b.
     """
-    return simu_nc_t(cholQ, b)
+    return simu_nc_t(cov, b)
 
 
-def d_simu_nc_mat_vec_inv(cholQ: SparseFactor, b: NDArrayFloat) -> NDArrayFloat:
+def d_simu_nc_mat_vec_inv(
+    scf: covmats.SparseCholeskyFactor, b: NDArrayFloat
+) -> NDArrayFloat:
     """
     Return the product between the derivative of simu_nc and a vector.
 
     Parameters
     ----------
-    cholQ : SparseFactor
+    scf : covmats.SparseCholeskyFactor
         The cholesky factorization of unconditional precision matrix Q.
 
     b : NDArrayFloat
@@ -569,13 +665,13 @@ def d_simu_nc_mat_vec_inv(cholQ: SparseFactor, b: NDArrayFloat) -> NDArrayFloat:
         Results of the inverse-transposed non-conditional simulation operator applied
         to the input vector b.
     """
-    return simu_nc_t_inv(cholQ, b)
+    return simu_nc_t_inv(scf, b)
 
 
 def simu_c(
-    cholQ: SparseFactor,
+    cov: covmats.CovarianceMatrix,
     Q_cond: csc_array,
-    cholQ_cond: SparseFactor,
+    scf_cond: covmats.SparseCholeskyFactor,
     dat: NDArrayFloat,
     dat_indices: NDArrayInt,
     dat_var: NDArrayFloat,
@@ -589,11 +685,11 @@ def simu_c(
 
     Parameters
     ----------
-    cholQ : SparseFactor
-        Cholesky decomposition of the unconditional precision matrix.
+    cov: covmats.CovarianceMatrix
+        Covariance matrix.
     Q_cond : csc_array
         Conditional precision matrix.
-    cholQ_cond : SparseFactor
+    scf_cond : covmats.SparseCholeskyFactor
         Cholesky factorization of the conditional precision matrix.
     dat : NDArrayFloat
         Conditional values.
@@ -618,18 +714,18 @@ def simu_c(
     NDArrayFloat
         Conditional simulation.
     """
-    z_k = kriging(Q_cond, dat, dat_indices, cholQ_cond=cholQ_cond, dat_var=dat_var)
+    z_k = kriging(Q_cond, dat, dat_indices, scf_cond=scf_cond, dat_var=dat_var)
     # z_k = krig_prec2(Q_cond, dat * 1 / grid_var[dat_indices], dat_indices)
-    z_nc = simu_nc(cholQ, w, random_state)
+    z_nc = simu_nc(cov, w, random_state)
     dat_nc = z_nc[dat_indices]
     # z_nck = krig_chol(QTT_factor, QTD, dat_nc, dat_indices)
-    z_nck = kriging(Q_cond, dat_nc, dat_indices, cholQ_cond=cholQ_cond, dat_var=dat_var)
+    z_nck = kriging(Q_cond, dat_nc, dat_indices, scf_cond=scf_cond, dat_var=dat_var)
     return z_k - (z_nc - z_nck)
 
 
 def d_simu_c_matvec(
-    cholQ: SparseFactor,
-    cholQ_cond: SparseFactor,
+    scf: covmats.SparseCholeskyFactor,
+    scf_cond: covmats.SparseCholeskyFactor,
     dat_indices: NDArrayInt,
     dat_var: NDArrayFloat,
     b: NDArrayFloat,
@@ -641,11 +737,11 @@ def d_simu_c_matvec(
 
     Parameters
     ----------
-    cholQ : SparseFactor
+    scf : covmats.SparseCholeskyFactor
         Cholesky decomposition of the unconditional precision matrix.
     Q_cond : csc_array
         Conditional precision matrix.
-    cholQ_cond : SparseFactor
+    scf_cond : covmats.SparseCholeskyFactor
         Cholesky factorization of the conditional precision matrix.
     dat_indices : NDArrayInt
         Grid cell indices of the conditional values.
@@ -668,39 +764,6 @@ def d_simu_c_matvec(
     NDArrayFloat
         Conditional simulation.
     """
-    Z = lil_array((cholQ_cond.L().shape[0], dat_indices.size))
+    Z = lil_array((scf_cond.L().shape[0], dat_indices.size))
     Z[dat_indices, np.arange(dat_indices.size)] = 1
-    return simu_nc_t(cholQ, Z @ (1 / dat_var * (Z.T @ cholQ_cond(b))) - b)
-
-
-def get_variance(Q: csc_array, cholQ: Optional[SparseFactor]) -> NDArrayFloat:
-    """
-    Extract efficiently the diagonal of the covariance matrix from the precision matrix.
-
-    It relies on the linear operator `matvec` operation and consequenlty does not
-    require to build the dense matrix which is much longer and generally untractable
-    for large-scale problems.
-
-    Parameters
-    ----------
-    hess_inv : LbfgsInvHessProduct
-        Linear operator for the L-BFGS approximate inverse Hessian.
-
-    Returns
-    -------
-    NDArrayFloat
-        The diagonal of the L-BFGS approximated inverse Hessian.
-    """
-    # perform the cholesky factorization -> solving is then much faster
-    if cholQ is None:
-        _cholQ = sparse_cholesky(Q.tocsc())
-    else:
-        _cholQ = cholQ
-    n_params = Q.shape[0]
-    cov_mat_diag = np.zeros(n_params)
-    v = np.zeros(n_params)
-    for i in range(n_params):
-        v[i - 1] = 0.0
-        v[i] = 1.0
-        cov_mat_diag[i] = _cholQ(v)[i]
-    return cov_mat_diag
+    return simu_nc_t(scf, Z @ (1 / dat_var * (Z.T @ scf_cond(b))) - b)

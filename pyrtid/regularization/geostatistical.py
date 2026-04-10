@@ -7,11 +7,10 @@ Provide classes and functions for geostatistical regularization.
 TODO: add the formulas.
 """
 
+import covmats
 import numpy as np
 
 from pyrtid.regularization.base import Regularizator
-from pyrtid.regularization.covariances import CovarianceMatrix
-from pyrtid.regularization.priors import NullPriorTerm, PriorTerm
 from pyrtid.utils import NDArrayFloat
 from pyrtid.utils.finite_differences import finite_gradient
 from pyrtid.utils.preconditioner import NoTransform, Preconditioner
@@ -43,8 +42,8 @@ class GeostatisticalRegularizator(Regularizator):
 
     def __init__(
         self,
-        cov_m: CovarianceMatrix,
-        prior: PriorTerm = NullPriorTerm(),
+        cov_m: covmats.CovarianceMatrix,
+        prior: covmats.PriorTerm = covmats.NullPriorTerm(),
         preconditioner: Preconditioner = NoTransform(),
     ) -> None:
         """
@@ -54,7 +53,7 @@ class GeostatisticalRegularizator(Regularizator):
         ----------
         cov_m : CovarianceMatrix
             _description_
-        prior : Optional[PriorTerm], optional
+        prior : Optional[covmats.PriorTerm], optional
             A prior term for `(x - prior_term)`, by default NullPriorTerm.
         transform: Callable, optional
             Parameter pre-transformation (variable change for the solver). The default
@@ -68,8 +67,8 @@ class GeostatisticalRegularizator(Regularizator):
             is made.
         """
         super().__init__(preconditioner)
-        self.cov_m: CovarianceMatrix = cov_m
-        self.prior: PriorTerm = prior
+        self.cov_m: covmats.CovarianceMatrix = cov_m
+        self.prior: covmats.PriorTerm = prior
 
     def _eval_loss(self, values: NDArrayFloat) -> float:
         r"""
@@ -170,7 +169,7 @@ class EnsembleRegularizator(GeostatisticalRegularizator):
 
         # And this is strictly equivalent (element wise multiplication)
         return (
-            0.5 * float(np.sum(residuals * self.cov_m.solve(residuals))) / ens.shape[1]  # type: ignore
+            0.5 * float(np.sum(residuals * self.cov_m.solve(residuals))) / ens.shape[1]
         )
 
     def eval_loss_gradient_analytical(self, ens: NDArrayFloat) -> NDArrayFloat:

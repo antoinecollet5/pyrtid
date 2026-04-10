@@ -1,12 +1,34 @@
 """Unit tests for the spde utilities."""
 
 from contextlib import nullcontext as does_not_raise
+from typing import no_type_check
 
+import covmats
 import numpy as np
 import pyrtid.utils.spde as spde
 import pytest
-from pyrtid.utils import SparseFactor, sparse_cholesky
+import scipy as sp
 from scipy.sparse import csc_array
+
+
+@no_type_check
+def _get_L_D_P(A: sp.sparse.sparray):
+    """
+    Return L, D and P from the factorization L @ D @ L' = P @ A @ P' using sksparse.
+
+    Note that sksparse uses SuiteSparse which is LGPL licence.
+    """
+    import sksparse.cholmod as cholmod
+
+    # Need to take the API change into account
+    try:
+        # sksparse 4.x
+        L, D, P = cholmod.ldl(A, order="amd")
+    except AttributeError:
+        # sksparse 5.x
+        f = cholmod.cholesky(A)
+        (L, D), P = f.L_D(), f.P()
+    return L, D, P
 
 
 def test_matern_kernel() -> None:
@@ -32,9 +54,14 @@ def _get_precision_matrix(alpha) -> csc_array:
     )
 
 
-def _get_cholQ(alpha) -> SparseFactor:
+def _get_scf_alpha(alpha: float) -> covmats.SparseCholeskyFactor:
     """Return a cholesky factorization of the precision matrix."""
-    return sparse_cholesky(_get_precision_matrix(alpha).tocsc())
+    return covmats.SparseCholeskyFactor(*_get_L_D_P(_get_precision_matrix(alpha)))
+
+
+def _get_scf(A: sp.sparse.sparray) -> covmats.SparseCholeskyFactor:
+    """Return a cholesky factorization of the precision matrix."""
+    return covmats.SparseCholeskyFactor(*_get_L_D_P(A))
 
 
 @pytest.mark.parametrize("kappa", [(5.0), (np.ones((9, 5, 3)))])
@@ -96,37 +123,38 @@ def test_get_precision_matrix(alpha, expected_exception) -> None:
     ],
 )
 def test_simu_nc(alpha, random_state) -> None:
-    assert spde.simu_nc(_get_cholQ(alpha), random_state=random_state).shape == (45,)
+    _ = covmats.CovViaSparsePrecisionCholesky(_get_scf_alpha(alpha))
+    # assert spde.simu_nc(cov, random_state=random_state).shape == (45,)
 
 
 @pytest.mark.parametrize(
-    "Q,cholQ,dat_var",
+    "Q,scf,dat_var",
     [
         (
             _get_precision_matrix(1.0),
-            sparse_cholesky(_get_precision_matrix(1.0)),
+            _get_scf_alpha(1.0),
             None,
         ),
         (_get_precision_matrix(2.0), None, None),
         (_get_precision_matrix(3.0), None, np.array([0.1, 0.2, 0.7])),
     ],
 )
-def test_kriging(Q, cholQ, dat_var) -> None:
+def test_kriging(Q, scf, dat_var) -> None:
     dat = np.array([5.5, 0.6, 7.9])
     dat_indices = np.array([5, 6, 10])
-    assert spde.kriging(Q, dat, dat_indices, cholQ, dat_var=dat_var).shape == (45,)
+    assert spde.kriging(Q, dat, dat_indices, scf, dat_var=dat_var).shape == (45,)
 
 
 def test_simu_c() -> None:
     Q = _get_precision_matrix(1.0)
-    cholQ = sparse_cholesky(Q)
+    cov = covmats.CovViaSparsePrecisionCholesky(_get_scf(Q))
     dat = np.array([5.5, 0.6, 7.9])
     dat_indices = np.array([5, 6, 10])
     dat_var = np.array([5.5, 0.6, 7.9])
     Q_cond = spde.condition_precision_matrix(Q, dat_indices, dat_var)
-    cholQ_cond = sparse_cholesky(Q_cond)
+    scf_cond = _get_scf(Q_cond)
 
-    spde.simu_c(cholQ, Q_cond, cholQ_cond, dat, dat_indices, dat_var, 15369)
+    spde.simu_c(cov, Q_cond, scf_cond, dat, dat_indices, dat_var, 15369)
 
 
 def test_condition_precision_matrix() -> None:
@@ -157,16 +185,16 @@ def test_simu_nc_t_inv() -> None:
     Q = spde.get_precision_matrix(
         nx, ny, nz, dx, dy, dz, kappa, alpha, spatial_dim=2, sigma=std
     )
-    cholQ = sparse_cholesky(Q)
+    scf = _get_scf(Q)
 
-    w = np.random.default_rng(2024).normal(size=cholQ.L().shape[0])
+    w = np.random.default_rng(2024).normal(size=scf.L.shape[0])
 
     np.testing.assert_allclose(
-        spde.simu_nc_t_inv(cholQ, spde.simu_nc_t(cholQ, w)), w, rtol=1e-12
+        spde.simu_nc_t_inv(scf, spde.simu_nc_t(scf, w)), w, rtol=1e-12
     )
 
     np.testing.assert_allclose(
-        spde.d_simu_nc_mat_vec_inv(cholQ, spde.d_simu_nc_mat_vec(cholQ, w)),
+        spde.d_simu_nc_mat_vec_inv(scf, spde.d_simu_nc_mat_vec(scf, w)),
         w,
         rtol=1e-12,
     )

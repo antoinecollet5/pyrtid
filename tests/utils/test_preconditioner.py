@@ -1,19 +1,20 @@
 import logging
 from contextlib import nullcontext as does_not_raise
-from typing import Optional
+from typing import Optional, no_type_check
 
+import covmats
 import numdifftools as nd
 import numpy as np
 import pyrtid.inverse as dminv
 import pyrtid.utils.spde as spde
 import pytest
+import scipy as sp
 from pyrtid.utils import (
     NDArrayFloat,
     NDArrayInt,
     RectilinearGrid,
     check_random_state,
     indices_to_node_number,
-    sparse_cholesky,
 )
 from pyrtid.utils.preconditioner import (
     GradientScalerConfig,
@@ -34,10 +35,36 @@ from pyrtid.utils.preconditioner import (
     to_new_range_derivative,
 )
 
+
+@no_type_check
+def _get_L_D_P(A: sp.sparse.sparray):
+    """
+    Return L, D and P from the factorization L @ D @ L' = P @ A @ P' using sksparse.
+
+    Note that sksparse uses SuiteSparse which is LGPL licence.
+    """
+    import sksparse.cholmod as cholmod
+
+    # Need to take the API change into account
+    try:
+        # sksparse 4.x
+        L, D, P = cholmod.ldl(A, order="amd")
+    except AttributeError:
+        # sksparse 5.x
+        f = cholmod.cholesky(A)
+        (L, D), P = f.L_D(), f.P()
+    return L, D, P
+
+
 logger = logging.getLogger("ROOT")
 scaler_log = logging.getLogger("SCALER")
 logger.setLevel(logging.INFO)
 scaler_log.setLevel(logging.INFO)
+
+
+def _get_scf(A: sp.sparse.sparray) -> covmats.SparseCholeskyFactor:
+    """Return a cholesky factorization of the precision matrix."""
+    return covmats.SparseCholeskyFactor(*_get_L_D_P(A))
 
 
 @pytest.mark.parametrize(
@@ -404,9 +431,9 @@ def test_GDP_SPDE(is_update_mean: bool) -> None:
     Q_ref = spde.get_precision_matrix(
         nx, ny, nz, dx, dy, dz, kappa, scaling_factor, spatial_dim=2, sigma=std
     )
-    cholQ_ref = sparse_cholesky(Q_ref)
+    scf_ref = _get_scf(Q_ref)
     # Non conditional simulation -> change the random state to obtain a different field
-    simu_ = spde.simu_nc(cholQ_ref, random_state=2026).reshape(nx, ny, order="F")
+    simu_ = spde.simu_nc(scf_ref, random_state=2026).reshape(nx, ny, order="F")
     reference_grade_ppm = np.abs(simu_ + mean)
 
     # Conditioning data
@@ -447,8 +474,8 @@ def test_GDP_SPDE(is_update_mean: bool) -> None:
     Q_c = spde.condition_precision_matrix(Q_nc, dat_nn, dat_var)
 
     # Decompose with cholesky
-    cholQ_nc = sparse_cholesky(Q_nc)
-    cholQ_c = sparse_cholesky(Q_c)
+    scf_nc = _get_scf(Q_nc)
+    scf_c = _get_scf(Q_c)
 
     lbounds = np.ones((nx * ny)) * -1000
     ubounds = np.ones((nx * ny)) * 1500
@@ -466,11 +493,11 @@ def test_GDP_SPDE(is_update_mean: bool) -> None:
         Q_nc,
         estimated_mean,
         theta=theta_test,
-        cholQ_nc=cholQ_nc,
+        scf_nc=scf_nc,
         random_state=2024,
         is_update_mean=is_update_mean,
     )
-    s_nc = pcd_gdpncs.backtransform(pcd_gdpncs(np.zeros(cholQ_nc.P().size)))
+    s_nc = pcd_gdpncs.backtransform(pcd_gdpncs(np.zeros(scf_nc.P().size)))
     np.testing.assert_allclose(pcd_gdpncs.theta, theta_test, rtol=1e-5)
     pcd_gdpncs.test_preconditioner(lbounds, ubounds, eps=1e-8)
     pcd_gdpncs.transform_bounds(np.vstack([lbounds, ubounds]).T)
@@ -527,15 +554,15 @@ def test_GDP_SPDE(is_update_mean: bool) -> None:
         dat_val,
         dat_var,
         theta=theta_test,
-        cholQ_nc=cholQ_nc,
-        cholQ_c=cholQ_c,
+        scf_nc=scf_nc,
+        scf_c=scf_c,
         random_state=2024,
         is_update_mean=is_update_mean,
     )
     pcd_gdpcs.smart_copy().test_preconditioner(lbounds, ubounds, rtol=1e-4, eps=1e-6)
     # pcd_gdpcs.test_preconditioner(lbounds, ubounds, rtol=1e-4, eps=1e-6)
     pcd_gdpcs.transform_bounds(np.vstack([lbounds, ubounds]).T)
-    s_nc = pcd_gdpcs.backtransform(pcd_gdpcs(np.zeros(cholQ_nc.P().size)))
+    s_nc = pcd_gdpcs.backtransform(pcd_gdpcs(np.zeros(scf_nc.P().size)))
     np.testing.assert_allclose(pcd_gdpcs.theta, theta_test)
 
     grad_nc = (

@@ -102,6 +102,7 @@ from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from typing import Generator, List, Optional, Sequence, Tuple, Union
 
+import covmats
 import numdifftools as nd
 import numpy as np
 import scipy as sp
@@ -113,10 +114,8 @@ from pyrtid.utils import (
     NDArrayFloat,
     NDArrayInt,
     RectilinearGrid,
-    SparseFactor,
     check_random_state,
     object_or_object_sequence_to_list,
-    sparse_cholesky,
 )
 
 
@@ -2060,10 +2059,9 @@ class GDPNCS(Preconditioner):
     def __init__(
         self,
         ne: int,
-        Q_nc: csc_array,
+        cov: covmats.CovarianceMatrix,
         estimated_mean: float = 0.0,
         theta: Optional[NDArrayFloat] = None,
-        cholQ_nc: Optional[SparseFactor] = None,
         random_state: Optional[
             Union[int, np.random.Generator, np.random.RandomState]
         ] = None,
@@ -2088,19 +2086,11 @@ class GDPNCS(Preconditioner):
 
         self.estimated_mean: float = estimated_mean
         self.is_update_mean: bool = is_update_mean
-
-        # TODO: check if Q_nc is square
-
-        # perform the cholesky factorization of the sparse non conditional precision
-        # matrix for fast inversion
-        if cholQ_nc is None:
-            self._cholQ_nc = sparse_cholesky(Q_nc)
-        else:
-            self._cholQ_nc = cholQ_nc
+        self.cov: covmats.CovarianceMatrix = cov
 
         # initialize the ensemble of white noises with shape (Ns, Ne)
         self.W: NDArrayFloat = check_random_state(random_state).normal(
-            size=(Q_nc.shape[0], ne)
+            size=(cov.shape[0], ne)
         )
 
         if theta is not None:
@@ -2144,7 +2134,7 @@ class GDPNCS(Preconditioner):
         NDArrayFloat
             Conditioned (transformed) parameter values.
         """
-        assert s_raw.size == self._cholQ_nc.P().size
+        assert s_raw.size == self.cov.shape[0]
         if self.is_update_mean:
             return np.hstack((self.theta, self.estimated_mean))
         return self.theta
@@ -2170,9 +2160,8 @@ class GDPNCS(Preconditioner):
             self.theta = s_cond
 
         return (
-            spde.simu_nc(
-                self._cholQ_nc,
-                w=gd_parametrize(self.W, get_gd_weights(self.theta)),
+            self.cov.colorize(
+                x=gd_parametrize(self.W, get_gd_weights(self.theta)),
             )
             + self.estimated_mean
         )
@@ -2192,7 +2181,7 @@ class GDPNCS(Preconditioner):
         Return the backtransform 1st derivative times a vector.
         """
         out = d_gd_parametrize_mat_vec(
-            self.W, self.theta, spde.d_simu_nc_mat_vec(self._cholQ_nc, gradient)
+            self.W, self.theta, spde.d_simu_nc_mat_vec(self._scf_nc, gradient)
         )
         if self.is_update_mean:
             return np.hstack((out, np.sum(gradient)))
@@ -2258,13 +2247,13 @@ class GDPCS(GDPNCS):
         ne: int,
         Q_nc: csc_array,
         Q_c: csc_array,
+        scf_nc: covmats.SparseCholeskyFactor,
+        scf_c: covmats.SparseCholeskyFactor,
         estimated_mean: float,
         dat_nn: NDArrayInt,
         dat_val: NDArrayFloat,
         dat_var: NDArrayFloat,
         theta: Optional[NDArrayFloat] = None,
-        cholQ_nc: Optional[SparseFactor] = None,
-        cholQ_c: Optional[SparseFactor] = None,
         random_state: Optional[
             Union[int, np.random.Generator, np.random.RandomState]
         ] = None,
@@ -2290,18 +2279,13 @@ class GDPCS(GDPNCS):
             Q_nc=Q_nc,
             estimated_mean=estimated_mean,
             theta=theta,
-            cholQ_nc=cholQ_nc,
+            scf_nc=scf_nc,
             random_state=random_state,
             is_update_mean=is_update_mean,
         )
 
-        # perform the cholesky factorization of the sparse non conditional precision
-        # matrix for fast inversion
-        if cholQ_c is None:
-            self._cholQ_c = sparse_cholesky(Q_c)
-        else:
-            self._cholQ_c = cholQ_c
         self._Q_c = Q_c
+        self._scf_c = scf_c
 
         # Conditioning data
         self.dat_nn = dat_nn
@@ -2329,9 +2313,9 @@ class GDPCS(GDPNCS):
             self.theta = s_cond
         return (
             spde.simu_c(
-                self._cholQ_nc,
+                self._scf_nc,
                 self._Q_c,
-                self._cholQ_c,
+                self._scf_c,
                 self.dat_val - self.estimated_mean,
                 self.dat_nn,
                 self.dat_var,
@@ -2358,18 +2342,18 @@ class GDPCS(GDPNCS):
             self.W,
             self.theta,
             spde.d_simu_c_matvec(
-                self._cholQ_nc, self._cholQ_c, self.dat_nn, self.dat_var, gradient
+                self._scf_nc, self._scf_c, self.dat_nn, self.dat_var, gradient
             ),
         )
         if self.is_update_mean:
-            Z = lil_array((self._cholQ_nc.L().shape[0], self.dat_nn.size))
+            Z = lil_array((self._scf_nc.L().shape[0], self.dat_nn.size))
             Z[self.dat_nn, np.arange(self.dat_nn.size)] = 1
 
             return np.hstack(
                 (
                     out,
                     np.sum(gradient)
-                    - (1 / self.dat_var @ (Z.T @ self._cholQ_c(gradient))),
+                    - (1 / self.dat_var @ (Z.T @ self._scf_c(gradient))),
                 )
             )
         return out

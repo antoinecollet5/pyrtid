@@ -272,27 +272,27 @@ def make_spatial_gradient_matrices(
             # Forward scheme only: see PhD manuscript, chapter 7 for the explanaition.
             idc_owner, idc_neigh = get_owner_neigh_indices(
                 grid,
-                (slice(0, grid.nx - 1), slice(None)),
-                (slice(1, grid.nx), slice(None)),
+                (slice(0, grid.nx - 1), slice(None), slice(None)),
+                (slice(1, grid.nx), slice(None), slice(None)),
                 owner_indices_to_keep=_sub_selection,
                 neigh_indices_to_keep=_sub_selection,
             )
 
-            mat_grad_x[idc_owner, idc_neigh] -= tmp * np.ones(idc_owner.size)  # type: ignore
-            mat_grad_x[idc_owner, idc_owner] += tmp * np.ones(idc_owner.size)  # type: ignore
+            mat_grad_x[idc_owner, idc_neigh] -= tmp * np.ones(idc_owner.size)
+            mat_grad_x[idc_owner, idc_owner] += tmp * np.ones(idc_owner.size)
 
         if which in ["backward", "both"]:
             # Forward scheme only: see PhD manuscript, chapter 7 for the explanaition.
             idc_owner, idc_neigh = get_owner_neigh_indices(
                 grid,
-                (slice(1, grid.nx), slice(None)),
-                (slice(0, grid.nx - 1), slice(None)),
+                (slice(1, grid.nx), slice(None), slice(None)),
+                (slice(0, grid.nx - 1), slice(None), slice(None)),
                 owner_indices_to_keep=_sub_selection,
                 neigh_indices_to_keep=_sub_selection,
             )
 
-            mat_grad_x[idc_owner, idc_neigh] -= tmp * np.ones(idc_owner.size)  # type: ignore
-            mat_grad_x[idc_owner, idc_owner] += tmp * np.ones(idc_owner.size)  # type: ignore
+            mat_grad_x[idc_owner, idc_neigh] -= tmp * np.ones(idc_owner.size)
+            mat_grad_x[idc_owner, idc_owner] += tmp * np.ones(idc_owner.size)
 
     # Y contribution
     if grid.ny >= 2:
@@ -302,26 +302,26 @@ def make_spatial_gradient_matrices(
             # Forward scheme only: see PhD manuscript, chapter 7 for the explanaition.
             idc_owner, idc_neigh = get_owner_neigh_indices(
                 grid,
-                (slice(None), slice(0, grid.ny - 1)),
-                (slice(None), slice(1, grid.ny)),
+                (slice(None), slice(0, grid.ny - 1), slice(None)),
+                (slice(None), slice(1, grid.ny), slice(None)),
                 owner_indices_to_keep=_sub_selection,
                 neigh_indices_to_keep=_sub_selection,
             )
 
-            mat_grad_y[idc_owner, idc_neigh] -= tmp * np.ones(idc_owner.size)  # type: ignore
-            mat_grad_y[idc_owner, idc_owner] += tmp * np.ones(idc_owner.size)  # type: ignore
+            mat_grad_y[idc_owner, idc_neigh] -= tmp * np.ones(idc_owner.size)
+            mat_grad_y[idc_owner, idc_owner] += tmp * np.ones(idc_owner.size)
 
         if which in ["backward", "both"]:
             # Forward scheme only: see PhD manuscript, chapter 7 for the explanaition.
             idc_owner, idc_neigh = get_owner_neigh_indices(
                 grid,
-                (slice(None), slice(1, grid.ny)),
-                (slice(None), slice(0, grid.ny - 1)),
+                (slice(None), slice(1, grid.ny), slice(None)),
+                (slice(None), slice(0, grid.ny - 1), slice(None)),
                 owner_indices_to_keep=_sub_selection,
                 neigh_indices_to_keep=_sub_selection,
             )
-            mat_grad_y[idc_owner, idc_neigh] -= tmp * np.ones(idc_owner.size)  # type: ignore
-            mat_grad_y[idc_owner, idc_owner] += tmp * np.ones(idc_owner.size)  # type: ignore
+            mat_grad_y[idc_owner, idc_neigh] -= tmp * np.ones(idc_owner.size)
+            mat_grad_y[idc_owner, idc_owner] += tmp * np.ones(idc_owner.size)
 
     return mat_grad_x.tocsc(), mat_grad_y.tocsc()
 
@@ -362,25 +362,25 @@ def make_spatial_permutation_matrices(
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
             grid,
-            (slice(0, grid.nx - 1), slice(None)),
-            (slice(1, grid.nx), slice(None)),
+            (slice(0, grid.nx - 1), slice(None), slice(None)),
+            (slice(1, grid.nx), slice(None), slice(None)),
             owner_indices_to_keep=_sub_selection,
             neigh_indices_to_keep=_sub_selection,
         )
 
-        mat_perm_x[idc_neigh, idc_owner] = np.ones(idc_owner.size)  # type: ignore
+        mat_perm_x[idc_neigh, idc_owner] = np.ones(idc_owner.size)
 
     # Y contribution
     if grid.ny >= 2:
         # Forward scheme:
         idc_owner, idc_neigh = get_owner_neigh_indices(
             grid,
-            (slice(None), slice(0, grid.ny - 1)),
-            (slice(None), slice(1, grid.ny)),
+            (slice(None), slice(0, grid.ny - 1), slice(None)),
+            (slice(None), slice(1, grid.ny), slice(None)),
             owner_indices_to_keep=_sub_selection,
             neigh_indices_to_keep=_sub_selection,
         )
 
-        mat_perm_y[idc_neigh, idc_owner] = np.ones(idc_owner.size)  # type: ignore
+        mat_perm_y[idc_neigh, idc_owner] = np.ones(idc_owner.size)
 
     return mat_perm_x.tocsc(), mat_perm_y.tocsc()
