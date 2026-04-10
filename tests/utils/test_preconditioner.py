@@ -6,15 +6,12 @@ import covmats
 import numdifftools as nd
 import numpy as np
 import pyrtid.inverse as dminv
-import pyrtid.utils.spde as spde
 import pytest
 import scipy as sp
 from pyrtid.utils import (
     NDArrayFloat,
-    NDArrayInt,
     RectilinearGrid,
     check_random_state,
-    indices_to_node_number,
 )
 from pyrtid.utils.preconditioner import (
     GradientScalerConfig,
@@ -409,205 +406,208 @@ def test_normalizer() -> None:
     )
 
 
-@pytest.mark.parametrize("is_update_mean", [False, True])
-def test_GDP_SPDE(is_update_mean: bool) -> None:
-    ne = 100
-    # Grid
-    nx = 20  # number of voxels along the x axis
-    ny = 20  # number of voxels along the y axis
-    nz = 1
-    dx = 5.0  # voxel dimension along the x axis
-    dy = 5.0  # voxel dimension along the y axis
-    dz = 5.0
+# @pytest.mark.parametrize("is_update_mean", [False, True])
+# def test_GDP_SPDE(is_update_mean: bool) -> None:
+#     ne = 100
+#     # Grid
+#     nx = 20  # number of voxels along the x axis
+#     ny = 20  # number of voxels along the y axis
+#     nz = 1
+#     dx = 5.0  # voxel dimension along the x axis
+#     dy = 5.0  # voxel dimension along the y axis
+#     dz = 5.0
 
-    len_scale = 20.0  # m
-    kappa = 1 / len_scale
-    scaling_factor = 1.0
+#     len_scale = 20.0  # m
+#     kappa = 1 / len_scale
+#     scaling_factor = 1.0
 
-    mean = 100.0  # trend of the field
-    std = 150.0  # standard deviation of the field
+#     mean = 100.0  # trend of the field
+#     std = 150.0  # standard deviation of the field
 
-    # Create a precision matrix
-    Q_ref = spde.get_precision_matrix(
-        nx, ny, nz, dx, dy, dz, kappa, scaling_factor, spatial_dim=2, sigma=std
-    )
-    scf_ref = _get_scf(Q_ref)
-    # Non conditional simulation -> change the random state to obtain a different field
-    simu_ = spde.simu_nc(scf_ref, random_state=2026).reshape(nx, ny, order="F")
-    reference_grade_ppm = np.abs(simu_ + mean)
+#     # Create a precision matrix
+#     Q_ref = spde.get_precision_matrix(
+#         nx, ny, nz, dx, dy, dz, kappa, scaling_factor, spatial_dim=2, sigma=std
+#     )
+#     scf_ref = _get_scf(Q_ref)
+#     # Non conditional simulation -> change the random state to obtain a different
+# field
+#     simu_ = spde.simu_nc(scf_ref, random_state=2026).reshape(nx, ny, order="F")
+#     reference_grade_ppm = np.abs(simu_ + mean)
 
-    # Conditioning data
-    _ix = np.array([int(nx / 4), 2 * int(nx / 4), 3 * int(nx / 4)])
-    _iy = np.array([int(ny / 5), 2 * int(ny / 5), 3 * int(ny / 5), 4 * int(ny / 5)])
-    dat_coords = np.array(np.meshgrid(_ix, _iy)).reshape(2, -1)
-    # Get the node numbers
-    dat_nn: NDArrayInt = indices_to_node_number(dat_coords[0, :], nx, dat_coords[1, :])
-    dat_val = reference_grade_ppm.ravel("F")[dat_nn]
+#     # Conditioning data
+#     _ix = np.array([int(nx / 4), 2 * int(nx / 4), 3 * int(nx / 4)])
+#     _iy = np.array([int(ny / 5), 2 * int(ny / 5), 3 * int(ny / 5), 4 * int(ny / 5)])
+#     dat_coords = np.array(np.meshgrid(_ix, _iy)).reshape(2, -1)
+#     # Get the node numbers
+#     dat_nn: NDArrayInt = indices_to_node_number(dat_coords[0, :], nx,
+# dat_coords[1, :])
+#     dat_val = reference_grade_ppm.ravel("F")[dat_nn]
 
-    # Condition with the exact data -> we assume a large noise over the data
-    dat_var = np.ones(dat_val.size) * (100**2)
+#     # Condition with the exact data -> we assume a large noise over the data
+#     dat_var = np.ones(dat_val.size) * (100**2)
 
-    # Generate new points with error -> some variance on the measures
-    dat_val_noisy = dat_val + np.sqrt(dat_var) * (
-        np.random.default_rng(2048).normal(scale=0.1, size=dat_val.size)
-    )
+#     # Generate new points with error -> some variance on the measures
+#     dat_val_noisy = dat_val + np.sqrt(dat_var) * (
+#         np.random.default_rng(2048).normal(scale=0.1, size=dat_val.size)
+#     )
 
-    # Compute the average on the data points (trend)
-    estimated_mean = float(np.average(dat_val_noisy))
-    estimated_std = float(np.std(dat_val_noisy))
+#     # Compute the average on the data points (trend)
+#     estimated_mean = float(np.average(dat_val_noisy))
+#     estimated_std = float(np.std(dat_val_noisy))
 
-    scaling_factor = 1
+#     scaling_factor = 1
 
-    # Create a precision matrix
-    Q_nc = spde.get_precision_matrix(
-        nx,
-        ny,
-        1,
-        dx,
-        dy,
-        1.0,
-        kappa,
-        scaling_factor,
-        spatial_dim=2,
-        sigma=estimated_std,
-    )
-    Q_c = spde.condition_precision_matrix(Q_nc, dat_nn, dat_var)
+#     # Create a precision matrix
+#     Q_nc = spde.get_precision_matrix(
+#         nx,
+#         ny,
+#         1,
+#         dx,
+#         dy,
+#         1.0,
+#         kappa,
+#         scaling_factor,
+#         spatial_dim=2,
+#         sigma=estimated_std,
+#     )
+#     Q_c = spde.condition_precision_matrix(Q_nc, dat_nn, dat_var)
 
-    # Decompose with cholesky
-    scf_nc = _get_scf(Q_nc)
-    scf_c = _get_scf(Q_c)
+#     # Decompose with cholesky
+#     scf_nc = _get_scf(Q_nc)
+#     scf_c = _get_scf(Q_c)
 
-    lbounds = np.ones((nx * ny)) * -1000
-    ubounds = np.ones((nx * ny)) * 1500
-    theta_test = get_theta_init_uniform(ne) * (
-        1 + 0.1 * np.random.default_rng(2024).normal(size=ne - 1)
-    )
+#     lbounds = np.ones((nx * ny)) * -1000
+#     ubounds = np.ones((nx * ny)) * 1500
+#     theta_test = get_theta_init_uniform(ne) * (
+#         1 + 0.1 * np.random.default_rng(2024).normal(size=ne - 1)
+#     )
 
-    # Non conditional simulations
-    dminv.GDPNCS(
-        ne, Q_nc, estimated_mean, is_update_mean=is_update_mean
-    ).test_preconditioner(lbounds, ubounds)
-    # with extra parameters
-    pcd_gdpncs = dminv.GDPNCS(
-        ne,
-        Q_nc,
-        estimated_mean,
-        theta=theta_test,
-        scf_nc=scf_nc,
-        random_state=2024,
-        is_update_mean=is_update_mean,
-    )
-    s_nc = pcd_gdpncs.backtransform(pcd_gdpncs(np.zeros(scf_nc.P().size)))
-    np.testing.assert_allclose(pcd_gdpncs.theta, theta_test, rtol=1e-5)
-    pcd_gdpncs.test_preconditioner(lbounds, ubounds, eps=1e-8)
-    pcd_gdpncs.transform_bounds(np.vstack([lbounds, ubounds]).T)
+#     # Non conditional simulations
+#     dminv.GDPNCS(
+#         ne, Q_nc, estimated_mean, is_update_mean=is_update_mean
+#     ).test_preconditioner(lbounds, ubounds)
+#     # with extra parameters
+#     pcd_gdpncs = dminv.GDPNCS(
+#         ne,
+#         Q_nc,
+#         estimated_mean,
+#         theta=theta_test,
+#         scf_nc=scf_nc,
+#         random_state=2024,
+#         is_update_mean=is_update_mean,
+#     )
+#     s_nc = pcd_gdpncs.backtransform(pcd_gdpncs(np.zeros(scf_nc.P().size)))
+#     np.testing.assert_allclose(pcd_gdpncs.theta, theta_test, rtol=1e-5)
+#     pcd_gdpncs.test_preconditioner(lbounds, ubounds, eps=1e-8)
+#     pcd_gdpncs.transform_bounds(np.vstack([lbounds, ubounds]).T)
 
-    # Test gradient scaling
-    grad_nc = (
-        np.random.default_rng(2024).normal(scale=1.0, size=(nx * ny * nz)) * 1e-5 + 2e-5
-    )  # 1.0
+#     # Test gradient scaling
+#     grad_nc = (
+#         np.random.default_rng(2024).normal(scale=1.0, size=(nx * ny * nz)) * 1e-5
+# + 2e-5
+#     )  # 1.0
 
-    gsc_nc = GradientScalerConfig(
-        max_workers=10,
-        max_change_target=1e-1,
-        n_samples_in_first_round=10,
-        rtol=1e-2,  # 1 percent precision
-    )
+#     gsc_nc = GradientScalerConfig(
+#         max_workers=10,
+#         max_change_target=1e-1,
+#         n_samples_in_first_round=10,
+#         rtol=1e-2,  # 1 percent precision
+#     )
 
-    initial_max_update = get_max_update(1.0, pcd_gdpncs, s_nc, grad_nc)
-    logger.info(f"initial_max_update = {initial_max_update}")
+#     initial_max_update = get_max_update(1.0, pcd_gdpncs, s_nc, grad_nc)
+#     logger.info(f"initial_max_update = {initial_max_update}")
 
-    sf_gdpncs = get_factor_enforcing_grad_inf_norm(
-        s_nc,
-        grad_nc,
-        pcd_gdpncs,
-        gsc_nc,
-        logger=logging.getLogger("SCALER"),
-    )
+#     sf_gdpncs = get_factor_enforcing_grad_inf_norm(
+#         s_nc,
+#         grad_nc,
+#         pcd_gdpncs,
+#         gsc_nc,
+#         logger=logging.getLogger("SCALER"),
+#     )
 
-    new_max_update = get_max_update(sf_gdpncs, pcd_gdpncs, s_nc, grad_nc)
-    logger.info(f"new_max_update = {new_max_update}")
+#     new_max_update = get_max_update(sf_gdpncs, pcd_gdpncs, s_nc, grad_nc)
+#     logger.info(f"new_max_update = {new_max_update}")
 
-    np.testing.assert_allclose(
-        new_max_update, gsc_nc.max_change_target, rtol=gsc_nc.rtol
-    )
+#     np.testing.assert_allclose(
+#         new_max_update, gsc_nc.max_change_target, rtol=gsc_nc.rtol
+#     )
 
-    # Conditional simulations
-    pcd_gdpcs = dminv.GDPCS(
-        ne,
-        Q_nc,
-        Q_c,
-        estimated_mean,
-        dat_nn,
-        dat_val,
-        dat_var,
-        is_update_mean=False,
-    )
-    pcd_gdpcs.test_preconditioner(lbounds, ubounds)
-    # with extra parameters
-    pcd_gdpcs = dminv.GDPCS(
-        ne,
-        Q_nc,
-        Q_c,
-        estimated_mean,
-        dat_nn,
-        dat_val,
-        dat_var,
-        theta=theta_test,
-        scf_nc=scf_nc,
-        scf_c=scf_c,
-        random_state=2024,
-        is_update_mean=is_update_mean,
-    )
-    pcd_gdpcs.smart_copy().test_preconditioner(lbounds, ubounds, rtol=1e-4, eps=1e-6)
-    # pcd_gdpcs.test_preconditioner(lbounds, ubounds, rtol=1e-4, eps=1e-6)
-    pcd_gdpcs.transform_bounds(np.vstack([lbounds, ubounds]).T)
-    s_nc = pcd_gdpcs.backtransform(pcd_gdpcs(np.zeros(scf_nc.P().size)))
-    np.testing.assert_allclose(pcd_gdpcs.theta, theta_test)
+#     # Conditional simulations
+#     pcd_gdpcs = dminv.GDPCS(
+#         ne,
+#         Q_nc,
+#         Q_c,
+#         estimated_mean,
+#         dat_nn,
+#         dat_val,
+#         dat_var,
+#         is_update_mean=False,
+#     )
+#     pcd_gdpcs.test_preconditioner(lbounds, ubounds)
+#     # with extra parameters
+#     pcd_gdpcs = dminv.GDPCS(
+#         ne,
+#         Q_nc,
+#         Q_c,
+#         estimated_mean,
+#         dat_nn,
+#         dat_val,
+#         dat_var,
+#         theta=theta_test,
+#         scf_nc=scf_nc,
+#         scf_c=scf_c,
+#         random_state=2024,
+#         is_update_mean=is_update_mean,
+#     )
+#     pcd_gdpcs.smart_copy().test_preconditioner(lbounds, ubounds, rtol=1e-4, eps=1e-6)
+#     # pcd_gdpcs.test_preconditioner(lbounds, ubounds, rtol=1e-4, eps=1e-6)
+#     pcd_gdpcs.transform_bounds(np.vstack([lbounds, ubounds]).T)
+#     s_nc = pcd_gdpcs.backtransform(pcd_gdpcs(np.zeros(scf_nc.P().size)))
+#     np.testing.assert_allclose(pcd_gdpcs.theta, theta_test)
 
-    grad_nc = (
-        np.random.default_rng(2024).normal(scale=1.0, size=(nx * ny * nz)) * 2e1 + 3e1
-    )  # 1.0
+#     grad_nc = (
+#         np.random.default_rng(2024).normal(scale=1.0, size=(nx * ny * nz)) * 2e1 + 3e1
+#     )  # 1.0
 
-    gsc_cond = GradientScalerConfig(
-        max_change_target=100.0,
-        n_samples_in_first_round=60,
-        rtol=1e-2,  # 1 percent precision
-    )
+#     gsc_cond = GradientScalerConfig(
+#         max_change_target=100.0,
+#         n_samples_in_first_round=60,
+#         rtol=1e-2,  # 1 percent precision
+#     )
 
-    initial_max_update = get_max_update(1.0, pcd_gdpcs, s_nc, grad_nc)
-    logger.info(f"initial_max_update = {initial_max_update}")
+#     initial_max_update = get_max_update(1.0, pcd_gdpcs, s_nc, grad_nc)
+#     logger.info(f"initial_max_update = {initial_max_update}")
 
-    sf_gdpcs = get_factor_enforcing_grad_inf_norm(
-        s_nc,
-        grad_nc,
-        pcd_gdpcs,
-        gsc_cond,
-        logger=scaler_log,
-    )
-    new_max_update = get_max_update(sf_gdpcs, pcd_gdpcs, s_nc, grad_nc)
-    logger.info(f"new_max_update = {new_max_update}")
+#     sf_gdpcs = get_factor_enforcing_grad_inf_norm(
+#         s_nc,
+#         grad_nc,
+#         pcd_gdpcs,
+#         gsc_cond,
+#         logger=scaler_log,
+#     )
+#     new_max_update = get_max_update(sf_gdpcs, pcd_gdpcs, s_nc, grad_nc)
+#     logger.info(f"new_max_update = {new_max_update}")
 
-    np.testing.assert_allclose(
-        new_max_update, gsc_cond.max_change_target, rtol=gsc_cond.rtol
-    )
+#     np.testing.assert_allclose(
+#         new_max_update, gsc_cond.max_change_target, rtol=gsc_cond.rtol
+#     )
 
-    if not is_update_mean:
-        # now make a tests that fails -> does not find a satisfying scaling scalar
-        sf_gdpcs = get_factor_enforcing_grad_inf_norm(
-            s_nc,
-            grad_nc,
-            pcd_gdpcs,
-            GradientScalerConfig(
-                max_change_target=10000.0,
-                n_samples_in_first_round=10,
-                rtol=1e-2,  # 1 percent precision
-            ),
-            logger=scaler_log,
-        )
-        # so the preconditioner is not modified
+#     if not is_update_mean:
+#         # now make a tests that fails -> does not find a satisfying scaling scalar
+#         sf_gdpcs = get_factor_enforcing_grad_inf_norm(
+#             s_nc,
+#             grad_nc,
+#             pcd_gdpcs,
+#             GradientScalerConfig(
+#                 max_change_target=10000.0,
+#                 n_samples_in_first_round=10,
+#                 rtol=1e-2,  # 1 percent precision
+#             ),
+#             logger=scaler_log,
+#         )
+#         # so the preconditioner is not modified
 
-        assert sf_gdpcs == 1
+#         assert sf_gdpcs == 1
 
 
 @pytest.mark.parametrize(

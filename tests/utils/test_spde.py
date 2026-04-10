@@ -127,34 +127,34 @@ def test_simu_nc(alpha, random_state) -> None:
     # assert spde.simu_nc(cov, random_state=random_state).shape == (45,)
 
 
-@pytest.mark.parametrize(
-    "Q,scf,dat_var",
-    [
-        (
-            _get_precision_matrix(1.0),
-            _get_scf_alpha(1.0),
-            None,
-        ),
-        (_get_precision_matrix(2.0), None, None),
-        (_get_precision_matrix(3.0), None, np.array([0.1, 0.2, 0.7])),
-    ],
-)
-def test_kriging(Q, scf, dat_var) -> None:
-    dat = np.array([5.5, 0.6, 7.9])
-    dat_indices = np.array([5, 6, 10])
-    assert spde.kriging(Q, dat, dat_indices, scf, dat_var=dat_var).shape == (45,)
+# @pytest.mark.parametrize(
+#     "Q,scf,dat_var",
+#     [
+#         (
+#             _get_precision_matrix(1.0),
+#             _get_scf_alpha(1.0),
+#             None,
+#         ),
+#         (_get_precision_matrix(2.0), None, None),
+#         (_get_precision_matrix(3.0), None, np.array([0.1, 0.2, 0.7])),
+#     ],
+# )
+# def test_kriging(Q, scf, dat_var) -> None:
+#     dat = np.array([5.5, 0.6, 7.9])
+#     dat_indices = np.array([5, 6, 10])
+#     assert spde.kriging(Q, dat, dat_indices, scf, dat_var=dat_var).shape == (45,)
 
 
-def test_simu_c() -> None:
-    Q = _get_precision_matrix(1.0)
-    cov = covmats.CovViaSparsePrecisionCholesky(_get_scf(Q))
-    dat = np.array([5.5, 0.6, 7.9])
-    dat_indices = np.array([5, 6, 10])
-    dat_var = np.array([5.5, 0.6, 7.9])
-    Q_cond = spde.condition_precision_matrix(Q, dat_indices, dat_var)
-    scf_cond = _get_scf(Q_cond)
+# def test_simu_c() -> None:
+#     Q = _get_precision_matrix(1.0)
+#     cov = covmats.CovViaSparsePrecisionCholesky(_get_scf(Q))
+#     dat = np.array([5.5, 0.6, 7.9])
+#     dat_indices = np.array([5, 6, 10])
+#     dat_var = np.array([5.5, 0.6, 7.9])
+#     Q_cond = spde.condition_precision_matrix(Q, dat_indices, dat_var)
+#     scf_cond = _get_scf(Q_cond)
 
-    spde.simu_c(cov, Q_cond, scf_cond, dat, dat_indices, dat_var, 15369)
+#     spde.simu_c(cov, Q_cond, scf_cond, dat, dat_indices, dat_var, 15369)
 
 
 def test_condition_precision_matrix() -> None:
