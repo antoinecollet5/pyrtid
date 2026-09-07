@@ -36,7 +36,7 @@ dependencies = [
     "scipy",
     "gstools",
     "typing_extensions",
-    "pyesmda@git+https://github.com/antoinecollet5/pyesmda/",
+    "pyesmda",
     "stochopy",
     "matplotlib",
     "joblib",
@@ -44,9 +44,9 @@ dependencies = [
     "lbfgsb",
     "numba",
     "pypcga",
-    "covmats>=0.2.2",
+    "covmats>=0.4.0",
     "scooby",
-    "quickpaver>=0.2.0"
+    "quickpaver>=0.4.0"
 ]
 [project.optional-dependencies]
 all = ['pyrtid[install, lint, tests, examples, docs]']
