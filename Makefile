@@ -62,6 +62,12 @@ test-all: ## run tests on every Python version with tox
 	tox
 
 coverage: ## check code coverage quickly with the default Python
+	coverage run --source pyrtid -m pytest
+	coverage report -m
+	coverage html
+	$(BROWSER) htmlcov/index.html
+
+coverage-tox: ## check code coverage quickly with the default Python
 	tox
 	coverage combine
 	coverage report -m
