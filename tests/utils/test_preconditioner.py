@@ -8,6 +8,7 @@ import numpy as np
 import pyrtid.inverse as dminv
 import pytest
 import scipy as sp
+from covmats._sparse_helpers import get_SPD_sparse_n11_example
 from pyrtid.utils import (
     NDArrayFloat,
     RectilinearGrid,
@@ -406,208 +407,377 @@ def test_normalizer() -> None:
     )
 
 
-# @pytest.mark.parametrize("is_update_mean", [False, True])
-# def test_GDP_SPDE(is_update_mean: bool) -> None:
-#     ne = 100
-#     # Grid
-#     nx = 20  # number of voxels along the x axis
-#     ny = 20  # number of voxels along the y axis
-#     nz = 1
-#     dx = 5.0  # voxel dimension along the x axis
-#     dy = 5.0  # voxel dimension along the y axis
-#     dz = 5.0
+# ---------------------------------------------------------------------------
+# GDPNCS / GDPCS: Gradual Deformation parametrization, now built on covmats
+# (dense/sparse covariance representations) instead of the old ad hoc
+# SPDE/precision-matrix code.
+# ---------------------------------------------------------------------------
 
-#     len_scale = 20.0  # m
-#     kappa = 1 / len_scale
-#     scaling_factor = 1.0
 
-#     mean = 100.0  # trend of the field
-#     std = 150.0  # standard deviation of the field
+def _get_dense_cov(n: int = 9, seed: int = 5) -> covmats.CovViaCholesky:
+    """A small, well-conditioned dense covariance for GDPNCS/GDPCS tests."""
+    rng = np.random.default_rng(seed)
+    A = rng.random((n, n))
+    A = A @ A.T + n * np.eye(n)  # strongly positive definite
+    return covmats.CovViaCholesky(np.linalg.cholesky(A))
 
-#     # Create a precision matrix
-#     Q_ref = spde.get_precision_matrix(
-#         nx, ny, nz, dx, dy, dz, kappa, scaling_factor, spatial_dim=2, sigma=std
-#     )
-#     scf_ref = _get_scf(Q_ref)
-#     # Non conditional simulation -> change the random state to obtain a different
-# field
-#     simu_ = spde.simu_nc(scf_ref, random_state=2026).reshape(nx, ny, order="F")
-#     reference_grade_ppm = np.abs(simu_ + mean)
 
-#     # Conditioning data
-#     _ix = np.array([int(nx / 4), 2 * int(nx / 4), 3 * int(nx / 4)])
-#     _iy = np.array([int(ny / 5), 2 * int(ny / 5), 3 * int(ny / 5), 4 * int(ny / 5)])
-#     dat_coords = np.array(np.meshgrid(_ix, _iy)).reshape(2, -1)
-#     # Get the node numbers
-#     dat_nn: NDArrayInt = indices_to_node_number(dat_coords[0, :], nx,
-# dat_coords[1, :])
-#     dat_val = reference_grade_ppm.ravel("F")[dat_nn]
+def _get_sparse_cov(seed: int = 2026) -> covmats.CovViaSparseCholesky:
+    """A sparse covariance (via SparseCholeskyFactor) for GDPNCS/GDPCS tests."""
+    A = get_SPD_sparse_n11_example(seed=seed)
+    return covmats.CovViaSparseCholesky(_get_scf(A))
 
-#     # Condition with the exact data -> we assume a large noise over the data
-#     dat_var = np.ones(dat_val.size) * (100**2)
 
-#     # Generate new points with error -> some variance on the measures
-#     dat_val_noisy = dat_val + np.sqrt(dat_var) * (
-#         np.random.default_rng(2048).normal(scale=0.1, size=dat_val.size)
-#     )
+def _dense_point_obs(idx, n: int) -> NDArrayFloat:
+    """Dense (non-LinearOperator) point-observation matrix, for coverage of
+    the `aslinearoperator` fallback in `GDPCS._dbacktransform_vec`."""
+    H = np.zeros((len(idx), n))
+    H[np.arange(len(idx)), idx] = 1.0
+    return H
 
-#     # Compute the average on the data points (trend)
-#     estimated_mean = float(np.average(dat_val_noisy))
-#     estimated_std = float(np.std(dat_val_noisy))
 
-#     scaling_factor = 1
+def test_preconditioner_1d_vector_validation() -> None:
+    pcd = dminv.NoTransform()
+    bad = np.ones((2, 2))
+    grad_bad = np.ones((2, 2))
+    with pytest.raises(ValueError, match="'transform' method expects a 1D vector!"):
+        pcd.transform(bad)
+    with pytest.raises(ValueError, match="'backtransform' method expects a 1D vector!"):
+        pcd.backtransform(bad)
+    with pytest.raises(ValueError, match="'dtransform_vec' method expects 1D vectors!"):
+        pcd.dtransform_vec(bad, grad_bad)
+    with pytest.raises(
+        ValueError, match="'dbacktransform_vec' method expects 1D vectors!"
+    ):
+        pcd.dbacktransform_vec(bad, grad_bad)
+    with pytest.raises(
+        ValueError, match="'dbacktransform_inv_vec' method expects 1D vectors!"
+    ):
+        pcd.dbacktransform_inv_vec(bad, grad_bad)
 
-#     # Create a precision matrix
-#     Q_nc = spde.get_precision_matrix(
-#         nx,
-#         ny,
-#         1,
-#         dx,
-#         dy,
-#         1.0,
-#         kappa,
-#         scaling_factor,
-#         spatial_dim=2,
-#         sigma=estimated_std,
-#     )
-#     Q_c = spde.condition_precision_matrix(Q_nc, dat_nn, dat_var)
 
-#     # Decompose with cholesky
-#     scf_nc = _get_scf(Q_nc)
-#     scf_c = _get_scf(Q_c)
+@pytest.mark.parametrize("is_update_mean", [False, True])
+def test_GDPNCS(is_update_mean: bool) -> None:
+    ne = 8
+    cov = _get_dense_cov()
+    n = cov.shape[0]
 
-#     lbounds = np.ones((nx * ny)) * -1000
-#     ubounds = np.ones((nx * ny)) * 1500
-#     theta_test = get_theta_init_uniform(ne) * (
-#         1 + 0.1 * np.random.default_rng(2024).normal(size=ne - 1)
-#     )
+    theta_test = get_theta_init_uniform(ne) * (
+        1 + 0.05 * np.random.default_rng(2024).normal(size=ne - 1)
+    )
+    pcd = dminv.GDPNCS(
+        ne,
+        cov,
+        estimated_mean=12.5,
+        theta=theta_test,
+        random_state=2024,
+        is_update_mean=is_update_mean,
+    )
+    np.testing.assert_allclose(pcd.theta, theta_test)
 
-#     # Non conditional simulations
-#     dminv.GDPNCS(
-#         ne, Q_nc, estimated_mean, is_update_mean=is_update_mean
-#     ).test_preconditioner(lbounds, ubounds)
-#     # with extra parameters
-#     pcd_gdpncs = dminv.GDPNCS(
-#         ne,
-#         Q_nc,
-#         estimated_mean,
-#         theta=theta_test,
-#         scf_nc=scf_nc,
-#         random_state=2024,
-#         is_update_mean=is_update_mean,
-#     )
-#     s_nc = pcd_gdpncs.backtransform(pcd_gdpncs(np.zeros(scf_nc.P().size)))
-#     np.testing.assert_allclose(pcd_gdpncs.theta, theta_test, rtol=1e-5)
-#     pcd_gdpncs.test_preconditioner(lbounds, ubounds, eps=1e-8)
-#     pcd_gdpncs.transform_bounds(np.vstack([lbounds, ubounds]).T)
+    lbounds = np.ones(n) * -1e10
+    ubounds = np.ones(n) * 1e10
+    # exercises transform/backtransform round-trip, dtransform_vec,
+    # dbacktransform_vec (finite-difference-checked), and
+    # dbacktransform_inv_vec (caught NotImplementedError)
+    pcd.test_preconditioner(lbounds, ubounds, eps=1e-6, rtol=1e-3)
 
-#     # Test gradient scaling
-#     grad_nc = (
-#         np.random.default_rng(2024).normal(scale=1.0, size=(nx * ny * nz)) * 1e-5
-# + 2e-5
-#     )  # 1.0
+    n_cond = (ne - 1) + (1 if is_update_mean else 0)
+    bounds = pcd.transform_bounds(np.vstack([lbounds, ubounds]).T)
+    assert bounds.shape == (n_cond, 2)
+    np.testing.assert_array_equal(bounds[:, 0], -1e100)
+    np.testing.assert_array_equal(bounds[:, 1], 1e100)
 
-#     gsc_nc = GradientScalerConfig(
-#         max_workers=10,
-#         max_change_target=1e-1,
-#         n_samples_in_first_round=10,
-#         rtol=1e-2,  # 1 percent precision
-#     )
+    # smart_copy must deep-copy theta/estimated_mean
+    cp = pcd.smart_copy()
+    cp.theta[0] += 1.0
+    cp.estimated_mean += 1.0
+    assert not np.allclose(cp.theta, pcd.theta)
+    assert cp.estimated_mean != pcd.estimated_mean
 
-#     initial_max_update = get_max_update(1.0, pcd_gdpncs, s_nc, grad_nc)
-#     logger.info(f"initial_max_update = {initial_max_update}")
 
-#     sf_gdpncs = get_factor_enforcing_grad_inf_norm(
-#         s_nc,
-#         grad_nc,
-#         pcd_gdpncs,
-#         gsc_nc,
-#         logger=logging.getLogger("SCALER"),
-#     )
+def test_GDPNCS_default_theta() -> None:
+    ne = 6
+    cov = _get_dense_cov()
+    pcd = dminv.GDPNCS(ne, cov, estimated_mean=1.0, random_state=7)
+    # default theta -> all Ne realizations equally weighted
+    np.testing.assert_allclose(get_gd_weights(pcd.theta), np.ones(ne) / np.sqrt(ne))
 
-#     new_max_update = get_max_update(sf_gdpncs, pcd_gdpncs, s_nc, grad_nc)
-#     logger.info(f"new_max_update = {new_max_update}")
 
-#     np.testing.assert_allclose(
-#         new_max_update, gsc_nc.max_change_target, rtol=gsc_nc.rtol
-#     )
+def test_GDPNCS_sparse_cov() -> None:
+    cov = _get_sparse_cov()
+    pcd = dminv.GDPNCS(6, cov, estimated_mean=0.0, random_state=11)
+    lbounds = np.ones(cov.shape[0]) * -1e10
+    ubounds = np.ones(cov.shape[0]) * 1e10
+    pcd.test_preconditioner(lbounds, ubounds, eps=1e-6, rtol=1e-3)
 
-#     # Conditional simulations
-#     pcd_gdpcs = dminv.GDPCS(
-#         ne,
-#         Q_nc,
-#         Q_c,
-#         estimated_mean,
-#         dat_nn,
-#         dat_val,
-#         dat_var,
-#         is_update_mean=False,
-#     )
-#     pcd_gdpcs.test_preconditioner(lbounds, ubounds)
-#     # with extra parameters
-#     pcd_gdpcs = dminv.GDPCS(
-#         ne,
-#         Q_nc,
-#         Q_c,
-#         estimated_mean,
-#         dat_nn,
-#         dat_val,
-#         dat_var,
-#         theta=theta_test,
-#         scf_nc=scf_nc,
-#         scf_c=scf_c,
-#         random_state=2024,
-#         is_update_mean=is_update_mean,
-#     )
-#     pcd_gdpcs.smart_copy().test_preconditioner(lbounds, ubounds, rtol=1e-4, eps=1e-6)
-#     # pcd_gdpcs.test_preconditioner(lbounds, ubounds, rtol=1e-4, eps=1e-6)
-#     pcd_gdpcs.transform_bounds(np.vstack([lbounds, ubounds]).T)
-#     s_nc = pcd_gdpcs.backtransform(pcd_gdpcs(np.zeros(scf_nc.P().size)))
-#     np.testing.assert_allclose(pcd_gdpcs.theta, theta_test)
 
-#     grad_nc = (
-#         np.random.default_rng(2024).normal(scale=1.0, size=(nx * ny * nz)) * 2e1 + 3e1
-#     )  # 1.0
+def test_GDPNCS_colorize_adjoint_not_implemented(monkeypatch) -> None:
+    cov = _get_dense_cov()
+    pcd = dminv.GDPNCS(6, cov, estimated_mean=1.0, random_state=1)
+    s_cond = pcd.transform(np.zeros(cov.shape[0]))
+    monkeypatch.delattr(covmats.CovarianceMatrix, "colorize_adjoint")
+    with pytest.raises(
+        NotImplementedError,
+        match=r"GDPNCS\._dbacktransform_vec requires `cov\.colorize_adjoint`",
+    ):
+        pcd.dbacktransform_vec(s_cond, np.ones(cov.shape[0]))
 
-#     gsc_cond = GradientScalerConfig(
-#         max_change_target=100.0,
-#         n_samples_in_first_round=60,
-#         rtol=1e-2,  # 1 percent precision
-#     )
 
-#     initial_max_update = get_max_update(1.0, pcd_gdpcs, s_nc, grad_nc)
-#     logger.info(f"initial_max_update = {initial_max_update}")
+@pytest.mark.parametrize("is_update_mean", [False, True])
+@pytest.mark.parametrize("obs_op_as_dense_array", [False, True])
+@pytest.mark.parametrize("obs_cov_as_covmat", [False, True])
+def test_GDPCS(
+    is_update_mean: bool, obs_op_as_dense_array: bool, obs_cov_as_covmat: bool
+) -> None:
+    ne = 8
+    cov = _get_dense_cov()
+    n = cov.shape[0]
+    obs_idx = [1, 4, 7]
 
-#     sf_gdpcs = get_factor_enforcing_grad_inf_norm(
-#         s_nc,
-#         grad_nc,
-#         pcd_gdpcs,
-#         gsc_cond,
-#         logger=scaler_log,
-#     )
-#     new_max_update = get_max_update(sf_gdpcs, pcd_gdpcs, s_nc, grad_nc)
-#     logger.info(f"new_max_update = {new_max_update}")
+    H = (
+        _dense_point_obs(obs_idx, n)
+        if obs_op_as_dense_array
+        else covmats.make_point_observation_operator(obs_idx, n=n)
+    )
+    obs_values = np.array([0.2, -0.1, 0.4])
+    obs_cov = (
+        covmats.CovViaDiagonal(np.array([0.1, 0.1, 0.1])) if obs_cov_as_covmat else 0.1
+    )
 
-#     np.testing.assert_allclose(
-#         new_max_update, gsc_cond.max_change_target, rtol=gsc_cond.rtol
-#     )
+    theta_test = get_theta_init_uniform(ne)
+    pcd = dminv.GDPCS(
+        ne,
+        cov,
+        H,
+        obs_values,
+        obs_cov,
+        estimated_mean=2.0,
+        theta=theta_test,
+        random_state=2024,
+        is_update_mean=is_update_mean,
+    )
+    np.testing.assert_allclose(pcd.theta, theta_test)
 
-#     if not is_update_mean:
-#         # now make a tests that fails -> does not find a satisfying scaling scalar
-#         sf_gdpcs = get_factor_enforcing_grad_inf_norm(
-#             s_nc,
-#             grad_nc,
-#             pcd_gdpcs,
-#             GradientScalerConfig(
-#                 max_change_target=10000.0,
-#                 n_samples_in_first_round=10,
-#                 rtol=1e-2,  # 1 percent precision
-#             ),
-#             logger=scaler_log,
-#         )
-#         # so the preconditioner is not modified
+    lbounds = np.ones(n) * -1e10
+    ubounds = np.ones(n) * 1e10
+    # exercises _backtransform (Matheron's rule implemented directly via
+    # `_solve_data_space_system`, a conjugate-gradient solve shared with the
+    # gradient), dbacktransform_vec (finite-difference-checked, both the
+    # `obs_op` LinearOperator-vs-array and `obs_cov` CovarianceMatrix-vs-scalar
+    # branches), and dbacktransform_inv_vec (caught NotImplementedError).
+    pcd.test_preconditioner(lbounds, ubounds, eps=1e-6, rtol=1e-3)
 
-#         assert sf_gdpcs == 1
+    # the conditioned field should be deterministic across repeated calls at
+    # the same theta (fixed, once-drawn observation-noise realization eps_u)
+    s_cond = pcd.transform(np.zeros(n))
+    field1 = pcd.backtransform(s_cond)
+    field2 = pcd.backtransform(s_cond)
+    np.testing.assert_allclose(field1, field2)
+
+
+def test_GDPCS_random_state_as_generator() -> None:
+    """`random_state` can be an already-built `np.random.Generator`, not
+    just an int/None (which `check_random_state` turns into a legacy
+    `np.random.RandomState`). `GDPCS` only ever calls `.normal()` /
+    `.standard_normal()` on it, which both classes support identically, so
+    both must work."""
+    ne = 6
+    cov = _get_dense_cov()
+    n = cov.shape[0]
+    H = covmats.make_point_observation_operator([0, 3], n=n)
+    pcd = dminv.GDPCS(
+        ne,
+        cov,
+        H,
+        np.array([0.1, -0.2]),
+        0.05,
+        estimated_mean=0.0,
+        random_state=np.random.default_rng(42),
+    )
+    field = pcd.backtransform(pcd.transform(np.zeros(n)))
+    assert field.shape == (n,)
+
+
+def test_GDPCS_colorize_adjoint_not_implemented(monkeypatch) -> None:
+    ne = 6
+    cov = _get_dense_cov()
+    n = cov.shape[0]
+    H = covmats.make_point_observation_operator([0, 2], n=n)
+    pcd = dminv.GDPCS(
+        ne, cov, H, np.array([0.1, 0.2]), 0.1, estimated_mean=0.0, random_state=4
+    )
+    s_cond = pcd.transform(np.zeros(n))
+    monkeypatch.delattr(covmats.CovarianceMatrix, "colorize_adjoint")
+    with pytest.raises(
+        NotImplementedError,
+        match=r"GDPCS\._dbacktransform_vec requires `cov\.colorize_adjoint`",
+    ):
+        pcd.dbacktransform_vec(s_cond, np.ones(n))
+
+
+@pytest.mark.parametrize("via_gradient", [False, True])
+def test_GDPCS_cg_not_converged(monkeypatch, via_gradient: bool) -> None:
+    """`_solve_data_space_system` is shared by `_backtransform` and
+    `_dbacktransform_vec`; a non-converging CG solve must surface as a
+    `RuntimeError` from either call site."""
+    ne = 6
+    cov = _get_dense_cov()
+    n = cov.shape[0]
+    H = covmats.make_point_observation_operator([0, 2], n=n)
+    pcd = dminv.GDPCS(
+        ne, cov, H, np.array([0.1, 0.2]), 0.1, estimated_mean=0.0, random_state=5
+    )
+    s_cond = pcd.transform(np.zeros(n))
+
+    def _fake_cg(A, b, **kwargs):
+        return np.zeros_like(b), 1  # info != 0 -> did not converge
+
+    monkeypatch.setattr(sp.sparse.linalg, "cg", _fake_cg)
+    with pytest.raises(
+        RuntimeError,
+        match="the conjugate-gradient solve for the data-space system did not converge",
+    ):
+        if via_gradient:
+            pcd.dbacktransform_vec(s_cond, np.ones(n))
+        else:
+            pcd.backtransform(s_cond)
+
+
+def test_gradient_scaler_config_default_pcd_change_eval() -> None:
+    gsc = GradientScalerConfig(max_change_target=1.0)
+    assert isinstance(gsc.pcd_change_eval, dminv.NoTransform)
+
+
+def test_is_picklable() -> None:
+    from pyrtid.utils.preconditioner import is_picklable
+
+    assert is_picklable(dminv.NoTransform()) is True
+    # a generator cannot be pickled (raises TypeError, caught by is_picklable)
+    assert is_picklable((x for x in range(3))) is False
+
+
+def test_get_max_update_without_gsc() -> None:
+    pcd = dminv.LinearTransform(slope=50.0, y_intercept=0.0)
+    s_nc = np.ones(10) * 1e-4
+    grad_nc = -np.ones_like(s_nc) * 600.0
+    # gsc=None -> uses the raw (unscaled) difference instead of pcd_change_eval
+    update = get_max_update(1.0, pcd, s_nc, grad_nc)
+    assert update > 0
+
+
+def test_get_factor_enforcing_grad_inf_norm_multi_round_and_sequential() -> None:
+    pcd = dminv.LinearTransform(slope=50.0, y_intercept=0.0)
+    s_nc = np.ones(10) * 1e-4
+    grad_nc = -np.ones_like(s_nc) * 600.0
+
+    # very tight rtol forces several refinement rounds, and max_workers=1
+    # forces the sequential (non-multiprocessing) code path
+    gsc = GradientScalerConfig(
+        max_workers=1,
+        max_change_target=0.8,
+        pcd_change_eval=dminv.NoTransform(),
+        n_samples_in_first_round=10,
+        rtol=1e-5,
+        lb=1e-10,
+        ub=1e10,
+    )
+    scaling_factor = get_factor_enforcing_grad_inf_norm(
+        s_nc, grad_nc, pcd, gsc, logger=scaler_log
+    )
+    new_max_update = get_max_update(scaling_factor, pcd, s_nc, grad_nc, gsc)
+    np.testing.assert_allclose(new_max_update, gsc.max_change_target, rtol=1e-4)
+
+
+def test_get_factor_enforcing_grad_inf_norm_does_not_converge() -> None:
+    pcd = dminv.LinearTransform(slope=50.0, y_intercept=0.0)
+    s_nc = np.ones(10) * 1e-4
+    grad_nc = -np.ones_like(s_nc) * 600.0
+
+    # a negative target is unreachable (updates are non-negative norms) ->
+    # exhausts the 5 rounds and falls back to a scaling factor of 1.0
+    gsc = GradientScalerConfig(
+        max_workers=10,
+        max_change_target=-1.0,
+        n_samples_in_first_round=10,
+        rtol=1e-2,
+        lb=1e-10,
+        ub=1e10,
+    )
+    scaling_factor = get_factor_enforcing_grad_inf_norm(
+        s_nc, grad_nc, pcd, gsc, logger=scaler_log
+    )
+    assert scaling_factor == 1.0
+
+
+def test_get_factor_enforcing_grad_inf_norm_n_samples_already_high() -> None:
+    pcd = dminv.LinearTransform(slope=50.0, y_intercept=0.0)
+    s_nc = np.ones(10) * 1e-4
+    grad_nc = -np.ones_like(s_nc) * 600.0
+
+    # n_samples_in_first_round >= 50 -> used as-is (no bump-to-50 branch)
+    gsc = GradientScalerConfig(
+        max_workers=10,
+        max_change_target=0.8,
+        pcd_change_eval=dminv.NoTransform(),
+        n_samples_in_first_round=60,
+        rtol=1e-2,
+        lb=1e-10,
+        ub=1e10,
+    )
+    scaling_factor = get_factor_enforcing_grad_inf_norm(
+        s_nc, grad_nc, pcd, gsc, logger=scaler_log
+    )
+    new_max_update = get_max_update(scaling_factor, pcd, s_nc, grad_nc, gsc)
+    np.testing.assert_allclose(new_max_update, gsc.max_change_target, rtol=gsc.rtol)
+
+
+def test_preconditioner_out_of_bounds() -> None:
+    pcd = dminv.SqrtTransform()  # LBOUND_RAW = 0.0, UBOUND_RAW = +inf
+    with pytest.raises(ValueError, match="do not match with the"):
+        pcd.transform(np.array([-1.0, 2.0]))
+
+    pcd2 = dminv.SigmoidRescalerBounded(1e-9, 1e-4, rate=1.0, is_log10=True)
+    with pytest.raises(ValueError, match="do not match with the"):
+        pcd2.backtransform(np.array([-50.0, 50.0]))
+
+
+def test_sub_selector_dbacktransform_inv_vec() -> None:
+    grid = RectilinearGrid(nx=5, ny=2, dx=1.0, dy=1.0)
+    pcd = dminv.SubSelector([1, 2, 6], grid)
+    s_cond = pcd.transform(np.arange(grid.n_grid_cells, dtype=np.float64))
+    out = pcd.dbacktransform_inv_vec(s_cond, np.array([10.0, 20.0, 30.0]))
+    expected = np.zeros(grid.n_grid_cells)
+    expected[[1, 2, 6]] = [10.0, 20.0, 30.0]
+    np.testing.assert_array_equal(out, expected)
+
+
+def test_slicer() -> None:
+    grid = RectilinearGrid(nx=4, ny=3, dx=1.0, dy=1.0)
+    pcd = dminv.Slicer(grid, span=(slice(0, 2), slice(None)))
+    field = np.arange(grid.n_grid_cells, dtype=np.float64)
+    s_cond = pcd.transform(field)
+    assert s_cond.size == 2 * 3
+
+
+def test_boundsclipper_transform_validation() -> None:
+    pcd = dminv.BoundsClipper(np.ones(5) * -1.0, np.ones(5) * 5.0)
+    with pytest.raises(ValueError, match="values for which s_raw < lbound!"):
+        pcd.transform(np.array([-2.0, 0.0, 1.0, 2.0, 3.0]))
+    with pytest.raises(ValueError, match="values for which s_raw > ubound!"):
+        pcd.transform(np.array([-1.0, 0.0, 1.0, 2.0, 6.0]))
+
+    # in-bounds values pass through untouched
+    in_bounds = np.array([-1.0, 0.0, 1.0, 2.0, 5.0])
+    np.testing.assert_array_equal(pcd.transform(in_bounds), in_bounds)
+
+    # trivial passthrough methods
+    np.testing.assert_array_equal(pcd.dtransform_vec(in_bounds, np.ones(5)), np.ones(5))
+    np.testing.assert_array_equal(
+        pcd.dbacktransform_inv_vec(in_bounds, np.ones(5)), np.ones(5)
+    )
+    bounds = np.array([[-1.0, 5.0]] * 5)
+    np.testing.assert_array_equal(pcd.transform_bounds(bounds), bounds)
 
 
 @pytest.mark.parametrize(

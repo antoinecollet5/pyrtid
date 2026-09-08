@@ -99,16 +99,15 @@ import pickle
 import warnings
 from abc import ABC, abstractmethod
 from concurrent.futures import ProcessPoolExecutor
-from dataclasses import dataclass
-from typing import Generator, List, Optional, Sequence, Tuple, Union
+from dataclasses import dataclass, field
+from typing import Callable, Generator, List, Optional, Sequence, Tuple, Union
 
 import covmats
 import numdifftools as nd
 import numpy as np
 import scipy as sp
-from scipy.sparse import csc_array, lil_array
+from scipy.sparse.linalg import LinearOperator
 
-import pyrtid.utils.spde as spde
 from pyrtid.utils import (
     NDArrayBool,
     NDArrayFloat,
@@ -121,7 +120,7 @@ from pyrtid.utils import (
 
 class Preconditioner(ABC):
     """
-    This an asbract class for parameter preconditioning and parametrization.
+    This is an abstract class for parameter preconditioning and parametrization.
 
     This class provides an interface for adjusted variables preconditioning i.e.,
     application of a transformation, that conditions a given problem into a form that
@@ -155,7 +154,7 @@ class Preconditioner(ABC):
             The conditioned values as a 1D vector.
         """
         if not s_raw.ndim == 1:
-            raise ValueError("'transfrom' method expects a 1D vector!")
+            raise ValueError("'transform' method expects a 1D vector!")
         self.test_bounds_tr(s_raw)  # test that s_raw is in the supported range
         # call the _transform method defined in child classes
         return self._transform(s_raw)
@@ -175,7 +174,7 @@ class Preconditioner(ABC):
             The non-conditioned values as a 1D vector.
         """
         if not s_cond.ndim == 1:
-            raise ValueError("'backtransfrom' method expects a 1D vector!")
+            raise ValueError("'backtransform' method expects a 1D vector!")
         self.test_bounds_btr(s_cond)  # test that s_cond is in the supported range
         # call the _backtransform method defined in child classes
         return self._backtransform(s_cond)
@@ -194,7 +193,7 @@ class Preconditioner(ABC):
         self, s_raw: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
         """
-        Return the transform 1st derivative times a vector as a 1-D vector..
+        Return the transform 1st derivative times a vector as a 1-D vector.
 
         Because the preconditioner operates a variable change in the function: the new
         objective function J is J2(s2) = J[s], with s the adjusted parameter vector.
@@ -210,12 +209,16 @@ class Preconditioner(ABC):
 
 
         Often, it is more efficient to compute (ds2/ds * dJ2/ds2) directly
-        than to return ds2/ds, espectially if ds2/ds is a matrix of large dimension.
+        than to return ds2/ds, especially if ds2/ds is a matrix of large dimension.
 
         Parameters
         ----------
-        b : NDArrayFloat
-            Any vector with size $N_{s}$.
+        s_raw : NDArrayFloat
+            The non-conditioned values with size $N_{s}$ at which the derivative
+            is evaluated.
+        gradient : NDArrayFloat
+            Any vector with size $N_{s2}$, typically the gradient of the objective
+            function w.r.t. the conditioned values.
 
         Returns
         -------
@@ -224,7 +227,7 @@ class Preconditioner(ABC):
             values and any vector b with size $N_{s2}$.
         """
         if not s_raw.ndim == 1 or not gradient.ndim == 1:
-            raise ValueError("'dtransfrom_vec' method expects 1D vectors!")
+            raise ValueError("'dtransform_vec' method expects 1D vectors!")
         self.test_bounds_tr(s_raw)  # test that s_raw is in the supported range
         # call the _dtransform_vec method defined in child classes
         return self._dtransform_vec(s_raw, gradient)
@@ -232,7 +235,9 @@ class Preconditioner(ABC):
     @abstractmethod
     def _dtransform_vec(
         self, s_raw: NDArrayFloat, gradient: NDArrayFloat
-    ) -> NDArrayFloat: ...  # pragma: no cover
+    ) -> NDArrayFloat:
+        """Return the transform 1st derivative times a vector."""
+        ...  # pragma: no cover
 
     def dbacktransform_vec(
         self, s_cond: NDArrayFloat, gradient: NDArrayFloat
@@ -254,12 +259,16 @@ class Preconditioner(ABC):
           -> dJ2/ds2 = ds/ds2 dJ/ds = exp(s2) * dj/ds
 
         Often, it is more efficient to compute (ds/ds2 * dJ/ds) directly
-        than to return ds/ds2, espectially if ds/ds2 is a matrix of large dimension.
+        than to return ds/ds2, especially if ds/ds2 is a matrix of large dimension.
 
         Parameters
         ----------
-        b : NDArrayFloat
-            Any vector with size $N_{s}$.
+        s_cond : NDArrayFloat
+            The conditioned values with size $N_{s2}$ at which the derivative
+            is evaluated.
+        gradient : NDArrayFloat
+            Any vector with size $N_{s}$, typically the gradient of the objective
+            function w.r.t. the non-conditioned values.
 
         Returns
         -------
@@ -268,7 +277,7 @@ class Preconditioner(ABC):
             values and any vector b with size $N_{s}$.
         """
         if not s_cond.ndim == 1 or not gradient.ndim == 1:
-            raise ValueError("'dtransfrom_vec' method expects 1D vectors!")
+            raise ValueError("'dbacktransform_vec' method expects 1D vectors!")
 
         self.test_bounds_btr(s_cond)  # test that s_cond is in the supported range
         # call the _dbacktransform_vec method defined in child classes
@@ -294,21 +303,31 @@ class Preconditioner(ABC):
           -> dJ2/ds2 = ds/ds2 dJ/ds = exp(s2) * dj/ds
 
         Often, it is more efficient to compute (ds/ds2 * dJ/ds) directly
-        than to return ds/ds2, espectially if ds/ds2 is a matrix of large dimension.
+        than to return ds/ds2, especially if ds/ds2 is a matrix of large dimension.
 
         Parameters
         ----------
-        b : NDArrayFloat
-            Any vector with size $N_{s}$.
+        s_cond : NDArrayFloat
+            The conditioned values with size $N_{s2}$ at which the derivative
+            is evaluated.
+        gradient : NDArrayFloat
+            Any vector with size $N_{s}$, typically the result of
+            :meth:`dbacktransform_vec` that we want to invert.
 
         Returns
         -------
         NDArrayFloat
             Product of the 1st derivative w.r.t. the conditioned (transformed)
             values and any vector b with size $N_{s}$.
+
+        Raises
+        ------
+        NotImplementedError
+            If the given preconditioner does not support this operation (e.g.
+            because the backtransform derivative is not invertible).
         """
         if not s_cond.ndim == 1 or not gradient.ndim == 1:
-            raise ValueError("'dbacktransfrom_inv_vec' method expects 1D vectors!")
+            raise ValueError("'dbacktransform_inv_vec' method expects 1D vectors!")
 
         self.test_bounds_btr(s_cond)  # test that s_cond is in the supported range
         # call the _dbacktransform_vec method defined in child classes
@@ -317,15 +336,19 @@ class Preconditioner(ABC):
     @abstractmethod
     def _dbacktransform_vec(
         self, s_cond: NDArrayFloat, gradient: NDArrayFloat
-    ) -> NDArrayFloat: ...  # pragma: no cover
+    ) -> NDArrayFloat:
+        """Return the backtransform 1st derivative times a vector."""
+        ...  # pragma: no cover
 
     @abstractmethod
     def _dbacktransform_inv_vec(
         self, s_cond: NDArrayFloat, gradient: NDArrayFloat
-    ) -> NDArrayFloat: ...  # pragma: no cover
+    ) -> NDArrayFloat:
+        """Return the inverse of the backtransform 1st derivative times a vector."""
+        ...  # pragma: no cover
 
     def __call__(self, s_raw: NDArrayFloat) -> NDArrayFloat:
-        """Call the preconditioner."""
+        """Call the preconditioner (alias for :meth:`transform`)."""
         return self.transform(s_raw)
 
     def _get_test_data(
@@ -337,7 +360,25 @@ class Preconditioner(ABC):
         """
         Get test data to check the preconditioner correctness.
 
-        This is a development tool.
+        This is a development tool. It draws values uniformly within
+        ``[lbounds, ubounds]`` (infinite bounds are clipped to +/-1e10 so that
+        sampling remains well defined).
+
+        Parameters
+        ----------
+        lbounds : Union[float, NDArrayFloat]
+            Lower bound(s) of the range from which test values are drawn.
+        ubounds : Union[float, NDArrayFloat]
+            Upper bound(s) of the range from which test values are drawn.
+        shape : Optional[Union[int, Sequence[int]]], optional
+            Shape of the returned test array. If None, it is inferred from
+            the size of `lbounds`/`ubounds` (defaulting to 50 samples for
+            scalar bounds). The default is None.
+
+        Returns
+        -------
+        NDArrayFloat
+            Array of test values uniformly sampled within the given bounds.
         """
         _lbounds, _ubounds = np.array(lbounds), np.array(ubounds)
         _lbounds[np.isneginf(_lbounds)] = -1e10
@@ -361,7 +402,7 @@ class Preconditioner(ABC):
         Parameters
         ----------
         s_raw : NDArrayFloat
-            NOn-conditioned values.
+            Non-conditioned values.
 
         Raises
         ------
@@ -379,6 +420,7 @@ class Preconditioner(ABC):
 
     def test_bounds_btr(self, s_cond: NDArrayFloat) -> None:
         """
+        Test the bounds for back-transformation.
 
         Parameters
         ----------
@@ -411,21 +453,27 @@ class Preconditioner(ABC):
         """
         Test if the backconditioner and the derivatives times a vector are correct.
 
-        This is a development tool.
+        This is a development tool: it checks (1) that `backtransform` is the
+        inverse of `transform`, (2) that `dtransform_vec` matches a finite
+        difference approximation, (3) that `dbacktransform_vec` matches a
+        finite difference approximation, and (4) that `dbacktransform_inv_vec`
+        correctly inverts `dbacktransform_vec` (skipped if the preconditioner
+        raises `NotImplementedError` for that operation).
 
         Parameters
         ----------
         lbounds : Union[float, NDArrayFloat]
-            _description_
+            Lower bound(s) used to generate random test values.
         ubounds : Union[float, NDArrayFloat]
-            _description_
+            Upper bound(s) used to generate random test values.
         shape : Optional[Union[int, Sequence[int]]], optional
-            _description_, by default None
+            Shape of the generated test values. The default is None.
         rtol : float, optional
-            _description_, by default 1e-5
+            Relative tolerance used for all correctness checks.
+            The default is 1e-5.
         eps : Optional[float], optional
             The epsilon for the computation of the approximated preconditioner first
-            derivative by finite difference. by default None.
+            derivative by finite difference. The default is None.
 
         Raises
         ------
@@ -451,19 +499,23 @@ class Preconditioner(ABC):
         Parameters
         ----------
         lbounds : Union[float, NDArrayFloat]
-            _description_
+            Lower bound(s) used to generate random test values.
         ubounds : Union[float, NDArrayFloat]
-            _description_
+            Upper bound(s) used to generate random test values.
         shape : Optional[Union[int, Sequence[int]]], optional
-            _description_, by default None
+            Shape of the generated test values. The default is None.
         rtol : float, optional
-            _description_, by default 1e-5
+            Relative tolerance used for all correctness checks.
+            The default is 1e-5.
         eps : Optional[float], optional
             The epsilon for the computation of the approximated preconditioner first
-            derivative by finite difference. by default None.
+            derivative by finite difference. The default is None.
         skip_checks: Optional[Sequence[int]]
-            List of checks to skip. This is useful when some preconditioner will fail
-            tests while remaining correct. The default is None.
+            List of checks to skip (1: backtransform/transform inverse check,
+            2: dtransform_vec finite-difference check, 3: dbacktransform_vec
+            finite-difference check, 4: dbacktransform_inv_vec check). This is
+            useful when some preconditioner will fail tests while remaining
+            correct. The default is None.
 
         Raises
         ------
@@ -557,7 +609,7 @@ class Preconditioner(ABC):
 
 
 class ChainedTransforms(Preconditioner):
-    """Combinaition of multiple preconditioners."""
+    """Combination of multiple preconditioners applied one after the other."""
 
     def __init__(self, pcds: Sequence[Preconditioner]) -> None:
         """
@@ -588,15 +640,11 @@ class ChainedTransforms(Preconditioner):
         NDArrayFloat
             Conditioned (transformed) parameter values.
         """
-
-        def chain_op(input, i) -> NDArrayFloat:
-            """Chain the preconditioners."""
-            if i < len(self.pcds):
-                return chain_op(self.pcds[i].transform(input), i + 1)
-            return input
-
+        out = s_raw
         # successively transform the data with each preconditioner
-        return chain_op(s_raw, 0)
+        for pcd in self.pcds:
+            out = pcd.transform(out)
+        return out
 
     def _backtransform(self, s_cond: NDArrayFloat) -> NDArrayFloat:
         """
@@ -612,77 +660,45 @@ class ChainedTransforms(Preconditioner):
         NDArrayFloat
             Non-conditioned (transformed) parameter values.
         """
-
-        def chain_back_op(input, i) -> NDArrayFloat:
-            """Chain the preconditioners."""
-            if i < len(self.pcds):
-                return chain_back_op(
-                    self.pcds[len(self.pcds) - 1 - i].backtransform(input), i + 1
-                )
-            return input
-
+        out = s_cond
         # successively backtransform the data with each preconditioner
         # in the reversed order
-        return chain_back_op(s_cond, 0)
+        for pcd in reversed(self.pcds):
+            out = pcd.backtransform(out)
+        return out
 
     def _dtransform_vec(
         self, s_raw: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
-        Return the transform 1st derivative times a vector as a 1-D vector..
-        """
-
-        def _chain_derivative_op(s, _gradient, i) -> NDArrayFloat:
-            """Chain the preconditioners."""
-            if i < len(self.pcds):
-                pcd: Preconditioner = self.pcds[i]
-                return _chain_derivative_op(
-                    pcd(s), pcd.dtransform_vec(s, _gradient), i + 1
-                )
-            return _gradient
-
-        return _chain_derivative_op(s_raw, gradient, 0)
+        """Return the transform 1st derivative times a vector as a 1-D vector."""
+        s, _gradient = s_raw, gradient
+        for pcd in self.pcds:
+            _gradient = pcd.dtransform_vec(s, _gradient)
+            s = pcd(s)
+        return _gradient
 
     def _dbacktransform_vec(
         self, s_cond: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
-        Return the backtransform 1st derivative times a vector.
-        """
-
+        """Return the backtransform 1st derivative times a vector."""
         # dJ3/ds3 = ds2[s3]/ds3 * ds[s2]/ds2 * dJ/ds ...
-        def _chain_derivative_op(s, _gradient, i) -> NDArrayFloat:
-            """Chain the preconditioners."""
-            if i < len(self.pcds):
-                pcd: Preconditioner = self.pcds[i]
-                return _chain_derivative_op(
-                    pcd(s), pcd.dbacktransform_vec(pcd(s), _gradient), i + 1
-                )
-            return _gradient
-
-        return _chain_derivative_op(self.backtransform(s_cond), gradient, 0)
+        s, _gradient = self.backtransform(s_cond), gradient
+        for pcd in self.pcds:
+            _gradient = pcd.dbacktransform_vec(pcd(s), _gradient)
+            s = pcd(s)
+        return _gradient
 
     def _dbacktransform_inv_vec(
         self, s_cond: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
-        Return the inverse of the backtransform 1st derivative times a vector.
-        """
-
-        def chain_derivative_back_inv_op(s, _gradient, i) -> NDArrayFloat:
-            """Chain the preconditioners."""
-            if i < len(self.pcds):
-                pcd: Preconditioner = self.pcds[len(self.pcds) - 1 - i]
-                return chain_derivative_back_inv_op(
-                    pcd.backtransform(s),
-                    pcd.dbacktransform_inv_vec(s, _gradient),
-                    i + 1,
-                )
-            return _gradient
-
+        """Return the inverse of the backtransform 1st derivative times a vector."""
+        s, _gradient = s_cond, gradient
         # successively backtransform the data with each preconditioner
         # in the reversed order
-        return chain_derivative_back_inv_op(s_cond, gradient, 0)
+        for pcd in reversed(self.pcds):
+            _gradient = pcd.dbacktransform_inv_vec(s, _gradient)
+            s = pcd.backtransform(s)
+        return _gradient
 
     def transform_bounds(self, bounds: NDArrayFloat) -> NDArrayFloat:
         """
@@ -698,28 +714,23 @@ class ChainedTransforms(Preconditioner):
         NDArrayFloat
             Array of shape (N_s, 2) with transformed bounds.
         """
-
         # Apply the preconditioning to lower and upper bounds and sort the values
         # so that lbounds <= ubounds
         # this assumes that the underlying transformation is monotonic.
         # hence, this function must be modified in child class if this assumption
         # does not hold
-        def chain_op(input, i) -> NDArrayFloat:
-            """Chain the preconditioners."""
-            if i < len(self.pcds):
-                return chain_op(self.pcds[i].transform_bounds(input), i + 1)
-            return input
-
-        # successively transform the data with each preconditioner
-        return chain_op(bounds, 0)
+        out = bounds
+        for pcd in self.pcds:
+            out = pcd.transform_bounds(out)
+        return out
 
     def smart_copy(self) -> ChainedTransforms:
-        """Return a deep copy of the instance."""
+        """Return a copy of the instance, deep-copying each chained preconditioner."""
         return ChainedTransforms([p.smart_copy() for p in self.pcds])
 
 
 class NoTransform(Preconditioner):
-    """Does not apply any preconditioning."""
+    """Does not apply any preconditioning (identity transform)."""
 
     def _transform(self, s_raw: NDArrayFloat) -> NDArrayFloat:
         """
@@ -756,30 +767,24 @@ class NoTransform(Preconditioner):
     def _dtransform_vec(
         self, s_raw: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
-        Return the transform 1st derivative times a vector as a 1-D vector..
-        """
+        """Return the transform 1st derivative times a vector as a 1-D vector."""
         return gradient
 
     def _dbacktransform_vec(
         self, s_cond: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
-        Return the backtransform 1st derivative times a vector.
-        """
+        """Return the backtransform 1st derivative times a vector."""
         return gradient
 
     def _dbacktransform_inv_vec(
         self, s_cond: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
-        Return the inverse of the backtransform 1st derivative times a vector.
-        """
+        """Return the inverse of the backtransform 1st derivative times a vector."""
         return gradient
 
 
 class LinearTransform(Preconditioner):
-    """Apply a linear transform to the parameter."""
+    """Apply a linear transform to the parameter (``s_cond = slope * s_raw + b``)."""
 
     def __init__(
         self, slope: Union[float, NDArrayFloat], y_intercept: Union[float, NDArrayFloat]
@@ -832,25 +837,19 @@ class LinearTransform(Preconditioner):
     def _dtransform_vec(
         self, s_raw: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
-        Return the transform 1st derivative times a vector as a 1-D vector..
-        """
+        """Return the transform 1st derivative times a vector as a 1-D vector."""
         return self.slope * gradient
 
     def _dbacktransform_vec(
         self, s_cond: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
-        Return the backtransform 1st derivative times a vector.
-        """
+        """Return the backtransform 1st derivative times a vector."""
         return 1 / self.slope * gradient
 
     def _dbacktransform_inv_vec(
         self, s_cond: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
-        Return the inverse of the backtransform 1st derivative times a vector.
-        """
+        """Return the inverse of the backtransform 1st derivative times a vector."""
         return gradient * self.slope
 
 
@@ -895,35 +894,30 @@ class SqrtTransform(Preconditioner):
     def _dtransform_vec(
         self, s_raw: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
-        Return the transform 1st derivative times a vector as a 1-D vector..
-        """
+        """Return the transform 1st derivative times a vector as a 1-D vector."""
         return 1 / (2.0 * np.sqrt(s_raw)) * gradient
 
     def _dbacktransform_vec(
         self, s_cond: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
-        Return the backtransform 1st derivative times a vector.
-        """
+        """Return the backtransform 1st derivative times a vector."""
         return 2.0 * s_cond * gradient
 
     def _dbacktransform_inv_vec(
         self, s_cond: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
-        Return the inverse of the backtransform 1st derivative times a vector.
-        """
+        """Return the inverse of the backtransform 1st derivative times a vector."""
         return gradient / 2.0 / s_cond
 
 
 class InvAbsTransform(Preconditioner):
-    """Apply an inverse absolute value preconditioning to ensure of the parameter."""
+    """Apply an inverse absolute value preconditioning (tracks and restores sign)."""
 
     LBOUND_RAW: float = 0.0
     UBOUND_RAW: float = +np.inf
 
     def __init__(self) -> None:
+        """Initialize the instance, with all signs initially positive."""
         self.signs = np.array([1.0])
 
     def _transform(self, s_raw: NDArrayFloat) -> NDArrayFloat:
@@ -962,26 +956,20 @@ class InvAbsTransform(Preconditioner):
     def _dtransform_vec(
         self, s_raw: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
-        Return the transform 1st derivative times a vector as a 1-D vector..
-        """
+        """Return the transform 1st derivative times a vector as a 1-D vector."""
         return self.signs * gradient
 
     def _dbacktransform_vec(
         self, s_cond: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
-        Return the backtransform 1st derivative times a vector.
-        """
+        """Return the backtransform 1st derivative times a vector."""
         return np.sign(s_cond) * gradient
 
     def _dbacktransform_inv_vec(
         self, s_cond: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
-        Return the inverse of the backtransform 1st derivative times a vector.
-        """
-        # should have the same effect as gradient / np.sign(s_sond)
+        """Return the inverse of the backtransform 1st derivative times a vector."""
+        # should have the same effect as gradient / np.sign(s_cond)
         return gradient * np.sign(s_cond)
 
     def transform_bounds(self, bounds: NDArrayFloat) -> NDArrayFloat:
@@ -996,13 +984,14 @@ class InvAbsTransform(Preconditioner):
         Returns
         -------
         NDArrayFloat
-            Array of shape (N_s, 2) with transformed bounds.
+            Array of shape (N_s, 2) with transformed bounds. Unchanged here since
+            the sign is data-dependent and cannot be inferred from static bounds.
         """
         return bounds
 
 
 class LogTransform(Preconditioner):
-    """Apply a sqrt preconditioning to ensure positive values of the parameter."""
+    """Apply a log preconditioning to ensure positive values of the parameter."""
 
     LBOUND_RAW = 1e-100  # cannot be zero
     UBOUND_RAW = +np.inf
@@ -1042,25 +1031,19 @@ class LogTransform(Preconditioner):
     def _dtransform_vec(
         self, s_raw: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
-        Return the transform 1st derivative times a vector as a 1-D vector..
-        """
+        """Return the transform 1st derivative times a vector as a 1-D vector."""
         return 1 / s_raw * gradient
 
     def _dbacktransform_vec(
         self, s_cond: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
-        Return the backtransform 1st derivative times a vector.
-        """
+        """Return the backtransform 1st derivative times a vector."""
         return np.exp(s_cond) * gradient
 
     def _dbacktransform_inv_vec(
         self, s_cond: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
-        Return the inverse of the backtransform 1st derivative times a vector.
-        """
+        """Return the inverse of the backtransform 1st derivative times a vector."""
         return gradient / np.exp(s_cond)
 
 
@@ -1075,7 +1058,7 @@ def logistic(
     s : NDArrayFloat
         Input values.
     s0 : float, optional
-        Value of the function's midpoint, by default 0.0?
+        Value of the function's midpoint, by default 0.0
     rate : float, optional
         The logistic growth rate or steepness of the curve, by default 1.0
     supremum : float, optional
@@ -1100,7 +1083,7 @@ def logit(
     s : NDArrayFloat
         Input values.
     s0 : float, optional
-        Value of the function's midpoint, by default 0.0?
+        Value of the function's midpoint, by default 0.0
     rate : float, optional
         The logistic growth rate or steepness of the curve, by default 1.0
     supremum : float, optional
@@ -1109,7 +1092,7 @@ def logit(
     Returns
     -------
     NDArrayFloat
-        Logistic values.
+        Logit values.
     """
     return -np.log(supremum / s - 1.0) / rate + s0
 
@@ -1118,14 +1101,14 @@ def tanh_wrapper(
     s: NDArrayFloat, s0: float = 0.0, rate: float = 1.0, supremum: float = 1.0
 ) -> NDArrayFloat:
     """
-    Return the hyperbolic tangent function (inverse to arctanh).
+    Return the hyperbolic tangent function (inverse to arctanh_wrapper).
 
     Parameters
     ----------
     s : NDArrayFloat
         Input values.
     s0 : float, optional
-        Value of the function's midpoint, by default 0.0?
+        Value of the function's midpoint, by default 0.0
     rate : float, optional
         The logistic growth rate or steepness of the curve, by default 1.0
     supremum : float, optional
@@ -1134,7 +1117,7 @@ def tanh_wrapper(
     Returns
     -------
     NDArrayFloat
-        Logistic values.
+        Hyperbolic tangent values, rescaled to ``[0, supremum]``.
     """
     return supremum / 2.0 * (np.tanh((s - s0) * rate) + 1.0)
 
@@ -1150,7 +1133,7 @@ def dtanh_wrapper(
     s : NDArrayFloat
         Input values.
     s0 : float, optional
-        Value of the function's midpoint, by default 0.0?
+        Value of the function's midpoint, by default 0.0
     rate : float, optional
         The logistic growth rate or steepness of the curve, by default 1.0
     supremum : float, optional
@@ -1159,7 +1142,7 @@ def dtanh_wrapper(
     Returns
     -------
     NDArrayFloat
-        Logistic values.
+        Derivative of :func:`tanh_wrapper` w.r.t. ``s``.
     """
     return supremum / 2.0 * rate * (1 - np.tanh((s - s0) * rate) ** 2)
 
@@ -1173,9 +1156,9 @@ def arctanh_wrapper(
     Parameters
     ----------
     s : NDArrayFloat
-        Input values.
+        Input values, expected in ``[0, supremum]``.
     s0 : float, optional
-        Value of the function's midpoint, by default 0.0?
+        Value of the function's midpoint, by default 0.0
     rate : float, optional
         The logistic growth rate or steepness of the curve, by default 1.0
     supremum : float, optional
@@ -1184,7 +1167,7 @@ def arctanh_wrapper(
     Returns
     -------
     NDArrayFloat
-        Logistic values.
+        Inverse hyperbolic tangent values.
     """
     with np.errstate(divide="ignore"):
         return np.arctanh(s / supremum * 2.0 - 1.0) / rate + s0
@@ -1199,9 +1182,9 @@ def darctanh_wrapper(
     Parameters
     ----------
     s : NDArrayFloat
-        Input values.
+        Input values, expected in ``[0, supremum]``.
     s0 : float, optional
-        Value of the function's midpoint, by default 0.0?
+        Value of the function's midpoint, by default 0.0
     rate : float, optional
         The logistic growth rate or steepness of the curve, by default 1.0
     supremum : float, optional
@@ -1210,7 +1193,7 @@ def darctanh_wrapper(
     Returns
     -------
     NDArrayFloat
-        Logistic values.
+        Derivative of :func:`arctanh_wrapper` w.r.t. ``s``.
     """
     with np.errstate(divide="ignore"):
         return -supremum / (2.0 * rate * s * (s - supremum))
@@ -1239,7 +1222,7 @@ def to_new_range(
         New range lower bound.
     new_ubound : float
         New range upper bound.
-    is_log: bool
+    is_log10: bool
         Whether to use a log10 scale for the new range.
 
     Returns
@@ -1270,7 +1253,7 @@ def to_new_range_derivative(
     is_log10: bool = False,
 ) -> NDArrayFloat:
     """
-    Rescale the input values to the new desired range.
+    Return the derivative (w.r.t. s_raw) of :func:`to_new_range`.
 
     Parameters
     ----------
@@ -1284,13 +1267,13 @@ def to_new_range_derivative(
         New range lower bound.
     new_ubound : float
         New range upper bound.
-    is_log: bool
+    is_log10: bool
         Whether to use a log10 scale for the new range.
 
     Returns
     -------
     NDArrayFloat
-        Rescaled output values.
+        Derivative of the rescaled output values w.r.t. `s_raw`.
     """
     # we use recursivity
     if not is_log10:
@@ -1335,18 +1318,18 @@ class RangeRescaler(Preconditioner):
 
         Parameters
         ----------
-        lbound : NDArrayFloat
-            Lower bound of the original values.
-        ubound : NDArrayFloat
-            Upper bound of the original values.
-        lbound : NDArrayFloat
-            Lower bound of the conditioned values. This does not really matters.
-            The default is -5.0.
-        ubound : NDArrayFloat
-            Upper bound of the conditioned values. This does not really matters.
-            The default is 5.0.
-        is_log: bool
-            Whether to use a log10-scaling for the logit y-scale.
+        old_lbound : float
+            Lower bound of the original (non-conditioned) values.
+        old_ubound : float
+            Upper bound of the original (non-conditioned) values.
+        new_lbound : float
+            Lower bound of the conditioned (rescaled) values. This does not
+            really matter, e.g. -5.0.
+        new_ubound : float
+            Upper bound of the conditioned (rescaled) values. This does not
+            really matter, e.g. 5.0.
+        is_log10: bool
+            Whether to use a log10-scaling for the rescaling.
         """
         self.old_lbound: float = old_lbound
         self.old_ubound: float = old_ubound
@@ -1368,8 +1351,8 @@ class RangeRescaler(Preconditioner):
         NDArrayFloat
             Conditioned (transformed) parameter values.
         """
-        # ici il faut faire l'opposé
-        # rescaling between 5 and -5 -> the scale does not really matter
+        # rescaling between new_lbound and new_ubound -> the scale does not
+        # really matter
         return to_new_range(
             np.log10(s_raw) if self.is_log10 else s_raw,
             old_lbound=(
@@ -1408,9 +1391,7 @@ class RangeRescaler(Preconditioner):
     def _dtransform_vec(
         self, s_raw: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
-        Return the transform 1st derivative times a vector as a 1-D vector..
-        """
+        """Return the transform 1st derivative times a vector as a 1-D vector."""
         # we apply the chain rule
         return (
             to_new_range_derivative(
@@ -1435,9 +1416,7 @@ class RangeRescaler(Preconditioner):
     def _dbacktransform_vec(
         self, s_cond: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
-        Return the backtransform 1st derivative times a vector.
-        """
+        """Return the backtransform 1st derivative times a vector."""
         return (
             to_new_range_derivative(
                 s_cond,
@@ -1452,9 +1431,7 @@ class RangeRescaler(Preconditioner):
     def _dbacktransform_inv_vec(
         self, s_cond: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
-        Return the inverse of the backtransform 1st derivative times a vector.
-        """
+        """Return the inverse of the backtransform 1st derivative times a vector."""
         return gradient / (
             to_new_range_derivative(
                 s_cond,
@@ -1472,19 +1449,13 @@ class SigmoidRescaler(Preconditioner):
     Rescale the values using a sigmoid transform.
 
     The underlying function is an hyperbolic tangent (tanh). Raw values must be
-    in the interval ]0, 1[.
+    in the interval ``]0, supremum[``.
 
     This parametrization is particularly useful when a parameter
-    has two modes that are the limits of the value page. For example,
-    to image a porosity field and two facies, one porous, the other not
-    with more or less homogeneous values for each facies (e.g. 15% and 40% ).
-
-    The log10 option allows to work with non linearly scaled parameters such as
-    diffusivity or permeability.
+    has two modes that are the limits of the value range. For example,
+    to image a porosity field with two facies, one porous, the other not,
+    with more or less homogeneous values for each facies (e.g. 15% and 40%).
     """
-
-    LBOUND_RAW = 0.0
-    UBOUND_RAW = 1.0
 
     def __init__(
         self, s0: float = 0.0, rate: float = 1.0, supremum: float = 1.0
@@ -1494,15 +1465,22 @@ class SigmoidRescaler(Preconditioner):
 
         Parameters
         ----------
+        s0: float
+            Value of the function's midpoint. The default is 0.0.
         rate: float
             Growth rate. The higher the rate, the steeper the sigmoid. A value of
             3 is usually the upper acceptable limit, i.e., above this value,
             the bijection between "transform" and "backtransform" might be lost and the
-            derivative might become ncorrect.
+            derivative might become incorrect. The default is 1.0.
+        supremum: float
+            The supremum of the values supported by the transform, i.e., the raw
+            values must lie in ``]0, supremum[``. The default is 1.0.
         """
         self.s0: float = s0
         self.rate: float = rate
         self.supremum: float = supremum
+        self.LBOUND_RAW = 0.0
+        self.UBOUND_RAW = supremum
 
     def _transform(self, s_raw: NDArrayFloat) -> NDArrayFloat:
         """
@@ -1541,9 +1519,7 @@ class SigmoidRescaler(Preconditioner):
     def _dtransform_vec(
         self, s_raw: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
-        Return the transform 1st derivative times a vector as a 1-D vector..
-        """
+        """Return the transform 1st derivative times a vector as a 1-D vector."""
         return (
             darctanh_wrapper(s_raw, s0=self.s0, rate=self.rate, supremum=self.supremum)
             * gradient
@@ -1552,9 +1528,7 @@ class SigmoidRescaler(Preconditioner):
     def _dbacktransform_vec(
         self, s_cond: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
-        Return the backtransform 1st derivative times a vector.
-        """
+        """Return the backtransform 1st derivative times a vector."""
         # otherwise chain rule of two functions
         return (
             dtanh_wrapper(s_cond, s0=self.s0, rate=self.rate, supremum=self.supremum)
@@ -1564,15 +1538,18 @@ class SigmoidRescaler(Preconditioner):
     def _dbacktransform_inv_vec(
         self, s_cond: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
-        Return the inverse of the backtransform 1st derivative times a vector.
-        """
+        """Return the inverse of the backtransform 1st derivative times a vector."""
         return gradient / (
             dtanh_wrapper(s_cond, s0=self.s0, rate=self.rate, supremum=self.supremum)
         )
 
 
 class SigmoidRescalerBounded(ChainedTransforms):
+    """
+    Chain a :class:`RangeRescaler` (to ``]0, 1[``) with
+    a :class:`SigmoidRescaler`.
+    """
+
     LBOUND_RAW = -np.inf  # cannot be zero
     UBOUND_RAW = +np.inf
     LBOUND_COND: float = -10
@@ -1590,15 +1567,15 @@ class SigmoidRescalerBounded(ChainedTransforms):
 
         Parameters
         ----------
-        old_lbound : NDArrayFloat
+        old_lbound : float
             Lower bound of the original values.
-        old_ubound : NDArrayFloat
+        old_ubound : float
             Upper bound of the original values.
         rate: float
             Growth rate. The higher the rate, the steeper the sigmoid. A value of
             3 is usually the upper acceptable limit, i.e., above this value,
             the bijection between "transform" and "backtransform" might be lost and the
-            derivative might become ncorrect.
+            derivative might become incorrect.
         is_log10: bool
             Whether to use a log10-scaling for the logit y-scale.
         """
@@ -1619,7 +1596,9 @@ class SigmoidRescalerBounded(ChainedTransforms):
         Returns
         -------
         NDArrayFloat
-            Array of shape (N_s, 2) with transformed bounds.
+            Array of shape (N_s, 2), constant and set to
+            ``[LBOUND_COND, UBOUND_COND]`` since the sigmoid never actually
+            reaches its asymptotes.
         """
         return np.array(
             [
@@ -1630,15 +1609,17 @@ class SigmoidRescalerBounded(ChainedTransforms):
 
 
 class Normalizer(Preconditioner):
-    """Apply a sqrt preconditioning to ensure positive values of the parameter."""
+    """Center and scale the parameter by the prior field's mean and std deviation."""
 
     def __init__(self, s_prior: NDArrayFloat) -> None:
         """
+        Initialize the instance.
 
         Parameters
         ----------
         s_prior : NDArrayFloat
-            _description_
+            Prior field used to compute the (scalar) mean and standard
+            deviation used for the normalization.
         """
         super().__init__()
         # mean value of the prior field
@@ -1681,36 +1662,41 @@ class Normalizer(Preconditioner):
     def _dtransform_vec(
         self, s_raw: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
-        Return the transform 1st derivative times a vector as a 1-D vector..
-        """
+        """Return the transform 1st derivative times a vector as a 1-D vector."""
         return gradient / self.prior_std
 
     def _dbacktransform_vec(
         self, s_cond: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
-        Return the backtransform 1st derivative times a vector.
-        """
+        """Return the backtransform 1st derivative times a vector."""
         return self.prior_std * gradient
 
     def _dbacktransform_inv_vec(
         self, s_cond: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
-        Return the inverse of the backtransform 1st derivative times a vector.
-        """
+        """Return the inverse of the backtransform 1st derivative times a vector."""
         return gradient / self.prior_std
 
 
 class StdRescaler(Preconditioner):
-    """Apply a sqrt preconditioning to ensure positive values of the parameter."""
+    """Rescale the deviation of the parameter from a (possibly spatial) prior field."""
 
     def __init__(
         self,
         s_prior: NDArrayFloat,
         prior_std: Optional[float] = None,
     ) -> None:
+        """
+        Initialize the instance.
+
+        Parameters
+        ----------
+        s_prior : NDArrayFloat
+            Prior field, subtracted from/added back to the raw values.
+        prior_std : Optional[float], optional
+            Standard deviation used for the rescaling. If None, it is
+            computed from `s_prior`. The default is None.
+        """
         super().__init__()
         # need to store the prior field for the rescaling
         self.s_prior = s_prior
@@ -1756,25 +1742,19 @@ class StdRescaler(Preconditioner):
     def _dtransform_vec(
         self, s_raw: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
-        Return the transform 1st derivative times a vector as a 1-D vector..
-        """
+        """Return the transform 1st derivative times a vector as a 1-D vector."""
         return gradient / self.prior_std
 
     def _dbacktransform_vec(
         self, s_cond: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
-        Return the backtransform 1st derivative times a vector.
-        """
+        """Return the backtransform 1st derivative times a vector."""
         return self.prior_std * gradient
 
     def _dbacktransform_inv_vec(
         self, s_cond: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
-        Return the inverse of the backtransform 1st derivative times a vector.
-        """
+        """Return the inverse of the backtransform 1st derivative times a vector."""
         return gradient / self.prior_std
 
 
@@ -1788,6 +1768,16 @@ class BoundsRescaler(Preconditioner):
         lbounds: Union[float, NDArrayFloat],
         ubounds: Union[float, NDArrayFloat],
     ) -> None:
+        """
+        Initialize the instance.
+
+        Parameters
+        ----------
+        lbounds : Union[float, NDArrayFloat]
+            Lower bound(s) of the non-conditioned values.
+        ubounds : Union[float, NDArrayFloat]
+            Upper bound(s) of the non-conditioned values.
+        """
         super().__init__()
         # need to store bounds for the rescaling process
         self.lbounds = lbounds
@@ -1834,9 +1824,7 @@ class BoundsRescaler(Preconditioner):
     def _dtransform_vec(
         self, s_raw: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
-        Return the transform 1st derivative times a vector as a 1-D vector..
-        """
+        """Return the transform 1st derivative times a vector as a 1-D vector."""
         _s_raw = s_raw.clip(self.lbounds + self.EPSILON, self.ubounds - self.EPSILON)
         return (
             -(self.ubounds - self.lbounds)
@@ -1847,9 +1835,7 @@ class BoundsRescaler(Preconditioner):
     def _dbacktransform_vec(
         self, s_cond: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
-        Return the backtransform 1st derivative times a vector.
-        """
+        """Return the backtransform 1st derivative times a vector."""
         return (
             (self.ubounds - self.lbounds) * np.exp(s_cond) / (np.exp(s_cond) + 1) ** 2
         ) * gradient
@@ -1857,15 +1843,31 @@ class BoundsRescaler(Preconditioner):
     def _dbacktransform_inv_vec(
         self, s_cond: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
-        Return the inverse of the backtransform 1st derivative times a vector.
-        """
+        """Return the inverse of the backtransform 1st derivative times a vector."""
         return gradient / (
             (self.ubounds - self.lbounds) * np.exp(s_cond) / (np.exp(s_cond) + 1) ** 2
         )
 
 
 def get_gd_weights(theta: NDArrayFloat) -> NDArrayFloat:
+    """
+    Return the Gradual Deformation (GD) weights associated with `theta`.
+
+    The weights are built such that the sum of their squares equals one, so
+    that the linear combination of white noises they define
+    (see :func:`gd_parametrize`) remains a standard-normal white noise.
+
+    Parameters
+    ----------
+    theta : NDArrayFloat
+        Gradual deformation parameter vector, with size ``Ne - 1`` where
+        ``Ne`` is the number of combined realizations/white noises.
+
+    Returns
+    -------
+    NDArrayFloat
+        GD weights, with size ``Ne``.
+    """
     if np.size(theta) < 1:
         raise ValueError("The theta vector is empty!")
     # initialize the vector of weights
@@ -1890,7 +1892,7 @@ def gd_parametrize(W: NDArrayFloat, weights: NDArrayFloat) -> NDArrayFloat:
 
     Parameters
     ----------
-    z_arr : NDArrayFloat
+    W : NDArrayFloat
         Array with size (N_z, Ne) which columns are independent random variables
         following a centered-reduced normal distribution of size (N_z).
         Ne is the number of independent realizations.
@@ -1919,11 +1921,16 @@ def d_gd_parametrize_mat_vec(
         Ne is the number of independent realizations.
     theta : NDArrayFloat
         Gradual deformation parameter.
+    b : NDArrayFloat
+        Vector with size (N_z,) to multiply the derivative with, typically the
+        gradient w.r.t. the GD-parametrized field ``Z = gd_parametrize(z_arr,
+        get_gd_weights(theta))``.
 
     Returns
     -------
     NDArrayFloat
-        New random variable following a centered-reduced normal distribution.
+        Product of the derivative of ``Z`` w.r.t. `theta` and `b`, with size
+        equal to ``np.size(theta)``.
     """
     # check input size
     assert np.size(b) == np.size(z_arr[:, 0])
@@ -1952,6 +1959,25 @@ def d_gd_parametrize_mat_vec(
 
 
 def _check_ne(ne: int) -> int:
+    """
+    Validate and cast the number of realizations `ne` used in GD parametrizations.
+
+    Parameters
+    ----------
+    ne : int
+        Candidate number of realizations. Must be castable to an integer
+        that is greater than or equal to 2.
+
+    Returns
+    -------
+    int
+        The validated number of realizations.
+
+    Raises
+    ------
+    ValueError
+        If `ne` cannot be cast to an integer, or if it is lower than 2.
+    """
     try:
         ne = int(ne)
         if ne < 2:
@@ -2044,16 +2070,32 @@ def get_theta_init(target_weights: NDArrayFloat) -> NDArrayFloat:
 
 class GDPNCS(Preconditioner):
     """
-    Apply a Gradual Deformation parametrization associated with the SPDE approach.
+    Apply a Gradual Deformation parametrization for a non-conditional field.
 
-    The Gradual Deformation parametrization is used to generate a white noise
-    reduced and centered as a linear Combinaition of Ne white noises while adjusting
-    Ne-1 parameters. The obtained white noise is used in the SPDE approach to
-    generate a field with the required geostatistical parameters.
+    The Gradual Deformation (GD) parametrization generates a white noise
+    (reduced and centered) as a linear combination of Ne white noises while
+    adjusting Ne-1 parameters (``theta``). The obtained white noise is
+    "colorized" through a :class:`covmats.CovarianceMatrix` (``cov``) to
+    generate a field with the desired geostatistical covariance -- any
+    ``covmats`` backend works here (dense/sparse Cholesky, sparse precision
+    Cholesky, ensemble, eigen-factorized, ...), which generalizes the former
+    SPDE-only implementation.
 
-    Here: non conditional-simulation.
+    Here: non-conditional simulation (see :class:`GDPCS` for the conditional
+    counterpart).
 
-    TODO: add ref.
+    Notes
+    -----
+    :meth:`_dbacktransform_vec` requires ``cov.colorize_adjoint``, which is
+    available on all dense/eigen/ensemble ``covmats`` backends but not yet
+    on the sparse ones (see the module docstring); it raises
+    ``NotImplementedError`` in that case. :meth:`_dbacktransform_inv_vec` is
+    not implemented (not invertible), as in the previous SPDE-based version.
+
+    References
+    ----------
+    Hu, L.Y. (2000). "Gradual Deformation and Iterative Calibration of
+    Gaussian-Related Stochastic Models." Mathematical Geology 32, 87-108.
     """
 
     def __init__(
@@ -2072,14 +2114,30 @@ class GDPNCS(Preconditioner):
 
         Parameters
         ----------
+        ne : int
+            Number of independent white noise realizations combined by the
+            gradual deformation.
+        cov : covmats.CovarianceMatrix
+            Covariance representation of the field to simulate, with shape
+            ``(n, n)``. Only ``cov.colorize`` is required for the forward
+            (non-conditional) simulation.
+        estimated_mean : float, optional
+            Initial estimated (constant) mean of the field. The default is 0.0.
+        theta : Optional[NDArrayFloat], optional
+            Initial gradual deformation parameter, with size `ne - 1`. If
+            None, it is initialized so that all Ne realizations are equally
+            weighted (see :func:`get_theta_init_uniform`). The default is None.
         random_state : Optional[Union[int, np.random.Generator, np.random.RandomState]]
-            Pseudorandom number generator state used to generate resamples.
-            If `random_state` is ``None`` (or `np.random`), the
-            `numpy.random.RandomState` singleton is used.
+            Pseudorandom number generator state used to draw the ensemble of
+            `ne` white noises. If `random_state` is ``None`` (or `np.random`),
+            the `numpy.random.RandomState` singleton is used.
             If `random_state` is an int, a new ``RandomState`` instance is used,
             seeded with `random_state`.
             If `random_state` is already a ``Generator`` or ``RandomState``
             instance then that instance is used. The default is None
+        is_update_mean : bool, optional
+            Whether the (constant) field mean is also adjusted alongside
+            `theta`. The default is True.
         """
         # initialize the super instance
         super().__init__()
@@ -2088,9 +2146,16 @@ class GDPNCS(Preconditioner):
         self.is_update_mean: bool = is_update_mean
         self.cov: covmats.CovarianceMatrix = cov
 
-        # initialize the ensemble of white noises with shape (Ns, Ne)
+        # Dimension of the white noise expected by `cov.colorize`: the full
+        # field size for full-rank representations, or the retained rank
+        # (`subspace_size`) for low-rank ones (e.g. CovViaEnsemble).
+        self._colorize_dim: int = int(
+            getattr(cov, "subspace_size", None) or cov.shape[0]
+        )
+
+        # initialize the ensemble of white noises with shape (colorize_dim, ne)
         self.W: NDArrayFloat = check_random_state(random_state).normal(
-            size=(cov.shape[0], ne)
+            size=(self._colorize_dim, ne)
         )
 
         if theta is not None:
@@ -2111,7 +2176,25 @@ class GDPNCS(Preconditioner):
         """
         Get test data to check the preconditioner correctness.
 
-        This is a development tool.
+        This is a development tool. Unlike the base class implementation, it
+        does not sample uniformly within `lbounds`/`ubounds` (those are
+        ignored): it back-transforms the current `theta`/`estimated_mean`,
+        since arbitrary values are not valid GD-parametrized fields.
+
+        Parameters
+        ----------
+        lbounds : Union[float, NDArrayFloat]
+            Ignored, kept for interface compatibility with the base class.
+        ubounds : Union[float, NDArrayFloat]
+            Ignored, kept for interface compatibility with the base class.
+        shape : Optional[Union[int, Sequence[int]]], optional
+            Ignored, kept for interface compatibility with the base class.
+
+        Returns
+        -------
+        NDArrayFloat
+            The field obtained by back-transforming the current `theta`
+            (and `estimated_mean` if `is_update_mean` is True).
         """
         if self.is_update_mean:
             return self.backtransform(np.hstack((self.theta, self.estimated_mean)))
@@ -2146,12 +2229,14 @@ class GDPNCS(Preconditioner):
         Parameters
         ----------
         s_cond : NDArrayFloat
-            Conditioned (transformed) parameter values.
+            Conditioned (transformed) parameter values: the GD parameter
+            `theta` (plus `estimated_mean` if `is_update_mean` is True).
 
         Returns
         -------
         NDArrayFloat
-            Non-conditioned (transformed) parameter values.
+            Non-conditioned (transformed) parameter values, i.e. the
+            GD-parametrized, colorized field.
         """
         if self.is_update_mean:
             self.theta = s_cond[:-1]
@@ -2159,29 +2244,49 @@ class GDPNCS(Preconditioner):
         else:
             self.theta = s_cond
 
-        return (
-            self.cov.colorize(
-                x=gd_parametrize(self.W, get_gd_weights(self.theta)),
-            )
-            + self.estimated_mean
-        )
+        z = gd_parametrize(self.W, get_gd_weights(self.theta))
+        return self.cov.colorize(z) + self.estimated_mean
 
     def _dtransform_vec(
         self, s_raw: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
-        Return the transform 1st derivative times a vector as a 1-D vector..
-        """
+        """Return the transform 1st derivative times a vector as a 1-D vector."""
         return np.zeros_like(s_raw)
 
     def _dbacktransform_vec(
         self, s_cond: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
+        r"""
         Return the backtransform 1st derivative times a vector.
+
+        Uses the chain rule through ``backtransform(theta) = cov.colorize(z(theta))
+        + mean``, with ``z(theta) = gd_parametrize(W, get_gd_weights(theta))``::
+
+            dJ/dtheta = (dz/dtheta)^T @ (dcolorize/dz)^T @ gradient
+                      = d_gd_parametrize_mat_vec(W, theta,
+                        cov.colorize_adjoint(gradient))
+
+        and ``dJ/d(mean) = sum(gradient)`` (since the mean term is additive
+        and applies identically to every entry of the field).
+
+        Requires ``cov.colorize_adjoint`` (added to ``covmats`` >= 0.5,
+        mirroring ``matvec``/``rmatvec``; see the module docstring).
+
+        Raises
+        ------
+        NotImplementedError
+            If `cov` does not expose `colorize_adjoint` (e.g. a sparse
+            Cholesky/precision-Cholesky backend for which the corresponding
+            `SparseCholeskyFactor` adjoint is not implemented yet).
         """
+        if not hasattr(self.cov, "colorize_adjoint"):
+            raise NotImplementedError(
+                "GDPNCS._dbacktransform_vec requires `cov.colorize_adjoint`, "
+                f"which is not available on {type(self.cov).__name__}. See the "
+                "module docstring notes on `GDPNCS`/`GDPCS` and `covmats`."
+            )
         out = d_gd_parametrize_mat_vec(
-            self.W, self.theta, spde.d_simu_nc_mat_vec(self._scf_nc, gradient)
+            self.W, self.theta, self.cov.colorize_adjoint(gradient)
         )
         if self.is_update_mean:
             return np.hstack((out, np.sum(gradient)))
@@ -2192,6 +2297,13 @@ class GDPNCS(Preconditioner):
     ) -> NDArrayFloat:
         """
         Return the inverse of the backtransform 1st derivative times a vector.
+
+        Raises
+        ------
+        NotImplementedError
+            Always: this operation is not implemented for GDPNCS (as in the
+            previous SPDE-based implementation). Contact the developers for
+            details if needed.
         """
         raise NotImplementedError(
             "_dbacktransform_inv_vec is not implemented for "
@@ -2210,7 +2322,9 @@ class GDPNCS(Preconditioner):
         Returns
         -------
         NDArrayFloat
-            Array of shape (N_s, 2) with transformed bounds.
+            Array of shape (N_cond, 2) with very loose (near +/-inf) bounds,
+            since `theta`/`estimated_mean` are not meaningfully bounded by
+            the field's own bounds.
         """
         n_cond = self.theta.size
         if self.is_update_mean:
@@ -2221,7 +2335,7 @@ class GDPNCS(Preconditioner):
         return bounds
 
     def smart_copy(self) -> GDPNCS:
-        """Return a deep copy of the instance."""
+        """Return a copy of the instance, deep-copying `theta` and `estimated_mean`."""
         cp = copy.copy(self)
         cp.theta = copy.deepcopy(cp.theta)
         cp.estimated_mean = copy.deepcopy(cp.estimated_mean)
@@ -2230,29 +2344,50 @@ class GDPNCS(Preconditioner):
 
 class GDPCS(GDPNCS):
     """
-    Apply a Gradual Deformation parametrization associated with the SPDE approach.
+    Apply a Gradual Deformation parametrization for a conditional field.
 
-    The Gradual Deformation parametrization is used to generate a white noise
-    reduced and centered as a linear Combinaition of Ne white noises while adjusting
-    Ne-1 parameters. The obtained white noise is used in the SPDE approach to
-    generate a field with the required geostatistical parameters.
+    Same as :class:`GDPNCS`, but the field is conditioned to noisy point (or
+    more general linear) observations, via Matheron's rule / pathwise
+    conditioning: ``z_cond = z_u + cov @ H^T @ A^{-1} @ (d - H @ z_u -
+    eps_u)``, where ``z_u`` is the unconditional draw, ``H`` the observation
+    operator, ``A = H cov H^T + R`` the data-space system, and ``eps_u`` a
+    draw of the observation noise. This generalizes the former
+    SPDE/precision-matrix only implementation (``spde.simu_c``) to any
+    ``covmats`` backend.
 
-    Here: conditional-simulation.
+    Unlike an earlier version of this class, Matheron's rule is implemented
+    directly here (drawing ``eps_u`` once at construction time and solving
+    the data-space system with conjugate gradients -- the same machinery
+    :meth:`_dbacktransform_vec` needs anyway) rather than by delegating to
+    :func:`covmats.conditional_simulate` with a ``colorize_fn`` override and
+    a reseeded RNG. The previous approach worked, but its reproducibility
+    depended on the *internal, undocumented* draw order of
+    ``conditional_simulate`` (it draws a throwaway `colorize_dim`-sized
+    array, then ``eps_u``): reusing a fixed seed only reproduces the same
+    ``eps_u`` as long as that internal order/count never changes. Drawing
+    ``eps_u`` ourselves removes that coupling entirely.
 
-    TODO: add ref.
+    Notes
+    -----
+    ``eps_u`` is drawn once in :meth:`__init__` and reused on every call to
+    :meth:`_backtransform`, so the conditioned field is a smooth,
+    deterministic function of ``theta`` (and ``estimated_mean``) alone, as
+    required for gradual-deformation optimization.
+
+    :meth:`_dbacktransform_vec` differentiates through the full conditioning
+    system (not just ``colorize``, since the correction term also depends on
+    ``theta``); see that method's docstring for the derivation. It requires
+    ``cov.colorize_adjoint`` for the same reason as :class:`GDPNCS`.
     """
 
     def __init__(
         self,
         ne: int,
-        Q_nc: csc_array,
-        Q_c: csc_array,
-        scf_nc: covmats.SparseCholeskyFactor,
-        scf_c: covmats.SparseCholeskyFactor,
-        estimated_mean: float,
-        dat_nn: NDArrayInt,
-        dat_val: NDArrayFloat,
-        dat_var: NDArrayFloat,
+        cov: covmats.CovarianceMatrix,
+        obs_op: Union[LinearOperator, NDArrayFloat],
+        obs_values: NDArrayFloat,
+        obs_cov: Union[covmats.CovarianceMatrix, float, NDArrayFloat],
+        estimated_mean: float = 0.0,
         theta: Optional[NDArrayFloat] = None,
         random_state: Optional[
             Union[int, np.random.Generator, np.random.RandomState]
@@ -2264,98 +2399,232 @@ class GDPCS(GDPNCS):
 
         Parameters
         ----------
+        ne : int
+            Number of independent white noise realizations combined by the
+            gradual deformation.
+        cov : covmats.CovarianceMatrix
+            Prior covariance representation of the field, with shape (n, n).
+        obs_op : Union[LinearOperator, NDArrayFloat]
+            Observation/measurement operator ``H``, with shape
+            ``(n_obs, n)``. Use :func:`covmats.make_point_observation_operator`
+            for plain point observations at grid/discretization nodes.
+        obs_values : NDArrayFloat
+            Observed data, with shape ``(n_obs,)``.
+        obs_cov : Union[covmats.CovarianceMatrix, float, NDArrayFloat]
+            Observation-error covariance ``R``. A float or 1D array of length
+            `n_obs` is treated as independent per-observation variances.
+        estimated_mean : float, optional
+            Initial estimated (constant) prior mean of the field.
+            The default is 0.0.
+        theta : Optional[NDArrayFloat], optional
+            Initial gradual deformation parameter, with size `ne - 1`. If
+            None, it is initialized so that all Ne realizations are equally
+            weighted. The default is None.
         random_state : Optional[Union[int, np.random.Generator, np.random.RandomState]]
-            Pseudorandom number generator state used to generate resamples.
-            If `random_state` is ``None`` (or `np.random`), the
-            `numpy.random.RandomState` singleton is used.
-            If `random_state` is an int, a new ``RandomState`` instance is used,
-            seeded with `random_state`.
-            If `random_state` is already a ``Generator`` or ``RandomState``
-            instance then that instance is used. The default is None
+            Pseudorandom number generator state used both to draw the
+            ensemble of `ne` white noises (as in :class:`GDPNCS`) and to
+            draw the fixed observation-noise realization `eps_u` used by
+            Matheron's rule (see class notes). The default is None.
+        is_update_mean : bool, optional
+            Whether the (constant) field mean is also adjusted alongside
+            `theta`. The default is True.
         """
-        # initialize the super instance
         super().__init__(
             ne=ne,
-            Q_nc=Q_nc,
+            cov=cov,
             estimated_mean=estimated_mean,
             theta=theta,
-            scf_nc=scf_nc,
             random_state=random_state,
             is_update_mean=is_update_mean,
         )
 
-        self._Q_c = Q_c
-        self._scf_c = scf_c
+        self.obs_op = obs_op
+        self.obs_values = obs_values
+        self.obs_cov = obs_cov
 
-        # Conditioning data
-        self.dat_nn = dat_nn
-        self.dat_val = dat_val
-        self.dat_var = dat_var
+        # Fixed observation-noise draw (`eps_u` in Matheron's rule): drawn
+        # once here, directly, with our own rng, and reused on every call to
+        # `_backtransform`/`_dbacktransform_vec`, so the conditioned field is
+        # a smooth, deterministic function of `theta` (and `estimated_mean`)
+        # alone. See the class docstring for why this is drawn directly
+        # rather than by reseeding `covmats.conditional_simulate`'s RNG.
+        self._eps_u: NDArrayFloat = self._draw_eps_u(check_random_state(random_state))
+
+    def _draw_eps_u(
+        self, rng: Union[np.random.Generator, np.random.RandomState]
+    ) -> NDArrayFloat:
+        """
+        Draw one realization of the observation noise `eps_u` ~ N(0, R).
+
+        Parameters
+        ----------
+        rng : Union[np.random.Generator, np.random.RandomState]
+            Already-constructed random number generator, e.g. as returned by
+            `check_random_state`.
+
+        Returns
+        -------
+        NDArrayFloat
+            A draw of `eps_u`, with shape `(n_obs,)`.
+        """
+        if isinstance(self.obs_cov, covmats.CovarianceMatrix):
+            return self.obs_cov.sample_mvnormal(shape=[1], random_state=rng)[0]
+        _obs_cov_arr = np.asarray(self.obs_cov, dtype=float)
+        return np.sqrt(_obs_cov_arr) * rng.standard_normal(np.size(self.obs_values))
+
+    def _get_obs_op_as_linop(self) -> LinearOperator:
+        """Return `obs_op` as a `LinearOperator`, wrapping it if needed."""
+        return (
+            self.obs_op
+            if isinstance(self.obs_op, LinearOperator)
+            else sp.sparse.linalg.aslinearoperator(np.asarray(self.obs_op))
+        )
+
+    def _get_obs_cov_matvec(self) -> Callable[[NDArrayFloat], NDArrayFloat]:
+        """Return a callable computing `R @ x`, whatever `obs_cov`'s type."""
+        if isinstance(self.obs_cov, covmats.CovarianceMatrix):
+            return self.obs_cov.matvec
+        _obs_cov_arr = np.asarray(self.obs_cov, dtype=float)
+        return lambda x: _obs_cov_arr * x
+
+    def _solve_data_space_system(
+        self,
+        H: LinearOperator,
+        r_matvec: Callable[[NDArrayFloat], NDArrayFloat],
+        rhs: NDArrayFloat,
+    ) -> NDArrayFloat:
+        r"""
+        Solve ``(H cov H^T + R) @ x = rhs`` for `x`, via conjugate gradients.
+
+        Shared by :meth:`_backtransform` (Matheron's rule correction) and
+        :meth:`_dbacktransform_vec` (its adjoint): both need a solve against
+        the same data-space system, and neither ever assembles it, `cov`, or
+        the posterior covariance densely.
+
+        Parameters
+        ----------
+        H : LinearOperator
+            Observation operator, as returned by
+            :meth:`_get_obs_op_as_linop`.
+        r_matvec : Callable[[NDArrayFloat], NDArrayFloat]
+            Callable computing ``R @ x``, as returned by
+            :meth:`_get_obs_cov_matvec`.
+        rhs : NDArrayFloat
+            Right-hand side, with shape `(n_obs,)`.
+
+        Returns
+        -------
+        NDArrayFloat
+            The solution `x`, with shape `(n_obs,)`.
+
+        Raises
+        ------
+        RuntimeError
+            If the conjugate-gradient solve does not converge.
+        """
+        n_obs = H.shape[0]
+
+        def _a_matvec(x: NDArrayFloat) -> NDArrayFloat:
+            return H.matvec(self.cov.matvec(H.rmatvec(x))) + r_matvec(x)
+
+        a_linop = LinearOperator((n_obs, n_obs), matvec=_a_matvec, dtype=float)
+        sol, info = sp.sparse.linalg.cg(a_linop, rhs, rtol=1e-10)
+        if info != 0:
+            raise RuntimeError(
+                "GDPCS: the conjugate-gradient solve for the data-space "
+                f"system did not converge (info={info})."
+            )
+        return sol
 
     def _backtransform(self, s_cond: NDArrayFloat) -> NDArrayFloat:
         """
         Apply the back-preconditioning/parametrization.
 
+        Implements Matheron's rule directly: ``z_cond = z_u + cov @ H^T @
+        A^{-1} @ (d - H @ z_u - eps_u)``, with ``z_u`` the GD-parametrized
+        unconditional draw and ``eps_u`` the fixed observation-noise draw
+        from :meth:`__init__` (see the class docstring).
+
         Parameters
         ----------
         s_cond : NDArrayFloat
-            Conditioned (transformed) parameter values.
+            Conditioned (transformed) parameter values: the GD parameter
+            `theta` (plus `estimated_mean` if `is_update_mean` is True).
 
         Returns
         -------
         NDArrayFloat
-            Non-conditioned (transformed) parameter values.
+            Non-conditioned (transformed) parameter values, i.e. the
+            GD-parametrized field conditioned to the observation data.
         """
         if self.is_update_mean:
             self.theta = s_cond[:-1]
             self.estimated_mean = s_cond[-1]
         else:
             self.theta = s_cond
-        return (
-            spde.simu_c(
-                self._scf_nc,
-                self._Q_c,
-                self._scf_c,
-                self.dat_val - self.estimated_mean,
-                self.dat_nn,
-                self.dat_var,
-                w=gd_parametrize(self.W, get_gd_weights(self.theta)),
-            )
-            + self.estimated_mean
-        )
 
-    def _dtransform_vec(
-        self, s_raw: NDArrayFloat, gradient: NDArrayFloat
-    ) -> NDArrayFloat:
-        """
-        Return the transform 1st derivative times a vector as a 1-D vector..
-        """
-        return np.zeros_like(s_raw)
+        z = gd_parametrize(self.W, get_gd_weights(self.theta))
+        z_u = self.cov.colorize(z) + self.estimated_mean
+
+        H = self._get_obs_op_as_linop()
+        r_matvec = self._get_obs_cov_matvec()
+        resid = self.obs_values - (H.matvec(z_u) + self._eps_u)
+        lam = self._solve_data_space_system(H, r_matvec, resid)
+        return z_u + self.cov.matvec(H.rmatvec(lam))
 
     def _dbacktransform_vec(
         self, s_cond: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
+        r"""
+        Return the backtransform 1st derivative times a vector.
+
+        Unlike :meth:`GDPNCS._dbacktransform_vec`, the conditioning
+        correction term of Matheron's rule itself depends on `theta` through
+        the unconditional draw, so the chain rule must go through the whole
+        conditioning system, not just through ``cov.colorize``.
+
+        Writing ``A = H cov H^T + R`` (the ``(n_obs, n_obs)`` system solved
+        by :meth:`_solve_data_space_system`) and
+        ``z_cond(z) = mean + (I - cov H^T A^{-1} H) colorize(z) + const``
+        (the part of :meth:`_backtransform` depending on the GD white noise
+        `z`, with everything not depending on `z` -- the data, `eps_u` --
+        folded into the constant), the adjoint is::
+
+            lam = A^{-1} @ (H @ (cov @ gradient))
+            corrected = gradient - H^T @ lam
+            d(theta) = d_gd_parametrize_mat_vec(
+                W, theta, cov.colorize_adjoint(corrected)
+            )
+            d(mean) = sum(corrected)
+
+        This was validated against finite differences of
+        :meth:`_backtransform`.
+
+        Raises
+        ------
+        NotImplementedError
+            If `cov` does not expose `colorize_adjoint` (see
+            :meth:`GDPNCS._dbacktransform_vec`).
+        RuntimeError
+            If the conjugate-gradient solve for `lam` does not converge.
         """
-        Return the transform 1st derivative times a vector as a 1-D vector..
-        """
+        if not hasattr(self.cov, "colorize_adjoint"):
+            raise NotImplementedError(
+                "GDPCS._dbacktransform_vec requires `cov.colorize_adjoint`, "
+                f"which is not available on {type(self.cov).__name__}. See the "
+                "module docstring notes on `GDPNCS`/`GDPCS` and `covmats`."
+            )
+        H = self._get_obs_op_as_linop()
+        r_matvec = self._get_obs_cov_matvec()
+        lam = self._solve_data_space_system(
+            H, r_matvec, H.matvec(self.cov.matvec(gradient))
+        )
+        corrected = gradient - H.rmatvec(lam)
         out = d_gd_parametrize_mat_vec(
-            self.W,
-            self.theta,
-            spde.d_simu_c_matvec(
-                self._scf_nc, self._scf_c, self.dat_nn, self.dat_var, gradient
-            ),
+            self.W, self.theta, self.cov.colorize_adjoint(corrected)
         )
         if self.is_update_mean:
-            Z = lil_array((self._scf_nc.L().shape[0], self.dat_nn.size))
-            Z[self.dat_nn, np.arange(self.dat_nn.size)] = 1
-
-            return np.hstack(
-                (
-                    out,
-                    np.sum(gradient)
-                    - (1 / self.dat_var @ (Z.T @ self._scf_c(gradient))),
-                )
-            )
+            return np.hstack((out, np.sum(corrected)))
         return out
 
     def _dbacktransform_inv_vec(
@@ -2363,6 +2632,13 @@ class GDPCS(GDPNCS):
     ) -> NDArrayFloat:
         """
         Return the inverse of the backtransform 1st derivative times a vector.
+
+        Raises
+        ------
+        NotImplementedError
+            Always: this operation is not implemented for GDPCS (as in the
+            previous SPDE-based implementation). Contact the developers for
+            details if needed.
         """
         raise NotImplementedError(
             "_dbacktransform_inv_vec is not implemented for "
@@ -2371,7 +2647,7 @@ class GDPCS(GDPNCS):
 
 
 class SubSelector(Preconditioner):
-    """Apply a selection on the input field."""
+    """Apply a selection on the input field, keeping the rest of it fixed."""
 
     def __init__(self, node_numbers: NDArrayInt, grid: RectilinearGrid) -> None:
         """
@@ -2380,9 +2656,9 @@ class SubSelector(Preconditioner):
         Parameters
         ----------
         node_numbers : NDArrayInt
-            Node to sample.
-        field_shape : int
-            Size of the field to be sampled.
+            Node(s) to sample/select from the field.
+        grid : RectilinearGrid
+            Grid defining the size of the field to be sampled.
         """
         self.node_numbers = np.array(node_numbers)
         self.field_size: int = grid.n_grid_cells
@@ -2428,9 +2704,7 @@ class SubSelector(Preconditioner):
     def _dtransform_vec(
         self, s_raw: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
-        Return the transform 1st derivative times a vector as a 1-D vector..
-        """
+        """Return the transform 1st derivative times a vector as a 1-D vector."""
         assert np.size(s_raw) == self.field_size
         assert np.size(gradient) == self.node_numbers.size
         out = np.zeros(self.field_size)
@@ -2440,18 +2714,14 @@ class SubSelector(Preconditioner):
     def _dbacktransform_vec(
         self, s_cond: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
-        Return the backtransform 1st derivative times a vector.
-        """
+        """Return the backtransform 1st derivative times a vector."""
         assert gradient.size == self.field_size
         return gradient[self.node_numbers]
 
     def _dbacktransform_inv_vec(
         self, s_cond: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
-        Return the inverse of the backtransform 1st derivative times a vector.
-        """
+        """Return the inverse of the backtransform 1st derivative times a vector."""
         # no effect here. We just sub sample the gradient
         assert gradient.size == self.node_numbers.size
         assert s_cond.size == self.node_numbers.size
@@ -2494,21 +2764,24 @@ class SubSelector(Preconditioner):
         """
         Test if the backconditioner and the derivatives times a vector are correct.
 
-        This is a development tool.
+        This is a development tool. The `dbacktransform_inv_vec` check (4) is
+        skipped, since sub-selection is not invertible (values outside of
+        `node_numbers` are lost, not restored, by `transform`/`backtransform`).
 
         Parameters
         ----------
         lbounds : Union[float, NDArrayFloat]
-            _description_
+            Lower bound(s) used to generate random test values.
         ubounds : Union[float, NDArrayFloat]
-            _description_
+            Upper bound(s) used to generate random test values.
         shape : Optional[Union[int, Sequence[int]]], optional
-            _description_, by default None
+            Shape of the generated test values. The default is None.
         rtol : float, optional
-            _description_, by default 1e-5
+            Relative tolerance used for all correctness checks.
+            The default is 1e-5.
         eps : Optional[float], optional
             The epsilon for the computation of the approximated preconditioner first
-            derivative by finite difference. by default None.
+            derivative by finite difference. The default is None.
 
         Raises
         ------
@@ -2519,7 +2792,7 @@ class SubSelector(Preconditioner):
 
 
 class Slicer(SubSelector):
-    """Apply a slicing to the field of values."""
+    """Apply a slicing to the field of values, selecting a rectilinear sub-domain."""
 
     def __init__(
         self,
@@ -2529,21 +2802,85 @@ class Slicer(SubSelector):
             slice(None),
         ),
     ) -> None:
-        """Initialize the instance."""
+        """
+        Initialize the instance.
+
+        Parameters
+        ----------
+        grid : RectilinearGrid
+            Grid defining the size and shape of the field to be sliced.
+        span : Union[NDArrayInt, Tuple[slice, slice], NDArrayBool], optional
+            Slice, boolean mask, or index array applied to the (Fortran
+            order) reshaped field to select the nodes to keep. The default
+            selects the whole field (``(slice(None), slice(None))``).
+        """
         field_size = grid.n_grid_cells
         node_numbers = np.arange(field_size).reshape(grid.shape, order="F")[span]
         super().__init__(node_numbers, grid)
 
 
 def gaussian_cfd(x: NDArrayFloat, mu: float, std: float) -> NDArrayFloat:
+    """
+    Return the cumulative distribution function (CDF) of a Gaussian distribution.
+
+    Parameters
+    ----------
+    x : NDArrayFloat
+        Input values at which to evaluate the CDF.
+    mu : float
+        Mean of the Gaussian distribution.
+    std : float
+        Standard deviation of the Gaussian distribution.
+
+    Returns
+    -------
+    NDArrayFloat
+        CDF values, in ``[0, 1]``.
+    """
     return 0.5 * (1.0 + sp.special.erf((x - mu) / (std * np.sqrt(2))))
 
 
 def gaussian_cfd_inv(x: NDArrayFloat, mu: float, std: float) -> NDArrayFloat:
+    """
+    Return the inverse cumulative distribution function (quantile function).
+
+    Parameters
+    ----------
+    x : NDArrayFloat
+        Input probabilities, in ``[0, 1]``.
+    mu : float
+        Mean of the Gaussian distribution.
+    std : float
+        Standard deviation of the Gaussian distribution.
+
+    Returns
+    -------
+    NDArrayFloat
+        Values of the Gaussian quantile function (inverse of :func:`gaussian_cfd`).
+    """
     return sp.special.erfinv(2.0 * x - 1.0) * (std * np.sqrt(2)) + mu
 
 
 def gaussian_cfd_inv_deriv(x: NDArrayFloat, mu: float, std: float) -> NDArrayFloat:
+    """
+    Return the derivative (w.r.t. x) of :func:`gaussian_cfd_inv`.
+
+    Parameters
+    ----------
+    x : NDArrayFloat
+        Input probabilities, in ``[0, 1]``.
+    mu : float
+        Mean of the Gaussian distribution. Unused (the derivative does not
+        depend on the mean), kept for signature symmetry with
+        :func:`gaussian_cfd_inv`.
+    std : float
+        Standard deviation of the Gaussian distribution.
+
+    Returns
+    -------
+    NDArrayFloat
+        Derivative of the Gaussian quantile function w.r.t. `x`.
+    """
     return (
         np.sqrt(np.pi)
         * np.exp(sp.special.erfinv(2.0 * x - 1.0) ** 2)
@@ -2631,9 +2968,7 @@ class Uniform2Gaussian(Preconditioner):
     def _dtransform_vec(
         self, s_raw: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
-        Return the transform 1st derivative times a vector as a 1-D vector..
-        """
+        """Return the transform 1st derivative times a vector as a 1-D vector."""
         return (
             gaussian_cfd_inv_deriv(
                 (s_raw - self.ud_lbound) / (self.ud_ubound - self.ud_lbound),
@@ -2647,9 +2982,7 @@ class Uniform2Gaussian(Preconditioner):
     def _dbacktransform_vec(
         self, s_cond: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
-        Return the backtransform 1st derivative times a vector.
-        """
+        """Return the backtransform 1st derivative times a vector."""
         return (
             (self.ud_ubound - self.ud_lbound)
             * np.exp(-((s_cond - self.gd_mu) ** 2) / (2 * self.gd_std**2))
@@ -2659,9 +2992,7 @@ class Uniform2Gaussian(Preconditioner):
     def _dbacktransform_inv_vec(
         self, s_cond: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
-        Return the inverse of the backtransform 1st derivative times a vector.
-        """
+        """Return the inverse of the backtransform 1st derivative times a vector."""
         return gradient / (
             (self.ud_ubound - self.ud_lbound)
             * np.exp(-((s_cond - self.gd_mu) ** 2) / (2 * self.gd_std**2))
@@ -2670,7 +3001,7 @@ class Uniform2Gaussian(Preconditioner):
 
 
 class BoundsClipper(Preconditioner):
-    """Apply an inverse absolute value preconditioning to ensure of the parameter."""
+    """Clip the parameter to the given bounds (non-invertible transform)."""
 
     LBOUND_RAW: float = -np.inf
     UBOUND_RAW: float = +np.inf
@@ -2680,6 +3011,16 @@ class BoundsClipper(Preconditioner):
         lbounds: Union[float, NDArrayFloat],
         ubounds: Union[float, NDArrayFloat],
     ) -> None:
+        """
+        Initialize the instance.
+
+        Parameters
+        ----------
+        lbounds : Union[float, NDArrayFloat]
+            Lower bound(s) used to clip the back-transformed values.
+        ubounds : Union[float, NDArrayFloat]
+            Upper bound(s) used to clip the back-transformed values.
+        """
         super().__init__()
         # need to store bounds for the rescaling process
         self.lbounds = lbounds
@@ -2698,6 +3039,13 @@ class BoundsClipper(Preconditioner):
         -------
         NDArrayFloat
             Conditioned (transformed) parameter values.
+
+        Raises
+        ------
+        ValueError
+            If any value in `s_raw` is out of the given bounds (clipping
+            only ever happens on `backtransform`, so `transform` should
+            never see out-of-bounds values under normal use).
         """
         if np.any(s_raw < self.lbounds):
             raise ValueError(
@@ -2723,24 +3071,21 @@ class BoundsClipper(Preconditioner):
         Returns
         -------
         NDArrayFloat
-            Non-conditioned (transformed) parameter values.
+            Non-conditioned (transformed) parameter values, clipped to
+            ``[lbounds, ubounds]``.
         """
         return s_cond.clip(self.lbounds, self.ubounds)
 
     def _dtransform_vec(
         self, s_raw: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
-        Return the transform 1st derivative times a vector as a 1-D vector..
-        """
+        """Return the transform 1st derivative times a vector as a 1-D vector."""
         return gradient
 
     def _dbacktransform_vec(
         self, s_cond: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
-        Return the backtransform 1st derivative times a vector.
-        """
+        """Return the backtransform 1st derivative times a vector."""
         gradient = gradient.copy()
         # lower bound
         gradient[s_cond < self.lbounds] = 0.0
@@ -2753,10 +3098,8 @@ class BoundsClipper(Preconditioner):
     def _dbacktransform_inv_vec(
         self, s_cond: NDArrayFloat, gradient: NDArrayFloat
     ) -> NDArrayFloat:
-        """
-        Return the inverse of the backtransform 1st derivative times a vector.
-        """
-        # should have the same effect as gradient / np.sign(s_sond)
+        """Return the inverse of the backtransform 1st derivative times a vector."""
+        # should have the same effect as gradient / np.sign(s_cond)
         return gradient
 
     def transform_bounds(self, bounds: NDArrayFloat) -> NDArrayFloat:
@@ -2771,7 +3114,8 @@ class BoundsClipper(Preconditioner):
         Returns
         -------
         NDArrayFloat
-            Array of shape (N_s, 2) with transformed bounds.
+            Array of shape (N_s, 2), unchanged (clipping does not affect the
+            bounds themselves).
         """
         return bounds
 
@@ -2784,28 +3128,34 @@ class BoundsClipper(Preconditioner):
         eps: Optional[float] = None,
     ) -> None:
         """
-        Test if the backconditioner and the derivatives times a vector are correct.
+        Test if the backconditioner derivative is correct.
 
-        This is a development tool.
+        This is a development tool. Only the finite-difference check on
+        `dbacktransform_vec` is performed: `backtransform` is not the
+        inverse of `transform` here (clipping is not invertible), so the
+        other checks from :meth:`Preconditioner._test_preconditioner` do
+        not apply.
 
         Parameters
         ----------
         lbounds : Union[float, NDArrayFloat]
-            _description_
+            Lower bound(s) used to generate random test values.
         ubounds : Union[float, NDArrayFloat]
-            _description_
+            Upper bound(s) used to generate random test values.
         shape : Optional[Union[int, Sequence[int]]], optional
-            _description_, by default None
+            Shape of the generated test values. The default is None.
         rtol : float, optional
-            _description_, by default 1e-5
+            Relative tolerance used for the correctness check.
+            The default is 1e-5.
         eps : Optional[float], optional
             The epsilon for the computation of the approximated preconditioner first
-            derivative by finite difference. by default None.
+            derivative by finite difference. The default is None.
 
         Raises
         ------
-        ValueError
-            If one of the backconditioner of the gradient conditioner are incorrect.
+        AssertionError
+            If the backconditioner derivative does not match its finite
+            difference approximation.
         """
         # Add a small epsilon to avoid boundary cases
         test_data = self._get_test_data(lbounds=lbounds, ubounds=ubounds, shape=shape)
@@ -2821,7 +3171,24 @@ class BoundsClipper(Preconditioner):
 
 
 def scale_pcd(scaling_factor: float, pcd: Preconditioner) -> Preconditioner:
-    """Scale the given preconditioner with the scaling factor."""
+    """
+    Scale the given preconditioner with the scaling factor.
+
+    Parameters
+    ----------
+    scaling_factor : float
+        Multiplicative scaling factor applied after `pcd`.
+    pcd : Preconditioner
+        Preconditioner to scale. It is deep-copied (via
+        :meth:`Preconditioner.smart_copy`) so the original instance is not
+        mutated.
+
+    Returns
+    -------
+    Preconditioner
+        A :class:`ChainedTransforms` applying `pcd` then a
+        :class:`LinearTransform` of slope `scaling_factor` and zero intercept.
+    """
     return ChainedTransforms(
         [pcd.smart_copy(), LinearTransform(slope=scaling_factor, y_intercept=0.0)]
     )
@@ -2853,7 +3220,7 @@ class GradientScalerConfig:
     """
 
     max_change_target: float
-    pcd_change_eval: Preconditioner = NoTransform()
+    pcd_change_eval: Preconditioner = field(default_factory=NoTransform)
     max_workers: int = 50
     rtol: float = 0.05
     lb: float = 1e-10
@@ -2928,6 +3295,41 @@ def cost_fun(
     lb_nc: Optional[Union[NDArrayFloat, float]] = None,
     ub_nc: Optional[Union[NDArrayFloat, float]] = None,
 ) -> float:
+    """
+    Cost function used to search for the scaling factor enforcing a target update.
+
+    Returns ``log((get_max_update(...) - max_change_target) ** 2 + 1)``: a
+    smooth, always-positive function of `scaling_factor` that is minimized
+    when :func:`get_max_update` matches `max_change_target`.
+
+    Parameters
+    ----------
+    scaling_factor : float
+        Scaling factor for the parameter, forwarded to :func:`get_max_update`.
+    pcd : Preconditioner
+        Preconditioner, forwarded to :func:`get_max_update`.
+    s_nc : NDArrayFloat
+        Non conditioned parameter values, forwarded to :func:`get_max_update`.
+    grad_nc : NDArrayFloat
+        Gradient of the objective function with respect to the non
+        conditioned parameter values, forwarded to :func:`get_max_update`.
+    max_change_target : float
+        Target maximum update of the parameter values.
+    gsc : Optional[GradientScalerConfig], optional
+        Configuration for the gradient scaling, forwarded to
+        :func:`get_max_update`. The default is None.
+    lb_nc : Optional[Union[NDArrayFloat, float]], optional
+        Lower bound on the non conditioned parameter, forwarded to
+        :func:`get_max_update`. The default is None.
+    ub_nc : Optional[Union[NDArrayFloat, float]], optional
+        Upper bound on the non conditioned parameter, forwarded to
+        :func:`get_max_update`. The default is None.
+
+    Returns
+    -------
+    float
+        The (always positive, log-scaled) cost value.
+    """
     return np.log(
         (
             get_max_update(
@@ -2965,7 +3367,25 @@ def get_relative_error(x: float, x_ref: float) -> float:
     return (x - x_ref) / x_ref
 
 
-def is_picklable(obj):
+def is_picklable(obj) -> bool:
+    """
+    Return whether `obj` can be pickled.
+
+    Used to decide whether :func:`get_factor_enforcing_grad_inf_norm` can
+    parallelize its search over scaling factors using a
+    :class:`~concurrent.futures.ProcessPoolExecutor` (which requires
+    pickling `obj`), or must fall back to sequential evaluation.
+
+    Parameters
+    ----------
+    obj : Any
+        Object whose picklability is tested.
+
+    Returns
+    -------
+    bool
+        True if `obj` can be pickled, False otherwise.
+    """
     try:
         pickle.dumps(obj)
 
