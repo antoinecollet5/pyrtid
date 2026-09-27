@@ -9,6 +9,13 @@ import warnings
 from typing import Optional, Tuple, Union
 
 import numpy as np
+import quickpaver
+from inv_toolbox.utils import (
+    arithmetic_mean,
+    get_super_ilu_preconditioner,
+    harmonic_mean,
+)
+from quickpaver import RectilinearGrid
 from scipy.sparse import lil_array
 from scipy.sparse.linalg import LinearOperator, SuperLU, gmres
 
@@ -24,11 +31,6 @@ from pyrtid.forward.models import (
 from pyrtid.utils import (
     Callback,
     NDArrayFloat,
-    RectilinearGrid,
-    arithmetic_mean,
-    get_array_borders_selection_3d,
-    get_super_ilu_preconditioner,
-    harmonic_mean,
 )
 
 
@@ -76,7 +78,7 @@ def fill_stationary_flmat_for_axis(
     grid: RectilinearGrid, fl_model: FlowModel, q_next: lil_array, axis: int
 ) -> None:
     kmean = get_kmean(grid, fl_model, axis)
-    tmp = grid.gamma_ij(axis) / grid.pipj(axis) / grid.grid_cell_volume
+    tmp = grid.gc_face_area_m2(axis) / grid.pipj_m(axis) / grid.grid_cell_volume_m3
     fwd_slicer = grid.get_slicer_forward(axis)
     bwd_slicer = grid.get_slicer_backward(axis)
 
@@ -144,7 +146,9 @@ def fill_transient_flmat_for_axis(
     rhomean = get_rhomean(grid, tr_model, axis=axis, time_index=time_index - 1)
     sc = fl_model.storage_coefficient.ravel("F")
 
-    _tmp: float = grid.gamma_ij(axis) / grid.pipj(axis) / grid.grid_cell_volume
+    _tmp: float = (
+        grid.gc_face_area_m2(axis) / grid.pipj_m(axis) / grid.grid_cell_volume_m3
+    )
     fwd_slicer = grid.get_slicer_forward(axis)
     bwd_slicer = grid.get_slicer_backward(axis)
 
@@ -237,7 +241,7 @@ def get_zj_zi_rhs(grid: RectilinearGrid, fl_model: FlowModel) -> NDArrayFloat:
 
     kmean = get_kmean(grid, fl_model, axis)
 
-    tmp = grid.gamma_ij(axis) / grid.pipj(axis) / grid.grid_cell_volume
+    tmp = grid.gamma_ij_x_m2(axis) / grid.pipj_m(axis) / grid.grid_cell_volume_m3
 
     # Forward scheme:
     idc_owner, idc_neigh = get_owner_neigh_indices(
@@ -378,7 +382,7 @@ def find_u(
 
     if fl_model.is_gravity:
         pressure = fl_model.lpressure[time_index]
-        out[bwd_slicer] = (pressure[bwd_slicer] - pressure[fwd_slicer]) / grid.pipj(
+        out[bwd_slicer] = (pressure[bwd_slicer] - pressure[fwd_slicer]) / grid.pipj_m(
             axis
         )
 
@@ -404,7 +408,7 @@ def find_u(
     else:
         head = fl_model.lhead[time_index]
         out[bwd_slicer] = (
-            -kmean * (head[bwd_slicer] - head[fwd_slicer]) / grid.pipj(axis)
+            -kmean * (head[bwd_slicer] - head[fwd_slicer]) / grid.pipj_m(axis)
         )
     return out
 
@@ -450,14 +454,14 @@ def update_unitflow_cst_head_nodes(
     flow = np.zeros(grid.shape)
     _flow = np.zeros(grid.shape)
     if grid.nx > 1:
-        flow += fl_model.lu_darcy_x[time_index][:-1, :, :] * grid.gamma_ij_x
-        flow -= fl_model.lu_darcy_x[time_index][1:, :, :] * grid.gamma_ij_x
+        flow += fl_model.lu_darcy_x[time_index][:-1, :, :] * grid.gamma_ij_x_m2
+        flow -= fl_model.lu_darcy_x[time_index][1:, :, :] * grid.gamma_ij_x_m2
     if grid.ny > 1:
-        flow += fl_model.lu_darcy_y[time_index][:, :-1, :] * grid.gamma_ij_y
-        flow -= fl_model.lu_darcy_y[time_index][:, 1:, :] * grid.gamma_ij_y
+        flow += fl_model.lu_darcy_y[time_index][:, :-1, :] * grid.gamma_ij_y_m2
+        flow -= fl_model.lu_darcy_y[time_index][:, 1:, :] * grid.gamma_ij_y_m2
     if grid.nz > 1:
-        flow += fl_model.lu_darcy_z[time_index][:, :, :-1] * grid.gamma_ij_z
-        flow -= fl_model.lu_darcy_z[time_index][:, :, 1:] * grid.gamma_ij_z
+        flow += fl_model.lu_darcy_z[time_index][:, :, :-1] * grid.gamma_ij_z_m2
+        flow -= fl_model.lu_darcy_z[time_index][:, :, 1:] * grid.gamma_ij_z_m2
 
     # Trick: Set the flow to zero where the head is not constant
     # Q: est-ce que c'est juste pour les constant head ????
@@ -477,31 +481,31 @@ def update_unitflow_cst_head_nodes(
         # evacuation along x
         if fl_model.west_boundary_idx.size != 0:
             _ltot[0, fl_model.west_boundary_idx[0], fl_model.west_boundary_idx[1]] += (
-                grid.gamma_ij_x
+                grid.gamma_ij_x_m2
             )
         if fl_model.east_boundary_idx.size != 0:
             _ltot[-1, fl_model.east_boundary_idx[0], fl_model.east_boundary_idx[1]] += (
-                grid.gamma_ij_x
+                grid.gamma_ij_x_m2
             )
     if grid.ny > 1:
         # evacuation along y
         if fl_model.south_boundary_idx.size != 0:
             _ltot[
                 fl_model.south_boundary_idx[0], 0, fl_model.south_boundary_idx[1]
-            ] += grid.gamma_ij_y
+            ] += grid.gamma_ij_y_m2
         if fl_model.north_boundary_idx.size != 0:
             _ltot[
                 fl_model.north_boundary_idx[0], -1, fl_model.north_boundary_idx[1]
-            ] += grid.gamma_ij_y
+            ] += grid.gamma_ij_y_m2
     if grid.nz > 1:
         # evacuation along z
         if fl_model.bottom_boundary_idx.size != 0:
             _ltot[
                 fl_model.bottom_boundary_idx[0], fl_model.bottom_boundary_idx[1], 0
-            ] += grid.gamma_ij_z
+            ] += grid.gamma_ij_z_m2
         if fl_model.top_boundary_idx.size != 0:
             _ltot[fl_model.top_boundary_idx[0], fl_model.top_boundary_idx[1], -1] += (
-                grid.gamma_ij_z
+                grid.gamma_ij_z_m2
             )
 
     # 2) Update unitflow for the constant-head nodes
@@ -509,7 +513,7 @@ def update_unitflow_cst_head_nodes(
         fl_model.cst_head_indices[0], fl_model.cst_head_indices[1]
     ] = (
         _flow[fl_model.cst_head_indices[0], fl_model.cst_head_indices[1]]
-        / grid.grid_cell_volume
+        / grid.grid_cell_volume_m3
     )
 
     # 3) Now creates an artificial flow on the domain boundaries
@@ -518,7 +522,9 @@ def update_unitflow_cst_head_nodes(
     # grid cells located in the boundary of the domain.
 
     # 3.1) For constant head in the borders -> unitflow is null
-    cst_head_border_mask = _flow != 0 & get_array_borders_selection_3d(*grid.shape)
+    cst_head_border_mask = _flow != 0 & quickpaver.get_array_borders_selection(
+        *grid.shape
+    )
     fl_model.lunitflow[time_index][cst_head_border_mask] = 0.0
 
     # 3.2) Report the flow on the boundaries
@@ -601,19 +607,19 @@ def compute_u_darcy_div(
     u_darcy_div = np.zeros(grid.shape)
 
     # x contribution
-    u_darcy_div -= fl_model.lu_darcy_x[time_index][:-1, :, :] * grid.gamma_ij_x
-    u_darcy_div += fl_model.lu_darcy_x[time_index][1:, :, :] * grid.gamma_ij_x
+    u_darcy_div -= fl_model.lu_darcy_x[time_index][:-1, :, :] * grid.gamma_ij_x_m2
+    u_darcy_div += fl_model.lu_darcy_x[time_index][1:, :, :] * grid.gamma_ij_x_m2
 
     # y contribution
-    u_darcy_div -= fl_model.lu_darcy_y[time_index][:, :-1, :] * grid.gamma_ij_y
-    u_darcy_div += fl_model.lu_darcy_y[time_index][:, 1:, :] * grid.gamma_ij_y
+    u_darcy_div -= fl_model.lu_darcy_y[time_index][:, :-1, :] * grid.gamma_ij_y_m2
+    u_darcy_div += fl_model.lu_darcy_y[time_index][:, 1:, :] * grid.gamma_ij_y_m2
 
     # z contribution
-    u_darcy_div -= fl_model.lu_darcy_z[time_index][:, :, :-1] * grid.gamma_ij_z
-    u_darcy_div += fl_model.lu_darcy_z[time_index][:, :, 1:] * grid.gamma_ij_z
+    u_darcy_div -= fl_model.lu_darcy_z[time_index][:, :, :-1] * grid.gamma_ij_z_m2
+    u_darcy_div += fl_model.lu_darcy_z[time_index][:, :, 1:] * grid.gamma_ij_z_m2
 
     # Take the surface into account
-    u_darcy_div /= grid.grid_cell_volume
+    u_darcy_div /= grid.grid_cell_volume_m3
 
     # Constant head handling - null divergence
     cst_idx = fl_model.cst_head_indices
@@ -659,12 +665,12 @@ def get_gravity_gradient(
     )
 
     tmp[idc_owner] += (
-        grid.gamma_ij(axis)
+        grid.gc_face_area_m2(axis)
         * rhomean[idc_owner] ** 2
         * GRAVITY
         / WATER_DENSITY
         * kmean[idc_owner]
-        / grid.grid_cell_volume
+        / grid.grid_cell_volume_m3
         / sc[idc_owner]
     )
 
@@ -677,13 +683,13 @@ def get_gravity_gradient(
     )
 
     tmp[idc_owner] -= (
-        grid.gamma_ij(axis)
+        grid.gc_face_area_m2(axis)
         * (rhomean[idc_neigh] ** 2)
         * GRAVITY
         / WATER_DENSITY
         * kmean[idc_neigh]
         / sc[idc_owner]
-        / grid.grid_cell_volume
+        / grid.grid_cell_volume_m3
     )
 
     return tmp

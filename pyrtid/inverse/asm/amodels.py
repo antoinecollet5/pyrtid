@@ -10,6 +10,7 @@ from abc import ABC
 from typing import List, Optional
 
 import numpy as np
+from quickpaver import RectilinearGrid
 from scipy.sparse import csc_array, lil_array
 
 from pyrtid.forward.models import (  # ConstantHead,; ZeroConcGradient,
@@ -24,7 +25,6 @@ from pyrtid.inverse.obs import (
 )
 from pyrtid.utils import (
     NDArrayFloat,
-    RectilinearGrid,
     object_or_object_sequence_to_list,
 )
 

@@ -82,9 +82,31 @@ Loss functions
 
 """
 
+import inv_toolbox.regularization as regularization
+from inv_toolbox.utils.preconditioner import (
+    GDPCS,
+    GDPNCS,
+    BoundsClipper,
+    BoundsRescaler,
+    ChainedTransforms,
+    GradientScalerConfig,
+    InvAbsTransform,
+    LinearTransform,
+    LogTransform,
+    Normalizer,
+    NoTransform,
+    Preconditioner,
+    RangeRescaler,
+    SigmoidRescaler,
+    SigmoidRescalerBounded,
+    Slicer,
+    SqrtTransform,
+    StdRescaler,
+    SubSelector,
+    Uniform2Gaussian,
+)
 from pyesmda import ESMDAInversionType
 
-import pyrtid.regularization as regularization
 from pyrtid.inverse.asm.amain_solver import AdjointSolver
 from pyrtid.inverse.asm.amodels import AdjointModel
 from pyrtid.inverse.executors import (
@@ -133,28 +155,6 @@ from pyrtid.inverse.params import (
     get_parameters_bounds,
     get_parameters_values_from_model,
     update_model_with_parameters_values,
-)
-from pyrtid.utils.preconditioner import (
-    GDPCS,
-    GDPNCS,
-    BoundsClipper,
-    BoundsRescaler,
-    ChainedTransforms,
-    GradientScalerConfig,
-    InvAbsTransform,
-    LinearTransform,
-    LogTransform,
-    Normalizer,
-    NoTransform,
-    Preconditioner,
-    RangeRescaler,
-    SigmoidRescaler,
-    SigmoidRescalerBounded,
-    Slicer,
-    SqrtTransform,
-    StdRescaler,
-    SubSelector,
-    Uniform2Gaussian,
 )
 
 __all__ = [

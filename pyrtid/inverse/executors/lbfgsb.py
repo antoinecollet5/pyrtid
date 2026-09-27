@@ -22,6 +22,11 @@ from typing import Deque, List, Optional, Tuple
 
 import numpy as np
 import scipy as sp
+from inv_toolbox.regularization import ConstantRegWeight
+from inv_toolbox.utils.preconditioner import (
+    get_factor_enforcing_grad_inf_norm,
+    scale_pcd,
+)
 from lbfgsb import minimize_lbfgsb
 
 from pyrtid.inverse.executors.base import (
@@ -39,9 +44,7 @@ from pyrtid.inverse.params import (
     get_parameters_bounds,
     get_parameters_values_from_model,
 )
-from pyrtid.regularization import ConstantRegWeight
 from pyrtid.utils import NDArrayFloat
-from pyrtid.utils.preconditioner import get_factor_enforcing_grad_inf_norm, scale_pcd
 
 lbfgsb_solver_config_params_ds = r"""
     ftol_linesearch: float

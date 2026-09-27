@@ -6,6 +6,12 @@
 from __future__ import annotations
 
 import numpy as np
+from inv_toolbox.utils import (
+    NDArrayFloat,
+    dxi_arithmetic_mean,
+    harmonic_mean,
+)
+from quickpaver import RectilinearGrid
 
 from pyrtid.forward.flow_solver import get_kmean, get_rhomean
 from pyrtid.forward.models import (  # ConstantHead,; ZeroConcGradient,
@@ -17,12 +23,6 @@ from pyrtid.forward.models import (  # ConstantHead,; ZeroConcGradient,
     VerticalAxis,
 )
 from pyrtid.inverse.asm.amodels import AdjointFlowModel, AdjointTransportModel
-from pyrtid.utils import (
-    NDArrayFloat,
-    RectilinearGrid,
-    dxi_arithmetic_mean,
-    harmonic_mean,
-)
 
 
 def get_drhomean(
@@ -181,7 +181,7 @@ def _add_diffusivity_contribution(
     )
     # add the storgae coefficient to ma_apressure
     ma_apressure_sc = ma_apressure / (
-        fl_model.storage_coefficient[:, :, :] * grid.grid_cell_volume
+        fl_model.storage_coefficient[:, :, :] * grid.grid_cell_volume_m3
     )
 
     pprev = fl_model.pressure[:, :, :, time_index + 1]
@@ -227,7 +227,7 @@ def _add_diffusivity_contribution(
                     crank_flow * (pprev[bwd_slicer] - pprev[fwd_slicer])
                     + (1.0 - crank_flow) * (pnext[bwd_slicer] - pnext[fwd_slicer])
                 )
-                / grid.pipj(axis)
+                / grid.pipj_m(axis)
                 * drhomean
                 + tmp
             )
@@ -238,7 +238,7 @@ def _add_diffusivity_contribution(
         contrib[fwd_slicer] += (
             dpressure_fx
             * (ma_apressure_sc[fwd_slicer] - ma_apressure_sc[bwd_slicer])
-            * grid.gamma_ij(axis)
+            * grid.gc_face_area_m2(axis)
         )
 
         # Backward scheme
@@ -248,7 +248,7 @@ def _add_diffusivity_contribution(
                     crank_flow * (pprev[fwd_slicer] - pprev[bwd_slicer])
                     + (1.0 - crank_flow) * (pnext[fwd_slicer] - pnext[bwd_slicer])
                 )
-                / grid.pipj(axis)
+                / grid.pipj_m(axis)
                 * drhomean
                 - tmp
             )
@@ -259,7 +259,7 @@ def _add_diffusivity_contribution(
         contrib[bwd_slicer] += (
             dpressure_bx
             * (ma_apressure_sc[bwd_slicer] - ma_apressure_sc[fwd_slicer])
-            * grid.gamma_ij(axis)
+            * grid.gc_face_area_m2(axis)
         )
 
     a_tr_model.a_density[:, :, :, time_index] += contrib.reshape(grid.shape, order="F")

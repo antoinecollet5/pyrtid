@@ -5,10 +5,10 @@ from typing import Any, Dict
 
 import numpy as np
 import pytest
+from inv_toolbox.regularization import TikhonovRegularizator, TVRegularizator
+from inv_toolbox.utils.preconditioner import ChainedTransforms, LogTransform, Slicer
 from pyrtid.inverse import AdjustableParameter
-from pyrtid.regularization import TikhonovRegularizator, TVRegularizator
-from pyrtid.utils import RectilinearGrid
-from pyrtid.utils.preconditioner import ChainedTransforms, LogTransform, Slicer
+from quickpaver import RectilinearGrid
 
 
 @pytest.mark.parametrize(

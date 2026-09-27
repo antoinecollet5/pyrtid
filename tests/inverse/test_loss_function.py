@@ -2,6 +2,7 @@ import numpy as np
 import pyrtid.forward as dmfwd
 import pyrtid.inverse as dminv
 import pytest
+from inv_toolbox.regularization import TikhonovRegularizator
 from pyrtid.inverse.loss_function import (
     eval_loss_ls,
     eval_model_loss_function,
@@ -9,8 +10,7 @@ from pyrtid.inverse.loss_function import (
 )
 from pyrtid.inverse.obs import Observable, StateVariable
 from pyrtid.inverse.params import eval_weighted_loss_reg
-from pyrtid.regularization import TikhonovRegularizator
-from pyrtid.utils import RectilinearGrid
+from quickpaver import RectilinearGrid
 
 
 @pytest.mark.parametrize(

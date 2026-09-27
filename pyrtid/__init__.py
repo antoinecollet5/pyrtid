@@ -38,7 +38,7 @@ except ImportError:
             warnings.warn(message)
 
 
-from pyrtid import forward, inverse, plot, regularization, utils
+from pyrtid import forward, inverse, utils
 from pyrtid.__about__ import __author__, __email__, __version__
 
 
@@ -57,8 +57,12 @@ class Report(ScoobyReport):  # ty:ignore[unsupported-base]
             "nested_grid_plotter",
             "stochopy",
             "scooby",
+            "quickpaver",
+            "inv_toolbox",
             "iterative_ensemble_smoother",
             "lbfgsb",
+            "pypcga",
+            "pyesmda",
             "gstools",
         ]
 

@@ -29,6 +29,7 @@ from typing import (
 )
 
 import numpy as np
+from inv_toolbox.utils import NDArrayFloat, is_all_close
 
 from pyrtid.forward import ForwardModel, ForwardSolver
 from pyrtid.inverse.asm import AdjointModel, AdjointSolver
@@ -52,7 +53,6 @@ from pyrtid.inverse.params import (
     update_model_with_parameters_values,
     update_parameters_from_model,
 )
-from pyrtid.utils import NDArrayFloat, is_all_close
 
 
 def register_params_ds(params_ds: str):  # type: ignore

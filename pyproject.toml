@@ -46,7 +46,8 @@ dependencies = [
     "pypcga",
     "covmats>=0.4.0",
     "scooby",
-    "quickpaver>=0.4.0"
+    "quickpaver>=0.5.0",
+    "inv_toolbox"
 ]
 [project.optional-dependencies]
 all = ['pyrtid[install, lint, tests, examples, docs]']

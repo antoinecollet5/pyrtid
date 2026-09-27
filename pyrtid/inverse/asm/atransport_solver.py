@@ -10,6 +10,12 @@ from typing import Tuple
 
 import covmats
 import numpy as np
+from inv_toolbox.utils import (
+    NDArrayFloat,
+    get_super_ilu_preconditioner,
+    harmonic_mean,
+)
+from quickpaver import RectilinearGrid
 from scipy.sparse import lil_array
 from scipy.sparse.linalg import gmres
 
@@ -24,12 +30,6 @@ from pyrtid.forward.models import (
 )
 from pyrtid.forward.solver import get_max_coupling_error
 from pyrtid.inverse.asm.amodels import AdjointTransportModel
-from pyrtid.utils import (
-    NDArrayFloat,
-    RectilinearGrid,
-    get_super_ilu_preconditioner,
-    harmonic_mean,
-)
 
 
 def get_adjoint_max_coupling_error(
@@ -130,11 +130,13 @@ def make_transient_adj_transport_matrices(
             owner_indices_to_keep=tr_model.free_conc_nn,
         )
 
-        tmp_diff = grid.gamma_ij(axis) / grid.pipj(axis) / grid.grid_cell_volume
+        tmp_diff = (
+            grid.gc_face_area_m2(axis) / grid.pipj_m(axis) / grid.grid_cell_volume_m3
+        )
         tmp_un_pos = (
             np.where(normal * un > 0.0, normal * un, 0.0)[idc_owner]
-            * grid.gamma_ij(axis)
-            / grid.grid_cell_volume
+            * grid.gc_face_area_m2(axis)
+            / grid.grid_cell_volume_m3
         )
 
         q_next[idc_owner, idc_neigh] -= (
@@ -162,8 +164,8 @@ def make_transient_adj_transport_matrices(
 
         tmp_un_pos = (
             np.where(normal * un > 0.0, normal * un, 0.0)[idc_neigh]
-            * grid.gamma_ij(axis)
-            / grid.grid_cell_volume
+            * grid.gc_face_area_m2(axis)
+            / grid.grid_cell_volume_m3
         )
 
         q_next[idc_owner, idc_neigh] -= (
@@ -261,7 +263,7 @@ def _add_adj_transport_boundary_conditions(
             bd1_slicer,
             bd2_slicer,
         )
-        tmp = grid.gamma_ij(axis) / grid.grid_cell_volume
+        tmp = grid.gc_face_area_m2(axis) / grid.grid_cell_volume_m3
 
         _un = u_darcy[(fwd_slicer) + (time_index,)].ravel("F")[idc_left_border]
         normal = -1.0

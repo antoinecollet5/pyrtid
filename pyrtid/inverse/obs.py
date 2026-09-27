@@ -9,21 +9,21 @@ import json
 from typing import Optional, Sequence, Tuple, Union
 
 import numpy as np
+from inv_toolbox.utils.means import (
+    MeanType,
+    get_mean_values_for_last_axis,
+    get_mean_values_gradient_for_last_axis,
+)
+from quickpaver import rlg_nn_to_idx
 
 from pyrtid.forward import ForwardModel
 from pyrtid.utils import (
     Int,
     NDArrayFloat,
     NDArrayInt,
-    node_number_to_indices,
     object_or_object_sequence_to_list,
 )
 from pyrtid.utils.enum import StrEnum
-from pyrtid.utils.means import (
-    MeanType,
-    get_mean_values_for_last_axis,
-    get_mean_values_gradient_for_last_axis,
-)
 
 
 class StateVariable(StrEnum):
@@ -515,7 +515,7 @@ def get_values_matching_node_indices(
         Simulated values at the observation location
     """
     nx, ny, nz = input_values.shape[:3]
-    X, Y, Z = node_number_to_indices(node_indices, nx=nx, ny=ny)
+    X, Y, Z = rlg_nn_to_idx(node_indices, nx=nx, ny=ny)
     if len(input_values.shape) == 4:
         return input_values[X, Y, Z, :]
     # state variable constant within time
@@ -720,9 +720,7 @@ def get_adjoint_sources_for_obs(
     adj_src = np.zeros(field.shape)
 
     # Location in the grid
-    X, Y, Z = node_number_to_indices(
-        obs.node_indices, nx=model.grid.nx, ny=model.grid.ny
-    )
+    X, Y, Z = rlg_nn_to_idx(obs.node_indices, nx=model.grid.nx, ny=model.grid.ny)
 
     # 2) Taking into account the derivative linked with the values time interpolation
     # (observations defined between two times of the simulation)

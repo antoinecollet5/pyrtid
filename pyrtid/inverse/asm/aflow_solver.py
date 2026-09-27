@@ -10,6 +10,12 @@ from typing import Tuple
 
 import covmats
 import numpy as np
+from inv_toolbox.utils import (
+    NDArrayFloat,
+    dxi_harmonic_mean,
+    get_super_ilu_preconditioner,
+)
+from quickpaver import RectilinearGrid
 from scipy.sparse import csc_matrix, lil_array
 from scipy.sparse.linalg import lgmres
 
@@ -24,12 +30,6 @@ from pyrtid.forward.models import (  # ConstantHead,; ZeromobGradient,
     get_owner_neigh_indices,
 )
 from pyrtid.inverse.asm.amodels import AdjointFlowModel, AdjointTransportModel
-from pyrtid.utils import (
-    NDArrayFloat,
-    RectilinearGrid,
-    dxi_harmonic_mean,
-    get_super_ilu_preconditioner,
-)
 
 
 def add_adj_stationary_flow_to_q_next_for_axis(
@@ -38,7 +38,7 @@ def add_adj_stationary_flow_to_q_next_for_axis(
     kmean = get_kmean(grid, fl_model, axis)
     fwd_slicer = grid.get_slicer_forward(axis)
     bwd_slicer = grid.get_slicer_backward(axis)
-    _tmp = grid.gamma_ij(axis) / grid.pipj(axis) / grid.grid_cell_volume
+    _tmp = grid.gc_face_area_m2(axis) / grid.pipj_m(axis) / grid.grid_cell_volume_m3
     if fl_model.is_gravity:
         _tmp /= WATER_DENSITY * GRAVITY
 
@@ -134,7 +134,7 @@ def fill_transient_adj_flow_matrices_for_axis(
     kmean = get_kmean(grid, fl_model, axis)
     fwd_slicer = grid.get_slicer_forward(axis)
     bwd_slicer = grid.get_slicer_backward(axis)
-    _tmp = grid.gamma_ij(axis) / grid.pipj(axis) / grid.grid_cell_volume
+    _tmp = grid.gc_face_area_m2(axis) / grid.pipj_m(axis) / grid.grid_cell_volume_m3
 
     # at n - 1
     rhomean_next = get_rhomean(grid, tr_model, axis=axis, time_index=time_index - 1)
@@ -380,7 +380,7 @@ def update_adjoint_u_darcy(
 
             # 1) advective term
             a_u_darcy[tuple(bwd_slicer) + (time_index,)] += (
-                grid.gamma_ij(axis)
+                grid.gc_face_area_m2(axis)
                 * (
                     (
                         crank_adv * (a_mob[bwd_slicer] - a_mob[fwd_slicer])
@@ -389,12 +389,12 @@ def update_adjoint_u_darcy(
                     )
                     * mob_ij
                 )
-                / grid.grid_cell_volume
+                / grid.grid_cell_volume_m3
             )
 
             # 2) U divergence term
             a_u_darcy[tuple(bwd_slicer) + (time_index,)] += (
-                grid.gamma_ij(axis)
+                grid.gc_face_area_m2(axis)
                 * (
                     crank_adv
                     * (
@@ -407,15 +407,15 @@ def update_adjoint_u_darcy(
                         - a_mob_old[bwd_slicer] * mob[bwd_slicer]
                     )
                 )
-                / grid.grid_cell_volume
+                / grid.grid_cell_volume_m3
             )
 
             # 3) Dispersivity term -> \lmabda *
             # forward in space
             lhs[fwd_slicer] += (
-                grid.gamma_ij(axis)
-                / grid.pipj(axis)
-                / grid.grid_cell_volume
+                grid.gc_face_area_m2(axis)
+                / grid.pipj_m(axis)
+                / grid.grid_cell_volume_m3
                 * (
                     (
                         crank_diff * (mob[bwd_slicer] - mob[fwd_slicer])
@@ -428,9 +428,9 @@ def update_adjoint_u_darcy(
             )
             # backward in space
             lhs[bwd_slicer] += (
-                grid.gamma_ij(axis)
-                / grid.pipj(axis)
-                / grid.grid_cell_volume
+                grid.gc_face_area_m2(axis)
+                / grid.pipj_m(axis)
+                / grid.grid_cell_volume_m3
                 * (
                     (
                         crank_diff * (mob[fwd_slicer] - mob[bwd_slicer])
@@ -681,12 +681,12 @@ def get_adjoint_transport_src_terms(
 
         # Forward
         src[fwd_slicer] += (
-            kmean * a_u_darcy[tuple(bwd_slicer) + (time_index,)] / grid.pipj(axis)
+            kmean * a_u_darcy[tuple(bwd_slicer) + (time_index,)] / grid.pipj_m(axis)
         ) * tmp
 
         # Backward
         src[bwd_slicer] -= (
-            kmean * a_u_darcy[tuple(bwd_slicer) + (time_index,)] / grid.pipj(axis)
+            kmean * a_u_darcy[tuple(bwd_slicer) + (time_index,)] / grid.pipj_m(axis)
         ) * tmp
 
     return src.ravel("F")

@@ -8,6 +8,7 @@ import warnings
 from typing import List, Optional
 
 import numpy as np
+from inv_toolbox.utils import finite_jacobian, is_all_close
 
 from pyrtid.forward import ForwardModel, ForwardSolver
 from pyrtid.inverse.fsm.solver import FSMSolver
@@ -22,8 +23,6 @@ from pyrtid.inverse.params import (
 )
 from pyrtid.utils import (
     NDArrayFloat,
-    finite_jacobian,
-    is_all_close,
     object_or_object_sequence_to_list,
 )
 

@@ -9,9 +9,9 @@ from typing import Optional, Union
 import covmats
 import numpy as np
 import scipy as sp
+from quickpaver import rlg_idx_to_nn, span_to_node_numbers_3d
 from scipy.sparse import csc_array, lil_array
 
-from pyrtid.utils.grid import indices_to_node_number, span_to_node_numbers_3d
 from pyrtid.utils.types import NDArrayFloat, NDArrayInt
 
 
@@ -96,7 +96,7 @@ def get_laplacian_matrix_for_loops(
     for ix in range(nx):
         for iy in range(ny):
             for iz in range(nz):
-                node_index = int(indices_to_node_number(ix, nx, iy, ny, iz))
+                node_index = int(rlg_idx_to_nn(ix, nx, iy, ny, iz))
                 lap[node_index, node_index] += _kappa[node_index] ** 2
 
                 if nx > 1:
@@ -108,27 +108,27 @@ def get_laplacian_matrix_for_loops(
 
                 # X contribution
                 if ix > 0:
-                    neighbor_index = int(indices_to_node_number(ix - 1, nx, iy, ny, iz))
+                    neighbor_index = int(rlg_idx_to_nn(ix - 1, nx, iy, ny, iz))
                     lap[node_index, neighbor_index] += -1.0 / dx**2
                 if ix < nx - 1:
-                    neighbor_index = int(indices_to_node_number(ix + 1, nx, iy, ny, iz))
+                    neighbor_index = int(rlg_idx_to_nn(ix + 1, nx, iy, ny, iz))
                     lap[node_index, neighbor_index] += -1.0 / dx**2
 
                 # Y contribution
                 if iy > 0:
-                    neighbor_index = int(indices_to_node_number(ix, nx, iy - 1, ny, iz))
+                    neighbor_index = int(rlg_idx_to_nn(ix, nx, iy - 1, ny, iz))
                     lap[node_index, neighbor_index] += -1.0 / dy**2
                 if iy < ny - 1:
-                    neighbor_index = int(indices_to_node_number(ix, nx, iy + 1, ny, iz))
+                    neighbor_index = int(rlg_idx_to_nn(ix, nx, iy + 1, ny, iz))
                     lap[node_index, neighbor_index] += -1.0 / dy**2
 
                 # Z contribution
                 if iz > 0:
-                    neighbor_index = int(indices_to_node_number(ix, nx, iy, ny, iz - 1))
+                    neighbor_index = int(rlg_idx_to_nn(ix, nx, iy, ny, iz - 1))
                     lap[node_index, neighbor_index] += -1.0 / dz**2
                 if iz < nz - 1:
                     neighbor_index = int(
-                        indices_to_node_number(
+                        rlg_idx_to_nn(
                             ix,
                             nx,
                             iy,

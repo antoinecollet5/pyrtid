@@ -16,26 +16,26 @@ from typing import Callable, List, Optional, Sequence, Union
 
 import numpy as np
 import scipy as sp
-
-from pyrtid.forward import ForwardModel
-from pyrtid.inverse.obs import StateVariable, get_array_from_state_variable
-from pyrtid.regularization import (
+from inv_toolbox.regularization import (
     ConstantRegWeight,
     Regularizator,
     RegWeightUpdateStrategy,
 )
+from inv_toolbox.utils.preconditioner import (
+    GradientScalerConfig,
+    NoTransform,
+    Preconditioner,
+)
+from inv_toolbox.utils.spatial_filters import Filter
+
+from pyrtid.forward import ForwardModel
+from pyrtid.inverse.obs import StateVariable, get_array_from_state_variable
 from pyrtid.utils import (
     NDArrayFloat,
     NDArrayInt,
     StrEnum,
     object_or_object_sequence_to_list,
 )
-from pyrtid.utils.preconditioner import (
-    GradientScalerConfig,
-    NoTransform,
-    Preconditioner,
-)
-from pyrtid.utils.spatial_filters import Filter
 
 
 def identify_function(x: NDArrayFloat) -> NDArrayFloat:

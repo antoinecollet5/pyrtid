@@ -8,8 +8,9 @@ import pyrtid.forward as dmfwd
 import pyrtid.inverse as dminv
 import pytest
 import scipy as sp
-from pyrtid.utils import NDArrayFloat, RectilinearGrid, indices_to_node_number
-from pyrtid.utils.operators import get_angle_btw_vectors_deg
+from inv_toolbox.utils import get_angle_btw_vectors_deg
+from pyrtid.utils import NDArrayFloat
+from quickpaver import RectilinearGrid, rlg_idx_to_nn
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -108,7 +109,7 @@ def get_forward_and_obs(
         day += 1
         sink_term = dmfwd.SourceTerm(
             f"producer loc # {loc}",
-            node_ids=np.array(indices_to_node_number(ix=loc, nx=nx)),
+            node_ids=np.array(rlg_idx_to_nn(ix=loc, nx=nx)),
             # pumping on 1 day
             times=np.array([day, day + 1], dtype=np.float64) * 3600 * 24,
             flowrates=np.array([prod_flw, 0.0]),
@@ -121,7 +122,7 @@ def get_forward_and_obs(
         day += 1
         source_term = dmfwd.SourceTerm(
             f"injector loc # {loc}",
-            node_ids=np.array(indices_to_node_number(ix=loc, nx=nx)),
+            node_ids=np.array(rlg_idx_to_nn(ix=loc, nx=nx)),
             times=np.array([day, day + 1], dtype=np.float64) * 3600 * 24,
             flowrates=np.array([-prod_flw, 0.0]),
             concentrations=np.array([[0.0, 0.0], [0.0, 0.0]]),

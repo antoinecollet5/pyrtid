@@ -9,6 +9,8 @@ import warnings
 from typing import Tuple
 
 import numpy as np
+from inv_toolbox.utils import get_super_ilu_preconditioner, harmonic_mean
+from quickpaver import RectilinearGrid
 from scipy.sparse import lil_array
 from scipy.sparse.linalg import gmres
 
@@ -18,8 +20,7 @@ from pyrtid.forward.models import (
     TransportModel,
     get_owner_neigh_indices,
 )
-from pyrtid.utils import NDArrayFloat, RectilinearGrid, harmonic_mean
-from pyrtid.utils.operators import get_super_ilu_preconditioner
+from pyrtid.utils import NDArrayFloat
 
 
 def fill_trmat_for_axis(
@@ -50,7 +51,9 @@ def fill_trmat_for_axis(
     dmean[fwd_slicer] = harmonic_mean(disp[fwd_slicer], disp[bwd_slicer])
     dmean = dmean.flatten(order="F")
 
-    tmp_diff: float = grid.gamma_ij(axis) / grid.pipj(axis) / grid.grid_cell_volume
+    tmp_diff: float = (
+        grid.gc_face_area_m2(axis) / grid.pipj_m(axis) / grid.grid_cell_volume_m3
+    )
 
     tmp_un = np.zeros(grid.shape)
     tmp_un[fwd_slicer] = u_darcy[tuple(bwd_slicer) + (time_index,)]
@@ -60,7 +63,7 @@ def fill_trmat_for_axis(
     un = tmp_un.flatten(order="F")
     un_old = tmp_un_old.flatten(order="F")
 
-    tmp_adv = grid.gamma_ij(axis) / grid.grid_cell_volume
+    tmp_adv = grid.gc_face_area_m2(axis) / grid.grid_cell_volume_m3
 
     # Forward scheme:
     normal = 1.0
@@ -237,7 +240,7 @@ def _add_transport_boundary_conditions_for_axis(
         bd1_slicer,
         bd2_slicer,
     )
-    tmp = grid.gamma_ij(axis) / grid.grid_cell_volume
+    tmp = grid.gc_face_area_m2(axis) / grid.grid_cell_volume_m3
 
     # left border
     _un = u_darcy[tuple(fwd_slicer) + (time_index,)].ravel("F")[idc_left_border]

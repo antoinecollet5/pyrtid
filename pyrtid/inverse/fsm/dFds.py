@@ -9,15 +9,16 @@ This is required to build the right hand side in the forward sensitivity method.
 
 from __future__ import annotations
 
+from typing import Tuple
+
 import numpy as np
+import quickpaver
+from inv_toolbox.utils import dxi_harmonic_mean, harmonic_mean
 
 from pyrtid.forward.flow_solver import GRAVITY, WATER_DENSITY, get_rhomean
 from pyrtid.forward.models import FlowRegime, ForwardModel, VerticalAxis
 from pyrtid.utils import (
     NDArrayFloat,
-    dxi_harmonic_mean,
-    get_extended_grid_shape,
-    harmonic_mean,
     np_cache,
 )
 
@@ -77,7 +78,7 @@ def dFhdKv(
             ]
             * vecs[(fwd_slicer) + (slice(None),)]
         )
-        tmp = fwd_model.grid.gamma_ij(axis) / fwd_model.grid.pipj(axis)
+        tmp = fwd_model.grid.gc_face_area_m2(axis) / fwd_model.grid.pipj_m(axis)
 
         # For all n != 0
         if time_index != 0:
@@ -88,7 +89,7 @@ def dFhdKv(
                     * (head_prev[bwd_slicer] - head_prev[fwd_slicer])
                 )
                 * tmp
-                / fwd_model.grid.grid_cell_volume
+                / fwd_model.grid.grid_cell_volume_m3
             )
             # Forward
             out[(fwd_slicer) + (slice(None),)] -= (
@@ -105,7 +106,7 @@ def dFhdKv(
             lhs = (
                 (head[bwd_slicer] - head[fwd_slicer])[:, :, :, np.newaxis]
                 * tmp
-                / fwd_model.grid.grid_cell_volume
+                / fwd_model.grid.grid_cell_volume_m3
                 * dKijdKxv
             )
             out[(fwd_slicer) + (slice(None),)] -= lhs
@@ -157,7 +158,7 @@ def dFhdSsv(
         bwd_slicer = fwd_model.grid.get_slicer_backward(axis)
 
         Kij = harmonic_mean(permeability[bwd_slicer], permeability[fwd_slicer])
-        tmp = fwd_model.grid.gamma_ij(axis) / fwd_model.grid.pipj(axis)
+        tmp = fwd_model.grid.gc_face_area_m2(axis) / fwd_model.grid.pipj_m(axis)
 
         # For all n != 0
         if time_index != 0:
@@ -169,7 +170,7 @@ def dFhdSsv(
                 )
                 * tmp
                 * Kij
-                / fwd_model.grid.grid_cell_volume
+                / fwd_model.grid.grid_cell_volume_m3
             )
             # Forward
             out[(fwd_slicer) + (slice(None),)] -= (
@@ -260,13 +261,13 @@ def dFpdKv(
                         + (1.0 - crank_flow)
                         * (pressure_prev[bwd_slicer] - pressure_prev[fwd_slicer])
                     )
-                    / fwd_model.grid.pipj(axis)
+                    / fwd_model.grid.pipj_m(axis)
                     + rhoijg
                 )
-                * fwd_model.grid.gamma_ij(axis)
+                * fwd_model.grid.gc_face_area_m2(axis)
                 * rhoij
                 / WATER_DENSITY
-                / fwd_model.grid.grid_cell_volume
+                / fwd_model.grid.grid_cell_volume_m3
             )
             # Forward
             out[(fwd_slicer) + (slice(None),)] -= (
@@ -288,9 +289,9 @@ def dFpdKv(
                     - z[fwd_slicer]
                     + z[bwd_slicer]
                 )
-                * fwd_model.grid.gamma_ij(axis)
-                / fwd_model.grid.pipj(axis)
-                / fwd_model.grid.grid_cell_volume
+                * fwd_model.grid.gc_face_area_m2(axis)
+                / fwd_model.grid.pipj_m(axis)
+                / fwd_model.grid.grid_cell_volume_m3
             ) * dKijdKxv
 
             out[(fwd_slicer) + (slice(None),)] -= lhs
@@ -364,14 +365,14 @@ def dFpdSsv(
                         + (1.0 - crank_flow)
                         * (pressure_prev[bwd_slicer] - pressure_prev[fwd_slicer])
                     )
-                    / fwd_model.grid.pipj(axis)
+                    / fwd_model.grid.pipj_m(axis)
                     + rhoijg
                 )
-                * fwd_model.grid.gamma_ij(axis)
+                * fwd_model.grid.gc_face_area_m2(axis)
                 * rhoij
                 * Kij
                 / WATER_DENSITY
-                / fwd_model.grid.grid_cell_volume
+                / fwd_model.grid.grid_cell_volume_m3
             )
             # Forward
             out[(fwd_slicer) + (slice(None),)] -= (
@@ -401,6 +402,18 @@ def dFpdSsv(
     return out
 
 
+def _get_extended_grid_shape(
+    grid: quickpaver.RectilinearGrid, axis: int, extend: int
+) -> Tuple[int, int, int]:
+    if axis == 0:
+        return (grid.nx + extend, grid.ny, grid.nz)
+    if axis == 1:
+        return (grid.nx, grid.ny + extend, grid.nz)
+    if axis == 2:
+        return (grid.nx, grid.ny, grid.nz + extend)
+    raise ValueError()
+
+
 def dFUdKv(
     fwd_model: ForwardModel, time_index: int, vecs: NDArrayFloat, axis: int
 ) -> NDArrayFloat:
@@ -426,7 +439,10 @@ def dFUdKv(
 
     # TODO: update this
     out = np.zeros(
-        (*get_extended_grid_shape(fwd_model.grid, axis=axis, extend=1), vecs.shape[-1]),
+        (
+            *_get_extended_grid_shape(fwd_model.grid, axis=axis, extend=1),
+            vecs.shape[-1],
+        ),
         dtype=np.float64,
     )
 
@@ -471,7 +487,7 @@ def dFUdKv(
             * (
                 (
                     (pressure[bwd_slicer] - pressure[fwd_slicer])
-                    / fwd_model.grid.pipj(axis)
+                    / fwd_model.grid.pipj_m(axis)
                     + rho_ij_g
                 )
                 / WATER_DENSITY
@@ -482,7 +498,7 @@ def dFUdKv(
         head = fwd_model.fl_model.lhead[time_index]
         out[(bwd_slicer) + (slice(None),)] += (
             dKijdKxv
-            * ((head[bwd_slicer] - head[fwd_slicer]) / fwd_model.grid.pipj(axis))[
+            * ((head[bwd_slicer] - head[fwd_slicer]) / fwd_model.grid.pipj_m(axis))[
                 :, :, :, np.newaxis
             ]
         )

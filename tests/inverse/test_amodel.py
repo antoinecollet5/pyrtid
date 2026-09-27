@@ -4,7 +4,9 @@ import numpy as np
 import pyrtid.forward as dmfwd
 import pyrtid.inverse as dminv
 import pytest
-from pyrtid.utils import MeanType, NDArrayFloat, RectilinearGrid, finite_gradient
+from inv_toolbox.utils import MeanType, finite_gradient
+from pyrtid.utils import NDArrayFloat
+from quickpaver import RectilinearGrid
 
 
 @pytest.mark.parametrize(

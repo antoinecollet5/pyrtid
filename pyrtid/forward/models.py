@@ -20,6 +20,11 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Set, Tuple, Union
 
 import numpy as np
+from quickpaver import (
+    RectilinearGrid,
+    rlg_nn_to_idx,
+    span_to_node_numbers_3d,
+)
 from scipy.sparse import lil_array
 from scipy.sparse.linalg import LinearOperator, SuperLU
 
@@ -27,12 +32,8 @@ from pyrtid.utils import (
     NDArrayBool,
     NDArrayFloat,
     NDArrayInt,
-    RectilinearGrid,
     StrEnum,
-    get_a_not_in_b_1d,
-    node_number_to_indices,
     object_or_object_sequence_to_list,
-    span_to_node_numbers_3d,
 )
 
 GRAVITY = 9.81
@@ -477,9 +478,9 @@ class SourceTerm:
 
     def get_node_indices(self, grid: RectilinearGrid) -> NDArrayInt:
         """Return the node indices."""
-        return np.array(
-            node_number_to_indices(self.node_ids, nx=grid.nx, ny=grid.ny)
-        ).reshape(3, -1)
+        return np.array(rlg_nn_to_idx(self.node_ids, nx=grid.nx, ny=grid.ny)).reshape(
+            3, -1
+        )
 
     @property
     def n_nodes(self) -> int:
@@ -561,6 +562,14 @@ class ZeroConcGradient(BoundaryCondition):
     """
 
     span: Union[NDArrayInt, Tuple[slice, slice, slice], slice]
+
+
+def _get_a_not_in_b_1d(a: NDArrayInt, b: NDArrayInt) -> NDArrayInt:
+    """Return the elements of a not found in b sorted by ascending order."""
+    # handle the case with an empty b
+    if b.size == 0 or a.size == 0:
+        return a
+    return np.sort(a[np.isin(a, b, invert=True)])
 
 
 class FlowModel(ABC):
@@ -768,7 +777,7 @@ class FlowModel(ABC):
 
                 # 3) determine if the segment is along one of the 5 borders of the
                 # domain. First we start by getting the indices in the grid
-                _ix, _iy, _iz = node_number_to_indices(new_nn, nx, ny)
+                _ix, _iy, _iz = rlg_nn_to_idx(new_nn, nx, ny)
                 # The span must be continuous (rectangular group of grid cells),
                 # so we can estimate the direction of constant head segment:
                 # must be more than 2 values on one of the borders
@@ -834,7 +843,7 @@ class FlowModel(ABC):
         """Return the indices (array) of the constant head grid cells."""
         # [:2] to ignore the z axis
         return np.array(
-            node_number_to_indices(
+            rlg_nn_to_idx(
                 self.cst_head_nn, nx=self.head.shape[0], ny=self.head.shape[1]
             )
         )
@@ -842,7 +851,7 @@ class FlowModel(ABC):
     @property
     def free_head_nn(self) -> NDArrayInt:
         """Return the free head node numbers."""
-        return get_a_not_in_b_1d(
+        return _get_a_not_in_b_1d(
             np.arange(np.prod(self.lhead[0].shape), dtype=np.int32),  # type: ignore
             self.cst_head_nn,
         )
@@ -852,7 +861,7 @@ class FlowModel(ABC):
         """Return the indices (array) of the free head grid cells."""
         # [:2] to ignore the z axis
         return np.array(
-            node_number_to_indices(
+            rlg_nn_to_idx(
                 self.free_head_nn, nx=self.head.shape[0], ny=self.head.shape[1]
             )
         )
@@ -1469,15 +1478,13 @@ class TransportModel:
         """Return the indices (array) of the constant conc grid cells."""
         # [:2] to ignore the z axis
         return np.array(
-            node_number_to_indices(
-                self.cst_conc_nn, nx=self.mob.shape[0], ny=self.mob.shape[1]
-            )
+            rlg_nn_to_idx(self.cst_conc_nn, nx=self.mob.shape[0], ny=self.mob.shape[1])
         )
 
     @property
     def free_conc_nn(self) -> NDArrayInt:
         """Return the free conc node numbers."""
-        return get_a_not_in_b_1d(
+        return _get_a_not_in_b_1d(
             np.arange(np.prod(self.lmob[0].shape), dtype=np.int32),  # type: ignore
             self.cst_conc_nn,
         )
@@ -1487,9 +1494,7 @@ class TransportModel:
         """Return the indices (array) of the free conc grid cells."""
         # [:2] to ignore the z axis
         return np.array(
-            node_number_to_indices(
-                self.free_conc_nn, nx=self.mob.shape[0], ny=self.mob.shape[1]
-            )
+            rlg_nn_to_idx(self.free_conc_nn, nx=self.mob.shape[0], ny=self.mob.shape[1])
         )
 
     def reinit(self) -> None:
@@ -1618,8 +1623,8 @@ class ForwardModel:
                     _conc_src[sp][condition.span] = 0.0
 
         return (
-            _unitflw_src / self.grid.grid_cell_volume,  # /s
-            _conc_src / self.grid.grid_cell_volume,  # mol/L
+            _unitflw_src / self.grid.grid_cell_volume_m3,  # /s
+            _conc_src / self.grid.grid_cell_volume_m3,  # mol/L
         )
 
     def add_src_term(self, source_term: SourceTerm) -> None:

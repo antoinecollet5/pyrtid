@@ -8,6 +8,8 @@ from __future__ import annotations
 from typing import Callable, Optional
 
 import numpy as np
+from inv_toolbox.utils.preconditioner import NoTransform, Preconditioner
+from quickpaver import RectilinearGrid
 from scipy.optimize import OptimizeResult
 
 from pyrtid.forward.geochem_utils import (
@@ -22,8 +24,7 @@ from pyrtid.forward.models import (
     TimeParameters,
     TransportModel,
 )
-from pyrtid.utils import NDArrayFloat, RectilinearGrid
-from pyrtid.utils.preconditioner import NoTransform, Preconditioner
+from pyrtid.utils import NDArrayFloat
 
 
 def solve_geochem(

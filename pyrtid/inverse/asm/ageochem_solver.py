@@ -8,6 +8,7 @@ from __future__ import annotations
 from copy import copy
 
 import numpy as np
+from quickpaver import RectilinearGrid
 
 from pyrtid.forward.geochem_solver import get_dM, get_dM_pos
 from pyrtid.forward.models import (  # ConstantHead,; ZeroConcGradient,
@@ -16,7 +17,7 @@ from pyrtid.forward.models import (  # ConstantHead,; ZeroConcGradient,
     TransportModel,
 )
 from pyrtid.inverse.asm.amodels import AdjointTransportModel
-from pyrtid.utils import NDArrayFloat, RectilinearGrid
+from pyrtid.utils import NDArrayFloat
 
 
 def solve_adj_geochem(

@@ -4,6 +4,7 @@ from typing import Optional, Sequence
 import numpy as np
 import pyrtid.forward as dmfwd
 import pytest
+from inv_toolbox.utils import MeanType, finite_gradient
 from pyrtid.inverse.loss_function import eval_model_loss_ls
 from pyrtid.inverse.obs import (
     Observable,
@@ -21,8 +22,8 @@ from pyrtid.inverse.obs import (
     get_values_matching_node_indices,
     get_weights,
 )
-from pyrtid.utils import NDArrayFloat, NDArrayInt, RectilinearGrid, finite_gradient
-from pyrtid.utils.means import MeanType
+from pyrtid.utils import NDArrayFloat, NDArrayInt
+from quickpaver import RectilinearGrid
 
 
 @pytest.mark.parametrize(

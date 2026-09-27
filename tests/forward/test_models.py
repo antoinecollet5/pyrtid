@@ -18,7 +18,8 @@ from pyrtid.forward.models import (
     ZeroConcGradient,
     get_owner_neigh_indices,
 )
-from pyrtid.utils import NDArrayFloat, RectilinearGrid
+from pyrtid.utils import NDArrayFloat
+from quickpaver import RectilinearGrid
 
 time_params = TimeParameters(duration=240000, dt_init=600.0)
 grid = RectilinearGrid(nx=20, ny=20, nz=1, dx=4.5, dy=7.5)
@@ -92,42 +93,6 @@ def test_wrong_time_params() -> None:
         ValueError, match=re.escape("dt_min (40.0) is above dt_max (30.0)!")
     ):
         TimeParameters(2, 35.0, 40.0, 30.0)
-
-
-@pytest.mark.parametrize(
-    "nx,ny,dx,dy,expected_exception",
-    [
-        (10.0, 10.0, 10.0, 10.0, does_not_raise()),
-        (0.0, 10.0, 0.0, 10.0, pytest.raises(ValueError, match="nx should be >= 1!")),
-        (10.0, 0.0, 10.0, 10.0, pytest.raises(ValueError, match="ny should be >= 1!")),
-        (10.0, 10.0, 0.0, 10.0, does_not_raise()),
-        (10.0, 10.0, 10.0, 0.0, does_not_raise()),
-        # (
-        #     1.0,
-        #     10.0,
-        #     10.0,
-        #     7.5,
-        #     pytest.raises(
-        #         ValueError,
-        #         match="For a 1D case, set nx different from 1 and ny equal to 1!",
-        #     ),
-        # ),
-        (10.0, 1.0, 10.0, 7.5, does_not_raise()),
-        (
-            2.0,
-            2.0,
-            10.0,
-            7.5,
-            pytest.raises(
-                ValueError, match=r"At least one of \(nx, ny\) should be of dimension 3"
-            ),
-        ),
-    ],
-)
-def test_grid(nx, ny, dx, dy, expected_exception) -> None:
-    with expected_exception:
-        geom = RectilinearGrid(nx=nx, ny=ny, dx=dx, dy=dy)
-        assert geom.grid_cell_volume == geom.grid_cell_volume == dx * dy
 
 
 def get_source_term() -> SourceTerm:

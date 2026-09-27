@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import Optional, Tuple
 
 import numpy as np
+import quickpaver
 from scipy.sparse import csc_array
 
 from pyrtid.forward.flow_solver import solve_fl_gmres
@@ -36,7 +37,6 @@ from pyrtid.inverse.obs import (
 from pyrtid.inverse.params import AdjustableParameters, ParameterName
 from pyrtid.utils import (
     NDArrayFloat,
-    RectilinearGrid,
     object_or_object_sequence_to_list,
 )
 
@@ -48,7 +48,9 @@ class FSMVects:
     Since most vectors will be null, we rely on sparse objects to save some memory.
     """
 
-    def __init__(self, grid: RectilinearGrid, vecs: NDArrayFloat, n_obs: int) -> None:
+    def __init__(
+        self, grid: quickpaver.RectilinearGrid, vecs: NDArrayFloat, n_obs: int
+    ) -> None:
         """Initiate the instance."""
 
         self.vecs = vecs

@@ -8,6 +8,15 @@ import warnings
 from typing import List, Optional
 
 import numpy as np
+from inv_toolbox.utils import (
+    NDArrayFloat,
+    StrEnum,
+    dxi_harmonic_mean,
+    finite_gradient,
+    harmonic_mean,
+    is_all_close,
+    object_or_object_sequence_to_list,
+)
 
 from pyrtid.forward import ForwardModel, ForwardSolver
 from pyrtid.forward.flow_solver import get_rhomean
@@ -24,14 +33,6 @@ from pyrtid.inverse.params import (
     update_model_with_parameters_values,
     update_parameters_from_model,
 )
-from pyrtid.utils import (
-    NDArrayFloat,
-    StrEnum,
-    finite_gradient,
-    is_all_close,
-    object_or_object_sequence_to_list,
-)
-from pyrtid.utils.means import dxi_harmonic_mean, harmonic_mean
 
 
 class DerivationVariable(StrEnum):
@@ -144,9 +145,9 @@ def get_diffusion_term_adjoint_gradient(
             # Gather the two schemes
             grad += (
                 (dconc_f * damob_f + dconc_b * damob_b)
-                * fwd_model.grid.gamma_ij(axis)
-                / fwd_model.grid.pipj(axis)
-                / fwd_model.grid.grid_cell_volume
+                * fwd_model.grid.gc_face_area_m2(axis)
+                / fwd_model.grid.pipj_m(axis)
+                / fwd_model.grid.grid_cell_volume_m3
             )
 
     # We sum along the temporal axis
@@ -327,7 +328,7 @@ def _get_perm_gradient_from_diffusivity_eq_saturated(
     # add the storgae coefficient tp ma_ahead_sc
     ma_ahead_sc = ma_ahead / (
         fwd_model.fl_model.storage_coefficient[:, :, :, np.newaxis]
-        * fwd_model.grid.grid_cell_volume
+        * fwd_model.grid.grid_cell_volume_m3
     )
     grad = np.zeros(shape)
 
@@ -338,7 +339,7 @@ def _get_perm_gradient_from_diffusivity_eq_saturated(
         fwd_slicer = fwd_model.grid.get_slicer_forward(axis)
         bwd_slicer = fwd_model.grid.get_slicer_backward(axis)
 
-        tmp = fwd_model.grid.gamma_ij(axis) / fwd_model.grid.pipj(axis)
+        tmp = fwd_model.grid.gc_face_area_m2(axis) / fwd_model.grid.pipj_m(axis)
 
         # Forward scheme
         dhead_f = np.zeros(shape)
@@ -379,7 +380,7 @@ def _get_perm_gradient_from_diffusivity_eq_saturated(
                     ma_ahead[(bwd_slicer) + (slice(None, 1),)]
                     - ma_ahead[(fwd_slicer) + (slice(None, 1),)]
                 )
-                / fwd_model.grid.grid_cell_volume
+                / fwd_model.grid.grid_cell_volume_m3
             ) * tmp
 
         # Backward scheme
@@ -420,7 +421,7 @@ def _get_perm_gradient_from_diffusivity_eq_saturated(
                     ma_ahead[(fwd_slicer) + (slice(None, 1),)]
                     - ma_ahead[(bwd_slicer) + (slice(None, 1),)]
                 )
-                / fwd_model.grid.grid_cell_volume
+                / fwd_model.grid.grid_cell_volume_m3
             ) * tmp
 
     # We sum along the temporal axis
@@ -466,7 +467,7 @@ def _get_perm_gradient_from_diffusivity_eq_density(
     # add the storgae coefficient to ma_apressure
     ma_apressure_sc = ma_apressure / (
         fwd_model.fl_model.storage_coefficient[:, :, :, np.newaxis]
-        * fwd_model.grid.grid_cell_volume
+        * fwd_model.grid.grid_cell_volume_m3
     )
     grad = np.zeros(shape)
 
@@ -510,7 +511,7 @@ def _get_perm_gradient_from_diffusivity_eq_density(
                         - pressure[(fwd_slicer) + (slice(None, -1),)]
                     )
                 )
-                / fwd_model.grid.pipj(axis)
+                / fwd_model.grid.pipj_m(axis)
                 * rhomean
                 + tmp
             )
@@ -526,7 +527,7 @@ def _get_perm_gradient_from_diffusivity_eq_density(
                 ma_apressure_sc[(bwd_slicer) + (slice(1, None),)]
                 - ma_apressure_sc[(fwd_slicer) + (slice(1, None),)]
             )
-            * fwd_model.grid.gamma_ij(axis)
+            * fwd_model.grid.gc_face_area_m2(axis)
         )
 
         # Handle the stationary case
@@ -545,13 +546,13 @@ def _get_perm_gradient_from_diffusivity_eq_density(
                 * dxi_harmonic_mean(permeability[fwd_slicer], permeability[bwd_slicer])[
                     :, :, :, np.newaxis
                 ]
-                * fwd_model.grid.gamma_ij(axis)
-                / fwd_model.grid.pipj(axis)
+                * fwd_model.grid.gc_face_area_m2(axis)
+                / fwd_model.grid.pipj_m(axis)
                 * (
                     ma_apressure[(bwd_slicer) + (slice(None, 1),)]
                     - ma_apressure[(fwd_slicer) + (slice(None, 1),)]
                 )
-                / fwd_model.grid.grid_cell_volume
+                / fwd_model.grid.grid_cell_volume_m3
             )
 
         # Backward scheme
@@ -569,7 +570,7 @@ def _get_perm_gradient_from_diffusivity_eq_density(
                         - pressure[(bwd_slicer) + (slice(None, -1),)]
                     )
                 )
-                / fwd_model.grid.pipj(axis)
+                / fwd_model.grid.pipj_m(axis)
                 * rhomean
                 - tmp
             )
@@ -585,7 +586,7 @@ def _get_perm_gradient_from_diffusivity_eq_density(
                 ma_apressure_sc[(fwd_slicer) + (slice(1, None),)]
                 - ma_apressure_sc[(bwd_slicer) + (slice(1, None),)]
             )
-            * fwd_model.grid.gamma_ij(axis)
+            * fwd_model.grid.gc_face_area_m2(axis)
         )
 
         # Handle the stationary case
@@ -604,13 +605,13 @@ def _get_perm_gradient_from_diffusivity_eq_density(
                 * dxi_harmonic_mean(permeability[bwd_slicer], permeability[fwd_slicer])[
                     :, :, :, np.newaxis
                 ]
-                * fwd_model.grid.gamma_ij(axis)
-                / fwd_model.grid.pipj(axis)
+                * fwd_model.grid.gc_face_area_m2(axis)
+                / fwd_model.grid.pipj_m(axis)
                 * (
                     ma_apressure[(fwd_slicer) + (slice(None, 1),)]
                     - ma_apressure[(bwd_slicer) + (slice(None, 1),)]
                 )
-                / fwd_model.grid.grid_cell_volume
+                / fwd_model.grid.grid_cell_volume_m3
             )
 
     # We sum along the temporal axis
@@ -684,7 +685,7 @@ def _get_perm_gradient_from_darcy_eq_saturated(
         )
 
         # Gather the two schemes
-        grad += (dhead_f + dhead_b) / fwd_model.grid.pipj(axis)
+        grad += (dhead_f + dhead_b) / fwd_model.grid.pipj_m(axis)
 
     # We sum along the temporal axis
     return np.sum(grad, axis=-1)
@@ -763,7 +764,7 @@ def _get_perm_gradient_from_darcy_eq_density(
         dpressure_f[fwd_slicer] += (
             (
                 (pressure[bwd_slicer] - pressure[fwd_slicer])
-                / fwd_model.grid.pipj(axis)
+                / fwd_model.grid.pipj_m(axis)
                 + rho_ij_g
             )
             * dxi_harmonic_mean(permeability[fwd_slicer], permeability[bwd_slicer])[
@@ -777,7 +778,7 @@ def _get_perm_gradient_from_darcy_eq_density(
         dpressure_b[bwd_slicer] -= (
             (
                 (pressure[fwd_slicer] - pressure[bwd_slicer])
-                / fwd_model.grid.pipj(axis)
+                / fwd_model.grid.pipj_m(axis)
                 - rho_ij_g
             )
             * dxi_harmonic_mean(permeability[bwd_slicer], permeability[fwd_slicer])[
@@ -1037,7 +1038,7 @@ def get_initial_conc_adjoint_gradient(
             tr_model.effective_diffusion[fwd_slicer],
             tr_model.effective_diffusion[bwd_slicer],
         )
-        tmp = fwd_model.grid.gamma_ij(axis) / fwd_model.grid.pipj(axis)
+        tmp = fwd_model.grid.gc_face_area_m2(axis) / fwd_model.grid.pipj_m(axis)
         # Forward scheme
         grad[fwd_slicer] += (
             +(1.0 - crank_diff) * (a_mob[bwd_slicer] - a_mob[fwd_slicer]) * dmean
