@@ -109,11 +109,15 @@ lint.select = [
     "W",
     # isort
     "I",
+    # pyupgrade
+    "UP",
+    # flake8-bugbear
+    "B",
 ]
 src = ["src", "tests", "docs"]
 
 # Allow autofix for all enabled rules (when `--fix`) is provided.
-lint.fixable = ["A", "B", "C", "D", "E", "F", "I"]
+lint.fixable = ["A", "B", "C", "D", "E", "F", "I", "UP"]
 lint.unfixable = []
 
 # Exclude a variety of commonly ignored directories.
@@ -146,8 +150,8 @@ line-length = 88
 # Allow unused variables when underscore-prefixed.
 lint.dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 
-# Assume Python 3.13.
-target-version = "py313"
+# Lowest supported Python version (see requires-python).
+target-version = "py310"
 
 [tool.pylint.LOGGING]
 # Format style used to check logging format string. `old` means using %
