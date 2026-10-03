@@ -13,8 +13,6 @@ build:
   os: ubuntu-22.04
   tools:
     python: "3.11"
-  apt_packages:
-    - libsuitesparse-dev
 
 # Optionally set the version of Python and requirements required to build your docs
 python:
@@ -25,5 +23,4 @@ python:
       extra_requirements:
         - docs
         - install
-        - sparse
         - examples
