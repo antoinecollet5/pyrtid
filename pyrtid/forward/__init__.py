@@ -62,10 +62,12 @@ and performs the calculation on a :class:`ForwardModel`.
    :toctree: _autosummary
 
     ForwardSolver
+    CouplingConvergenceError
     get_max_coupling_error
     solve_flow_stationary
     solve_flow_transient_semi_implicit
     solve_transport_semi_implicit
+    solve_geochem
     solve_geochem_explicit
     solve_geochem_implicit
 
@@ -84,7 +86,11 @@ Some useful functions
 """
 
 from .flow_solver import solve_flow_stationary, solve_flow_transient_semi_implicit
-from .geochem_solver import solve_geochem_explicit, solve_geochem_implicit
+from .geochem_solver import (
+    solve_geochem,
+    solve_geochem_explicit,
+    solve_geochem_implicit,
+)
 from .models import (
     ConstantConcentration,
     ConstantHead,
@@ -99,7 +105,7 @@ from .models import (
     ZeroConcGradient,
     get_owner_neigh_indices,
 )
-from .solver import ForwardSolver, get_max_coupling_error
+from .solver import CouplingConvergenceError, ForwardSolver, get_max_coupling_error
 from .transport_solver import solve_transport_semi_implicit
 
 __all__ = [
@@ -110,6 +116,7 @@ __all__ = [
     "ForwardModel",
     "SourceTerm",
     "ForwardSolver",
+    "CouplingConvergenceError",
     "ConstantHead",
     "ConstantConcentration",
     "ZeroConcGradient",
@@ -119,6 +126,7 @@ __all__ = [
     "solve_flow_stationary",
     "solve_flow_transient_semi_implicit",
     "solve_transport_semi_implicit",
+    "solve_geochem",
     "solve_geochem_explicit",
     "solve_geochem_implicit",
     "get_owner_neigh_indices",
