@@ -21,7 +21,8 @@ chemical system of each grid cell with a Newton-Raphson algorithm:
 from __future__ import annotations
 
 import logging
-from typing import Callable, Optional, Tuple
+from collections.abc import Callable
+from typing import Any
 
 import numpy as np
 from scipy import linalg
@@ -53,7 +54,7 @@ def backtracking_linesearch(
     max_iter: int = 30,
     min_shrink: float = 0.1,
     max_shrink: float = 0.5,
-) -> Optional[float]:
+) -> float | None:
     r"""
     Find a step length satisfying the Armijo (sufficient decrease) condition.
 
@@ -121,7 +122,7 @@ def standalone_linesearch(
     fun: Callable,
     grad: Callable,
     d: NDArrayFloat,
-    bounds: Optional[NDArrayFloat] = None,
+    bounds: NDArrayFloat | None = None,
     max_steplength_user: float = 1e8,
     ftol: float = 1e-3,
     gtol: float = 0.9,
@@ -129,8 +130,8 @@ def standalone_linesearch(
     max_iter: int = 30,
     opt_iter: int = 0,
     iprint: int = 10,
-    logger: Optional[logging.Logger] = None,
-) -> Tuple[Optional[float], int, int, float, float, NDArrayFloat]:
+    logger: logging.Logger | None = None,
+) -> tuple[float | None, int, int, float, float, NDArrayFloat]:
     r"""
     Find a step satisfying the strong Wolfe conditions (``lbfgsb`` line search).
 
@@ -214,7 +215,12 @@ def standalone_linesearch(
     from lbfgsb.linesearch import line_search as ls2
     from lbfgsb.scalar_function import ScalarFunction
 
-    lb, ub = get_bounds(x0, bounds)
+    # The internals are not typed consistently from one version to another
+    _get_bounds: Any = get_bounds
+    _line_search: Any = ls2
+    _scalar_function: Any = ScalarFunction
+
+    lb, ub = _get_bounds(x0, bounds)
 
     sf_kwargs = dict(
         fun=fun,
@@ -224,12 +230,12 @@ def standalone_linesearch(
         finite_diff_rel_step=None,
     )
     try:
-        sf = ScalarFunction(args=(), **sf_kwargs)
+        sf = _scalar_function(args=(), **sf_kwargs)
     except TypeError:  # newer versions of lbfgsb dropped the `args` argument
-        sf = ScalarFunction(**sf_kwargs)
+        sf = _scalar_function(**sf_kwargs)
     f0 = sf.fun(x0)
 
-    alpha = ls2(
+    alpha = _line_search(
         x0=x0,
         f0=f0,
         g0=grad(x0),
@@ -303,8 +309,8 @@ def get_polish(dC: NDArrayFloat, C: NDArrayFloat) -> NDArrayFloat:
 def solve_with_svd(
     A: NDArrayFloat,
     b: NDArrayFloat,
-    atol: Optional[float] = None,
-    rtol: Optional[float] = None,
+    atol: float | None = None,
+    rtol: float | None = None,
     check_finite: bool = True,
 ) -> NDArrayFloat:
     """
@@ -362,7 +368,7 @@ def newton(
     get_res: Callable[[NDArrayFloat], NDArrayFloat],
     get_invjacres: Callable[[NDArrayFloat], NDArrayFloat],
     atol: float,
-    linesearch: Optional[Callable[[NDArrayFloat, NDArrayFloat, int], object]] = None,
+    linesearch: Callable[[NDArrayFloat, NDArrayFloat, int], object] | None = None,
     rtol: float = 1e-12,
     max_iter: int = 100,
 ) -> OptimizeResult:
@@ -415,7 +421,10 @@ def newton(
 
         # Newton increment (to subtract) and optional damping
         dx = get_invjacres(x)
-        alpha = linesearch(x, dx, n_iterations) if linesearch is not None else 1.0
+        alpha = np.asarray(1.0)
+        if linesearch is not None:
+            # scalar or per-component damping factor
+            alpha = np.asarray(linesearch(x, dx, n_iterations), dtype=float)
 
         # update x and the residuals
         x = x - alpha * dx

@@ -30,8 +30,8 @@ import copy
 import types
 import warnings
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence, Set, Tuple, Union
 
 import numpy as np
 from quickpaver import (
@@ -40,7 +40,7 @@ from quickpaver import (
     span_to_node_numbers_3d,
 )
 from scipy import sparse
-from scipy.sparse import lil_array
+from scipy.sparse import csc_array, lil_array
 from scipy.sparse.linalg import LinearOperator, SuperLU
 
 from pyrtid.utils import (
@@ -123,8 +123,8 @@ class TimeParameters:
         self,
         duration: float,
         dt_init: float,
-        dt_min: Optional[float] = None,
-        dt_max: Optional[float] = None,
+        dt_min: float | None = None,
+        dt_max: float | None = None,
         courant_factor: float = 1.0,
     ) -> None:
         """
@@ -171,8 +171,8 @@ class TimeParameters:
         self.dt_init: float = _dt_init
         self.dt: float = _dt_init
         self.nfpi: int = 0
-        self.ldt: List[float] = []
-        self.lnfpi: List[int] = []
+        self.ldt: list[float] = []
+        self.lnfpi: list[int] = []
 
     @property
     def time_elapsed(self) -> float:
@@ -591,7 +591,7 @@ class SourceTerm:
         """Return the number of nodes."""
         return np.size(self.node_ids)
 
-    def get_values(self, time: float) -> Tuple[float, NDArrayFloat]:
+    def get_values(self, time: float) -> tuple[float, NDArrayFloat]:
         """
         Return the flowrate and the concentrations for a given time.
 
@@ -611,7 +611,7 @@ class SourceTerm:
             are zero before the first time.
         """
         if time < self.times[0]:
-            return 0.0, 0.0
+            return 0.0, np.zeros_like(self.concentrations[0])
         time_index = int(np.searchsorted(self.times, time, side="right")) - 1
         return self.flowrates[time_index], self.concentrations[time_index]
 
@@ -627,7 +627,7 @@ class BoundaryCondition(ABC):
         The span over which the condition applies.
     """
 
-    span: Union[NDArrayInt, Tuple[slice, slice, slice]]
+    span: NDArrayInt | tuple[slice, slice, slice]
 
 
 @dataclass
@@ -643,8 +643,8 @@ class ConstantHead(BoundaryCondition):
         The values to set.
     """
 
-    span: Union[NDArrayInt, Tuple[slice, slice, slice], slice]
-    values: Union[float, NDArrayFloat]
+    span: NDArrayInt | tuple[slice, slice, slice] | slice
+    values: float | NDArrayFloat
 
 
 @dataclass
@@ -660,8 +660,8 @@ class ConstantConcentration(BoundaryCondition):
         The values to set.
     """
 
-    span: Union[NDArrayInt, Tuple[slice, slice, slice], slice]
-    values: Union[float, NDArrayFloat]
+    span: NDArrayInt | tuple[slice, slice, slice] | slice
+    values: float | NDArrayFloat
 
 
 @dataclass
@@ -675,7 +675,7 @@ class ZeroConcGradient(BoundaryCondition):
         The span over which the condition applies.
     """
 
-    span: Union[NDArrayInt, Tuple[slice, slice, slice], slice]
+    span: NDArrayInt | tuple[slice, slice, slice] | slice
 
 
 def _get_a_not_in_b_1d(a: NDArrayInt, b: NDArrayInt) -> NDArrayInt:
@@ -767,17 +767,25 @@ class FlowModel(ABC):
             np.ones(grid.shape, dtype=np.float64) * fl_params.permeability
         )
 
-        self.lu_darcy_x: List[NDArrayFloat] = []
-        self.lu_darcy_y: List[NDArrayFloat] = []
-        self.lu_darcy_z: List[NDArrayFloat] = []
-        self.lu_darcy_div: List[NDArrayFloat] = []
-        self.lunitflow: List[NDArrayFloat] = []
+        self.lu_darcy_x: list[NDArrayFloat] = []
+        self.lu_darcy_y: list[NDArrayFloat] = []
+        self.lu_darcy_z: list[NDArrayFloat] = []
+        self.lu_darcy_div: list[NDArrayFloat] = []
+        self.lunitflow: list[NDArrayFloat] = []
 
-        self.boundary_conditions: List[BoundaryCondition] = []
-        self.q_prev_no_dt = lil_array((grid.n_grid_cells, grid.n_grid_cells))
-        self.q_next_no_dt = lil_array((grid.n_grid_cells, grid.n_grid_cells))
-        self.q_prev = lil_array((grid.n_grid_cells, grid.n_grid_cells))
-        self.q_next = lil_array((grid.n_grid_cells, grid.n_grid_cells))
+        self.boundary_conditions: list[BoundaryCondition] = []
+        self.q_prev_no_dt: lil_array | csc_array = lil_array(
+            (grid.n_grid_cells, grid.n_grid_cells)
+        )
+        self.q_next_no_dt: lil_array | csc_array = lil_array(
+            (grid.n_grid_cells, grid.n_grid_cells)
+        )
+        self.q_prev: lil_array | csc_array = lil_array(
+            (grid.n_grid_cells, grid.n_grid_cells)
+        )
+        self.q_next: lil_array | csc_array = lil_array(
+            (grid.n_grid_cells, grid.n_grid_cells)
+        )
         self.cst_head_nn: NDArrayInt = np.array([], dtype=np.int64)
         self.rtol = fl_params.rtol
         self.vertical_axis = fl_params.vertical_axis
@@ -798,13 +806,13 @@ class FlowModel(ABC):
         self.top_boundary_idx: NDArrayInt = np.empty((2, 0), dtype=np.int64)
 
         # Cache of the vertical position of the grid cell centers
-        self._vertical_pos: Optional[NDArrayFloat] = None
+        self._vertical_pos: NDArrayFloat | None = None
 
         # These are list of ndarrays
-        self.lhead: List[NDArrayFloat] = [np.zeros(grid.shape, dtype=np.float64)]
+        self.lhead: list[NDArrayFloat] = [np.zeros(grid.shape, dtype=np.float64)]
 
         # TODO: provide the initial density
-        self.lpressure: List[NDArrayFloat] = [
+        self.lpressure: list[NDArrayFloat] = [
             (
                 np.zeros(grid.shape, dtype=np.float64)
                 - self._get_mesh_center_vertical_pos()
@@ -817,14 +825,14 @@ class FlowModel(ABC):
         # This is mostly for development purposes.
         # only activated with the adjoint state or specific devs.
         self.is_save_spmats: bool = False
-        self.l_q_next: List[lil_array] = []
-        self.l_q_prev: List[lil_array] = []
+        self.l_q_next: list[lil_array | csc_array] = []
+        self.l_q_prev: list[lil_array | csc_array] = []
 
         # preconditioner (LU) for q_next, only useful to store with the forward
         # sensivitiy approach.
         self.is_save_spilu: bool = False
-        self.super_ilu: Optional[SuperLU] = None
-        self.preconditioner: Optional[LinearOperator] = None
+        self.super_ilu: SuperLU | None = None
+        self.preconditioner: LinearOperator | None = None
 
     @property
     def head(self) -> NDArrayFloat:
@@ -910,7 +918,10 @@ class FlowModel(ABC):
         # Set the values (both the head and the pressure, which are used for the
         # constant head cells when the gravity is considered). The constant head node
         # numbers are updated by `set_constant_head_indices`.
-        self.set_initial_head(condition.values, condition.span)
+        self.set_initial_head(
+            condition.values,
+            condition.span,  # ty: ignore[invalid-argument-type]
+        )
 
     def set_constant_head_indices(self) -> None:
         """
@@ -920,14 +931,14 @@ class FlowModel(ABC):
         domain (``west_boundary_idx``, ``east_boundary_idx``, ...).
         """
         node_numbers = np.array([], dtype=np.int32)
-        nx, ny, nz = self.lhead[0].shape  # type: ignore
+        nx, ny, nz = self.lhead[0].shape
 
-        _west_bidx: Set[Tuple[int, int]] = set()
-        _east_bidx: Set[Tuple[int, int]] = set()
-        _south_bidx: Set[Tuple[int, int]] = set()
-        _north_bidx: Set[Tuple[int, int]] = set()
-        _bottom_bidx: Set[Tuple[int, int]] = set()
-        _top_bidx: Set[Tuple[int, int]] = set()
+        _west_bidx: set[tuple[int, int]] = set()
+        _east_bidx: set[tuple[int, int]] = set()
+        _south_bidx: set[tuple[int, int]] = set()
+        _north_bidx: set[tuple[int, int]] = set()
+        _bottom_bidx: set[tuple[int, int]] = set()
+        _top_bidx: set[tuple[int, int]] = set()
 
         for condition in self.boundary_conditions:
             if isinstance(condition, ConstantHead):
@@ -943,37 +954,37 @@ class FlowModel(ABC):
                 # so we can estimate the direction of constant head segment:
                 # must be more than 2 values on one of the borders
                 # X
-                non_zero_west: int = np.count_nonzero(_ix == 0)
+                non_zero_west: int = int(np.count_nonzero(_ix == 0))
                 if non_zero_west > 1 or (non_zero_west == 1 and ny == 1 and nz == 1):
-                    for iy, iz in zip(_iy, _iz):
+                    for iy, iz in zip(_iy, _iz, strict=False):
                         _west_bidx.add((iy, iz))
-                non_zero_east: int = np.count_nonzero(_ix == nx - 1)
+                non_zero_east: int = int(np.count_nonzero(_ix == nx - 1))
                 if non_zero_east > 1 or (non_zero_east == 1 and ny == 1 and nz == 1):
-                    for iy, iz in zip(_iy, _iz):
+                    for iy, iz in zip(_iy, _iz, strict=False):
                         _east_bidx.add((iy, iz))
 
                 # Y
-                non_zero_south: int = np.count_nonzero(_iy == 0)
+                non_zero_south: int = int(np.count_nonzero(_iy == 0))
                 if non_zero_south > 1 or (non_zero_south == 1 and nx == 1 and nz == 1):
-                    for ix, iz in zip(_ix, _iz):
+                    for ix, iz in zip(_ix, _iz, strict=False):
                         _south_bidx.add((ix, iz))
 
-                non_zero_north: int = np.count_nonzero(_iy == ny - 1)
+                non_zero_north: int = int(np.count_nonzero(_iy == ny - 1))
                 if non_zero_north > 1 or (non_zero_north == 1 and nx == 1 and nz == 1):
-                    for ix, iz in zip(_ix, _iz):
+                    for ix, iz in zip(_ix, _iz, strict=False):
                         _north_bidx.add((ix, iz))
 
                 # Z
-                non_zero_bottom: int = np.count_nonzero(_iz == 0)
+                non_zero_bottom: int = int(np.count_nonzero(_iz == 0))
                 if non_zero_bottom > 1 or (
                     non_zero_bottom == 1 and nx == 1 and ny == 1
                 ):
-                    for ix, iy in zip(_ix, _iy):
+                    for ix, iy in zip(_ix, _iy, strict=False):
                         _bottom_bidx.add((ix, iy))
 
-                non_zero_top: int = np.count_nonzero(_iz == nz - 1)
+                non_zero_top: int = int(np.count_nonzero(_iz == nz - 1))
                 if non_zero_top > 1 or (non_zero_top == 1 and nx == 1 and ny == 1):
-                    for ix, iy in zip(_ix, _iy):
+                    for ix, iy in zip(_ix, _iy, strict=False):
                         _top_bidx.add((ix, iy))
 
         # domain boundary indices to numpy => easier indexing
@@ -1044,8 +1055,8 @@ class FlowModel(ABC):
           reported on the border face. The weight is then 1/2 there as well.
         """
         weights = np.ones(self.lhead[0].shape, dtype=np.float64)
-        lower = [slice(None)] * 3
-        upper = [slice(None)] * 3
+        lower: list[slice | int] = [slice(None)] * 3
+        upper: list[slice | int] = [slice(None)] * 3
         lower[axis] = 0
         upper[axis] = -1
         interior = [slice(None)] * 3
@@ -1058,7 +1069,7 @@ class FlowModel(ABC):
             1: (self.south_boundary_idx, self.north_boundary_idx),
             2: (self.bottom_boundary_idx, self.top_boundary_idx),
         }[axis]
-        for border_slicer, idx in zip((lower, upper), borders):
+        for border_slicer, idx in zip((lower, upper), borders, strict=False):
             if idx.size == 0:
                 continue
             # idx holds the indices along the two other axes (in increasing order)
@@ -1145,7 +1156,7 @@ class FlowModel(ABC):
 
     def get_du_darcy_norm_sample(
         self, time_index: int
-    ) -> Tuple[NDArrayFloat, NDArrayFloat, NDArrayFloat]:
+    ) -> tuple[NDArrayFloat, NDArrayFloat, NDArrayFloat]:
         """
         Return the derivatives of the cell-center velocity norm for one time.
 
@@ -1170,7 +1181,7 @@ class FlowModel(ABC):
         inv_norm[mask] = 1.0 / norm[mask]
 
         # return (d|U|/dUx , d|U|/dUy, d|U|/dUz)
-        return tuple(inv_norm * c * w for c, w in zip(centers, weights))  # type: ignore
+        return tuple(inv_norm * c * w for c, w in zip(centers, weights, strict=False))
 
     def get_u_darcy_norm(self) -> NDArrayFloat:
         """
@@ -1233,8 +1244,8 @@ class FlowModel(ABC):
 
     def set_initial_head(
         self,
-        values: Union[float, int, NDArrayInt, NDArrayFloat],
-        span: Union[NDArrayInt, Tuple[slice, slice, slice], NDArrayBool] = (
+        values: float | int | NDArrayInt | NDArrayFloat,
+        span: NDArrayInt | tuple[slice, slice, slice] | NDArrayBool = (
             slice(None),
             slice(None),
             slice(None),
@@ -1246,8 +1257,8 @@ class FlowModel(ABC):
 
     def set_initial_pressure(
         self,
-        values: Union[float, int, NDArrayInt, NDArrayFloat],
-        span: Union[NDArrayInt, Tuple[slice, slice, slice], NDArrayBool] = (
+        values: float | int | NDArrayInt | NDArrayFloat,
+        span: NDArrayInt | tuple[slice, slice, slice] | NDArrayBool = (
             slice(None),
             slice(None),
             slice(None),
@@ -1360,35 +1371,39 @@ class TransportModel:
         """Initialize the instance."""
         self.crank_nicolson_diffusion: float = tr_params.crank_nicolson_diffusion
         self.crank_nicolson_advection: float = tr_params.crank_nicolson_advection
-        self.diffusion = np.ones(grid.shape, dtype=np.float64) * tr_params.diffusion
-        self.dispersivity = (
+        self.diffusion: NDArrayFloat = (
+            np.ones(grid.shape, dtype=np.float64) * tr_params.diffusion
+        )
+        self.dispersivity: NDArrayFloat = (
             np.ones(grid.shape, dtype=np.float64) * tr_params.dispersivity
         )
-        self.porosity = np.ones(grid.shape, dtype=np.float64) * tr_params.porosity
-        self.lmob: List[NDArrayFloat] = [
+        self.porosity: NDArrayFloat = (
+            np.ones(grid.shape, dtype=np.float64) * tr_params.porosity
+        )
+        self.lmob: list[NDArrayFloat] = [
             np.zeros((self.n_sp, grid.nx, grid.ny, grid.nz), dtype=np.float64)
         ]
         self.lmob[0][0, :, :, :] = gch_params.conc
         self.lmob[0][1, :, :, :] = gch_params.conc2
 
-        self.limmob: List[NDArrayFloat] = [
+        self.limmob: list[NDArrayFloat] = [
             np.zeros((self.n_sp, grid.nx, grid.ny, grid.nz), dtype=np.float64)
         ]
         # For now, only on mineral
         self.limmob[0][0, :, :, :] = gch_params.grade
         self.limmob[0][1, :, :, :] = gch_params.grade2
 
-        self.ldensity: List[NDArrayFloat] = []
-        self.lsources: List[NDArrayFloat] = []
+        self.ldensity: list[NDArrayFloat] = []
+        self.lsources: list[NDArrayFloat] = []
         self.immob_prev = np.zeros(
             (self.n_sp, grid.nx, grid.ny, grid.nz), dtype=np.float64
         )
-        self.boundary_conditions: List[BoundaryCondition] = []
+        self.boundary_conditions: list[BoundaryCondition] = []
         # Stiffness matrices of the transport (lil when built, csc once solved)
-        self.q_prev: Union[lil_array, sparse.csc_array] = lil_array(
+        self.q_prev: lil_array | sparse.csc_array = lil_array(
             (grid.n_grid_cells, grid.n_grid_cells)
         )
-        self.q_next: Union[lil_array, sparse.csc_array] = lil_array(
+        self.q_next: lil_array | sparse.csc_array = lil_array(
             (grid.n_grid_cells, grid.n_grid_cells)
         )
         self.cst_conc_nn: NDArrayInt = np.array([], dtype=np.int64)
@@ -1405,14 +1420,14 @@ class TransportModel:
         # This is mostly for development purposes.
         # only activated with the adjoint state or specific devs.
         self.is_save_spmats: bool = False
-        self.l_q_next: List[lil_array] = []
-        self.l_q_prev: List[lil_array] = []
+        self.l_q_next: list[lil_array | csc_array] = []
+        self.l_q_prev: list[lil_array | csc_array] = []
 
         # preconditioner (LU) for q_next, only useful to store with the forward
         # sensivitiy approach.
         self.is_save_spilu: bool = False
-        self.super_ilu: Optional[SuperLU] = None
-        self.preconditioner: Optional[LinearOperator] = None
+        self.super_ilu: SuperLU | None = None
+        self.preconditioner: LinearOperator | None = None
 
     @property
     def mob(self) -> NDArrayFloat:
@@ -1505,9 +1520,9 @@ class TransportModel:
 
     def set_initial_grade(
         self,
-        values: Union[float, int, NDArrayInt, NDArrayFloat],
-        sp: Optional[int] = 0,
-        span: Union[NDArrayInt, Tuple[slice, slice, slice], NDArrayBool] = (
+        values: float | int | NDArrayInt | NDArrayFloat,
+        sp: int | None = 0,
+        span: NDArrayInt | tuple[slice, slice, slice] | NDArrayBool = (
             slice(None),
             slice(None),
             slice(None),
@@ -1518,9 +1533,9 @@ class TransportModel:
 
     def set_initial_conc(
         self,
-        values: Union[float, int, NDArrayInt, NDArrayFloat],
+        values: float | int | NDArrayInt | NDArrayFloat,
         sp: int = 0,
-        span: Union[NDArrayInt, Tuple[slice, slice, slice], NDArrayBool] = (
+        span: NDArrayInt | tuple[slice, slice, slice] | NDArrayBool = (
             slice(None),
             slice(None),
             slice(None),
@@ -1555,9 +1570,9 @@ class TransportModel:
         self.boundary_conditions.append(condition)
 
     @property
-    def _grid_shape(self) -> Tuple[int, int, int]:
+    def _grid_shape(self) -> tuple[int, int, int]:
         """Shape (nx, ny, nz) of the grid."""
-        return self.lmob[0].shape[1:]  # type: ignore
+        return self.lmob[0].shape[1:]
 
     def set_constant_conc_indices(self) -> None:
         """Set the node numbers of the grid cells with a constant concentration."""
@@ -1634,13 +1649,13 @@ class ForwardModel:
         self,
         grid: RectilinearGrid,
         time_params: TimeParameters,
-        fl_params: Optional[FlowParameters] = None,
-        tr_params: Optional[TransportParameters] = None,
-        gch_params: Optional[GeochemicalParameters] = None,
-        source_terms: Optional[Union[SourceTerm, Sequence[SourceTerm]]] = None,
-        boundary_conditions: Optional[
-            Union[BoundaryCondition, Sequence[BoundaryCondition]]
-        ] = None,
+        fl_params: FlowParameters | None = None,
+        tr_params: TransportParameters | None = None,
+        gch_params: GeochemicalParameters | None = None,
+        source_terms: SourceTerm | Sequence[SourceTerm] | None = None,
+        boundary_conditions: BoundaryCondition
+        | Sequence[BoundaryCondition]
+        | None = None,
     ) -> None:
         """
         Initialize the instance.
@@ -1687,7 +1702,7 @@ class ForwardModel:
         self.tr_model: TransportModel = TransportModel(
             grid, time_params, tr_params, gch_params
         )
-        self.source_terms: Dict[str, SourceTerm] = {}
+        self.source_terms: dict[str, SourceTerm] = {}
         if source_terms is not None:
             self.source_terms = {
                 v.name: v for v in object_or_object_sequence_to_list(source_terms)
@@ -1699,7 +1714,7 @@ class ForwardModel:
 
     def get_sources(
         self, time: float, grid: RectilinearGrid
-    ) -> Tuple[NDArrayFloat, NDArrayFloat]:
+    ) -> tuple[NDArrayFloat, NDArrayFloat]:
         """
         Get the flow sources and sink terms at a given time.
 
@@ -1765,7 +1780,8 @@ class ForwardModel:
         if self.source_terms.get(source_term.name) is not None:
             warnings.warn(
                 f"{source_term.name} is already among the source terms"
-                " and has been overwritten!"
+                " and has been overwritten!",
+                stacklevel=2,
             )
         self.source_terms[source_term.name] = source_term
 
@@ -1831,7 +1847,7 @@ class ForwardModel:
         (they can't be pickled): the copy shares them with the original.
         """
         deepcopy_method = self.__deepcopy__
-        self.__deepcopy__ = None
+        self.__deepcopy__ = None  # ty: ignore[invalid-assignment]
 
         # Handle non pickebeable objects
         tmp_fl_spilu = self.fl_model.super_ilu
@@ -1847,14 +1863,17 @@ class ForwardModel:
             cp = copy.deepcopy(self, memo)
         finally:
             # always restore the original object, even if the copy failed
-            self.__deepcopy__ = deepcopy_method
+            self.__deepcopy__ = deepcopy_method  # ty: ignore[invalid-assignment]
             self.fl_model.super_ilu = tmp_fl_spilu
             self.fl_model.preconditioner = tmp_fl_pcd
             self.tr_model.super_ilu = tmp_tr_spilu
             self.tr_model.preconditioner = tmp_tr_pcd
 
         # Bind to cp by types.MethodType
-        cp.__deepcopy__ = types.MethodType(deepcopy_method.__func__, cp)
+        cp.__deepcopy__ = types.MethodType(  # ty: ignore[invalid-assignment]
+            deepcopy_method.__func__,  # ty: ignore[unresolved-attribute]
+            cp,
+        )
 
         # restore the attributes in the copy
         cp.fl_model.super_ilu = tmp_fl_spilu
@@ -1880,12 +1899,12 @@ class SparseMatrixBuilder:
 
     __slots__ = ["shape", "_rows", "_cols", "_values"]
 
-    def __init__(self, shape: Tuple[int, int]) -> None:
+    def __init__(self, shape: tuple[int, int]) -> None:
         """Initialize an empty matrix with the given shape."""
         self.shape = shape
-        self._rows: List[NDArrayInt] = []
-        self._cols: List[NDArrayInt] = []
-        self._values: List[NDArrayFloat] = []
+        self._rows: list[NDArrayInt] = []
+        self._cols: list[NDArrayInt] = []
+        self._values: list[NDArrayFloat] = []
 
     def add(self, rows: NDArrayInt, cols: NDArrayInt, values: NDArrayFloat) -> None:
         """
@@ -1916,10 +1935,10 @@ class SparseMatrixBuilder:
 
 
 def add_entries(
-    matrix: Union[lil_array, SparseMatrixBuilder],
+    matrix: lil_array | SparseMatrixBuilder,
     rows: NDArrayInt,
     cols: NDArrayInt,
-    values: Union[float, NDArrayFloat],
+    values: float | NDArrayFloat,
 ) -> None:
     """
     Add ``values`` to the entries ``(rows[i], cols[i])`` of a matrix, in place.
@@ -1927,25 +1946,25 @@ def add_entries(
     The pairs ``(rows[i], cols[i])`` must be unique.
     """
     if isinstance(matrix, SparseMatrixBuilder):
-        matrix.add(rows, cols, values)
+        matrix.add(rows, cols, np.broadcast_to(values, np.shape(rows)).astype(float))
     else:
-        matrix[rows, cols] += values  # type: ignore
+        matrix[rows, cols] += np.broadcast_to(values, np.shape(rows))
 
 
 def add_to_diagonal(
-    matrix: Union[lil_array, SparseMatrixBuilder], values: Union[float, NDArrayFloat]
+    matrix: lil_array | SparseMatrixBuilder, values: float | NDArrayFloat
 ) -> None:
     """Add ``values`` to the diagonal of a square matrix, in place."""
     if isinstance(matrix, SparseMatrixBuilder):
         idx = np.arange(matrix.shape[0])
-        matrix.add(idx, idx, values)
+        matrix.add(idx, idx, np.broadcast_to(values, idx.shape).astype(float))
     else:
         matrix.setdiag(matrix.diagonal() + values)
 
 
 def remove_cst_bound_indices(
     indices_owner: NDArrayInt, indices_neigh: NDArrayInt, indices_to_remove: NDArrayInt
-) -> Tuple[NDArrayInt, NDArrayInt]:
+) -> tuple[NDArrayInt, NDArrayInt]:
     """
     Remove the owner/neighbor pairs whose owner is a boundary condition node.
 
@@ -1969,7 +1988,7 @@ def remove_cst_bound_indices(
 
 def keep_a_b_if_c_in_a(
     a: NDArrayInt, b: NDArrayInt, c: NDArrayInt
-) -> Tuple[NDArrayInt, NDArrayInt]:
+) -> tuple[NDArrayInt, NDArrayInt]:
     """Keep the pairs ``(a[i], b[i])`` for which ``a[i]`` is in ``c``."""
     is_kept = np.isin(a, c)
     return a[is_kept], b[is_kept]
@@ -1978,11 +1997,11 @@ def keep_a_b_if_c_in_a(
 # TODO cache
 def get_owner_neigh_indices(
     grid: RectilinearGrid,
-    span_owner: Tuple[slice, slice, slice],
-    span_neigh: Tuple[slice, slice, slice],
-    owner_indices_to_keep: Optional[NDArrayInt] = None,
-    neigh_indices_to_keep: Optional[NDArrayInt] = None,
-) -> Tuple[NDArrayInt, NDArrayInt]:
+    span_owner: tuple[slice, slice, slice],
+    span_neigh: tuple[slice, slice, slice],
+    owner_indices_to_keep: NDArrayInt | None = None,
+    neigh_indices_to_keep: NDArrayInt | None = None,
+) -> tuple[NDArrayInt, NDArrayInt]:
     """
     Return the node numbers of the pairs of neighbor grid cells.
 

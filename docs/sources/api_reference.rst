@@ -16,4 +16,3 @@ API Reference
    utils.rst
    forward.rst
    inverse.rst
-   plot.rst

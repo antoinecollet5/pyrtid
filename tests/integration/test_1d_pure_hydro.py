@@ -1,7 +1,8 @@
 import copy
 import logging
-from typing import Iterable, Tuple
+from collections.abc import Iterable
 
+import inv_toolbox
 import numpy as np
 import pyrtid
 import pyrtid.forward as dmfwd
@@ -22,7 +23,7 @@ MAX_VAL_K = 1e-2
 
 def get_forward_and_obs(
     flow_regime: dmfwd.FlowRegime,
-) -> Tuple[dmfwd.ForwardModel, dminv.Observables]:
+) -> tuple[dmfwd.ForwardModel, dminv.Observables]:
     nx = 40  # number of voxels along the x axis
     ny = 1  # number of voxels along the y axis
     nz = 1
@@ -118,7 +119,7 @@ def get_forward_and_obs(
         base_model.add_src_term(sink_term)
 
     # three successive injections on days 3, 4 and 5
-    for i, loc in enumerate(injection_locations):
+    for loc in injection_locations:
         day += 1
         source_term = dmfwd.SourceTerm(
             f"injector loc # {loc}",
@@ -213,12 +214,12 @@ def get_forward_and_obs(
 
 def get_executor_k(
     flow_regime: dmfwd.FlowRegime,
-) -> Tuple[dminv.AdjustableParameter, dminv.LBFGSBInversionExecutor]:
+) -> tuple[dminv.AdjustableParameter, dminv.LBFGSBInversionExecutor]:
     model_initial_guess, observables = get_forward_and_obs(flow_regime)
 
-    gsc = dminv.GradientScalerConfig(
+    gsc = inv_toolbox.utils.GradientScalerConfig(
         max_change_target=np.log(5),  # max an order of magnitude for the first update
-        pcd_change_eval=dminv.LogTransform(),
+        pcd_change_eval=inv_toolbox.utils.LogTransform(),
         lb=1e-10,
         ub=1e10,
     )
@@ -229,12 +230,13 @@ def get_executor_k(
         lbounds=MIN_VAL_K / 10,
         # * 10 to avoid finite differences fail because of bounds clipping
         ubounds=MAX_VAL_K * 10,
-        preconditioner=dminv.LogTransform(),
-        regularizators=dminv.regularization.TikhonovRegularizator(
-            grid=model_initial_guess.grid, preconditioner=dminv.LogTransform()
+        preconditioner=inv_toolbox.utils.LogTransform(),
+        regularizators=inv_toolbox.regularization.TikhonovRegularizator(
+            grid=model_initial_guess.grid,
+            preconditioner=inv_toolbox.utils.LogTransform(),
         ),
         gradient_scaler_config=gsc,
-        reg_weight_update_strategy=dminv.regularization.ConstantRegWeight(200.0),
+        reg_weight_update_strategy=inv_toolbox.regularization.ConstantRegWeight(200.0),
     )
 
     # Create an executor to keep track of the adjoint model
@@ -286,7 +288,7 @@ def test_optim_k(flow_regime: dmfwd.FlowRegime) -> None:
 
 def get_executor_h0(
     flow_regime: dmfwd.FlowRegime,
-) -> Tuple[dminv.AdjustableParameter, dminv.LBFGSBInversionExecutor]:
+) -> tuple[dminv.AdjustableParameter, dminv.LBFGSBInversionExecutor]:
     model_initial_guess, observables = get_forward_and_obs(flow_regime)
 
     param_h0 = dminv.AdjustableParameter(
@@ -318,7 +320,7 @@ def get_executor_h0(
 
 @pytest.mark.parametrize("flow_regime", ("transient", "stationary"))
 def test_grad_h0(flow_regime: dmfwd.FlowRegime) -> None:
-    param_h0, executor_h0 = get_executor_k(flow_regime)
+    param_h0, executor_h0 = get_executor_h0(flow_regime)
     # executor_h0.eval_loss(param_h0.preconditioner(param_h0.values.ravel("F")))
 
     is_grad_h0_ok = executor_h0.is_adjoint_gradient_correct(
@@ -335,7 +337,7 @@ def test_grad_h0(flow_regime: dmfwd.FlowRegime) -> None:
 
 def get_executor_sc(
     flow_regime: dmfwd.FlowRegime,
-) -> Tuple[dminv.AdjustableParameter, dminv.LBFGSBInversionExecutor]:
+) -> tuple[dminv.AdjustableParameter, dminv.LBFGSBInversionExecutor]:
     model_initial_guess, observables = get_forward_and_obs(flow_regime)
 
     param_sc = dminv.AdjustableParameter(
@@ -344,7 +346,7 @@ def get_executor_sc(
         lbounds=1e-6,
         # * 10 to avoid finite differences fail because of bounds clipping
         ubounds=1e-1,
-        preconditioner=dminv.LogTransform(),
+        preconditioner=inv_toolbox.utils.LogTransform(),
     )
 
     # Create an executor to keep track of the adjoint model

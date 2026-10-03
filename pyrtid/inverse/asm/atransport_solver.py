@@ -5,8 +5,8 @@
 
 from __future__ import annotations
 
+import contextlib
 import warnings
-from typing import Tuple
 
 import covmats
 import numpy as np
@@ -59,7 +59,7 @@ def make_transient_adj_transport_matrices(
     tr_model: TransportModel,
     time_params: TimeParameters,
     time_index: int,
-) -> Tuple[lil_array, lil_array]:
+) -> tuple[lil_array, lil_array]:
     """
     Make matrices for the transient transport.
 
@@ -68,7 +68,6 @@ def make_transient_adj_transport_matrices(
     Since the diffusion coefficient and porosity does not vary with time,
     matrices q_prev and q_next are the same.
     """
-
     dim = grid.n_grid_cells
     q_prev = lil_array((dim, dim), dtype=np.float64)
     q_next = lil_array((dim, dim), dtype=np.float64)
@@ -89,7 +88,7 @@ def make_transient_adj_transport_matrices(
     else:
         d_old = np.zeros_like(d)
 
-    for n, axis in zip(grid.shape, (0, 1, 2)):
+    for n, axis in zip(grid.shape, (0, 1, 2), strict=False):
         if n < 2:
             continue
 
@@ -97,10 +96,8 @@ def make_transient_adj_transport_matrices(
             u_darcy = fl_model.u_darcy_x
         elif axis == 1:
             u_darcy = fl_model.u_darcy_y
-        elif axis == 2:
-            u_darcy = fl_model.u_darcy_z
         else:
-            raise ValueError()
+            u_darcy = fl_model.u_darcy_z
 
         fwd_slicer = grid.get_slicer_forward(axis)
         bwd_slicer = grid.get_slicer_backward(axis)
@@ -117,7 +114,7 @@ def make_transient_adj_transport_matrices(
             dmean_old = np.zeros_like(dmean)
 
         tmp_un = np.zeros(grid.shape, dtype=np.float64)
-        tmp_un[fwd_slicer] = u_darcy[tuple(bwd_slicer) + (time_index,)]
+        tmp_un[fwd_slicer] = u_darcy[(*tuple(bwd_slicer), time_index)]
         un = tmp_un.flatten(order="F")
 
         # Forward scheme:
@@ -141,16 +138,16 @@ def make_transient_adj_transport_matrices(
 
         q_next[idc_owner, idc_neigh] -= (
             tr_model.crank_nicolson_diffusion * dmean[idc_owner] * tmp_diff
-        ) + crank_adv * tmp_un_pos  # type: ignore
+        ) + crank_adv * tmp_un_pos
         q_next[idc_owner, idc_owner] += (
             tr_model.crank_nicolson_diffusion * dmean[idc_owner] * tmp_diff
-        ) + crank_adv * tmp_un_pos  # type: ignore
+        ) + crank_adv * tmp_un_pos
         q_prev[idc_owner, idc_neigh] += (
             (1.0 - tr_model.crank_nicolson_diffusion) * dmean_old[idc_owner] * tmp_diff
-        ) + (1 - crank_adv) * tmp_un_pos  # type: ignore
+        ) + (1 - crank_adv) * tmp_un_pos
         q_prev[idc_owner, idc_owner] -= (
             (1.0 - tr_model.crank_nicolson_diffusion) * dmean_old[idc_owner] * tmp_diff
-        ) + (1 - crank_adv) * tmp_un_pos  # type: ignore
+        ) + (1 - crank_adv) * tmp_un_pos
 
         # Backward scheme
         normal = -1.0
@@ -170,16 +167,16 @@ def make_transient_adj_transport_matrices(
 
         q_next[idc_owner, idc_neigh] -= (
             tr_model.crank_nicolson_diffusion * dmean[idc_neigh] * tmp_diff
-        ) + crank_adv * tmp_un_pos  # type: ignore
+        ) + crank_adv * tmp_un_pos
         q_next[idc_owner, idc_owner] += (
             tr_model.crank_nicolson_diffusion * dmean[idc_neigh] * tmp_diff
-        ) + crank_adv * tmp_un_pos  # type: ignore
+        ) + crank_adv * tmp_un_pos
         q_prev[idc_owner, idc_neigh] += (
             (1.0 - tr_model.crank_nicolson_diffusion) * dmean_old[idc_neigh] * tmp_diff
-        ) + (1 - crank_adv) * tmp_un_pos  # type: ignore
+        ) + (1 - crank_adv) * tmp_un_pos
         q_prev[idc_owner, idc_owner] -= (
             (1.0 - tr_model.crank_nicolson_diffusion) * dmean_old[idc_neigh] * tmp_diff
-        ) + (1 - crank_adv) * tmp_un_pos  # type: ignore
+        ) + (1 - crank_adv) * tmp_un_pos
 
     _apply_adj_transport_sink_term(fl_model, tr_model, q_next, q_prev, time_index)
 
@@ -235,8 +232,7 @@ def _add_adj_transport_boundary_conditions(
     time_index: int,
 ) -> None:
     """Add the boundary conditions to the matrix."""
-
-    for n, axis in zip(grid.shape, (0, 1, 2)):
+    for n, axis in zip(grid.shape, (0, 1, 2), strict=False):
         if n < 2:
             continue
 
@@ -248,12 +244,10 @@ def _add_adj_transport_boundary_conditions(
             u_darcy = fl_model.u_darcy_y
             bd1_slicer = (slice(None), slice(0, 1), slice(None))
             bd2_slicer = (slice(None), slice(grid.ny - 1, grid.ny), slice(None))
-        elif axis == 2:
+        else:
             u_darcy = fl_model.u_darcy_z
             bd1_slicer = (slice(None), slice(None), slice(0, 1))
             bd2_slicer = (slice(None), slice(None), slice(grid.nz - 1, grid.nz))
-        else:
-            raise ValueError()
 
         fwd_slicer = grid.get_slicer_forward(axis, shift=1)
         bwd_slicer = grid.get_slicer_backward(axis, shift=1)
@@ -265,23 +259,23 @@ def _add_adj_transport_boundary_conditions(
         )
         tmp = grid.gc_face_area_m2(axis) / grid.grid_cell_volume_m3
 
-        _un = u_darcy[(fwd_slicer) + (time_index,)].ravel("F")[idc_left_border]
+        _un = u_darcy[(*fwd_slicer, time_index)].ravel("F")[idc_left_border]
         normal = -1.0
         q_next[idc_left_border, idc_left_border] += (
             tr_model.crank_nicolson_advection * _un * tmp * normal
-        )  # type: ignore
+        )
         q_prev[idc_left_border, idc_left_border] -= (
             (1 - tr_model.crank_nicolson_advection) * _un * tmp * normal
-        )  # type: ignore
+        )
 
-        _un = u_darcy[tuple(bwd_slicer) + (time_index,)].ravel("F")[idc_right_border]
+        _un = u_darcy[(*tuple(bwd_slicer), time_index)].ravel("F")[idc_right_border]
         normal = 1.0
         q_next[idc_right_border, idc_right_border] += (
             tr_model.crank_nicolson_advection * _un * tmp * normal
-        )  # type: ignore
+        )
         q_prev[idc_right_border, idc_right_border] -= (
             (1 - tr_model.crank_nicolson_advection) * _un * tmp * normal
-        )  # type: ignore
+        )
 
 
 def solve_adj_transport_transient_semi_implicit(
@@ -295,7 +289,6 @@ def solve_adj_transport_transient_semi_implicit(
     nafpi: int,
 ) -> int:
     """Solving the adjoint transport equation."""
-
     # The matrix with respect to the diffusion never changes.
     # The matrix with respect to the advection only needs to be updated at the first
     # fix point iteration
@@ -339,13 +332,11 @@ def solve_adj_transport_transient_semi_implicit(
 
         # Need a try - except for n = N_{ts} resolution: then \Delta t^{N_{ts}+1} does
         # not exists
-        try:
+        with contextlib.suppress(IndexError):
             q_prev.setdiag(
                 q_prev.diagonal()
                 + tr_model.porosity.flatten("F") / time_params.ldt[time_index]
             )
-        except IndexError:
-            pass
 
         a_tr_model.q_next = q_next
         a_tr_model.q_prev = q_prev
@@ -413,7 +404,8 @@ def solve_adj_transport_transient_semi_implicit(
     except RuntimeError:
         super_ilu, preconditioner = None, None
         warnings.warn(
-            f"SuperILU: q_next is singular in adjoint transport at it={time_index}!"
+            f"SuperILU: q_next is singular in adjoint transport at it={time_index}!",
+            stacklevel=2,
         )
 
     # Solve Ax = b with A sparse using LU preconditioner

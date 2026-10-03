@@ -3,8 +3,6 @@
 
 """Provide a model class to store the inversion parameters and results."""
 
-from typing import List, Union
-
 from pyrtid.forward.models import ForwardModel
 from pyrtid.inverse.obs import Observable, Observables
 from pyrtid.inverse.params import (
@@ -53,21 +51,21 @@ class InverseModel:
     """
 
     __slots__ = [
-        "observables",
-        "parameters_to_adjust",
-        "optimization_round_nb",
-        "scaling_factor",
+        "is_first_loss_function_call_in_round",
         "is_regularization_at_first_round",
-        "nb_g_calls",
+        "list_d_pred",
+        "list_losses_for_fd_grad",
+        "loss_history",
+        "loss_ls_history",
         "loss_ls_unscaled",
         "loss_reg_unscaled",
-        "loss_ls_history",
         "loss_reg_weighted_history",
-        "loss_history",
-        "list_losses_for_fd_grad",
-        "list_d_pred",
-        "is_first_loss_function_call_in_round",
         "n_update_rw",
+        "nb_g_calls",
+        "observables",
+        "optimization_round_nb",
+        "parameters_to_adjust",
+        "scaling_factor",
     ]
 
     def __init__(
@@ -92,11 +90,10 @@ class InverseModel:
         ValueError
             _description_
         """
-
-        self.observables: List[Observable] = object_or_object_sequence_to_list(
+        self.observables: list[Observable] = object_or_object_sequence_to_list(
             observables
         )
-        self.parameters_to_adjust: List[AdjustableParameter] = (
+        self.parameters_to_adjust: list[AdjustableParameter] = (
             object_or_object_sequence_to_list(parameters_to_adjust)
         )
 
@@ -112,24 +109,23 @@ class InverseModel:
 
     def init_state(self) -> None:
         """Initialize internal state."""
-
         self.optimization_round_nb: int = 0
         self.scaling_factor: float = 1.0
         self.is_regularization_at_first_round: bool = True
         self.nb_g_calls = 0
-        self.loss_ls_history: List[float] = []
-        self.loss_reg_weighted_history: List[float] = []
-        self.list_losses_for_fd_grad: List[float] = []
-        self.loss_history: List[float] = []
-        self.list_d_pred: List[NDArrayFloat] = []
+        self.loss_ls_history: list[float] = []
+        self.loss_reg_weighted_history: list[float] = []
+        self.list_losses_for_fd_grad: list[float] = []
+        self.loss_history: list[float] = []
+        self.list_d_pred: list[NDArrayFloat] = []
         self.is_first_loss_function_call_in_round: bool = True
         self.loss_ls_unscaled: float = 0.0
         self.loss_reg_unscaled: float = 0.0
         self.n_update_rw: int = 0
 
     @property
-    def loss_scaled_history(self) -> List[float]:
-        """Return the scaled losses"""
+    def loss_scaled_history(self) -> list[float]:
+        """Return the scaled losses."""
         return [j * self.scaling_factor for j in self.loss_history]
 
     @property
@@ -174,12 +170,10 @@ class InverseModel:
         if self.optimization_round_nb < 1:
             return True
         # Case without regularization
-        if all([len(param.regularizators) == 0 for param in self.parameters_to_adjust]):
+        if all(len(param.regularizators) == 0 for param in self.parameters_to_adjust):
             return False
         # Stop criteria
-        if self.optimization_round_nb < max_optimization_round_nb:
-            return True
-        return False
+        return self.optimization_round_nb < max_optimization_round_nb
 
     def is_adaptive_regularization(self) -> bool:
         """Whether any adjusted parameter use adaptive regularization strategy."""
@@ -238,9 +232,13 @@ class InverseModel:
             elif param.name == ParameterName.PERMEABILITY:
                 param.get_values_from_model_field(model.fl_model.permeability)
             elif param.name == ParameterName.INITIAL_CONCENTRATION:
-                param.get_values_from_model_field(model.tr_model.mob[:, :, 0])
+                param.get_values_from_model_field(
+                    model.tr_model.mob[param.sp][:, :, :, 0]
+                )
             elif param.name == ParameterName.INITIAL_GRADE:
-                param.get_values_from_model_field(model.tr_model.immob[:, :, 0])
+                param.get_values_from_model_field(
+                    model.tr_model.immob[param.sp][:, :, :, 0]
+                )
             else:
                 raise (
                     NotImplementedError(
@@ -248,7 +246,7 @@ class InverseModel:
                     )
                 )
 
-    def set_observables(self, observables: Union[Observable, List[Observable]]) -> None:
+    def set_observables(self, observables: Observable | list[Observable]) -> None:
         """Set the parameters to adjust during the inversion."""
         if isinstance(observables, list):
             self.observables = observables

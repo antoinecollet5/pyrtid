@@ -6,8 +6,6 @@
 from __future__ import annotations
 
 import copy
-from abc import ABC
-from typing import List, Optional
 
 import numpy as np
 from quickpaver import RectilinearGrid
@@ -29,26 +27,26 @@ from pyrtid.utils import (
 )
 
 
-class AdjointFlowModel(ABC):
+class AdjointFlowModel:
     """Represent an adjoint flow model."""
 
     __slots__ = [
         "a_head",
+        "a_head_sources",
+        "a_permeability_sources",
         "a_pressure",
+        "a_pressure_sources",
+        "a_storage_coefficient_sources",
         "a_u_darcy_x",
         "a_u_darcy_y",
         "a_u_darcy_z",
-        "a_head_sources",
-        "a_pressure_sources",
-        "a_permeability_sources",
-        "a_storage_coefficient_sources",
-        "q_prev",
-        "q_next",
         "crank_nicolson",
-        "rtol",
         "is_use_continuous_adj",
-        "l_q_prev",
         "l_q_next",
+        "l_q_prev",
+        "q_next",
+        "q_prev",
+        "rtol",
     ]
 
     def __init__(
@@ -107,19 +105,17 @@ class AdjointFlowModel(ABC):
         # crank nicolson: if None, then the crank-nicolson from the forward model
         # is used. This attribute only purpose is to test the impact of an
         # incorrect discretization.
-        self.crank_nicolson: Optional[float] = None
+        self.crank_nicolson: float | None = None
         self.rtol: float = 1e-8
         self.is_use_continuous_adj: bool = is_use_continuous_adj
 
         # List to store the successive stiffness matrices
         # This is mostly for development purposes.
-        self.l_q_next: List[lil_array] = []
-        self.l_q_prev: List[lil_array] = []
+        self.l_q_next: list[lil_array] = []
+        self.l_q_prev: list[lil_array] = []
 
     def clear_adjoint_sources(self) -> None:
-        """
-        Reset all adjoint sources to zero.
-        """
+        """Reset all adjoint sources to zero."""
         self.a_head_sources = csc_array(self.a_head_sources.shape)
         self.a_pressure_sources = csc_array(self.a_pressure_sources.shape)
         self.a_permeability_sources = csc_array(self.a_permeability_sources.shape)
@@ -127,7 +123,7 @@ class AdjointFlowModel(ABC):
             self.a_storage_coefficient_sources.shape
         )
 
-    def set_crank_nicolson(self, value: Optional[float]) -> None:
+    def set_crank_nicolson(self, value: float | None) -> None:
         self.crank_nicolson = value
 
     def reinit(self) -> None:
@@ -143,9 +139,7 @@ class AdjointFlowModel(ABC):
 
 
 class SaturatedAdjointFlowModel(AdjointFlowModel):
-    """
-    Saturated Adjoint Flow Model.
-    """
+    """Saturated Adjoint Flow Model."""
 
     def __init__(
         self,
@@ -173,9 +167,7 @@ class SaturatedAdjointFlowModel(AdjointFlowModel):
 
 
 class DensityAdjointFlowModel(AdjointFlowModel):
-    """
-    Density Adjoint Flow Model.
-    """
+    """Density Adjoint Flow Model."""
 
     def __init__(
         self,
@@ -226,25 +218,25 @@ class AdjointTransportModel:
     """
 
     __slots__ = [
-        "a_mob",
-        "a_mob_prev",
-        "a_immob",
-        "a_density",
         "a_conc_sources",
-        "a_grade_sources",
-        "a_porosity_sources",
+        "a_density",
+        "a_density_sources",
         "a_diffusion_sources",
         "a_dispersivity_sources",
-        "a_density_sources",
-        "q_prev",
-        "q_next",
         "a_gch_src_term",
+        "a_grade_sources",
+        "a_immob",
+        "a_mob",
+        "a_mob_prev",
+        "a_porosity_sources",
         "afpi_eps",
-        "is_adj_numerical_acceleration",
         "is_adj_num_acc_for_timestep",
-        "n_sp",
-        "l_q_prev",
+        "is_adj_numerical_acceleration",
         "l_q_next",
+        "l_q_prev",
+        "n_sp",
+        "q_next",
+        "q_prev",
     ]
 
     def __init__(
@@ -291,11 +283,11 @@ class AdjointTransportModel:
         # so use a sparse matrix instead of a dense array
         # NOTE: rows are grid cells, and columns are time indices
         # We use csc format for fast column (time) slicing
-        self.a_conc_sources: List[csc_array] = [
+        self.a_conc_sources: list[csc_array] = [
             csc_array((grid.n_grid_cells, time_params.nt), dtype=np.float64)
-            for sp in range(self.n_sp)  # type: ignore
+            for sp in range(self.n_sp)
         ]
-        self.a_grade_sources: List[csc_array] = copy.copy(self.a_conc_sources)
+        self.a_grade_sources: list[csc_array] = copy.copy(self.a_conc_sources)
         self.a_porosity_sources = csc_array((grid.n_grid_cells, 1), dtype=np.float64)
         self.a_diffusion_sources = csc_array((grid.n_grid_cells, 1), dtype=np.float64)
         self.a_dispersivity_sources = csc_array(
@@ -327,8 +319,8 @@ class AdjointTransportModel:
 
         # List to store the successive stiffness matrices
         # This is mostly for development purposes.
-        self.l_q_next: List[lil_array] = []
-        self.l_q_prev: List[lil_array] = []
+        self.l_q_next: list[lil_array] = []
+        self.l_q_prev: list[lil_array] = []
 
     @property
     def a_conc(self) -> NDArrayFloat:
@@ -355,7 +347,7 @@ class AdjointTransportModel:
 class AdjointModel:
     """Represent an adjoint model."""
 
-    __slots__ = ["grid", "time_params", "gch_params", "a_fl_model", "a_tr_model"]
+    __slots__ = ["a_fl_model", "a_tr_model", "gch_params", "grid", "time_params"]
 
     def __init__(
         self,
@@ -406,9 +398,7 @@ class AdjointModel:
         )
 
     def clear_adjoint_sources(self) -> None:
-        """
-        Reset all adjoint sources to zero.
-        """
+        """Reset all adjoint sources to zero."""
         self.a_fl_model.clear_adjoint_sources()
         self.a_tr_model.clear_adjoint_sources()
 
@@ -416,7 +406,7 @@ class AdjointModel:
         self,
         fwd_model: ForwardModel,
         observables: Observables,
-        hm_end_time: Optional[float] = None,
+        hm_end_time: float | None = None,
     ) -> None:
         """
         Initiate the adjoint variables.
@@ -430,7 +420,6 @@ class AdjointModel:
         hm_end_time : Optional[float], optional
             Threshold time from which the observation are ignored, by default None.
         """
-
         # First set all to zero
         self.clear_adjoint_sources()
 
@@ -490,7 +479,7 @@ class AdjointModel:
                 self.a_tr_model.a_porosity_sources += res
             elif obs.state_variable == StateVariable.PRESSURE:
                 self.a_fl_model.a_pressure_sources += res
-            elif obs.state_variable == StateVariable.STORAGE_COEFFICIENT:
+            else:  # storage coefficient
                 self.a_fl_model.a_storage_coefficient_sources += res
 
     def reinit(self) -> None:

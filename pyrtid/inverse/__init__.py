@@ -23,18 +23,6 @@ Different executors are provided (scipy, stochopy, pyesmda, pypcga).
 
 .. currentmodule:: pyrtid.inverse
 
-Regularization
-^^^^^^^^^^^^^^
-
-Sub module providing regularization tools.
-
-.. autosummary::
-   :toctree: _autosummary
-
-    regularization
-
-.. currentmodule:: pyrtid.inverse
-
 Adjoint
 ^^^^^^^
 
@@ -82,29 +70,6 @@ Loss functions
 
 """
 
-import inv_toolbox.regularization as regularization
-from inv_toolbox.utils.preconditioner import (
-    GDPCS,
-    GDPNCS,
-    BoundsClipper,
-    BoundsRescaler,
-    ChainedTransforms,
-    GradientScalerConfig,
-    InvAbsTransform,
-    LinearTransform,
-    LogTransform,
-    Normalizer,
-    NoTransform,
-    Preconditioner,
-    RangeRescaler,
-    SigmoidRescaler,
-    SigmoidRescalerBounded,
-    Slicer,
-    SqrtTransform,
-    StdRescaler,
-    SubSelector,
-    Uniform2Gaussian,
-)
 from pyesmda import ESMDAInversionType
 
 from pyrtid.inverse.asm.amain_solver import AdjointSolver
@@ -158,68 +123,46 @@ from pyrtid.inverse.params import (
 )
 
 __all__ = [
-    "regularization",
-    "ESMDAInversionType",
-    "ESMDAInversionExecutor",
-    "ESMDARSInversionExecutor",
-    "ESMDARSSolverConfig",
+    "AdjointModel",
+    "AdjointSolver",
+    "AdjustableParameter",
     "ESMDADMCInversionExecutor",
     "ESMDADMCSolverConfig",
+    "ESMDAInversionExecutor",
+    "ESMDAInversionType",
+    "ESMDARSInversionExecutor",
+    "ESMDARSSolverConfig",
     "ESMDASolverConfig",
+    "InverseModel",
     "LBFGSBInversionExecutor",
     "LBFGSBSolverConfig",
-    "PCGAInversionExecutor",
-    "PCGASolverConfig",
-    "ScipyInversionExecutor",
-    "ScipySolverConfig",
-    "StochopyInversionExecutor",
-    "StochopySolverConfig",
-    "AdjustableParameter",
-    "ParameterName",
-    "eval_loss_ls",
-    "get_parameters_values_from_model",
-    "update_model_with_parameters_values",
-    "get_parameters_bounds",
     "Observable",
     "Observables",
+    "PCGAInversionExecutor",
+    "PCGASolverConfig",
+    "ParameterName",
+    "ScipyInversionExecutor",
+    "ScipySolverConfig",
     "StateVariable",
-    "get_sorted_observable_times",
-    "get_sorted_observable_values",
-    "get_sorted_observable_uncertainties",
-    "get_predictions_matching_observations",
-    "get_observables_values_as_1d_vector",
-    "get_observables_uncertainties_as_1d_vector",
-    "get_values_matching_node_indices",
+    "StochopyInversionExecutor",
+    "StochopySolverConfig",
+    "eval_loss_ls",
+    "eval_model_loss_function",
+    "eval_model_loss_ls",
     "get_adjoint_sources_for_obs",
-    "update_perturbation_values",
-    "InverseModel",
-    "AdjointSolver",
-    "AdjointModel",
     "get_backconditioned_adj_gradient",
     "get_backconditioned_fd_gradient",
     "get_gridded_archived_gradients",
-    "eval_model_loss_ls",
-    "eval_model_loss_function",
-    "GDPCS",
-    "GDPNCS",
-    "LinearTransform",
-    "BoundsRescaler",
-    "LogTransform",
-    "Normalizer",
-    "Preconditioner",
-    "SqrtTransform",
-    "StdRescaler",
-    "NoTransform",
-    "SigmoidRescaler",
-    "SigmoidRescalerBounded",
-    "LinearTransform",
-    "ChainedTransforms",
-    "InvAbsTransform",
-    "RangeRescaler",
-    "SubSelector",
-    "Slicer",
-    "Uniform2Gaussian",
-    "BoundsClipper",
-    "GradientScalerConfig",
+    "get_observables_uncertainties_as_1d_vector",
+    "get_observables_values_as_1d_vector",
+    "get_parameters_bounds",
+    "get_parameters_values_from_model",
+    "get_predictions_matching_observations",
+    "get_sorted_observable_times",
+    "get_sorted_observable_uncertainties",
+    "get_sorted_observable_values",
     "get_theoretical_noise_level",
+    "get_values_matching_node_indices",
+    "update_model_with_parameters_values",
+    "update_perturbation_values",
 ]

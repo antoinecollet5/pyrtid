@@ -25,8 +25,9 @@ Engineers - SPE Reservoir Simulation Symposium
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Sequence
+from collections.abc import Sequence
+from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 from pyesmda import (
@@ -126,17 +127,19 @@ class ESMDASolverConfig(FSMSolverConfig):
     """
 
     n_assimilations: int = 4
-    cov_obs_inflation_factors: Optional[Sequence[float]] = None
+    cov_obs_inflation_factors: Sequence[float] | None = None
     inversion_type: ESMDAInversionType = ESMDAInversionType.SUBSPACE_RESCALED
     cov_ss_inflation_factor: float = 1.0
-    C_DD_localization: LocalizationStrategy = NoLocalization()
-    C_SD_localization: LocalizationStrategy = NoLocalization()
+    C_DD_localization: LocalizationStrategy = field(default_factory=NoLocalization)
+    C_SD_localization: LocalizationStrategy = field(default_factory=NoLocalization)
     save_ensembles_history: bool = False
     is_forecast_for_last_assimilation: bool = True
     batch_size: int = 5000
     is_parallel_analyse_step: bool = True
     truncation: float = 0.99
-    logger: Optional[logging.Logger] = logging.getLogger("ESMDA")
+    logger: logging.Logger | None = field(
+        default_factory=lambda: logging.getLogger("ESMDA")
+    )
 
 
 class ESMDAInversionExecutor(FSMInversionExecutor[ESMDASolverConfig]):
@@ -144,11 +147,10 @@ class ESMDAInversionExecutor(FSMInversionExecutor[ESMDASolverConfig]):
 
     def _init_solver(self, s_init: NDArrayFloat) -> None:
         """Initiate a solver with its args."""
-
         self.solver: ESMDA = ESMDA(
             self.data_model.obs,
             s_init,
-            self.data_model.cov_obs,
+            self.data_model.get_cov_obs_as_covmats(),
             self._map_forward_model,
             m_bounds=get_parameters_bounds(
                 self.inv_model.parameters_to_adjust, is_preconditioned=True
@@ -183,7 +185,7 @@ class ESMDAInversionExecutor(FSMInversionExecutor[ESMDASolverConfig]):
         self.solver.solve()
 
         # TODO: see if this works
-        s_best_av_esmda = np.mean(self.s_history[-1], axis=1)
+        s_best_av_esmda = np.mean(self.solver.m_posterior, axis=1)
 
         # Update the model with the new values of s (preconditioned)
         update_model_with_parameters_values(
@@ -195,11 +197,11 @@ class ESMDAInversionExecutor(FSMInversionExecutor[ESMDASolverConfig]):
         )
 
     @property
-    def s_history(self) -> List[NDArrayFloat]:
+    def s_history(self) -> list[NDArrayFloat]:
         """Return the successive ensembles."""
         return self.solver.m_history
 
-    def get_display_dict(self) -> Dict[str, Any]:
+    def get_display_dict(self) -> dict[str, Any]:
         return {"Number of realizations": self.solver.n_ensemble}
 
 
@@ -228,17 +230,17 @@ class ESMDARSSolverConfig(FSMSolverConfig):
     ----------
     """
 
-    std_s_prior: Optional[NDArrayFloat] = None
+    std_s_prior: NDArrayFloat | None = None
     inversion_type: ESMDAInversionType = ESMDAInversionType.SUBSPACE_RESCALED
     cov_ss_inflation_factor: float = 1.0
-    C_DD_localization: LocalizationStrategy = NoLocalization()
-    C_SD_localization: LocalizationStrategy = NoLocalization()
+    C_DD_localization: LocalizationStrategy = field(default_factory=NoLocalization)
+    C_SD_localization: LocalizationStrategy = field(default_factory=NoLocalization)
     save_ensembles_history: bool = False
     is_forecast_for_last_assimilation: bool = True
     batch_size: int = 10000
     is_parallel_analyse_step: bool = True
     truncation: float = 0.99
-    logger: Optional[logging.Logger] = logging.getLogger("ESMDA-RS")
+    logger: logging.Logger | None = logging.getLogger("ESMDA-RS")
 
 
 class ESMDARSInversionExecutor(FSMInversionExecutor[ESMDARSSolverConfig]):
@@ -246,12 +248,11 @@ class ESMDARSInversionExecutor(FSMInversionExecutor[ESMDARSSolverConfig]):
 
     def _init_solver(self, s_init: NDArrayFloat) -> None:
         """Initiate a solver with its args."""
-
         self.solver: ESMDA_RS = ESMDA_RS(
-            self.data_model.obs,
-            s_init,  # To change back
-            self.data_model.cov_obs,
-            self._map_forward_model,
+            self.data_model.obs,  # ty: ignore[invalid-argument-type]
+            s_init,  # To change back  # ty: ignore[invalid-argument-type]
+            self.data_model.get_cov_obs_as_covmats(),
+            self._map_forward_model,  # ty: ignore[invalid-argument-type]
             std_m_prior=self.solver_config.std_s_prior,
             m_bounds=get_parameters_bounds(
                 self.inv_model.parameters_to_adjust, is_preconditioned=True
@@ -282,7 +283,7 @@ class ESMDARSInversionExecutor(FSMInversionExecutor[ESMDARSSolverConfig]):
         self.solver.solve()
 
         # TODO: see if this works
-        s_best_av_esmda = np.mean(self.s_history[-1], axis=1)
+        s_best_av_esmda = np.mean(self.solver.m_posterior, axis=1)
 
         # Update the model with the new values of s (preconditioned)
         update_model_with_parameters_values(
@@ -295,7 +296,7 @@ class ESMDARSInversionExecutor(FSMInversionExecutor[ESMDARSSolverConfig]):
         return
 
     @property
-    def s_history(self) -> List[NDArrayFloat]:
+    def s_history(self) -> list[NDArrayFloat]:
         """Return the successive ensembles."""
         return self.solver.m_history
 
@@ -317,14 +318,14 @@ class ESMDADMCSolverConfig(FSMSolverConfig):
 
     inversion_type: ESMDAInversionType = ESMDAInversionType.SUBSPACE_RESCALED
     cov_ss_inflation_factor: float = 1.0
-    C_DD_localization: LocalizationStrategy = NoLocalization()
-    C_SD_localization: LocalizationStrategy = NoLocalization()
+    C_DD_localization: LocalizationStrategy = field(default_factory=NoLocalization)
+    C_SD_localization: LocalizationStrategy = field(default_factory=NoLocalization)
     save_ensembles_history: bool = False
     is_forecast_for_last_assimilation: bool = True
     batch_size: int = 10000
     is_parallel_analyse_step: bool = True
     truncation: float = 0.99
-    logger: Optional[logging.Logger] = logging.getLogger("ESMDA-DMC")
+    logger: logging.Logger | None = logging.getLogger("ESMDA-DMC")
 
 
 class ESMDADMCInversionExecutor(FSMInversionExecutor[ESMDADMCSolverConfig]):
@@ -332,12 +333,11 @@ class ESMDADMCInversionExecutor(FSMInversionExecutor[ESMDADMCSolverConfig]):
 
     def _init_solver(self, s_init: NDArrayFloat) -> None:
         """Initiate a solver with its args."""
-
         self.solver: ESMDA_DMC = ESMDA_DMC(
-            self.data_model.obs,
-            s_init,  # To change back
-            self.data_model.cov_obs,
-            self._map_forward_model,
+            self.data_model.obs,  # ty: ignore[invalid-argument-type]
+            s_init,  # To change back  # ty: ignore[invalid-argument-type]
+            self.data_model.get_cov_obs_as_covmats(),
+            self._map_forward_model,  # ty: ignore[invalid-argument-type]
             m_bounds=get_parameters_bounds(
                 self.inv_model.parameters_to_adjust, is_preconditioned=True
             ),
@@ -367,7 +367,7 @@ class ESMDADMCInversionExecutor(FSMInversionExecutor[ESMDADMCSolverConfig]):
         self.solver.solve()
 
         # TODO: see if this works
-        s_best_av_esmda = np.mean(self.s_history[-1], axis=1)
+        s_best_av_esmda = np.mean(self.solver.m_posterior, axis=1)
 
         # Update the model with the new values of s (preconditioned)
         update_model_with_parameters_values(
@@ -380,6 +380,6 @@ class ESMDADMCInversionExecutor(FSMInversionExecutor[ESMDADMCSolverConfig]):
         return
 
     @property
-    def s_history(self) -> List[NDArrayFloat]:
+    def s_history(self) -> list[NDArrayFloat]:
         """Return the successive ensembles."""
         return self.solver.m_history

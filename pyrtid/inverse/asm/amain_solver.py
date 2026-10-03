@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from pyrtid.forward.models import ForwardModel
 from pyrtid.inverse.asm.adensity_solver import solve_adj_density
@@ -27,7 +26,7 @@ from pyrtid.inverse.obs import Observables
 class AdjointSolver:
     """Solve the adjoint reactive-transport problem."""
 
-    __slots__ = ["fwd_model", "adj_model"]
+    __slots__ = ["adj_model", "fwd_model"]
 
     def __init__(
         self,
@@ -72,7 +71,7 @@ class AdjointSolver:
     def solve(
         self,
         observables: Observables,
-        hm_end_time: Optional[float] = None,
+        hm_end_time: float | None = None,
         is_verbose: bool = False,
         max_nafpi: int = 30,
     ) -> None:
@@ -101,7 +100,7 @@ class AdjointSolver:
         for time_index in range(
             self.fwd_model.time_params.nts,
             -1,
-            -1,  # type: ignore
+            -1,
         ):  # Reverse order in time, and reverse order in operator sequence
             self.adj_model.a_tr_model.is_adj_num_acc_for_timestep = (
                 self.adj_model.a_tr_model.is_adj_numerical_acceleration

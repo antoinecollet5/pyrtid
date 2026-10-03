@@ -46,8 +46,8 @@ def solve_adj_geochem(
     else:
         # Handle the Tmax (first timestep going backward)
         # or adjoint state initialization
-        a_immob_prev = np.zeros((1))
-        a_mob_prev = np.zeros((1))
+        a_immob_prev = np.zeros(1)
+        a_mob_prev = np.zeros(1)
         dt_prev = 1.0  # should be zero but we avoid a zero division here
 
     # B) Variables at time step n
@@ -160,7 +160,7 @@ def ddMdmobnext(
     dt_next: float,
     sp: int,
 ) -> NDArrayFloat:
-    """Return the derivative of dM w.r.t. mob. (n+1)"""
+    """Return the derivative of dM w.r.t. mob. (n+1)."""
     dM = get_dM(tr_model, gch_params, time_index, dt_next)
     # Initiate the derivative to zero
     deriv = np.zeros_like(dM)

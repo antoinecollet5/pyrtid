@@ -15,8 +15,6 @@ Submodules
     forward
     inverse
     utils
-    plot
-    regularization
 
 """
 
@@ -35,7 +33,7 @@ except ImportError:
                 "\n           `conda install -c conda-forge scooby`."
                 "\n           `Note that python >= 3.10 is required!\n"
             )
-            warnings.warn(message)
+            warnings.warn(message, stacklevel=2)
 
 
 from pyrtid import forward, inverse, utils
@@ -68,7 +66,7 @@ class Report(ScoobyReport):  # ty:ignore[unsupported-base]
 
         # Optional packages.
         optional = []
-        ScoobyReport().__init__(
+        super().__init__(
             additional=additional,
             core=core,
             optional=optional,
@@ -85,7 +83,5 @@ __all__ = [
     "forward",
     "inverse",
     "utils",
-    "plot",
-    "regularization",
     "Report",
 ]

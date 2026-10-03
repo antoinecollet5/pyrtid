@@ -21,7 +21,6 @@ scheme, with independent weights for the advection and the diffusion.
 from __future__ import annotations
 
 import warnings
-from typing import List, Tuple, Union
 
 import numpy as np
 from inv_toolbox.utils import get_super_ilu_preconditioner, harmonic_mean
@@ -41,10 +40,10 @@ from pyrtid.forward.models import (
 from pyrtid.utils import NDArrayFloat
 
 # The matrices can be filled in a lil_array or in a SparseMatrixBuilder
-MatrixLike = Union[lil_array, SparseMatrixBuilder]
+MatrixLike = lil_array | SparseMatrixBuilder
 
 
-def _get_u_darcy_list(fl_model: FlowModel, axis: int) -> List[NDArrayFloat]:
+def _get_u_darcy_list(fl_model: FlowModel, axis: int) -> list[NDArrayFloat]:
     """
     Return the list of darcy velocities (at the faces) along ``axis``, for all times.
 
@@ -237,6 +236,35 @@ def fill_trmat_for_axis(
     )
 
 
+def get_dispersion(
+    tr_model: TransportModel, fl_model: FlowModel, time_index: int
+) -> NDArrayFloat:
+    """
+    Return the diffusion/dispersion coefficient in the grid cells (m2/s).
+
+    It is the sum of the effective diffusion (diffusion times porosity) and of the
+    dispersivity times the norm of the darcy velocity.
+
+    Parameters
+    ----------
+    tr_model : TransportModel
+        The transport model.
+    fl_model : FlowModel
+        The flow model.
+    time_index : int
+        The time index.
+
+    Returns
+    -------
+    NDArrayFloat
+        The coefficient, with shape (nx, ny, nz).
+    """
+    return (
+        tr_model.effective_diffusion
+        + tr_model.dispersivity * fl_model.get_u_darcy_norm_sample(time_index)
+    )
+
+
 def _assemble_transport_matrices(
     grid: RectilinearGrid,
     tr_model: TransportModel,
@@ -244,15 +272,18 @@ def _assemble_transport_matrices(
     time_index: int,
     q_next: MatrixLike,
     q_prev: MatrixLike,
+    disp: NDArrayFloat | None = None,
 ) -> None:
-    """Fill ``q_next`` and ``q_prev`` with all the terms of the transport (no 1/dt)."""
-    # diffusion + dispersivity
-    disp = (
-        tr_model.effective_diffusion
-        + tr_model.dispersivity * fl_model.get_u_darcy_norm_sample(time_index)
-    )
+    """
+    Fill ``q_next`` and ``q_prev`` with all the terms of the transport (no 1/dt).
 
-    for n, axis in zip(grid.shape, (0, 1, 2)):
+    ``disp`` is the diffusion/dispersion coefficient. If None, it is computed with
+    :func:`get_dispersion`. Passing it is useful to differentiate the assembly.
+    """
+    if disp is None:
+        disp = get_dispersion(tr_model, fl_model, time_index)
+
+    for n, axis in zip(grid.shape, (0, 1, 2), strict=False):
         if n >= 2:
             fill_trmat_for_axis(
                 grid, fl_model, tr_model, q_next, q_prev, disp, time_index, axis
@@ -273,7 +304,7 @@ def make_transport_matrices(
     tr_model: TransportModel,
     fl_model: FlowModel,
     time_index: int,
-) -> Tuple[lil_array, lil_array]:
+) -> tuple[lil_array, lil_array]:
     """
     Make matrices for the transport, without the time derivative term.
 
@@ -423,7 +454,7 @@ def _add_transport_boundary_conditions(
     """Add the boundary conditions to the matrix."""
     # We get the indices of the borders and we apply a zero gradient.
 
-    for n, axis in zip(grid.shape, (0, 1, 2)):
+    for n, axis in zip(grid.shape, (0, 1, 2), strict=False):
         if n >= 2:
             _add_transport_boundary_conditions_for_axis(
                 grid, fl_model, tr_model, q_next, q_prev, time_index, axis
@@ -508,7 +539,8 @@ def solve_transport_semi_implicit(
         except RuntimeError:
             super_ilu, preconditioner = None, None
             warnings.warn(
-                f"SuperILU: q_next is singular in transport at it={time_index}!"
+                f"SuperILU: q_next is singular in transport at it={time_index}!",
+                stacklevel=2,
             )
 
         tr_model.super_ilu = super_ilu
@@ -558,7 +590,8 @@ def solve_transport_semi_implicit(
         if _exit_code != 0:
             warnings.warn(
                 f"The GMRES solver of the transport did not converge for species "
-                f"{isp} at it={time_index} (exit code {_exit_code})."
+                f"{isp} at it={time_index} (exit code {_exit_code}).",
+                stacklevel=2,
             )
             exit_code = exit_code or _exit_code
 

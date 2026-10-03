@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright (c) 2024-2026 Antoine COLLET
 
-from typing import Optional, Sequence
+from collections.abc import Sequence
 
 import numpy as np
 
@@ -52,7 +52,7 @@ def eval_loss_ls(
 def eval_model_loss_ls(
     model: ForwardModel,
     observables: Observables,
-    max_obs_time: Optional[float] = None,
+    max_obs_time: float | None = None,
 ) -> float:
     """
     Return the least-square loss function of the model for the given observations.
@@ -87,9 +87,9 @@ def eval_model_loss_function(
     model: ForwardModel,
     observables: Observables,
     parameters_to_adjust: AdjustableParameters,
-    max_obs_time: Optional[float] = None,
+    max_obs_time: float | None = None,
 ) -> float:
-    """_summary_
+    """_summary_.
 
     Parameters
     ----------

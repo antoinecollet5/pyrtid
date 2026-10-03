@@ -1,5 +1,5 @@
+from collections.abc import Sequence
 from contextlib import nullcontext as does_not_raise
-from typing import Optional, Sequence
 
 import numpy as np
 import pyrtid.forward as dmfwd
@@ -117,7 +117,7 @@ def test_observable_init(
 def test_get_times_idx_before_after_obs() -> None:
     obs_times = np.array([0.0, 2.0, 4.0, 5.6])
     ldt = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
-    calc_times = np.cumsum([0] + ldt)
+    calc_times = np.cumsum([0, *ldt])
 
     idx_before, idx_after = get_times_idx_before_after_obs(obs_times, calc_times)
 
@@ -128,7 +128,7 @@ def test_get_times_idx_before_after_obs() -> None:
 def test_get_weights() -> None:
     obs_times = np.array([0.0, 2.0, 4.0, 5.6])
     ldt = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
-    calc_times = np.cumsum([0] + ldt)
+    calc_times = np.cumsum([0, *ldt])
 
     idx_before, idx_after = get_times_idx_before_after_obs(obs_times, calc_times)
 
@@ -156,7 +156,7 @@ def test_get_weights() -> None:
             ).reshape(-1, 5, order="F"),
         ),
         (np.array([1, 3]), np.repeat(np.array([[2], [4]]), 5, axis=-1)),
-        (np.array([1]), np.ones(([5])).reshape(1, 5) * 2.0),
+        (np.array([1]), np.ones([5]).reshape(1, 5) * 2.0),
     ),
 )
 def test_get_values_matching_node_indices(
@@ -289,7 +289,7 @@ def model() -> dmfwd.ForwardModel:
 )
 def test_get_array_from_state_variable(
     state_variable: StateVariable,
-    sp: Optional[int],
+    sp: int | None,
     expected_shape: Sequence[int],
     expected_exception,
     model: dmfwd.ForwardModel,
@@ -432,10 +432,7 @@ def test_get_observables_values_as_1d_vector(
         sp=0,
     )
 
-    if is_use_list_of_obs:
-        obs = (obs1, obs1, obs1)
-    else:
-        obs = obs1
+    obs = (obs1, obs1, obs1) if is_use_list_of_obs else obs1
 
     np.testing.assert_allclose(
         get_observables_values_as_1d_vector(obs, max_obs_time), expected_values

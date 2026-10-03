@@ -12,7 +12,7 @@ from __future__ import annotations
 import copy
 import json
 import logging
-from typing import Callable, List, Optional, Sequence, Union
+from collections.abc import Callable, Sequence
 
 import numpy as np
 import scipy as sp
@@ -128,39 +128,39 @@ class AdjustableParameter:
     """
 
     __slots__ = [
-        "name",
-        "values",
         "_lbounds",
         "_ubounds",
-        "regularizators",
-        "preconditioner",
-        "filters",
         "archived_values",
+        "filters",
         "grad_adj_history",
         "grad_adj_raw_history",
         "grad_fd_history",
+        "gradient_scaler_config",
+        "jacvec_fd_history",
         "jacvec_fsm_history",
         "jacvec_fsm_raw_history",
-        "jacvec_fd_history",
-        "reg_weight_update_strategy",
-        "reg_weight_history",
         "loss_reg_history",
+        "name",
+        "preconditioner",
+        "reg_weight_history",
+        "reg_weight_update_strategy",
+        "regularizators",
         "sp",
-        "gradient_scaler_config",
+        "values",
     ]
 
     def __init__(
         self,
         name: ParameterName,
-        values: Optional[NDArrayFloat] = None,
-        lbounds: Union[float, NDArrayFloat] = -np.inf,
-        ubounds: Union[float, NDArrayFloat] = np.inf,
-        regularizators: Optional[Union[Regularizator, List[Regularizator]]] = None,
-        preconditioner: Preconditioner = NoTransform(),
-        filters: Optional[List[Filter]] = None,
-        sp: Optional[int] = None,
-        reg_weight_update_strategy: RegWeightUpdateStrategy = (ConstantRegWeight(1.0)),
-        gradient_scaler_config: Optional[GradientScalerConfig] = None,
+        values: NDArrayFloat | None = None,
+        lbounds: float | NDArrayFloat = -np.inf,
+        ubounds: float | NDArrayFloat = np.inf,
+        regularizators: Regularizator | list[Regularizator] | None = None,
+        preconditioner: Preconditioner | None = None,
+        filters: list[Filter] | None = None,
+        sp: int | None = None,
+        reg_weight_update_strategy: RegWeightUpdateStrategy | None = None,
+        gradient_scaler_config: GradientScalerConfig | None = None,
     ) -> None:
         """
         Initialize the instance.
@@ -209,7 +209,9 @@ class AdjustableParameter:
             if regularizators is not None
             else []
         )
-        self.preconditioner: Preconditioner = preconditioner
+        self.preconditioner: Preconditioner = (
+            NoTransform() if preconditioner is None else preconditioner
+        )
         self.filters = filters if filters is not None else []
 
         self._test_bounds_consistency()
@@ -233,25 +235,29 @@ class AdjustableParameter:
         else:
             self.sp = sp
 
-        self.reg_weight_update_strategy = reg_weight_update_strategy
+        self.reg_weight_update_strategy = (
+            ConstantRegWeight(1.0)
+            if reg_weight_update_strategy is None
+            else reg_weight_update_strategy
+        )
         # initialize internal lists
         self.init_state()
 
-        self.gradient_scaler_config: Optional[GradientScalerConfig] = (
+        self.gradient_scaler_config: GradientScalerConfig | None = (
             gradient_scaler_config
         )
 
     def init_state(self) -> None:
-        """Initialize the internal state (lists, comptors, etc.)"""
-        self.archived_values: List[NDArrayFloat] = []
-        self.grad_adj_history: List[NDArrayFloat] = []  # preconditioned
-        self.grad_adj_raw_history: List[NDArrayFloat] = []  # non-preconditioned
-        self.grad_fd_history: List[NDArrayFloat] = []
-        self.jacvec_fsm_history: List[NDArrayFloat] = []  # preconditioned
-        self.jacvec_fsm_raw_history: List[NDArrayFloat] = []  # non-preconditioned
-        self.jacvec_fd_history: List[NDArrayFloat] = []
-        self.reg_weight_history: List[float] = []
-        self.loss_reg_history: List[float] = []
+        """Initialize the internal state (lists, comptors, etc.)."""
+        self.archived_values: list[NDArrayFloat] = []
+        self.grad_adj_history: list[NDArrayFloat] = []  # preconditioned
+        self.grad_adj_raw_history: list[NDArrayFloat] = []  # non-preconditioned
+        self.grad_fd_history: list[NDArrayFloat] = []
+        self.jacvec_fsm_history: list[NDArrayFloat] = []  # preconditioned
+        self.jacvec_fsm_raw_history: list[NDArrayFloat] = []  # non-preconditioned
+        self.jacvec_fd_history: list[NDArrayFloat] = []
+        self.reg_weight_history: list[float] = []
+        self.loss_reg_history: list[float] = []
 
     @property
     def lbounds(self) -> NDArrayFloat:
@@ -259,7 +265,7 @@ class AdjustableParameter:
         return self._lbounds
 
     @lbounds.setter
-    def lbounds(self, _values: Union[int, float, NDArrayInt, NDArrayFloat]) -> None:
+    def lbounds(self, _values: int | float | NDArrayInt | NDArrayFloat) -> None:
         """Set the lower bound values."""
         self._lbounds = np.array(_values, dtype=np.float64)
 
@@ -269,7 +275,7 @@ class AdjustableParameter:
         return self._ubounds
 
     @ubounds.setter
-    def ubounds(self, _values: Union[int, float, NDArrayInt, NDArrayFloat]) -> None:
+    def ubounds(self, _values: int | float | NDArrayInt | NDArrayFloat) -> None:
         """Set the upper bound value."""
         self._ubounds = np.array(_values, dtype=np.float64)
 
@@ -309,13 +315,11 @@ class AdjustableParameter:
     @property
     def is_scale_logarithmically(self) -> bool:
         """Return whether the parameter scales logarithmically."""
-        if self.name in [
+        return self.name in [
             ParameterName.DIFFUSION,
             ParameterName.STORAGE_COEFFICIENT,
             ParameterName.PERMEABILITY,
-        ]:
-            return True
-        return False
+        ]
 
     def _test_bounds_consistency(self) -> None:
         """Test that ubounds > lbounds."""
@@ -428,10 +432,10 @@ class AdjustableParameter:
         """
         n_vals = self.values.size
         if np.size(self.lbounds) == np.size(self.ubounds) == 1:
-            bounds = np.concatenate(  # type: ignore
+            bounds = np.concatenate(
                 [
-                    np.full((1, n_vals), float(self.lbounds)),  # type: ignore
-                    np.full((1, n_vals), float(self.ubounds)),  # type: ignore
+                    np.full((1, n_vals), float(self.lbounds)),
+                    np.full((1, n_vals), float(self.ubounds)),
                 ]
             ).T
         else:
@@ -445,7 +449,7 @@ class AdjustableParameter:
             bounds = self.preconditioner.transform_bounds(bounds)
         return bounds
 
-    def eval_loss_reg(self, s_raw: Optional[NDArrayFloat] = None) -> float:
+    def eval_loss_reg(self, s_raw: NDArrayFloat | None = None) -> float:
         """
         Return the regularization objective function for the parameter.
 
@@ -468,9 +472,7 @@ class AdjustableParameter:
             _sum += reg.eval_loss(values.ravel("F"))
         return _sum
 
-    def eval_loss_reg_gradient(
-        self, s_raw: Optional[NDArrayFloat] = None
-    ) -> NDArrayFloat:
+    def eval_loss_reg_gradient(self, s_raw: NDArrayFloat | None = None) -> NDArrayFloat:
         """
         Return the regularization objective function gradient as a 1D array.
 
@@ -502,11 +504,11 @@ class AdjustableParameter:
 
     def update_reg_weight(
         self,
-        loss_ls_history: List[float],
+        loss_ls_history: list[float],
         loss_ls_grad: NDArrayFloat,
         loss_reg_grad: NDArrayFloat,
         n_obs: int,
-        logger: Optional[logging.Logger] = None,
+        logger: logging.Logger | None = None,
     ) -> bool:
         """
         Update the regularization weight.
@@ -525,6 +527,7 @@ class AdjustableParameter:
         logger: Optional[logging.Logger]
             Optional :class:`logging.Logger` instance used for event logging.
             The default is None.
+
         Returns
         -------
         bool
@@ -541,7 +544,7 @@ class AdjustableParameter:
         )
 
     def get_values_change(
-        self, is_use_pcd: bool = True, ord: Optional[float] = None
+        self, is_use_pcd: bool = True, ord: float | None = None
     ) -> float:
         """
         Evaluate the change between the two last vectors of values.
@@ -564,7 +567,7 @@ class AdjustableParameter:
         ) / sp.linalg.norm(_pcd(self.archived_values[-2]), ord=ord)
 
 
-AdjustableParameters = Union[AdjustableParameter, Sequence[AdjustableParameter]]
+AdjustableParameters = AdjustableParameter | Sequence[AdjustableParameter]
 
 
 def get_parameter_values_from_model(
@@ -745,7 +748,7 @@ def get_gridded_archived_gradients(
     """
     if is_adjoint:
         if is_preconditioned:
-            gradients: List[NDArrayFloat] = param.grad_adj_history
+            gradients: list[NDArrayFloat] = param.grad_adj_history
         else:
             gradients = param.grad_adj_raw_history
     else:
@@ -771,7 +774,7 @@ def get_param_values(
 
 
 def update_model_with_param_values(
-    model: ForwardModel, param: AdjustableParameter, sp: Optional[int] = None
+    model: ForwardModel, param: AdjustableParameter, sp: int | None = None
 ) -> None:
     """Update the input field with the Adjustable parameter current values."""
     if param.name == ParameterName.INITIAL_CONCENTRATION:
@@ -805,8 +808,8 @@ def update_model_with_param_values(
 def eval_weighted_loss_reg(
     params: AdjustableParameters,
     model: ForwardModel,
-    s_raw: Optional[NDArrayFloat] = None,
-    s_cond: Optional[NDArrayFloat] = None,
+    s_raw: NDArrayFloat | None = None,
+    s_cond: NDArrayFloat | None = None,
     is_save_reg_state: bool = False,
 ) -> float:
     """
@@ -851,7 +854,7 @@ def eval_weighted_loss_reg(
 
 
 def eval_weighted_loss_reg_gradient(
-    params: AdjustableParameters, model: ForwardModel, x: Optional[NDArrayFloat] = None
+    params: AdjustableParameters, model: ForwardModel, x: NDArrayFloat | None = None
 ) -> NDArrayFloat:
     """
     Get the regularization loss function for the provided parameters.

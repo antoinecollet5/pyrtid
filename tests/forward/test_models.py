@@ -2,7 +2,6 @@
 
 import re
 from contextlib import nullcontext as does_not_raise
-from typing import Tuple
 
 import numpy as np
 import pytest
@@ -49,7 +48,7 @@ def test_time_params(
     assert time_params.dt_init == expected_dt
 
     # Update timestep
-    for i in range(100):
+    for _i in range(100):
         # Save the previous timestep
         time_params.save_dt()
         time_params.update_dt(1, 1e30, 20)
@@ -67,7 +66,7 @@ def test_time_params(
 
     assert time_params.time_elapsed == 0
 
-    for i in range(20):
+    for _i in range(20):
         time_params.save_dt()
         time_params.save_nfpi()
         time_params.update_dt(30, 1e30, 20)
@@ -300,7 +299,7 @@ def test_source_term_et_node_indices() -> None:
     ],
 )
 def test_source_term_get_values(
-    time: float, expected_sources: Tuple[float, float]
+    time: float, expected_sources: tuple[float, float]
 ) -> None:
     st = SourceTerm(
         "joe",

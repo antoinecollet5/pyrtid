@@ -13,20 +13,19 @@ and can be found at: https://github.com/jonghyunharrylee/pyPCGA
 
 References
 ----------
-
 - J Lee, H Yoon, PK Kitanidis, CJ Werth, AJ Valocchi, "Scalable subsurface inverse
 modeling of huge data sets with an application to tracer concentration breakthrough data
 from magnetic resonance imaging", Water Resources Research 52 (7), 5213-5231
 
 - AK Saibaba, J Lee, PK Kitanidis, Randomized algorithms for generalized Hermitian
- eigenvalue problems with application to computing Karhunen–Loève expansion, Numerical
+ eigenvalue problems with application to computing Karhunen-Loève expansion, Numerical
    Linear Algebra with Applications 23 (2), 314-339
 
-- J Lee, PK Kitanidis, "Large‐scale hydraulic tomography and joint inversion of head
+- J Lee, PK Kitanidis, "Large-scale hydraulic tomography and joint inversion of head
 and tracer data using the Principal Component Geostatistical Approach (PCGA)",
 WRR 50 (7), 5410-5427
 
-- PK Kitanidis, J Lee, Principal Component Geostatistical Approach for large‐dimensional
+- PK Kitanidis, J Lee, Principal Component Geostatistical Approach for large-dimensional
 inverse problems, WRR 50 (7), 5428-5443
 
 Applications
@@ -34,7 +33,7 @@ Applications
 
 - T. Kadeethum, D. O'Malley, JN Fuhg, Y. Choi, J. Lee, HS Viswanathan and N. Bouklas,
 A framework for data-driven solution and parameter estimation of PDEs using conditional
-generative adversarial networks, Nature Computational Science, 819–829, 2021
+generative adversarial networks, Nature Computational Science, 819-829, 2021
 
 - J Lee, H Ghorbanidehno, M Farthing, T. Hesser, EF Darve, and PK Kitanidis, Riverine
 bathymetry imaging with indirect observations, Water Resources
@@ -56,8 +55,8 @@ Water Resources, 88: 186-197, 2016
 
 import logging
 import multiprocessing
-from dataclasses import astuple, dataclass
-from typing import Callable, Optional, Tuple, Union
+from collections.abc import Callable
+from dataclasses import astuple, dataclass, field
 
 import covmats
 from pypcga import PCGA
@@ -90,10 +89,10 @@ class PCGASolverConfig(FSMSolverConfig):
     ----------
     """
 
-    eig_cov: Optional[covmats.CovViaEigenFactorization] = None
-    drift: Optional[covmats.DriftMatrix] = None
-    prior_s_var: Optional[Union[float, NDArrayFloat]] = None
-    callback: Optional[Callable] = None
+    eig_cov: covmats.CovViaEigenFactorization | None = None
+    drift: covmats.DriftMatrix | None = None
+    prior_s_var: float | NDArrayFloat | None = None
+    callback: Callable | None = None
     is_line_search: bool = False
     is_lm: bool = False
     is_direct_solve: bool = False
@@ -101,25 +100,28 @@ class PCGASolverConfig(FSMSolverConfig):
     is_objfun_exact: bool = False  # former objeval
     max_it_lm: int = multiprocessing.cpu_count()
     alphamax_lm: float = 10.0**3.0  # does it sound ok?
-    lm_smin: Optional[float] = None
-    lm_smax: Optional[float] = None
+    lm_smin: float | None = None
+    lm_smax: float | None = None
     max_it_ls: int = 20
     maxiter: int = 10
-    ftarget: Optional[float] = None
+    ftarget: float | None = None
     ftol: float = 1e-5
     restol: float = 1e-2
-    logger: Optional[logging.Logger] = logging.getLogger("PCGA")
+    logger: logging.Logger | None = field(
+        default_factory=lambda: logging.getLogger("PCGA")
+    )
     is_save_jac: bool = False
     eps = 1.0e-8
 
     def __iter__(self):
+        """Iterate over the values of the configuration fields."""
         return iter(astuple(self))
 
 
 class PCGAInversionExecutor(FSMInversionExecutor[PCGASolverConfig]):
     """Principal Component Geostatistical Approach Inversion Executor."""
 
-    def _init_solver(self, s_init: Optional[NDArrayFloat] = None) -> None:
+    def _init_solver(self, s_init: NDArrayFloat | None = None) -> None:
         """Initiate a solver with its args."""
         # Array with grid coordinates. (X, Y, Z)...
         # Note: for regular grid you don't need to specify pts.
@@ -127,7 +129,7 @@ class PCGAInversionExecutor(FSMInversionExecutor[PCGASolverConfig]):
             self.solver: PCGA = PCGA(
                 s_init=self.data_model.s_init.ravel(),  # Must be a vector
                 obs=self.data_model.obs,
-                cov_obs=self.data_model.cov_obs,
+                cov_obs=self.data_model.get_cov_obs_as_covmats(),
                 forward_model=self._map_forward_model,
                 Q=self.solver_config.eig_cov,
                 drift=self.solver_config.drift,
@@ -161,7 +163,7 @@ class PCGAInversionExecutor(FSMInversionExecutor[PCGASolverConfig]):
         """Return the solver name."""
         return "PCGA"
 
-    def run(self) -> Tuple[NDArrayFloat, NDArrayFloat, NDArrayFloat, int]:
+    def run(self) -> tuple[NDArrayFloat, NDArrayFloat, NDArrayFloat, int]:
         """
         Run the history matching.
 

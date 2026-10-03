@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import json
-from typing import Optional, Sequence, Tuple, Union
+from collections.abc import Sequence
 
 import numpy as np
 from inv_toolbox.utils.means import (
@@ -74,14 +74,14 @@ class Observable:
     """
 
     __slots__ = [
-        "state_variable",
-        "node_indices",
-        "times",
-        "_values",
-        "uncertainties",
         "_mean_type",
+        "_values",
+        "node_indices",
         "perturbations",
         "sp",
+        "state_variable",
+        "times",
+        "uncertainties",
     ]
 
     def __init__(
@@ -90,9 +90,9 @@ class Observable:
         node_indices: Int,
         times: NDArrayFloat,
         values: NDArrayFloat,
-        uncertainties: Optional[Union[float, NDArrayFloat]] = None,
-        mean_type: Optional[MeanType] = None,
-        sp: Optional[int] = None,
+        uncertainties: float | NDArrayFloat | None = None,
+        mean_type: MeanType | None = None,
+        sp: int | None = None,
     ) -> None:
         """
         Initiate the instance.
@@ -122,7 +122,6 @@ class Observable:
             an arithmetic mean is used.
             The default is None.
         """
-
         self.state_variable = state_variable
         self.node_indices = np.sort(np.array(node_indices).ravel())
         self.times = times.ravel()
@@ -187,7 +186,7 @@ class Observable:
         return self._mean_type
 
     @mean_type.setter
-    def mean_type(self, value: Optional[MeanType]) -> None:
+    def mean_type(self, value: MeanType | None) -> None:
         """Set the mean type used to interpolate values over several grid cells."""
         if value is None:
             if self.state_variable in [
@@ -229,7 +228,7 @@ class Observable:
 
 
 # new type
-Observables = Union[Observable, Sequence[Observable]]
+Observables = Observable | Sequence[Observable]
 
 
 def update_perturbation_values(observables: Observables, pvals: NDArrayFloat) -> None:
@@ -239,10 +238,11 @@ def update_perturbation_values(observables: Observables, pvals: NDArrayFloat) ->
         last_index = first_index + obs.values.size
         # Update perturbations
         obs.perturbations = pvals[first_index:last_index]
+        first_index = last_index
 
 
 def _get_obs_ascending_time_sorting_permutations(
-    obs: Observable, max_time: Optional[float] = None
+    obs: Observable, max_time: float | None = None
 ) -> NDArrayInt:
     """
     Get the permutations required to sort the observation time in ascending order.
@@ -267,7 +267,7 @@ def _get_obs_ascending_time_sorting_permutations(
 
 
 def get_sorted_observable_times(
-    obs: Observable, max_time: Optional[float] = None
+    obs: Observable, max_time: float | None = None
 ) -> NDArrayFloat:
     """
     Get the observation times sorted in ascending order.
@@ -290,7 +290,7 @@ def get_sorted_observable_times(
 
 
 def get_sorted_observable_values(
-    obs: Observable, max_time: Optional[float] = None
+    obs: Observable, max_time: float | None = None
 ) -> NDArrayFloat:
     """
     Get the observation values sorted by ascending corresponding times.
@@ -313,7 +313,7 @@ def get_sorted_observable_values(
 
 
 def get_sorted_observable_uncertainties(
-    obs: Observable, max_time: Optional[float] = None
+    obs: Observable, max_time: float | None = None
 ) -> NDArrayFloat:
     """
     Get the observation uncertainties sorted by ascending corresponding times.
@@ -336,7 +336,7 @@ def get_sorted_observable_uncertainties(
 
 
 def get_array_from_state_variable(
-    model: ForwardModel, state_variable: StateVariable, sp: Optional[int] = None
+    model: ForwardModel, state_variable: StateVariable, sp: int | None = None
 ) -> NDArrayFloat:
     if state_variable == StateVariable.CONCENTRATION:
         if sp is None:
@@ -370,7 +370,7 @@ def get_array_from_state_variable(
 
 def get_observables_values_as_1d_vector(
     observables: Observables,
-    max_obs_time: Optional[float] = None,
+    max_obs_time: float | None = None,
 ) -> NDArrayFloat:
     """
     Return the values of all given observables as a 1D vector.
@@ -397,7 +397,7 @@ def get_observables_values_as_1d_vector(
 
 def get_observables_uncertainties_as_1d_vector(
     observables: Observables,
-    max_obs_time: Optional[float] = None,
+    max_obs_time: float | None = None,
 ) -> NDArrayFloat:
     """Return the uncertainties of all observables as a 1D vector.
 
@@ -424,7 +424,7 @@ def get_observables_uncertainties_as_1d_vector(
 
 def get_times_idx_before_after_obs(
     obs_times: NDArrayFloat, simu_times: NDArrayFloat
-) -> Tuple[NDArrayInt, NDArrayInt]:
+) -> tuple[NDArrayInt, NDArrayInt]:
     """
     Get the calculated times before and after the observation times.
 
@@ -459,7 +459,7 @@ def get_weights(
     simu_times: NDArrayFloat,
     before_idx: NDArrayInt,
     after_idx: NDArrayInt,
-) -> Tuple[NDArrayFloat, NDArrayFloat]:
+) -> tuple[NDArrayFloat, NDArrayFloat]:
     """
     Get the weights to apply on the calculated values after and before observations.
 
@@ -514,7 +514,7 @@ def get_values_matching_node_indices(
     NDArrayFloat
         Simulated values at the observation location
     """
-    nx, ny, nz = input_values.shape[:3]
+    nx, ny, _nz = input_values.shape[:3]
     X, Y, Z = rlg_nn_to_idx(node_indices, nx=nx, ny=ny)
     if len(input_values.shape) == 4:
         return input_values[X, Y, Z, :]
@@ -568,7 +568,7 @@ def get_interp_simu_values_matching_obs_times(
 def get_simulated_values_matching_obs(
     model: ForwardModel,
     obs: Observable,
-    max_obs_time: Optional[float] = None,
+    max_obs_time: float | None = None,
 ) -> NDArrayFloat:
     """
     Get the simulated values matching the given observable and the hm end time.
@@ -590,7 +590,7 @@ def get_simulated_values_matching_obs(
     NDArrayFloat
         Simulated values matching the given observable and the hm end time.
     """
-    simu_times = np.cumsum([0] + model.time_params.ldt)
+    simu_times = np.cumsum([0, *model.time_params.ldt])
     if max_obs_time is not None:
         max_obs_time = min(np.max(simu_times), max_obs_time)
     else:
@@ -599,10 +599,7 @@ def get_simulated_values_matching_obs(
     field = get_array_from_state_variable(model, obs.state_variable, obs.sp)
     obs_times = get_sorted_observable_times(obs, max_obs_time)
 
-    if len(field.shape) == 3:
-        _field = field.reshape((*field.shape, 1))
-    else:
-        _field = field
+    _field = field.reshape((*field.shape, 1)) if len(field.shape) == 3 else field
     _simu_values = get_mean_values_for_last_axis(
         get_values_matching_node_indices(obs.node_indices, _field),
         mean_type=obs.mean_type,
@@ -622,7 +619,7 @@ def get_adjoint_sources_for_obs(
     model: ForwardModel,
     obs: Observable,
     n_obs: int,
-    max_obs_time: Optional[float] = None,
+    max_obs_time: float | None = None,
 ) -> NDArrayFloat:
     r"""
     Get the adjoint sources for a given observable instance.
@@ -697,8 +694,7 @@ def get_adjoint_sources_for_obs(
     NDArrayFloat
         The adjoint sources for the given Observable instance.
     """
-
-    simu_times = np.cumsum([0] + model.time_params.ldt)
+    simu_times = np.cumsum([0, *model.time_params.ldt])
     if max_obs_time is not None:
         max_obs_time = min(np.max(simu_times), max_obs_time)
     else:
@@ -762,7 +758,7 @@ def get_adjoint_sources_for_obs(
 def get_predictions_matching_observations(
     model: ForwardModel,
     observables: Observables,
-    max_obs_time: Optional[float] = None,
+    max_obs_time: float | None = None,
 ) -> NDArrayFloat:
     """
     Return the 1D vector of predictions matching the observations.
@@ -781,9 +777,8 @@ def get_predictions_matching_observations(
     NDArrayFloat
         _description_
     """
-    res = []
-    for obs in object_or_object_sequence_to_list(observables):
-        res.append(
-            get_simulated_values_matching_obs(model, obs, max_obs_time).flatten()
-        )
+    res = [
+        get_simulated_values_matching_obs(model, obs, max_obs_time).flatten()
+        for obs in object_or_object_sequence_to_list(observables)
+    ]
     return np.hstack(res).ravel()

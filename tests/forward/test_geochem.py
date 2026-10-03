@@ -1,10 +1,8 @@
-from typing import List  # For type annotations
-
 import numdifftools as nd
 import numpy as np  # NumPy for numerical operations
-from lbfgsb.types import NDArrayFloat
 from pyrtid.forward.geochem_solver import F, Jacobian
 from pyrtid.forward.models import GeochemicalParameters
+from pyrtid.utils import NDArrayFloat
 
 
 def test_jacobian():
@@ -20,9 +18,9 @@ def test_jacobian():
     dt = 36000
 
     # List of mobile concentrations
-    lmob: List[NDArrayFloat] = [np.array([1e-10, 1e0])]
+    lmob: list[NDArrayFloat] = [np.array([1e-10, 1e0])]
     # List of immobile concentrations (grades)
-    limmob: List[NDArrayFloat] = [np.array([1.0e-3, 1e-10])]
+    limmob: list[NDArrayFloat] = [np.array([1.0e-3, 1e-10])]
 
     # Start a time step
     time_index = 1
@@ -42,6 +40,6 @@ def test_jacobian():
     C = np.hstack([mob_next, immob_next])
 
     np.testing.assert_allclose(
-        nd.Jacobian(F_wrapper, step=1e-5)(C),
+        np.asarray(nd.Jacobian(F_wrapper, step=1e-5)(C)),
         Jacobian(mob_next, immob_next, mob_prev, immob_prev, gch_params, dt),
     )

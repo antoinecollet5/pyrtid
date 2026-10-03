@@ -19,7 +19,6 @@ cell faces.
 from __future__ import annotations
 
 import warnings
-from typing import Optional, Tuple, Union
 
 import numpy as np
 import quickpaver
@@ -46,7 +45,7 @@ from pyrtid.forward.models import (
 from pyrtid.utils import NDArrayFloat
 
 # The matrices can be filled in a lil_array or in a SparseMatrixBuilder
-MatrixLike = Union[lil_array, SparseMatrixBuilder]
+MatrixLike = lil_array | SparseMatrixBuilder
 
 
 def get_kmean(
@@ -89,7 +88,7 @@ def get_rhomean(
     grid: RectilinearGrid,
     tr_model: TransportModel,
     axis: int,
-    time_index: Union[int, slice],
+    time_index: int | slice,
     is_flatten: bool = True,
 ) -> NDArrayFloat:
     """
@@ -179,7 +178,7 @@ def make_stationary_flow_matrices(
     dim = grid.n_grid_cells
     q_next = lil_array((dim, dim), dtype=np.float64)
 
-    for n, axis in zip(grid.shape, (0, 1, 2)):
+    for n, axis in zip(grid.shape, (0, 1, 2), strict=False):
         if n >= 2:
             fill_stationary_flmat_for_axis(grid, fl_model, q_next, axis)
 
@@ -226,6 +225,7 @@ def fill_transient_flmat_for_axis(
 
     # Add gravity effect
     if fl_model.is_gravity:
+        assert rhomean is not None
         tmp *= rhomean[idc_owner] / WATER_DENSITY
 
     add_entries(q_next, idc_owner, idc_neigh, -(fl_model.crank_nicolson * tmp))
@@ -245,6 +245,7 @@ def fill_transient_flmat_for_axis(
 
     # Add gravity effect
     if fl_model.is_gravity:
+        assert rhomean is not None
         tmp *= rhomean[idc_neigh] / WATER_DENSITY
 
     add_entries(q_next, idc_owner, idc_neigh, -(fl_model.crank_nicolson * tmp))
@@ -258,13 +259,13 @@ def _assemble_transient_flow_matrices(
     fl_model: FlowModel,
     tr_model: TransportModel,
     time_index: int,
-) -> Tuple[SparseMatrixBuilder, SparseMatrixBuilder]:
+) -> tuple[SparseMatrixBuilder, SparseMatrixBuilder]:
     """Fill (and return) the builders of the transient flow matrices (no 1/dt)."""
     dim = grid.n_grid_cells
     q_prev = SparseMatrixBuilder((dim, dim))
     q_next = SparseMatrixBuilder((dim, dim))
 
-    for n, axis in zip(grid.shape, (0, 1, 2)):
+    for n, axis in zip(grid.shape, (0, 1, 2), strict=False):
         if n >= 2:
             fill_transient_flmat_for_axis(
                 grid, fl_model, tr_model, q_next, q_prev, time_index, axis
@@ -277,7 +278,7 @@ def make_transient_flow_matrices(
     fl_model: FlowModel,
     tr_model: TransportModel,
     time_index: int,
-) -> Tuple[lil_array, lil_array]:
+) -> tuple[lil_array, lil_array]:
     """
     Make the matrices for the transient flow, without the time derivative term.
 
@@ -328,8 +329,8 @@ def get_zj_zi_rhs(grid: RectilinearGrid, fl_model: FlowModel) -> NDArrayFloat:
         owner_indices_to_keep=fl_model.free_head_nn,
     )
 
-    rhs_z[idc_owner] += kmean[idc_owner] * tmp * z[idc_neigh]  # type: ignore
-    rhs_z[idc_owner] -= kmean[idc_owner] * tmp * z[idc_owner]  # type: ignore
+    rhs_z[idc_owner] += kmean[idc_owner] * tmp * z[idc_neigh]
+    rhs_z[idc_owner] -= kmean[idc_owner] * tmp * z[idc_owner]
 
     # Backward scheme
     idc_owner, idc_neigh = get_owner_neigh_indices(
@@ -339,8 +340,8 @@ def get_zj_zi_rhs(grid: RectilinearGrid, fl_model: FlowModel) -> NDArrayFloat:
         owner_indices_to_keep=fl_model.free_head_nn,
     )
 
-    rhs_z[idc_owner] += kmean[idc_neigh] * tmp * z[idc_neigh]  # type: ignore
-    rhs_z[idc_owner] -= kmean[idc_neigh] * tmp * z[idc_owner]  # type: ignore
+    rhs_z[idc_owner] += kmean[idc_neigh] * tmp * z[idc_neigh]
+    rhs_z[idc_owner] -= kmean[idc_neigh] * tmp * z[idc_owner]
 
     return rhs_z
 
@@ -379,7 +380,7 @@ def solve_flow_stationary(
     """
     # Make stationary matrices
     fl_model.q_next = make_stationary_flow_matrices(grid, fl_model)
-    fl_model.q_prev = lil_array((fl_model.q_next.shape))
+    fl_model.q_prev = lil_array(fl_model.q_next.shape)
 
     # right hand side
     rhs = np.zeros(grid.n_grid_cells)
@@ -410,10 +411,10 @@ def solve_flow_stationary(
         )
     except RuntimeError:
         super_ilu, preconditioner = None, None
-        if super_ilu is None:
-            warnings.warn(
-                f"SuperILU: q_next is singular in stationary flow at it={time_index}!"
-            )
+        warnings.warn(
+            f"SuperILU: q_next is singular in stationary flow at it={time_index}!",
+            stacklevel=2,
+        )
 
     # only useful when using the FSM
     if fl_model.is_save_spilu:
@@ -865,7 +866,8 @@ def solve_flow_transient_semi_implicit(
     except RuntimeError:
         super_ilu, preconditioner = None, None
         warnings.warn(
-            f"SuperILU: q_next is singular in transient flow at it={time_index}!"
+            f"SuperILU: q_next is singular in transient flow at it={time_index}!",
+            stacklevel=2,
         )
 
     # only useful when using the FSM
@@ -927,10 +929,10 @@ def solve_flow_transient_semi_implicit(
 
 def _add_time_derivative_and_cst_head(
     fl_model: FlowModel,
-    q_next_no_dt: sparse.csc_array,
-    q_prev_no_dt: sparse.csc_array,
+    q_next_no_dt: sparse.csc_array | sparse.lil_array,
+    q_prev_no_dt: sparse.csc_array | sparse.lil_array,
     dt: float,
-) -> Tuple[sparse.csc_array, sparse.csc_array]:
+) -> tuple[sparse.csc_array, sparse.csc_array]:
     r"""
     Add the time derivative term to the transient matrices (csc format).
 
@@ -956,9 +958,9 @@ def _add_time_derivative_and_cst_head(
 def solve_fl_gmres(
     fl_model: FlowModel,
     rhs: NDArrayFloat,
-    super_ilu: Optional[SuperLU] = None,
-    preconditioner: Optional[LinearOperator] = None,
-) -> Tuple[NDArrayFloat, int]:
+    super_ilu: SuperLU | None = None,
+    preconditioner: LinearOperator | None = None,
+) -> tuple[NDArrayFloat, int]:
     """
     Solve ``fl_model.q_next @ x = rhs`` with GMRES.
 
@@ -993,5 +995,8 @@ def solve_fl_gmres(
         restart=20,
     )
     if exit_code != 0:
-        warnings.warn(f"The GMRES solver of the flow did not converge ({exit_code}).")
+        warnings.warn(
+            f"The GMRES solver of the flow did not converge ({exit_code}).",
+            stacklevel=2,
+        )
     return res, exit_code

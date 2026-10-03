@@ -5,7 +5,6 @@
 
 import copy
 import warnings
-from typing import List, Optional
 
 import numpy as np
 from inv_toolbox.utils import (
@@ -13,14 +12,13 @@ from inv_toolbox.utils import (
     StrEnum,
     dxi_harmonic_mean,
     finite_gradient,
-    harmonic_mean,
     is_all_close,
-    object_or_object_sequence_to_list,
 )
 
 from pyrtid.forward import ForwardModel, ForwardSolver
 from pyrtid.forward.flow_solver import get_rhomean
 from pyrtid.forward.models import GRAVITY, WATER_DENSITY, FlowRegime, VerticalAxis
+from pyrtid.forward.transport_solver import make_transport_matrices
 from pyrtid.inverse.asm import AdjointModel, AdjointSolver
 from pyrtid.inverse.asm.ageochem_solver import ddMdimmobprev
 from pyrtid.inverse.loss_function import eval_model_loss_function
@@ -33,6 +31,7 @@ from pyrtid.inverse.params import (
     update_model_with_parameters_values,
     update_parameters_from_model,
 )
+from pyrtid.utils import object_or_object_sequence_to_list
 
 
 class DerivationVariable(StrEnum):
@@ -76,7 +75,7 @@ def get_diffusion_term_adjoint_gradient(
         term_in_d_deriv = fwd_model.tr_model.diffusion[:, :, :, np.newaxis]
     elif deriv_var == DerivationVariable.DIFFUSION:
         term_in_d_deriv = fwd_model.tr_model.porosity[:, :, :, np.newaxis]
-    elif deriv_var == DerivationVariable.DISPERSIVITY:
+    else:  # dispersivity
         term_in_d_deriv = fwd_model.fl_model.get_u_darcy_norm()[:, :, :, 1:]
 
     crank_diff = fwd_model.tr_model.crank_nicolson_diffusion
@@ -86,7 +85,7 @@ def get_diffusion_term_adjoint_gradient(
         # mob = fwd_model.tr_model.mob_post_tr
         amob = adj_model.a_tr_model.a_mob[sp]
 
-        for n, axis in zip(fwd_model.grid.shape, (0, 1, 2)):
+        for n, axis in zip(fwd_model.grid.shape, (0, 1, 2), strict=False):
             if n < 2:
                 continue
 
@@ -96,16 +95,16 @@ def get_diffusion_term_adjoint_gradient(
 
             # Forward scheme
             dconc_f = np.zeros(shape)
-            dconc_f[(fwd_slicer) + (slice(1, None),)] += (
+            dconc_f[(*fwd_slicer, slice(1, None))] += (
                 crank_diff
                 * (
-                    mob[(bwd_slicer) + (slice(1, None),)]
-                    - mob[(fwd_slicer) + (slice(1, None),)]
+                    mob[(*bwd_slicer, slice(1, None))]
+                    - mob[(*fwd_slicer, slice(1, None))]
                 )
                 + (1.0 - crank_diff)
                 * (
-                    mob[(bwd_slicer) + (slice(None, -1),)]
-                    - mob[(fwd_slicer) + (slice(None, -1),)]
+                    mob[(*bwd_slicer, slice(None, -1))]
+                    - mob[(*fwd_slicer, slice(None, -1))]
                 )
             ) * (
                 dxi_harmonic_mean(d[fwd_slicer], d[bwd_slicer])
@@ -113,23 +112,22 @@ def get_diffusion_term_adjoint_gradient(
             )
 
             damob_f = np.zeros(shape)
-            damob_f[(fwd_slicer) + (slice(None),)] += (
-                amob[(bwd_slicer) + (slice(None),)]
-                - amob[(fwd_slicer) + (slice(None),)]
+            damob_f[(*fwd_slicer, slice(None))] += (
+                amob[(*bwd_slicer, slice(None))] - amob[(*fwd_slicer, slice(None))]
             )
 
             # Backward scheme
             dconc_b = np.zeros(shape)
-            dconc_b[(bwd_slicer) + (slice(1, None),)] += (
+            dconc_b[(*bwd_slicer, slice(1, None))] += (
                 crank_diff
                 * (
-                    mob[(fwd_slicer) + (slice(1, None),)]
-                    - mob[(bwd_slicer) + (slice(1, None),)]
+                    mob[(*fwd_slicer, slice(1, None))]
+                    - mob[(*bwd_slicer, slice(1, None))]
                 )
                 + (1.0 - crank_diff)
                 * (
-                    mob[(fwd_slicer) + (slice(None, -1),)]
-                    - mob[(bwd_slicer) + (slice(None, -1),)]
+                    mob[(*fwd_slicer, slice(None, -1))]
+                    - mob[(*bwd_slicer, slice(None, -1))]
                 )
             ) * (
                 dxi_harmonic_mean(d[bwd_slicer], d[fwd_slicer])
@@ -137,9 +135,8 @@ def get_diffusion_term_adjoint_gradient(
             )
 
             damob_b = np.zeros(shape)
-            damob_b[(bwd_slicer) + (slice(None),)] += (
-                amob[(fwd_slicer) + (slice(None),)]
-                - amob[(bwd_slicer) + (slice(None),)]
+            damob_b[(*bwd_slicer, slice(None))] += (
+                amob[(*fwd_slicer, slice(None))] - amob[(*bwd_slicer, slice(None))]
             )
 
             # Gather the two schemes
@@ -305,7 +302,6 @@ def _get_perm_gradient_from_diffusivity_eq_saturated(
     NDArrayFloat
         Gradient with respect to the permeability using head observations.
     """
-
     # continuous version just for the article about discretization.
     if adj_model.a_fl_model.is_use_continuous_adj:
         pass
@@ -332,7 +328,7 @@ def _get_perm_gradient_from_diffusivity_eq_saturated(
     )
     grad = np.zeros(shape)
 
-    for n, axis in zip(fwd_model.grid.shape, (0, 1, 2)):
+    for n, axis in zip(fwd_model.grid.shape, (0, 1, 2), strict=False):
         if n < 2:
             continue
 
@@ -346,22 +342,22 @@ def _get_perm_gradient_from_diffusivity_eq_saturated(
         dhead_f = (
             crank_flow
             * (
-                head[(bwd_slicer) + (slice(1, None),)]
-                - head[(fwd_slicer) + (slice(1, None),)]
+                head[(*bwd_slicer, slice(1, None))]
+                - head[(*fwd_slicer, slice(1, None))]
             )
             + (1.0 - crank_flow)
             * (
-                head[(bwd_slicer) + (slice(None, -1),)]
-                - head[(fwd_slicer) + (slice(None, -1),)]
+                head[(*bwd_slicer, slice(None, -1))]
+                - head[(*fwd_slicer, slice(None, -1))]
             )
         ) * dxi_harmonic_mean(permeability[fwd_slicer], permeability[bwd_slicer])[
             :, :, :, np.newaxis
         ]
-        grad[(fwd_slicer) + (slice(1, None),)] += (
+        grad[(*fwd_slicer, slice(1, None))] += (
             dhead_f
             * (
-                ma_ahead_sc[(bwd_slicer) + (slice(1, None),)]
-                - ma_ahead_sc[(fwd_slicer) + (slice(1, None),)]
+                ma_ahead_sc[(*bwd_slicer, slice(1, None))]
+                - ma_ahead_sc[(*fwd_slicer, slice(1, None))]
             )
             * tmp
         )
@@ -369,16 +365,16 @@ def _get_perm_gradient_from_diffusivity_eq_saturated(
         # Handle the stationary case
         if fwd_model.fl_model.regime == FlowRegime.STATIONARY:
             dhead_f = (
-                head[(bwd_slicer) + (slice(None, 1),)]
-                - head[(fwd_slicer) + (slice(None, 1),)]
+                head[(*bwd_slicer, slice(None, 1))]
+                - head[(*fwd_slicer, slice(None, 1))]
             ) * dxi_harmonic_mean(permeability[fwd_slicer], permeability[bwd_slicer])[
                 :, :, :, np.newaxis
             ]
-            grad[(fwd_slicer) + (slice(None, 1),)] += (
+            grad[(*fwd_slicer, slice(None, 1))] += (
                 dhead_f
                 * (
-                    ma_ahead[(bwd_slicer) + (slice(None, 1),)]
-                    - ma_ahead[(fwd_slicer) + (slice(None, 1),)]
+                    ma_ahead[(*bwd_slicer, slice(None, 1))]
+                    - ma_ahead[(*fwd_slicer, slice(None, 1))]
                 )
                 / fwd_model.grid.grid_cell_volume_m3
             ) * tmp
@@ -387,22 +383,22 @@ def _get_perm_gradient_from_diffusivity_eq_saturated(
         dhead_b = (
             crank_flow
             * (
-                head[(fwd_slicer) + (slice(1, None),)]
-                - head[(bwd_slicer) + (slice(1, None),)]
+                head[(*fwd_slicer, slice(1, None))]
+                - head[(*bwd_slicer, slice(1, None))]
             )
             + (1.0 - crank_flow)
             * (
-                head[(fwd_slicer) + (slice(None, -1),)]
-                - head[(bwd_slicer) + (slice(None, -1),)]
+                head[(*fwd_slicer, slice(None, -1))]
+                - head[(*bwd_slicer, slice(None, -1))]
             )
         ) * dxi_harmonic_mean(permeability[bwd_slicer], permeability[fwd_slicer])[
             :, :, :, np.newaxis
         ]
-        grad[(bwd_slicer) + (slice(1, None),)] += (
+        grad[(*bwd_slicer, slice(1, None))] += (
             dhead_b
             * (
-                ma_ahead_sc[(fwd_slicer) + (slice(1, None),)]
-                - ma_ahead_sc[(bwd_slicer) + (slice(1, None),)]
+                ma_ahead_sc[(*fwd_slicer, slice(1, None))]
+                - ma_ahead_sc[(*bwd_slicer, slice(1, None))]
             )
             * tmp
         )
@@ -410,16 +406,16 @@ def _get_perm_gradient_from_diffusivity_eq_saturated(
         # Handle the stationary case
         if fwd_model.fl_model.regime == FlowRegime.STATIONARY:
             dhead_b = (
-                head[(fwd_slicer) + (slice(None, 1),)]
-                - head[(bwd_slicer) + (slice(None, 1),)]
+                head[(*fwd_slicer, slice(None, 1))]
+                - head[(*bwd_slicer, slice(None, 1))]
             ) * dxi_harmonic_mean(permeability[bwd_slicer], permeability[fwd_slicer])[
                 :, :, :, np.newaxis
             ]
-            grad[(bwd_slicer) + (slice(None, 1),)] += (
+            grad[(*bwd_slicer, slice(None, 1))] += (
                 dhead_b
                 * (
-                    ma_ahead[(fwd_slicer) + (slice(None, 1),)]
-                    - ma_ahead[(bwd_slicer) + (slice(None, 1),)]
+                    ma_ahead[(*fwd_slicer, slice(None, 1))]
+                    - ma_ahead[(*bwd_slicer, slice(None, 1))]
                 )
                 / fwd_model.grid.grid_cell_volume_m3
             ) * tmp
@@ -473,7 +469,7 @@ def _get_perm_gradient_from_diffusivity_eq_density(
 
     vp = fwd_model.fl_model._get_mesh_center_vertical_pos()
 
-    for n, axis in zip(fwd_model.grid.shape, (0, 1, 2)):
+    for n, axis in zip(fwd_model.grid.shape, (0, 1, 2), strict=False):
         if n < 2:
             continue
 
@@ -502,13 +498,13 @@ def _get_perm_gradient_from_diffusivity_eq_density(
                 (
                     crank_flow
                     * (
-                        pressure[(bwd_slicer) + (slice(1, None),)]
-                        - pressure[(fwd_slicer) + (slice(1, None),)]
+                        pressure[(*bwd_slicer, slice(1, None))]
+                        - pressure[(*fwd_slicer, slice(1, None))]
                     )
                     + (1.0 - crank_flow)
                     * (
-                        pressure[(bwd_slicer) + (slice(None, -1),)]
-                        - pressure[(fwd_slicer) + (slice(None, -1),)]
+                        pressure[(*bwd_slicer, slice(None, -1))]
+                        - pressure[(*fwd_slicer, slice(None, -1))]
                     )
                 )
                 / fwd_model.grid.pipj_m(axis)
@@ -521,27 +517,27 @@ def _get_perm_gradient_from_diffusivity_eq_density(
             / WATER_DENSITY
         )
 
-        grad[(fwd_slicer) + (slice(1, None),)] += (
+        grad[(*fwd_slicer, slice(1, None))] += (
             dpressure_f
             * (
-                ma_apressure_sc[(bwd_slicer) + (slice(1, None),)]
-                - ma_apressure_sc[(fwd_slicer) + (slice(1, None),)]
+                ma_apressure_sc[(*bwd_slicer, slice(1, None))]
+                - ma_apressure_sc[(*fwd_slicer, slice(1, None))]
             )
             * fwd_model.grid.gc_face_area_m2(axis)
         )
 
         # Handle the stationary case
         if fwd_model.fl_model.regime == FlowRegime.STATIONARY:
-            grad[(fwd_slicer) + (slice(None, 1),)] += (
+            grad[(*fwd_slicer, slice(None, 1))] += (
                 (
                     (
-                        pressure[(bwd_slicer) + (slice(None, 1),)]
-                        - pressure[(fwd_slicer) + (slice(None, 1),)]
+                        pressure[(*bwd_slicer, slice(None, 1))]
+                        - pressure[(*fwd_slicer, slice(None, 1))]
                     )
                     / WATER_DENSITY
                     / GRAVITY
-                    + vp[(bwd_slicer) + (np.newaxis,)]
-                    - vp[(fwd_slicer) + (np.newaxis,)]
+                    + vp[(*bwd_slicer, np.newaxis)]
+                    - vp[(*fwd_slicer, np.newaxis)]
                 )
                 * dxi_harmonic_mean(permeability[fwd_slicer], permeability[bwd_slicer])[
                     :, :, :, np.newaxis
@@ -549,8 +545,8 @@ def _get_perm_gradient_from_diffusivity_eq_density(
                 * fwd_model.grid.gc_face_area_m2(axis)
                 / fwd_model.grid.pipj_m(axis)
                 * (
-                    ma_apressure[(bwd_slicer) + (slice(None, 1),)]
-                    - ma_apressure[(fwd_slicer) + (slice(None, 1),)]
+                    ma_apressure[(*bwd_slicer, slice(None, 1))]
+                    - ma_apressure[(*fwd_slicer, slice(None, 1))]
                 )
                 / fwd_model.grid.grid_cell_volume_m3
             )
@@ -561,13 +557,13 @@ def _get_perm_gradient_from_diffusivity_eq_density(
                 (
                     crank_flow
                     * (
-                        pressure[(fwd_slicer) + (slice(1, None),)]
-                        - pressure[(bwd_slicer) + (slice(1, None),)]
+                        pressure[(*fwd_slicer, slice(1, None))]
+                        - pressure[(*bwd_slicer, slice(1, None))]
                     )
                     + (1.0 - crank_flow)
                     * (
-                        pressure[(fwd_slicer) + (slice(None, -1),)]
-                        - pressure[(bwd_slicer) + (slice(None, -1),)]
+                        pressure[(*fwd_slicer, slice(None, -1))]
+                        - pressure[(*bwd_slicer, slice(None, -1))]
                     )
                 )
                 / fwd_model.grid.pipj_m(axis)
@@ -580,27 +576,27 @@ def _get_perm_gradient_from_diffusivity_eq_density(
             / WATER_DENSITY
         )
 
-        grad[(bwd_slicer) + (slice(1, None),)] += (
+        grad[(*bwd_slicer, slice(1, None))] += (
             dpressure_b
             * (
-                ma_apressure_sc[(fwd_slicer) + (slice(1, None),)]
-                - ma_apressure_sc[(bwd_slicer) + (slice(1, None),)]
+                ma_apressure_sc[(*fwd_slicer, slice(1, None))]
+                - ma_apressure_sc[(*bwd_slicer, slice(1, None))]
             )
             * fwd_model.grid.gc_face_area_m2(axis)
         )
 
         # Handle the stationary case
         if fwd_model.fl_model.regime == FlowRegime.STATIONARY:
-            grad[(bwd_slicer) + (slice(None, 1),)] += (
+            grad[(*bwd_slicer, slice(None, 1))] += (
                 (
                     (
-                        pressure[(fwd_slicer) + (slice(None, 1),)]
-                        - pressure[(bwd_slicer) + (slice(None, 1),)]
+                        pressure[(*fwd_slicer, slice(None, 1))]
+                        - pressure[(*bwd_slicer, slice(None, 1))]
                     )
                     / WATER_DENSITY
                     / GRAVITY
-                    + vp[(fwd_slicer) + (np.newaxis,)]
-                    - vp[(bwd_slicer) + (np.newaxis,)]
+                    + vp[(*fwd_slicer, np.newaxis)]
+                    - vp[(*bwd_slicer, np.newaxis)]
                 )
                 * dxi_harmonic_mean(permeability[bwd_slicer], permeability[fwd_slicer])[
                     :, :, :, np.newaxis
@@ -608,8 +604,8 @@ def _get_perm_gradient_from_diffusivity_eq_density(
                 * fwd_model.grid.gc_face_area_m2(axis)
                 / fwd_model.grid.pipj_m(axis)
                 * (
-                    ma_apressure[(fwd_slicer) + (slice(None, 1),)]
-                    - ma_apressure[(bwd_slicer) + (slice(None, 1),)]
+                    ma_apressure[(*fwd_slicer, slice(None, 1))]
+                    - ma_apressure[(*bwd_slicer, slice(None, 1))]
                 )
                 / fwd_model.grid.grid_cell_volume_m3
             )
@@ -645,7 +641,7 @@ def _get_perm_gradient_from_darcy_eq_saturated(
 
     grad = np.zeros_like(head)
 
-    for n, axis in zip(fwd_model.grid.shape, (0, 1, 2)):
+    for n, axis in zip(fwd_model.grid.shape, (0, 1, 2), strict=False):
         if n < 2:
             continue
 
@@ -656,18 +652,16 @@ def _get_perm_gradient_from_darcy_eq_saturated(
             a_u_darcy = adj_model.a_fl_model.a_u_darcy_x
         elif axis == 1:
             a_u_darcy = adj_model.a_fl_model.a_u_darcy_y
-        elif axis == 2:
-            a_u_darcy = adj_model.a_fl_model.a_u_darcy_z
         else:
-            raise ValueError()
+            a_u_darcy = adj_model.a_fl_model.a_u_darcy_z
 
         a_u_darcy = a_u_darcy[bwd_slicer]
 
         # Consider the x axis
         # Forward scheme
         dhead_f = np.zeros(shape)
-        dhead_f[(fwd_slicer) + (slice(None),)] += (
-            (head[(bwd_slicer) + (slice(None),)] - head[(fwd_slicer) + (slice(None),)])
+        dhead_f[(*fwd_slicer, slice(None))] += (
+            (head[(*bwd_slicer, slice(None))] - head[(*fwd_slicer, slice(None))])
             * dxi_harmonic_mean(permeability[fwd_slicer], permeability[bwd_slicer])[
                 :, :, :, np.newaxis
             ]
@@ -676,8 +670,8 @@ def _get_perm_gradient_from_darcy_eq_saturated(
 
         # Backward scheme
         dhead_b = np.zeros(shape)
-        dhead_b[(bwd_slicer) + (slice(None),)] -= (
-            (head[(fwd_slicer) + (slice(None),)] - head[(bwd_slicer) + (slice(None),)])
+        dhead_b[(*bwd_slicer, slice(None))] -= (
+            (head[(*fwd_slicer, slice(None))] - head[(*bwd_slicer, slice(None))])
             * dxi_harmonic_mean(permeability[bwd_slicer], permeability[fwd_slicer])[
                 :, :, :, np.newaxis
             ]
@@ -719,7 +713,7 @@ def _get_perm_gradient_from_darcy_eq_density(
     pressure = fwd_model.fl_model.pressure[:, :, :, time_slice]
     grad = np.zeros_like(pressure)
 
-    for n, axis in zip(fwd_model.grid.shape, (0, 1, 2)):
+    for n, axis in zip(fwd_model.grid.shape, (0, 1, 2), strict=False):
         if n < 2:
             continue
 
@@ -730,12 +724,10 @@ def _get_perm_gradient_from_darcy_eq_density(
             a_u_darcy = adj_model.a_fl_model.a_u_darcy_x
         elif axis == 1:
             a_u_darcy = adj_model.a_fl_model.a_u_darcy_y
-        elif axis == 2:
-            a_u_darcy = adj_model.a_fl_model.a_u_darcy_z
         else:
-            raise ValueError()
+            a_u_darcy = adj_model.a_fl_model.a_u_darcy_z
 
-        a_u_darcy = a_u_darcy[(bwd_slicer) + (time_slice,)]
+        a_u_darcy = a_u_darcy[(*bwd_slicer, time_slice)]
 
         if (
             (fwd_model.fl_model.vertical_axis == VerticalAxis.X and axis == 0)
@@ -806,6 +798,7 @@ def get_sc_adjoint_gradient(
         The forward model which contains all forward variables and parameters.
     adj_model : AdjointModel
         The adjoint model which contains all adjoint variables and parameters.
+
     Returns
     -------
     NDArrayFloat
@@ -1016,40 +1009,21 @@ def get_initial_conc_adjoint_gradient(
             \left\lVert \overrightarrow{\mathrm{P}_{i}\mathrm{P}_{j}} \right\rVert}
 
     """
-    tr_model = fwd_model.tr_model
-
-    grad = (
-        adj_model.a_tr_model.a_mob[sp, :, :, :, 1]
-        * fwd_model.tr_model.porosity
-        / fwd_model.time_params.ldt[0]
+    # The initial concentration only enters the first timestep through the matrix
+    # of the previous time (diffusion, dispersion and advection) and the
+    # accumulation term.
+    a_mob = adj_model.a_tr_model.a_mob[sp, :, :, :, 1].ravel("F")
+    _, q_prev = make_transport_matrices(
+        fwd_model.grid, fwd_model.tr_model, fwd_model.fl_model, 1
     )
-
-    crank_diff = fwd_model.tr_model.crank_nicolson_diffusion
-    a_mob = adj_model.a_tr_model.a_mob[sp, :, :, :, 1]
-
-    for n, axis in zip(fwd_model.grid.shape, (0, 1, 2)):
-        if n < 2:
-            continue
-
-        fwd_slicer = fwd_model.grid.get_slicer_forward(axis)
-        bwd_slicer = fwd_model.grid.get_slicer_backward(axis)
-
-        dmean = harmonic_mean(
-            tr_model.effective_diffusion[fwd_slicer],
-            tr_model.effective_diffusion[bwd_slicer],
-        )
-        tmp = fwd_model.grid.gc_face_area_m2(axis) / fwd_model.grid.pipj_m(axis)
-        # Forward scheme
-        grad[fwd_slicer] += (
-            +(1.0 - crank_diff) * (a_mob[bwd_slicer] - a_mob[fwd_slicer]) * dmean
-        ) * tmp
-        # Backward scheme
-        grad[bwd_slicer] += (
-            +(1.0 - crank_diff) * (a_mob[fwd_slicer] - a_mob[bwd_slicer]) * dmean
-        ) * tmp
-
-    return -grad + adj_model.a_tr_model.a_conc_sources[sp][:, 0].todense().reshape(
-        grad.shape, order="F"
+    grad = q_prev.T @ a_mob + (
+        a_mob * fwd_model.tr_model.porosity.ravel("F") / fwd_model.time_params.ldt[0]
+    )
+    shape = fwd_model.grid.shape
+    return -grad.reshape(shape, order="F") + (
+        adj_model.a_tr_model.a_conc_sources[sp][:, 0]
+        .todense()
+        .reshape(shape, order="F")
     )
 
 
@@ -1164,9 +1138,9 @@ def _local_fun_loss(
     vector: NDArrayFloat,
     parameter: AdjustableParameter,
     _model: ForwardModel,
-    observables: List[Observable],
-    parameters_to_adjust: List[AdjustableParameter],
-    max_obs_time: Optional[float] = None,
+    observables: list[Observable],
+    parameters_to_adjust: list[AdjustableParameter],
+    max_obs_time: float | None = None,
 ) -> float:
     # Update the model with the new values of x (preconditioned)
     # Do not save parameters values (useless)
@@ -1188,10 +1162,10 @@ def compute_fd_gradient(
     model: ForwardModel,
     observables: Observables,
     parameters_to_adjust: AdjustableParameters,
-    eps: Optional[float] = None,
+    eps: float | None = None,
     accuracy: int = 0,
     max_workers: int = 1,
-    max_obs_time: Optional[float] = None,
+    max_obs_time: float | None = None,
     is_save_state: bool = True,
 ) -> NDArrayFloat:
     """Compute the gradient of the given parameters by finite difference approximation.
@@ -1247,7 +1221,8 @@ def compute_fd_gradient(
                 " that equal the lower and/or upper bound(s). As values are clipped to"
                 " bounds to avoid solver crashes, it will results in a wrong gradient"
                 "approximation by finite differences "
-                "(typically scaled by a factor 0.5)."
+                "(typically scaled by a factor 0.5).",
+                stacklevel=2,
             )
 
         param_grad = finite_gradient(
@@ -1281,10 +1256,10 @@ def is_adjoint_gradient_correct(
     adj_model: AdjointModel,
     parameters_to_adjust: AdjustableParameters,
     observables: Observables,
-    eps: Optional[float] = None,
+    eps: float | None = None,
     accuracy: int = 0,
     max_workers: int = 1,
-    hm_end_time: Optional[float] = None,
+    hm_end_time: float | None = None,
     is_verbose: bool = False,
     is_save_state: bool = True,
     max_nafpi: int = 30,
@@ -1326,7 +1301,6 @@ def is_adjoint_gradient_correct(
     bool
         True if the adjoint gradient is correct.
     """
-
     # Update parameters with model
     update_parameters_from_model(fwd_model, parameters_to_adjust)
 

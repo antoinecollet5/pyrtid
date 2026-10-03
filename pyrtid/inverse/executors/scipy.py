@@ -12,7 +12,7 @@ from __future__ import annotations
 import copy
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any
 
 from scipy.optimize import OptimizeResult as ScipyOptimizeResult
 from scipy.optimize import minimize as scipy_minimize
@@ -57,7 +57,7 @@ class ScipySolverConfig(AdjointSolverConfig):
     """
 
     solver_name: str = "L-BFGS-B"
-    solver_options: Optional[Dict[str, Any]] = None
+    solver_options: dict[str, Any] | None = None
     max_optimization_round_nb: int = 1
     max_fun_first_round: int = 5
     max_fun_per_round: int = 5
@@ -84,7 +84,7 @@ class ScipyInversionExecutor(AdjointInversionExecutor[ScipySolverConfig]):
         """Return the solver name."""
         return self.solver_config.solver_name
 
-    def get_display_dict(self) -> Dict[str, Any]:
+    def get_display_dict(self) -> dict[str, Any]:
         # return {"Number of realizations": self.solver.s_dim}
 
         # "Stop criteria on cost function value"
@@ -100,7 +100,7 @@ class ScipyInversionExecutor(AdjointInversionExecutor[ScipySolverConfig]):
         # "Check gradient by finite difference"
         return {}
 
-    def run(self) -> ScipyOptimizeResult:
+    def run(self) -> ScipyOptimizeResult:  # ty: ignore[invalid-method-override]
         """
         Run the history matching.
 
@@ -127,7 +127,7 @@ class ScipyInversionExecutor(AdjointInversionExecutor[ScipySolverConfig]):
                 f"Entering optimization loop: {self.inv_model.optimization_round_nb}"
             )
             # Update options and stop criteria from the previous loops
-            _options: Dict[str, Any] = self._get_options_dict(
+            _options: dict[str, Any] = self._get_options_dict(
                 self.solver_config,
                 self.inv_model.nb_f_calls,
                 self.inv_model.optimization_round_nb,
@@ -149,7 +149,7 @@ class ScipyInversionExecutor(AdjointInversionExecutor[ScipySolverConfig]):
 
     def _get_options_dict(
         self, solver_config: ScipySolverConfig, nfev: int, round: int
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Update optimization stop criteria."""
         if solver_config.solver_options is not None:
             options = copy.deepcopy(solver_config.solver_options)

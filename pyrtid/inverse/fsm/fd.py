@@ -5,7 +5,6 @@
 
 import copy
 import warnings
-from typing import List, Optional
 
 import numpy as np
 from inv_toolbox.utils import finite_jacobian, is_all_close
@@ -31,8 +30,8 @@ def _local_fun_pred(
     vector: NDArrayFloat,
     parameter: AdjustableParameter,
     _model: ForwardModel,
-    observables: List[Observable],
-    max_obs_time: Optional[float] = None,
+    observables: list[Observable],
+    max_obs_time: float | None = None,
 ) -> NDArrayFloat:
     # Update the model with the new values of x (preconditioned)
     # Do not save parameters values (useless)
@@ -50,13 +49,13 @@ def compute_fd_jacvec(
     observables: Observables,
     parameters_to_adjust: AdjustableParameters,
     vecs: NDArrayFloat,
-    eps: Optional[float] = None,
+    eps: float | None = None,
     accuracy: int = 0,
     max_workers: int = 1,
-    max_obs_time: Optional[float] = None,
+    max_obs_time: float | None = None,
     is_save_state: bool = True,
 ) -> NDArrayFloat:
-    """Compute the gradient of the given parameters by finite difference approximation.
+    r"""Compute the gradient of the given parameters by finite difference approximation.
 
     Warning
     -------
@@ -92,13 +91,12 @@ def compute_fd_jacvec(
         Whether to save the FD gradient in memory. The default is True.
 
     """
-    _model = copy.deepcopy(model)
-
-    ljacvec: list[NDArrayFloat] = []
+    jacvecs = np.zeros((0, vecs.shape[1]))
+    idx = 0
     for param in object_or_object_sequence_to_list(parameters_to_adjust):
-        # FD approximation -> only on the adjusted values. This is convenient to
-        # test to gradient on a small portion of big models with to many grid cells to
-        # be entirely tested.
+        # A copy of the model is used for each parameter, so that the perturbed
+        # values of a parameter do not leak in the evaluations of the next one.
+        _model = copy.deepcopy(model)
 
         # Test the bounds -> it affects the finite differences evaluation
         param_values = get_parameter_values_from_model(_model, param)
@@ -109,34 +107,30 @@ def compute_fd_jacvec(
                 f'Adjusted parameter "{param.name}" has one or more values'
                 " that equal the lower and/or upper bound(s). As values are clipped to"
                 " bounds to avoid solver crashes, it will results in a wrong gradient"
-                "approximation by finite differences "
-                "(typically scaled by a factor 0.5)."
+                " approximation by finite differences "
+                "(typically scaled by a factor 0.5).",
+                stacklevel=2,
             )
 
-        ljacvec.append(
-            finite_jacobian(
-                param.preconditioner(param_values.ravel("F")),
-                _local_fun_pred,
-                fm_args=(
-                    param,
-                    _model,
-                    observables,
-                    max_obs_time,
-                ),
-                eps=eps,
-                accuracy=accuracy,
-                max_workers=max_workers,
-            )
-            @ vecs
+        # Jacobian of the predictions with respect to the preconditioned values of
+        # this parameter, times the part of the vectors which matches it.
+        size = param_values.size
+        jac = finite_jacobian(
+            param.preconditioner(param_values.ravel("F")),
+            _local_fun_pred,
+            fm_args=(param, _model, observables, max_obs_time),
+            eps=eps,
+            accuracy=accuracy,
+            max_workers=max_workers,
         )
+        contribution = jac @ vecs[idx : idx + size, :]
+        idx += size
+        jacvecs = contribution if jacvecs.shape[0] == 0 else jacvecs + contribution
 
-        # 2) Create an array full of nan and fill it with the
-        # # gradient (only at adjusted locations)
-        # Then save it.
         if is_save_state:
-            param.jacvec_fd_history.append(ljacvec[-1])
+            param.jacvec_fd_history.append(contribution)
 
-    return np.hstack(ljacvec)
+    return jacvecs
 
 
 def is_fsm_jacvec_correct(
@@ -144,14 +138,14 @@ def is_fsm_jacvec_correct(
     parameters_to_adjust: AdjustableParameters,
     observables: Observables,
     vecs: NDArrayFloat,
-    eps: Optional[float] = None,
+    eps: float | None = None,
     accuracy: int = 0,
     max_workers: int = 1,
-    hm_end_time: Optional[float] = None,
+    hm_end_time: float | None = None,
     is_verbose: bool = False,
     is_save_state: bool = True,
 ) -> bool:
-    """
+    r"""
     Check if the gradient computed with the adjoint state is equal with FD.
 
     Parameters
@@ -190,14 +184,17 @@ def is_fsm_jacvec_correct(
     bool
         True if the adjoint gradient is correct.
     """
-
     # Update parameters with model
     update_parameters_from_model(fwd_model, parameters_to_adjust)
 
     # Solve the forward problem
     solver: FSMSolver = FSMSolver(fwd_model)
-    fsm_jacvec = solver.solve(
-        observables, vecs, hm_end_time=hm_end_time, is_verbose=is_verbose
+    _, fsm_jacvec = solver.solve(
+        observables,
+        parameters_to_adjust,
+        vecs,
+        hm_end_time=hm_end_time,
+        is_verbose=is_verbose,
     )
 
     fd_jacvec = compute_fd_jacvec(

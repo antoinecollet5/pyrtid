@@ -1,3 +1,4 @@
+import inv_toolbox
 import numpy as np
 import pyrtid.forward as dmfwd
 import pyrtid.inverse as dminv
@@ -97,7 +98,9 @@ def test_eval_model_loss_function(
     param = dminv.AdjustableParameter(
         dminv.ParameterName.POROSITY,
         regularizators=TikhonovRegularizator(grid),
-        reg_weight_update_strategy=dminv.regularization.ConstantRegWeight(reg_weight),
+        reg_weight_update_strategy=inv_toolbox.regularization.ConstantRegWeight(
+            reg_weight
+        ),
     )
 
     np.testing.assert_allclose(

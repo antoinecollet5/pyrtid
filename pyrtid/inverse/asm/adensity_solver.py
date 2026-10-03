@@ -125,27 +125,25 @@ def _add_darcy_contribution(
     elif fl_model.vertical_axis == VerticalAxis.Y:
         axis = 1
         a_u_darcy = a_fl_model.a_u_darcy_y
-    # Y Contribution
-    elif fl_model.vertical_axis == VerticalAxis.Z:
+    # Z Contribution
+    else:
         axis = 2
         a_u_darcy = a_fl_model.a_u_darcy_z
-    else:
-        raise ValueError()
 
     fwd_slicer = grid.get_slicer_forward(axis)
     bwd_slicer = grid.get_slicer_backward(axis)
 
     kij = get_kmean(grid, fl_model, axis=axis, is_flatten=False)[fwd_slicer]
     a_u_darcy_old = (
-        a_u_darcy[tuple(bwd_slicer) + (time_index + 1,)] * kij / WATER_DENSITY
+        a_u_darcy[(*tuple(bwd_slicer), time_index + 1)] * kij / WATER_DENSITY
     )
     drhomean = get_drhomean(
-        grid, tr_model, axis=1, time_index=time_index, is_flatten=False
+        grid, tr_model, axis=axis, time_index=time_index, is_flatten=False
     )[fwd_slicer]
     # Up
-    a_tr_model.a_density[tuple(fwd_slicer) + (time_index,)] -= a_u_darcy_old * drhomean
+    a_tr_model.a_density[(*tuple(fwd_slicer), time_index)] -= a_u_darcy_old * drhomean
     # Down
-    a_tr_model.a_density[tuple(bwd_slicer) + (time_index,)] -= a_u_darcy_old * drhomean
+    a_tr_model.a_density[(*tuple(bwd_slicer), time_index)] -= a_u_darcy_old * drhomean
 
 
 def _add_diffusivity_contribution(
@@ -161,11 +159,6 @@ def _add_diffusivity_contribution(
         fl_crank: float = fl_model.crank_nicolson
     else:
         fl_crank = a_fl_model.crank_nicolson
-
-    if a_fl_model.crank_nicolson is None:
-        crank_flow: float = fl_model.crank_nicolson
-    else:
-        crank_flow = a_fl_model.crank_nicolson
 
     shape = grid.shape
     permeability = fl_model.permeability
@@ -190,7 +183,7 @@ def _add_diffusivity_contribution(
     contrib = np.zeros(shape)
 
     # iterate the axes (x, y, z)
-    for n, axis in zip(grid.shape, (0, 1, 2)):
+    for n, axis in zip(grid.shape, (0, 1, 2), strict=False):
         if n < 2:
             continue
 
@@ -207,7 +200,7 @@ def _add_diffusivity_contribution(
         tmp = np.zeros_like(drhomean)
 
         if (
-            (fl_model.vertical_axis == VerticalAxis.X and axis == 1)
+            (fl_model.vertical_axis == VerticalAxis.X and axis == 0)
             or (fl_model.vertical_axis == VerticalAxis.Y and axis == 1)
             or (fl_model.vertical_axis == VerticalAxis.Z and axis == 2)
         ):
@@ -224,8 +217,8 @@ def _add_diffusivity_contribution(
         dpressure_fx = (
             (
                 (
-                    crank_flow * (pprev[bwd_slicer] - pprev[fwd_slicer])
-                    + (1.0 - crank_flow) * (pnext[bwd_slicer] - pnext[fwd_slicer])
+                    fl_crank * (pprev[bwd_slicer] - pprev[fwd_slicer])
+                    + (1.0 - fl_crank) * (pnext[bwd_slicer] - pnext[fwd_slicer])
                 )
                 / grid.pipj_m(axis)
                 * drhomean
@@ -245,8 +238,8 @@ def _add_diffusivity_contribution(
         dpressure_bx = (
             (
                 (
-                    crank_flow * (pprev[fwd_slicer] - pprev[bwd_slicer])
-                    + (1.0 - crank_flow) * (pnext[fwd_slicer] - pnext[bwd_slicer])
+                    fl_crank * (pprev[fwd_slicer] - pprev[bwd_slicer])
+                    + (1.0 - fl_crank) * (pnext[fwd_slicer] - pnext[bwd_slicer])
                 )
                 / grid.pipj_m(axis)
                 * drhomean

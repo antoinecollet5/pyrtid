@@ -10,7 +10,6 @@ Note: it has been added in python 3.10 https://bugs.python.org/issue41816
 """
 
 from enum import Enum
-from typing import List
 
 
 class StrEnum(str, Enum):
@@ -36,6 +35,6 @@ class StrEnum(str, Enum):
         return self.value == other
 
     @classmethod
-    def to_list(cls) -> List[str]:
+    def to_list(cls) -> list[str]:
         """Return all enums as a list."""
         return list(cls)

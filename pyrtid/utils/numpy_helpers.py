@@ -52,8 +52,8 @@ def np_cache(*args, pos: int = 0, **kwargs):
                 return np_array
 
         # copy lru_cache attributes over too
-        wrapper.cache_info = cached_wrapper.cache_info
-        wrapper.cache_clear = cached_wrapper.cache_clear
+        wrapper.cache_info = cached_wrapper.cache_info  # ty: ignore[unresolved-attribute]
+        wrapper.cache_clear = cached_wrapper.cache_clear  # ty: ignore[unresolved-attribute]
 
         return wrapper
 

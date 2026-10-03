@@ -10,24 +10,17 @@ import os
 import shutil
 import warnings
 from abc import ABC, abstractmethod
+from collections.abc import Callable, Iterator, Sequence
 from concurrent.futures import ProcessPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import (
     Any,
-    Callable,
-    Dict,
     Generic,
-    Iterator,
-    List,
-    Optional,
-    Sequence,
-    Tuple,
-    Type,
     TypeVar,
-    Union,
 )
 
+import covmats
 import numpy as np
 from inv_toolbox.utils import NDArrayFloat, is_all_close
 
@@ -55,7 +48,7 @@ from pyrtid.inverse.params import (
 )
 
 
-def register_params_ds(params_ds: str):  # type: ignore
+def register_params_ds(params_ds: str):
     """
     Add the given string to the __doc__attribute of the class.
 
@@ -65,9 +58,9 @@ def register_params_ds(params_ds: str):  # type: ignore
         String added to the parameters section.
     """
 
-    def decorator(klass: Type):  # type: ignore
+    def decorator(klass: type):
         """Decorate the klass."""
-        klass.__doc__ += params_ds
+        klass.__doc__ = (klass.__doc__ or "") + params_ds
         return klass
 
     return decorator
@@ -114,11 +107,11 @@ class BaseSolverConfig:
     ----------
     """
 
-    hm_end_time: Optional[float] = None
+    hm_end_time: float | None = None
     is_parallel: bool = False
     max_workers: int = 2
-    random_state: Optional[Union[int, np.random.Generator, np.random.RandomState]] = (
-        np.random.default_rng(198873)
+    random_state: int | np.random.Generator | np.random.RandomState | None = field(
+        default_factory=lambda: np.random.default_rng(198873)
     )
     is_fwd_verbose: bool = False
     is_save_spmats: bool = False
@@ -147,7 +140,7 @@ class DataModel:
         covariance given by `covariance`.
     """
 
-    __slots__ = ["obs", "s_init", "_cov_obs"]
+    __slots__ = ["_cov_obs", "obs", "s_init"]
 
     def __init__(
         self,
@@ -169,24 +162,30 @@ class DataModel:
         """Return the length of the parameters vector."""
         if not self.is_ensemble():
             return 1
-        return self.s_init.shape[1]  # type: ignore
+        return self.s_init.shape[1]
 
     @property
     def s_dim(self):
         """Return the length of the parameters vector."""
-        return self.s_init.shape[0]  # type: ignore
+        return self.s_init.shape[0]
 
     @property
     def d_dim(self):
         """Return the number of observations / forecast data."""
         # alias for n_obs
-        return self.obs.shape[0]  # type: ignore
+        return self.obs.shape[0]
 
     @property
     def n_obs(self):
         """Return the number of observations / forecast data."""
         # alias for d_dim
-        return self.d_dim  # type: ignore
+        return self.d_dim
+
+    def get_cov_obs_as_covmats(self) -> covmats.CovarianceMatrix:
+        """Return the observation covariance as a :mod:`covmats` object."""
+        if self.cov_obs.ndim == 1:
+            return covmats.CovViaDiagonal(self.cov_obs)
+        return covmats.CovViaCholesky(np.linalg.cholesky(self.cov_obs))
 
     @property
     def cov_obs(self) -> NDArrayFloat:
@@ -198,7 +197,7 @@ class DataModel:
         """Set the observation errors covariance matrix."""
         # pylint: disable=C0103  # arg name does not conform to snake_case naming style
         is_error = False
-        if s.shape[0] != self.d_dim:  # type: ignore
+        if s.shape[0] != self.d_dim:
             is_error = True
         if len(s.shape) == 2:
             if s.shape[0] != s.shape[1]:
@@ -223,22 +222,22 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
     """
 
     __slots__ = [
+        "_adj_model",
+        "data_model",
         "fwd_model",
         "inv_model",
-        "_adj_model",
-        "solver_config",
         "pre_run_transformation",
-        "data_model",
+        "solver_config",
     ]
-    _adj_model: Optional[AdjointModel]
+    _adj_model: AdjointModel | None
 
     def __init__(
         self,
         fwd_model: ForwardModel,
         inv_model: InverseModel,
         solver_config: _BaseSolverConfig,
-        pre_run_transformation: Optional[Callable] = None,
-        s_init: Optional[NDArrayFloat] = None,
+        pre_run_transformation: Callable | None = None,
+        s_init: NDArrayFloat | None = None,
     ) -> None:
         """
         Initialize the executor.
@@ -275,7 +274,7 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         self._adj_model = None
         self.fwd_model: ForwardModel = fwd_model
         self.inv_model: InverseModel = inv_model
-        self.pre_run_transformation: Optional[Callable] = pre_run_transformation
+        self.pre_run_transformation: Callable | None = pre_run_transformation
         self.solver_config = solver_config
 
         # Update parameters (only if the values haven't been defined for the parameters)
@@ -343,8 +342,8 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         )
 
     @adj_model.setter
-    def adj_model(self, adj_model: Optional[AdjointModel]) -> None:
-        self._adj_model: Optional[AdjointModel] = adj_model
+    def adj_model(self, adj_model: AdjointModel | None) -> None:
+        self._adj_model: AdjointModel | None = adj_model
 
     def _init_adjoint_model(
         self,
@@ -372,7 +371,7 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         """Return the solver name."""
         return "unknown"
 
-    def get_display_dict(self) -> Dict[str, Any]:
+    def get_display_dict(self) -> dict[str, Any]:
         return {}
 
     def _initial_display(self) -> None:
@@ -483,7 +482,7 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         None.
         """
         run_n: int = self.inv_model.nb_f_calls
-        n_ensemble: int = s_ensemble.shape[1]  # type: ignore
+        n_ensemble: int = s_ensemble.shape[1]
         d_pred: NDArrayFloat = np.zeros([self.data_model.d_dim, n_ensemble])
         if self.solver_config.is_parallel:
             with ProcessPoolExecutor(
@@ -492,13 +491,13 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
                 results: Iterator[NDArrayFloat] = executor.map(
                     self._run_forward_model,
                     s_ensemble.T,
-                    range(run_n + 1, run_n + n_ensemble + 1),  # type: ignore
+                    range(run_n + 1, run_n + n_ensemble + 1),
                 )
                 for j, res in enumerate(results):
                     d_pred[:, j] = res
             # self.simu_n += n_ensemble
         else:
-            for j in range(n_ensemble):  # type: ignore
+            for j in range(n_ensemble):
                 d_pred[:, j] = self._run_forward_model(s_ensemble[:, j], run_n + j + 1)
         # update the number of runs
 
@@ -507,7 +506,7 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         self._check_nans_in_predictions(d_pred, run_n)
 
         # save objective functions. This should be very fast.
-        for i in range(d_pred.shape[1]):  # type: ignore
+        for i in range(d_pred.shape[1]):
             loss_ls = eval_loss_ls(
                 get_observables_values_as_1d_vector(
                     self.inv_model.observables, self.solver_config.hm_end_time
@@ -538,7 +537,6 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         is_verbose: bool
             Whether to display info. The default is False.
         """
-
         d_obs = get_observables_values_as_1d_vector(
             self.inv_model.observables, max_obs_time=self.solver_config.hm_end_time
         )
@@ -596,7 +594,7 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         return loss_total
 
     @abstractmethod
-    def run(self) -> Optional[Union[Sequence[Any], NDArrayFloat]]:
+    def run(self) -> Sequence[Any] | NDArrayFloat | None:
         """
         Run the history matching.
 
@@ -612,7 +610,7 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         # inverse model, the param archived values etc.
         return ()
 
-    @staticmethod  # type: ignore
+    @staticmethod
     def create_output_dir(path: Path) -> None:
         """
         Create an output directory.
@@ -631,7 +629,7 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
             shutil.rmtree(path)
         os.mkdir(path)
 
-    @staticmethod  # type: ignore
+    @staticmethod
     def _check_nans_in_predictions(d_pred: NDArrayFloat, simu_n: int) -> None:
         """
         Check and raise an exception if there is any NaNs in the input array.
@@ -664,8 +662,8 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         # Case of an ensemble
         else:
             # + simu_n + 1 to get the indices of simulations
-            error_indices: List[int] = sorted(
-                set(np.where(np.isnan(d_pred))[1] + simu_n + 1)  # type: ignore
+            error_indices: list[int] = sorted(
+                {int(i) for i in np.where(np.isnan(d_pred))[1] + simu_n + 1}
             )
             msg = (
                 "Something went wrong with NaN values"
@@ -679,7 +677,7 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         """Check if s init has the correct size."""
         if s_init.size == expected_s_dim:
             s_init = s_init.ravel("F")
-        if s_init.ndim != 2 and s_init.shape[0] != expected_s_dim:  # type: ignore
+        if s_init.ndim != 2 and s_init.shape[0] != expected_s_dim:
             raise ValueError(
                 "s_init must be either a 1D vector of shape (N_s)"
                 " or a 2D array of shape (N_s, N_e) with N_s the number of"
@@ -699,7 +697,8 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
                 "There are values out of bounds in the provided s_init!"
                 "Remember that preconditioned values are expected (only applies for "
                 "precondtioned parameters)."
-                "\nCheck your inputs if this is not desired."
+                "\nCheck your inputs if this is not desired.",
+                stacklevel=2,
             )
         return clipped
 
@@ -764,7 +763,7 @@ class AdjointInversionExecutor(BaseInversionExecutor, Generic[_AdjointSolverConf
 
     def is_adjoint_gradient_correct(
         self,
-        eps: Optional[float] = None,
+        eps: float | None = None,
         accuracy: int = 0,
         max_workers: int = 1,
         is_verbose: bool = False,
@@ -800,6 +799,14 @@ class AdjointInversionExecutor(BaseInversionExecutor, Generic[_AdjointSolverConf
             Maximum number of iteration per adjoint chemistry-transport loop allowed
             (fixed point iterations.)
         """
+        # The adjoint model must be allocated once the number of time steps is known
+        # (i.e. after a forward run), otherwise its arrays have the wrong size.
+        ForwardSolver(self.fwd_model).solve()
+        self._init_adjoint_model(
+            self.solver_config.afpi_eps,
+            self.solver_config.is_adj_numerical_acceleration,
+            self.solver_config.is_use_continuous_adj,
+        )
         return is_adjoint_gradient_correct(
             self.fwd_model,
             self.adj_model,
@@ -839,8 +846,8 @@ class AdjointInversionExecutor(BaseInversionExecutor, Generic[_AdjointSolverConf
         adj_grad = np.array([], dtype=np.float64)
         fd_grad = np.array([], dtype=np.float64)
         if self.solver_config.is_use_adjoint or self.solver_config.is_check_gradient:
-            if self.adj_model is not None:
-                crank_flow = self.adj_model.a_fl_model.crank_nicolson
+            if self._adj_model is not None:
+                crank_flow = self._adj_model.a_fl_model.crank_nicolson
             else:
                 crank_flow = None
             # Reinitialize the adjoint model
@@ -849,7 +856,8 @@ class AdjointInversionExecutor(BaseInversionExecutor, Generic[_AdjointSolverConf
                 self.solver_config.is_adj_numerical_acceleration,
                 self.solver_config.is_use_continuous_adj,
             )
-            self.adj_model.a_fl_model.set_crank_nicolson(crank_flow)
+            if crank_flow is not None:
+                self.adj_model.a_fl_model.set_crank_nicolson(crank_flow)
 
             # Solve the adjoint system
             solver = AdjointSolver(self.fwd_model, self.adj_model)
@@ -900,7 +908,7 @@ class AdjointInversionExecutor(BaseInversionExecutor, Generic[_AdjointSolverConf
         s_cond: NDArrayFloat,
         run_n: int,
         is_save_state: bool = True,
-    ) -> Tuple[float, NDArrayFloat, NDArrayFloat]:
+    ) -> tuple[float, NDArrayFloat, NDArrayFloat]:
         """
         Run the forward model and returns the prediction vector.
 
@@ -961,8 +969,8 @@ class AdjointInversionExecutor(BaseInversionExecutor, Generic[_AdjointSolverConf
 
         adj_grad = np.array([], dtype=np.float64)
         if self.solver_config.is_use_adjoint or self.solver_config.is_check_gradient:
-            if self.adj_model is not None:
-                crank_flow = self.adj_model.a_fl_model.crank_nicolson
+            if self._adj_model is not None:
+                crank_flow = self._adj_model.a_fl_model.crank_nicolson
             else:
                 crank_flow = None
             # Reinitialize the adjoint model
@@ -971,7 +979,8 @@ class AdjointInversionExecutor(BaseInversionExecutor, Generic[_AdjointSolverConf
                 self.solver_config.is_adj_numerical_acceleration,
                 self.solver_config.is_use_continuous_adj,
             )
-            self.adj_model.a_fl_model.set_crank_nicolson(crank_flow)
+            if crank_flow is not None:
+                self.adj_model.a_fl_model.set_crank_nicolson(crank_flow)
 
             # Solve the adjoint system
             solver = AdjointSolver(self.fwd_model, self.adj_model)
@@ -995,7 +1004,7 @@ class AdjointInversionExecutor(BaseInversionExecutor, Generic[_AdjointSolverConf
         self,
         s_ensemble: NDArrayFloat,
         is_parallel: bool = False,
-    ) -> Tuple[NDArrayFloat, NDArrayFloat, NDArrayFloat]:
+    ) -> tuple[NDArrayFloat, NDArrayFloat, NDArrayFloat]:
         r"""
         Return both predicted data and associated gradients for the ensemble.
 
@@ -1029,7 +1038,7 @@ class AdjointInversionExecutor(BaseInversionExecutor, Generic[_AdjointSolverConf
 
         """
         run_n: int = self.inv_model.nb_f_calls
-        n_ensemble: int = s_ensemble.shape[1]  # type: ignore
+        n_ensemble: int = s_ensemble.shape[1]
         d_pred: NDArrayFloat = np.zeros([self.data_model.d_dim, n_ensemble])
         # loss functions
         losses_array = np.zeros([n_ensemble])
@@ -1038,15 +1047,17 @@ class AdjointInversionExecutor(BaseInversionExecutor, Generic[_AdjointSolverConf
             with ProcessPoolExecutor(
                 max_workers=self.solver_config.max_workers
             ) as executor:
-                results: Iterator[NDArrayFloat] = executor.map(
-                    self._run_forward_model_with_adjoint,
-                    s_ensemble.T,
-                    range(run_n + 1, run_n + n_ensemble + 1),  # type: ignore
+                results: Iterator[tuple[float, NDArrayFloat, NDArrayFloat]] = (
+                    executor.map(
+                        self._run_forward_model_with_adjoint,
+                        s_ensemble.T,
+                        range(run_n + 1, run_n + n_ensemble + 1),
+                    )
                 )
                 for j, res in enumerate(results):
                     losses_array[j], d_pred[:, j], gradients[:, j] = res
         else:
-            for j in range(n_ensemble):  # type: ignore
+            for j in range(n_ensemble):
                 (
                     losses_array[j],
                     d_pred[:, j],
@@ -1100,8 +1111,8 @@ class FSMInversionExecutor(BaseInversionExecutor, Generic[_FSMSolverConfig]):
         run_n: int,
         is_save_state: bool = True,
         is_verbose: bool = False,
-    ) -> Tuple[NDArrayFloat, NDArrayFloat]:
-        """
+    ) -> tuple[NDArrayFloat, NDArrayFloat]:
+        r"""
         Run the forward model and returns the prediction vector.
 
         Parameters
@@ -1151,6 +1162,7 @@ class FSMInversionExecutor(BaseInversionExecutor, Generic[_FSMSolverConfig]):
         # the product between the Jacobian matrix (N_obs, N_s) and the given vectors.
         d_pred, jacvecs = FSMSolver(self.fwd_model).solve(
             observables=self.inv_model.observables,
+            parameters_to_adjust=self.inv_model.parameters_to_adjust,
             vecs=vecs,
             hm_end_time=self.solver_config.hm_end_time,
             is_verbose=is_verbose or self.solver_config.is_fwd_verbose,
@@ -1170,12 +1182,12 @@ class FSMInversionExecutor(BaseInversionExecutor, Generic[_FSMSolverConfig]):
 
     def is_fsm_jacobian_correct(
         self,
-        eps: Optional[float] = None,
+        eps: float | None = None,
         accuracy: int = 0,
         max_workers: int = 1,
         is_verbose: bool = False,
     ) -> bool:
-        """
+        r"""
         Return whether the adjoint gradient is correct or not.
 
         Note
@@ -1217,12 +1229,12 @@ class FSMInversionExecutor(BaseInversionExecutor, Generic[_FSMSolverConfig]):
     def is_fsm_jacvec_correct(
         self,
         vecs: NDArrayFloat,
-        eps: Optional[float] = None,
+        eps: float | None = None,
         accuracy: int = 0,
         max_workers: int = 1,
         is_verbose: bool = False,
     ) -> bool:
-        """
+        r"""
         Return whether the adjoint gradient is correct or not.
 
         Note

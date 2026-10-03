@@ -18,7 +18,7 @@ def test_eq() -> None:
     assert Colors.BLUE == "blue"
     assert Colors.YELLOW == "yellow"
     assert Colors.RED == "red"
-    assert not Colors.BLUE == 2
+    assert Colors.BLUE != 2
 
 
 def test_str() -> None:

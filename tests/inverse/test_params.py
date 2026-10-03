@@ -1,7 +1,7 @@
 """Tests for the adjustable parameter class."""
 
 from contextlib import nullcontext as does_not_raise
-from typing import Any, Dict
+from typing import Any
 
 import numpy as np
 import pytest
@@ -96,7 +96,7 @@ def test_init(kwargs, expected_exception):
 
 
 @pytest.fixture
-def example_kwargs() -> Dict[str, Any]:
+def example_kwargs() -> dict[str, Any]:
     return {
         "name": "any_param_name",
         "values": np.ones([5, 5]),
@@ -107,7 +107,7 @@ def example_kwargs() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def example_kwargs2() -> Dict[str, Any]:
+def example_kwargs2() -> dict[str, Any]:
     return {
         "name": "any_param_name2",
         "ubounds": 2e6,
@@ -143,7 +143,10 @@ def test_get_min_max_values(example_kwargs, example_kwargs2) -> None:
 
 def test_get_bounds(example_kwargs) -> None:
     # default behavior
-    param = AdjustableParameter(name="any_param_name", values=np.ones((5, 1)))
+    param = AdjustableParameter(
+        name="any_param_name",  # ty: ignore[invalid-argument-type]
+        values=np.ones((5, 1)),
+    )
     np.testing.assert_array_equal(
         param.get_bounds(),
         np.array([[-np.inf, np.inf]] * 5),

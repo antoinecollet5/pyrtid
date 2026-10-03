@@ -5,8 +5,8 @@
 
 from __future__ import annotations
 
+import contextlib
 import warnings
-from typing import Tuple
 
 import covmats
 import numpy as np
@@ -51,7 +51,7 @@ def add_adj_stationary_flow_to_q_next_for_axis(
         owner_indices_to_keep=fl_model.free_head_nn,
     )
     tmp = _tmp * kmean[idc_owner]
-    q_next[idc_owner, idc_owner] += tmp  # type: ignore
+    q_next[idc_owner, idc_owner] += tmp
 
     # 1.1.2) For all nodes but with free head neighbors only
     idc_owner, idc_neigh = get_owner_neigh_indices(
@@ -99,7 +99,7 @@ def add_adj_stationary_flow_to_q_next(
     Since the permeability and the storage coefficient does not vary with time,
     matrices q_prev and q_next are the same.
     """
-    for n, axis in zip(grid.shape, (0, 1, 2)):
+    for n, axis in zip(grid.shape, (0, 1, 2), strict=False):
         if n >= 2:
             add_adj_stationary_flow_to_q_next_for_axis(grid, fl_model, q_next, axis)
     return q_next
@@ -157,8 +157,8 @@ def fill_transient_adj_flow_matrices_for_axis(
         tmp_next *= rhomean_next[idc_owner] / WATER_DENSITY
         tmp_prev *= rhomean_prev[idc_owner] / WATER_DENSITY
 
-    q_next[idc_owner, idc_owner] += fl_crank * tmp_next  # type: ignore
-    q_prev[idc_owner, idc_owner] -= (1.0 - fl_crank) * tmp_prev  # type: ignore
+    q_next[idc_owner, idc_owner] += fl_crank * tmp_next
+    q_prev[idc_owner, idc_owner] -= (1.0 - fl_crank) * tmp_prev
 
     # 1.1.2) For all nodes but with free head neighbors only
     idc_owner, idc_neigh = get_owner_neigh_indices(
@@ -175,8 +175,8 @@ def fill_transient_adj_flow_matrices_for_axis(
         tmp_next *= rhomean_next[idc_owner] / WATER_DENSITY
         tmp_prev *= rhomean_prev[idc_owner] / WATER_DENSITY
 
-    q_next[idc_owner, idc_neigh] -= fl_crank * tmp_next  # type: ignore
-    q_prev[idc_owner, idc_neigh] += (1.0 - fl_crank) * tmp_prev  # type: ignore
+    q_next[idc_owner, idc_neigh] -= fl_crank * tmp_next
+    q_prev[idc_owner, idc_neigh] += (1.0 - fl_crank) * tmp_prev
 
     # 1.2) Backward scheme
 
@@ -195,8 +195,8 @@ def fill_transient_adj_flow_matrices_for_axis(
         tmp_next *= rhomean_next[idc_neigh] / WATER_DENSITY
         tmp_prev *= rhomean_prev[idc_neigh] / WATER_DENSITY
 
-    q_next[idc_owner, idc_owner] += fl_crank * tmp_next  # type: ignore
-    q_prev[idc_owner, idc_owner] -= (1.0 - fl_crank) * tmp_prev  # type: ignore
+    q_next[idc_owner, idc_owner] += fl_crank * tmp_next
+    q_prev[idc_owner, idc_owner] -= (1.0 - fl_crank) * tmp_prev
 
     # 1.2.2) For all nodes but with free head neighbors only
     idc_owner, idc_neigh = get_owner_neigh_indices(
@@ -213,8 +213,8 @@ def fill_transient_adj_flow_matrices_for_axis(
         tmp_next *= rhomean_next[idc_neigh] / WATER_DENSITY
         tmp_prev *= rhomean_prev[idc_neigh] / WATER_DENSITY
 
-    q_next[idc_owner, idc_neigh] -= fl_crank * tmp_next  # type: ignore
-    q_prev[idc_owner, idc_neigh] += (1.0 - fl_crank) * tmp_prev  # type: ignore
+    q_next[idc_owner, idc_neigh] -= fl_crank * tmp_next
+    q_prev[idc_owner, idc_neigh] += (1.0 - fl_crank) * tmp_prev
 
 
 def make_transient_adj_flow_matrices(
@@ -224,7 +224,7 @@ def make_transient_adj_flow_matrices(
     a_fl_model: AdjointFlowModel,
     time_params: TimeParameters,
     time_index: int,
-) -> Tuple[lil_array, lil_array]:
+) -> tuple[lil_array, lil_array]:
     """
     Make matrices for the transient flow.
 
@@ -237,7 +237,7 @@ def make_transient_adj_flow_matrices(
     q_prev = lil_array((dim, dim), dtype=np.float64)
     q_next = lil_array((dim, dim), dtype=np.float64)
 
-    for n, axis in zip(grid.shape, (0, 1, 2)):
+    for n, axis in zip(grid.shape, (0, 1, 2), strict=False):
         if n >= 2:
             fill_transient_adj_flow_matrices_for_axis(
                 grid,
@@ -261,7 +261,7 @@ def get_aflow_matrices(
     a_fl_model: AdjointFlowModel,
     time_params: TimeParameters,
     time_index: int,
-) -> Tuple[csc_matrix, csc_matrix]:
+) -> tuple[csc_matrix, csc_matrix]:
     # Since the density vary over time, it is required to rebuild the adjoint
     # matrices at each timestep.
     if fl_model.is_gravity:
@@ -290,10 +290,8 @@ def get_aflow_matrices(
     diag = np.zeros(grid.n_grid_cells)
     # Need a try - except for n = N_{ts} resolution: then \Delta t^{N_{ts}+1} does not
     # exists
-    try:
+    with contextlib.suppress(IndexError):
         diag[fl_model.free_head_nn] += float(1.0 / time_params.ldt[time_index])
-    except IndexError:
-        pass
 
     _q_prev.setdiag(_q_prev.diagonal() + diag)
 
@@ -352,7 +350,7 @@ def update_adjoint_u_darcy(
             mob_next = np.zeros_like(mob)
             a_mob = np.zeros_like(mob)
 
-        for n, axis in zip(grid.shape, (0, 1, 2)):
+        for n, axis in zip(grid.shape, (0, 1, 2), strict=False):
             if n < 2:
                 continue
 
@@ -362,16 +360,14 @@ def update_adjoint_u_darcy(
             elif axis == 1:
                 u_darcy = fl_model.u_darcy_y
                 a_u_darcy = a_fl_model.a_u_darcy_y
-            elif axis == 2:
+            else:
                 u_darcy = fl_model.u_darcy_z
                 a_u_darcy = a_fl_model.a_u_darcy_z
-            else:
-                raise ValueError()
 
             fwd_slicer = grid.get_slicer_forward(axis)
             bwd_slicer = grid.get_slicer_backward(axis)
 
-            un = u_darcy[tuple(bwd_slicer) + (time_index,)]
+            un = u_darcy[(*tuple(bwd_slicer), time_index)]
 
             mob_ij = np.where(
                 un > 0.0, mob[fwd_slicer], mob[bwd_slicer]
@@ -379,7 +375,7 @@ def update_adjoint_u_darcy(
             mob_ij[un == 0] = 0
 
             # 1) advective term
-            a_u_darcy[tuple(bwd_slicer) + (time_index,)] += (
+            a_u_darcy[(*tuple(bwd_slicer), time_index)] += (
                 grid.gc_face_area_m2(axis)
                 * (
                     (
@@ -393,7 +389,7 @@ def update_adjoint_u_darcy(
             )
 
             # 2) U divergence term
-            a_u_darcy[tuple(bwd_slicer) + (time_index,)] += (
+            a_u_darcy[(*tuple(bwd_slicer), time_index)] += (
                 grid.gc_face_area_m2(axis)
                 * (
                     crank_adv
@@ -486,7 +482,6 @@ def solve_adj_flow_saturated(
 
     dh/dt = div K grad h + ...
     """
-
     # 1) Obtain the adjoint pressure and add it as a source term (observation on the
     # pressure field)
     a_fl_model.a_pressure[:, :, :, time_index] = -(
@@ -509,7 +504,8 @@ def solve_adj_flow_saturated(
         super_ilu, preconditioner = None, None
         warnings.warn(
             "SuperILU: q_next is singular in adjoint "
-            f"saturated flow at it={time_index}!"
+            f"saturated flow at it={time_index}!",
+            stacklevel=2,
         )
 
     # 4) Obtain Q_{prev} @ h^{n+1}
@@ -560,7 +556,6 @@ def solve_adj_flow_density(
 
     dh/dt = div K grad h + ...
     """
-
     # 1) Obtain the adjoint head field and add it as a source term (observation on the
     # head field)
     a_fl_model.a_head[:, :, :, time_index] = -(
@@ -582,7 +577,8 @@ def solve_adj_flow_density(
     except RuntimeError:
         super_ilu, preconditioner = None, None
         warnings.warn(
-            f"SuperILU: q_next is singular in adjoint density flow at it={time_index}!"
+            f"SuperILU: q_next is singular in adjoint density flow at it={time_index}!",
+            stacklevel=2,
         )
 
     # 4) Obtain Q_{prev} @ p^{n+1}
@@ -599,9 +595,9 @@ def solve_adj_flow_density(
 
     # 6) Handle the density (forward variable) for n = 0 (initial system state).
     if time_index != 0:
-        density = tr_model.ldensity[time_index - 1]  # type: ignore
+        density = tr_model.ldensity[time_index - 1]
     else:
-        density = tr_model.ldensity[time_index]  # type: ignore
+        density = tr_model.ldensity[time_index]
 
     tmp += (
         (a_fl_model.a_head[:, :, :, time_index].ravel("F"))
@@ -661,7 +657,7 @@ def get_adjoint_transport_src_terms(
     if fl_model.is_gravity:
         tmp = 1.0 / GRAVITY / WATER_DENSITY
 
-    for n, axis in zip(grid.shape, (0, 1, 2)):
+    for n, axis in zip(grid.shape, (0, 1, 2), strict=False):
         if n < 2:
             continue
 
@@ -672,21 +668,19 @@ def get_adjoint_transport_src_terms(
             a_u_darcy = a_fl_model.a_u_darcy_x
         elif axis == 1:
             a_u_darcy = a_fl_model.a_u_darcy_y
-        elif axis == 2:
-            a_u_darcy = a_fl_model.a_u_darcy_z
         else:
-            raise ValueError()
+            a_u_darcy = a_fl_model.a_u_darcy_z
 
         kmean = get_kmean(grid, fl_model, axis, is_flatten=False)[fwd_slicer]
 
         # Forward
         src[fwd_slicer] += (
-            kmean * a_u_darcy[tuple(bwd_slicer) + (time_index,)] / grid.pipj_m(axis)
+            kmean * a_u_darcy[(*tuple(bwd_slicer), time_index)] / grid.pipj_m(axis)
         ) * tmp
 
         # Backward
         src[bwd_slicer] -= (
-            kmean * a_u_darcy[tuple(bwd_slicer) + (time_index,)] / grid.pipj_m(axis)
+            kmean * a_u_darcy[(*tuple(bwd_slicer), time_index)] / grid.pipj_m(axis)
         ) * tmp
 
     return src.ravel("F")

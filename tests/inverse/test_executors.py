@@ -24,13 +24,13 @@ MATCH_COV_OBS_ERR = re.escape(
 def test_data_model(
     cov_obs_shape, s_init_shape, expected_n_ensemble, expected_error
 ) -> None:
-    obs = np.zeros((10))
-    s_init = np.zeros((s_init_shape))
-    cov_obs = np.zeros((cov_obs_shape))
+    obs = np.zeros(10)
+    s_init = np.zeros(s_init_shape)
+    cov_obs = np.zeros(cov_obs_shape)
 
     with expected_error:
         data_model = DataModel(obs, s_init, cov_obs)
-        data_model.cov_obs
+        _ = data_model.cov_obs
         assert data_model.d_dim == 10
         assert data_model.s_dim == 100
         assert data_model.n_ensemble == expected_n_ensemble

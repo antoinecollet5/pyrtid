@@ -16,11 +16,10 @@ from __future__ import annotations
 import copy
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Literal
 
 from stochopy.optimize import OptimizeResult as StochpyOptimizeResult
 from stochopy.optimize import minimize as stochopy_minimize
-from typing_extensions import Literal
 
 from pyrtid.inverse.executors.base import (
     BaseInversionExecutor,
@@ -47,7 +46,7 @@ stochopy_solver_config_params_ds = """
 @register_params_ds(base_solver_config_params_ds)
 @dataclass
 class StochopySolverConfig(BaseSolverConfig):
-    """_summary_
+    """_summary_.
 
     Parameters
     ----------
@@ -55,7 +54,7 @@ class StochopySolverConfig(BaseSolverConfig):
 
     # TODO: add other parameters names
     solver_name: Literal["cmaes", "cpso", "de", "na", "pso", "vdcma"] = "cmaes"
-    solver_options: Optional[Dict[str, Any]] = None
+    solver_options: dict[str, Any] | None = None
     max_optimization_round_nb: int = 1
     max_fun_per_round: int = 5
 
@@ -71,7 +70,7 @@ class StochopyInversionExecutor(BaseInversionExecutor[StochopySolverConfig]):
         """Return the solver name."""
         return self.solver_config.solver_name
 
-    def run(self) -> StochpyOptimizeResult:
+    def run(self) -> StochpyOptimizeResult:  # ty: ignore[invalid-method-override]
         """
         Run the history matching.
 
@@ -96,7 +95,7 @@ class StochopyInversionExecutor(BaseInversionExecutor[StochopySolverConfig]):
                 "Entering optimization loop: %s", self.inv_model.optimization_round_nb
             )
             # Update options and stop criteria from the previous loops
-            _options: Dict[str, Any] = self._get_options_dict(
+            _options: dict[str, Any] = self._get_options_dict(
                 self.solver_config, self.inv_model.nb_f_calls
             )
 
@@ -107,16 +106,29 @@ class StochopyInversionExecutor(BaseInversionExecutor[StochopySolverConfig]):
                 ),
                 x0=x0,
                 method=self.solver_config.solver_name,
-                options=_options,
+                options=self._to_stochopy_options(_options),
             )
+            x0 = res.x
             # The output parameter vector becomes the input
         return res
+
+    @staticmethod
+    def _to_stochopy_options(options: dict[str, Any]) -> dict[str, Any]:
+        """Convert the ``maxfun`` stop criterion to ``maxiter`` (stochopy >= 2)."""
+        options = dict(options)
+        maxfun = options.pop("maxfun", 0)
+        if maxfun > 0:
+            popsize = options.get("popsize", 10)
+            options["maxiter"] = min(
+                options.get("maxiter", 100), max(1, -(-maxfun // popsize))
+            )
+        return options
 
     def _get_options_dict(
         self,
         solver_config: StochopySolverConfig,
         nfev: int,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Update optimization stop criteria."""
         if solver_config.solver_options is not None:
             options = copy.deepcopy(solver_config.solver_options)

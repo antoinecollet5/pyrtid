@@ -35,7 +35,8 @@ from __future__ import annotations
 
 import logging
 import warnings
-from typing import Callable, Literal, Optional, Tuple
+from collections.abc import Callable
+from typing import Literal
 
 import numpy as np
 from inv_toolbox.utils.preconditioner import NoTransform, Preconditioner
@@ -54,7 +55,7 @@ from pyrtid.forward.models import (
     TimeParameters,
     TransportModel,
 )
-from pyrtid.utils import NDArrayBool, NDArrayFloat
+from pyrtid.utils import NDArrayBool, NDArrayFloat, NDArrayInt
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +65,9 @@ __all__ = [
     "solve_geochem_implicit",
     "solve_geochem_system",
     "get_dM",
+    "get_dM_derivatives",
     "get_dM_pos",
+    "get_implicit_dM_derivatives",
     "get_phi",
     "F",
     "Jacobian",
@@ -73,7 +76,7 @@ __all__ = [
 
 
 def _get_constant_concentration_mask(
-    tr_model: TransportModel, shape: Tuple[int, ...]
+    tr_model: TransportModel, shape: tuple[int, ...]
 ) -> NDArrayBool:
     """Return a boolean mask (grid shape) of the constant concentration cells."""
     mask = np.zeros(shape, dtype=bool)
@@ -182,7 +185,7 @@ def _get_dM_candidates(
     gch_params: GeochemicalParameters,
     time_index: int,
     dt: float,
-) -> Tuple[NDArrayFloat, NDArrayFloat, NDArrayFloat, NDArrayFloat, NDArrayFloat]:
+) -> tuple[NDArrayFloat, NDArrayFloat, NDArrayFloat, NDArrayFloat, NDArrayFloat]:
     """
     Return the 3 candidate dissolved amounts and the arrays they derive from.
 
@@ -258,7 +261,7 @@ def get_dM_pos(
     gch_params: GeochemicalParameters,
     time_index: int,
     dt: float,
-) -> NDArrayFloat:
+) -> NDArrayInt:
     """
     Return which limitation controls the dissolution in each grid cell.
 
@@ -285,6 +288,178 @@ def get_dM_pos(
         tr_model, gch_params, time_index, dt
     )
     return np.argmin(np.array([kinetic, immob1, reagent]), axis=0)
+
+
+def get_dM_derivatives(
+    tr_model: TransportModel,
+    gch_params: GeochemicalParameters,
+    time_index: int,
+    dt: float,
+) -> tuple[NDArrayFloat, NDArrayFloat, NDArrayFloat]:
+    r"""
+    Return the derivatives of the grade variation :math:`\Delta M` of :func:`get_dM`.
+
+    The derivatives are those of the active limitation (kinetics, available mineral
+    or available reagent), and are null where nothing is dissolved. The grades of
+    the constant concentration grid cells do not vary, so the derivatives are null
+    there as well.
+
+    Parameters
+    ----------
+    tr_model : TransportModel
+        The transport model.
+    gch_params : GeochemicalParameters
+        The geochemical parameters.
+    time_index : int
+        Index of the current time (must be >= 1).
+    dt : float
+        The timestep in seconds.
+
+    Returns
+    -------
+    tuple[NDArrayFloat, NDArrayFloat, NDArrayFloat]
+        ``(d_dmob, d_dgrade0, d_dgrade1)`` with shapes ``(2, nx, ny, nz)``,
+        ``(nx, ny, nz)`` and ``(nx, ny, nz)``:
+
+        - ``d_dmob[i]`` is the derivative with respect to the mobile concentration
+          of the species ``i`` at ``time_index``,
+        - ``d_dgrade0`` is the derivative with respect to the grade of the mineral at
+          ``time_index - 1``,
+        - ``d_dgrade1`` is the derivative with respect to the grade of the product
+          at ``time_index - 1``, which is always null.
+    """
+    kinetic, immob1, reagent, fac, mob2 = _get_dM_candidates(
+        tr_model, gch_params, time_index, dt
+    )
+    mob1 = tr_model.lmob[time_index][0]
+    shape = mob1.shape
+    d_dmob = np.zeros((2, *shape))
+    d_dgrade0 = np.zeros(shape)
+    d_dgrade1 = np.zeros(shape)
+
+    # Which limitation is active (see get_dM_pos)
+    pos = np.argmin(np.array([kinetic, immob1, reagent]), axis=0)
+
+    # 1) the kinetics: dM = dt * kv * As * grade * (1 - mob1 / Ks) * mob2
+    coef = dt * gch_params.kv * gch_params.As
+    is_kin = pos == 0
+    d_dmob[0] = np.where(is_kin, -coef * immob1 * mob2 / gch_params.Ks, 0.0)
+    d_dmob[1] = np.where(is_kin, coef * immob1 * fac, 0.0)
+    d_dgrade0 = np.where(is_kin, coef * fac * mob2, 0.0)
+
+    # 2) the mineral is exhausted: dM = -grade
+    d_dgrade0 = np.where(pos == 1, -1.0, d_dgrade0)
+
+    # 3) the reagent is exhausted: dM = -mob2 / stocoef
+    d_dmob[1] = np.where(pos == 2, -1.0 / gch_params.stocoef, d_dmob[1])
+
+    # Special cases of get_dM: nothing is dissolved
+    no_dissolution = (fac <= 0.0) | (fac > 1.0) | (mob2 <= 0.0)
+    no_dissolution |= _get_constant_concentration_mask(tr_model, shape)
+    d_dmob[:, no_dissolution] = 0.0
+    d_dgrade0[no_dissolution] = 0.0
+
+    return d_dmob, d_dgrade0, d_dgrade1
+
+
+def get_implicit_dM_derivatives(
+    tr_model: TransportModel,
+    gch_params: GeochemicalParameters,
+    time_index: int,
+    dt: float,
+    tol: float = 1e-3,
+) -> tuple[NDArrayFloat, NDArrayFloat, NDArrayFloat, NDArrayInt, int]:
+    r"""
+    Return the derivatives of the grade variation of the implicit chemistry.
+
+    The timestep must have been solved, and the fixed point iterations between the
+    transport and the chemistry must have converged. In that case, the final
+    concentrations are the transported ones, and, as long as the extent
+    :math:`\xi` of the dissolution is not bounded, :math:`\Delta M = - \xi` is the
+    local function of the concentrations and of the grades at the previous time
+    (the same as with the explicit chemistry, but precipitation is allowed).
+
+    Otherwise, the extent is bounded by the physical limits (see
+    :func:`solve_geochem_implicit`) and the active limitation is identified from the
+    results:
+
+    - the mineral is exhausted: :math:`\Delta M = -\overline{c}_1^{n-1}`,
+    - the product is exhausted: :math:`\Delta M = \overline{c}_2^{n-1} / \nu`,
+    - the reagent (species 2 for the dissolution, species 1 for the precipitation)
+      is exhausted: the concentration of the species is null (pinned), and the
+      grade variation is determined by the transport.
+
+    Parameters
+    ----------
+    tr_model : TransportModel
+        The transport model.
+    gch_params : GeochemicalParameters
+        The geochemical parameters.
+    time_index : int
+        Index of the current time (must be >= 1).
+    dt : float
+        The timestep in seconds.
+    tol : float, optional
+        Relative tolerance used to identify the active limitation, by default 1e-3.
+
+    Returns
+    -------
+    tuple[NDArrayFloat, NDArrayFloat, NDArrayFloat, NDArrayInt, int]
+        ``(d_dmob, d_dgrade0, d_dgrade1, pinned, n_unknown)``:
+
+        - ``d_dmob`` with shape ``(2, nx, ny, nz)``: derivative of :math:`\Delta M`
+          with respect to the mobile concentrations at ``time_index``,
+        - ``d_dgrade0`` and ``d_dgrade1`` with shape ``(nx, ny, nz)``: derivatives
+          with respect to the grades of the species 1 and 2 at ``time_index - 1``,
+        - ``pinned`` with shape ``(nx, ny, nz)``: 0 if the grid cell is not pinned,
+          1 (resp. 2) if the concentration of the species 1 (resp. 2) is null,
+        - ``n_unknown``: number of grid cells where the active limitation could not
+          be identified (the unbounded case is assumed there).
+    """
+    mob = tr_model.lmob[time_index]
+    c1, c2 = mob[0], mob[1]
+    g1_prev, g2_prev = tr_model.limmob[time_index - 1]
+    g1 = tr_model.limmob[time_index][0]
+    nu = gch_params.stocoef
+    coef = dt * gch_params.kv * gch_params.As
+    fac = 1.0 - c1 / gch_params.Ks
+
+    extent = g1_prev - g1  # observed extent
+    extent_free = -coef * g1_prev * c2 * fac
+    scale = np.maximum(np.abs(extent), np.abs(extent_free))
+    scale = np.maximum(scale, 1e-12 * np.maximum(np.abs(g1_prev), 1e-30))
+
+    is_free = np.abs(extent - extent_free) <= tol * scale
+    is_mineral = ~is_free & (
+        np.abs(extent - g1_prev) <= tol * np.maximum(np.abs(g1_prev), scale)
+    )
+    is_product = ~is_free & ~is_mineral
+    is_product &= np.abs(extent + g2_prev / nu) <= tol * np.maximum(
+        np.abs(g2_prev / nu), scale
+    )
+    c1_zero = np.abs(c1) <= 1e-8 * max(float(np.max(np.abs(c1))), 1e-300)
+    c2_zero = np.abs(c2) <= 1e-8 * max(float(np.max(np.abs(c2))), 1e-300)
+    other = ~is_free & ~is_mineral & ~is_product
+    pinned = np.zeros(c1.shape, dtype=int)
+    pinned[other & (extent < 0.0) & c1_zero] = 1
+    pinned[other & (extent > 0.0) & c2_zero] = 2
+    n_unknown = int(np.count_nonzero(other & (pinned == 0)))
+
+    smooth = ~is_mineral & ~is_product & (pinned == 0)  # free (or unknown)
+    d_dmob = np.zeros((2, *c1.shape))
+    d_dmob[0] = np.where(smooth, -coef * g1_prev * c2 / gch_params.Ks, 0.0)
+    d_dmob[1] = np.where(smooth, coef * g1_prev * fac, 0.0)
+    d_dgrade0 = np.where(smooth, coef * fac * c2, 0.0)
+    d_dgrade0 = np.where(is_mineral, -1.0, d_dgrade0)
+    d_dgrade1 = np.where(is_product, 1.0 / nu, 0.0)
+
+    # The grades of the constant concentration grid cells do not vary
+    mask = _get_constant_concentration_mask(tr_model, c1.shape)
+    d_dmob[:, mask] = 0.0
+    d_dgrade0[mask] = 0.0
+    d_dgrade1[mask] = 0.0
+    pinned[mask] = 0
+    return d_dmob, d_dgrade0, d_dgrade1, pinned, n_unknown
 
 
 def get_implicit_extent_analytical(
@@ -572,7 +747,16 @@ def _newton_batch(
         F_new = F(x_new[:2], x_new[2:], mp, ip, gch_params, dt)
         if is_use_linesearch:
             _backtrack_batch(
-                xa, dx, x_new, F_new, Fa, small | ~is_finite, mp, ip, gch_params, dt
+                xa,
+                dx,
+                x_new,
+                F_new,
+                Fa,
+                np.logical_or(small, ~is_finite),
+                mp,
+                ip,
+                gch_params,
+                dt,
             )
         x[:, idx] = x_new
         residuals[:, idx] = F_new
@@ -601,7 +785,7 @@ def _solve_extent(
     rtol: float,
     max_iter: int,
     is_use_linesearch: bool,
-) -> Tuple[NDArrayFloat, int, int]:
+) -> tuple[NDArrayFloat, int, int]:
     """
     Solve the implicit chemistry and return the extent of dissolution.
 
@@ -755,7 +939,8 @@ def solve_geochem_implicit(
     if n_failed > 0:
         warnings.warn(
             f"The implicit geochemistry did not converge in {n_failed} grid cell(s) at "
-            f"time index {time_index}. Consider reducing the timestep."
+            f"time index {time_index}. Consider reducing the timestep.",
+            stacklevel=2,
         )
 
     # Physical limits of the extent of dissolution (lo <= 0 <= hi)
@@ -812,10 +997,10 @@ class _LocalNewtonProblem:
         self.nfev = 0
         self.njev = 0
         self.nhev = 0
-        self._x: Optional[NDArrayFloat] = None
-        self._residuals: Optional[NDArrayFloat] = None
-        self._jac: Optional[NDArrayFloat] = None
-        self._invjacres: Optional[NDArrayFloat] = None
+        self._x: NDArrayFloat | None = None
+        self._residuals: NDArrayFloat | None = None
+        self._jac: NDArrayFloat | None = None
+        self._invjacres: NDArrayFloat | None = None
 
     def _update_x(self, x: NDArrayFloat) -> None:
         if self._x is not None and np.array_equal(x, self._x):
@@ -829,6 +1014,7 @@ class _LocalNewtonProblem:
         self._update_x(x)
         if self._residuals is None:
             self.nfev += 1
+            assert self._x is not None
             c = self.pcd.backtransform(self._x)
             self._residuals = F(
                 c[:2], c[2:], self.mob_prev, self.immob_prev, self.gch_params, self.dt
@@ -841,6 +1027,7 @@ class _LocalNewtonProblem:
         self._update_x(x)
         if self._jac is None:
             self.njev += 1
+            assert self._x is not None
             c = self.pcd.backtransform(self._x)
             self._jac = Jacobian(
                 c[:2], c[2:], self.mob_prev, self.immob_prev, self.gch_params, self.dt
@@ -884,7 +1071,7 @@ def solve_geochem_system(
     is_use_svd: bool = False,
     is_use_ln: bool = False,
     is_use_polish: bool = False,
-    pcd: Optional[Preconditioner] = None,
+    pcd: Preconditioner | None = None,
     rtol: float = 1e-12,
     max_iter: int = 100,
 ) -> OptimizeResult:
@@ -956,7 +1143,7 @@ def solve_geochem_system(
     def _polish(x: NDArrayFloat, *args) -> NDArrayFloat:
         return get_polish(problem.get_invjacres(x), pcd.backtransform(x))
 
-    linesearch: Optional[Callable] = None
+    linesearch: Callable | None = None
     if is_use_ln:
         linesearch = _linesearch
     elif is_use_polish:

@@ -17,8 +17,8 @@ from __future__ import annotations
 
 import copy
 import logging
+from collections import deque
 from dataclasses import dataclass
-from typing import Deque, List, Optional, Tuple
 
 import numpy as np
 import scipy as sp
@@ -217,7 +217,7 @@ class LBFGSBSolverConfig(AdjointSolverConfig):
     """
 
     maxcor: int = 10
-    ftarget: Optional[float] = None
+    ftarget: float | None = None
     ftol: float = 1e-5
     gtol: float = 1e-5
     stol: float = 1e-3
@@ -258,9 +258,9 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
         loss: float,
         loss_old: float,
         loss_grad: NDArrayFloat,
-        S: Deque[NDArrayFloat],
-        G: Deque[NDArrayFloat],
-    ) -> Tuple[float, float, NDArrayFloat, Deque[NDArrayFloat]]:
+        S: deque[NDArrayFloat],
+        G: deque[NDArrayFloat],
+    ) -> tuple[float, float, NDArrayFloat, deque[NDArrayFloat]]:
         """
         Update f0, grad and G to match a potential new objective function.
 
@@ -317,7 +317,7 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
         logging.info("- Trying to update the regularization weights")
 
         # Regularization weight that has been used up to now
-        has_been_updated: List[bool] = []
+        has_been_updated: list[bool] = []
         idx = 0  # idx of the first value for the parameter
         for _i, param in enumerate(self.inv_model.parameters_to_adjust):
             # number of updated values for the current parameter
@@ -392,9 +392,10 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
 
         # Update all gradients
         idx = 0  # idx of the first value for the parameter
-        for param in self.inv_model.parameters_to_adjust:
+        for _i, param in enumerate(self.inv_model.parameters_to_adjust):
             # Case 1: no update to perform for the parameter
             if not has_been_updated[_i]:
+                idx += param.size_preconditioned_values
                 continue
 
             logging.info(
@@ -410,7 +411,7 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
             loss_grad[idx : idx + n_vals] = update_gradient(
                 param,
                 s_cond,
-                loss_grad[idx : idx + n_vals],
+                loss_grad,
                 idx,
                 n_vals,
                 -1,
@@ -421,7 +422,7 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
                 G[len(G) - _j - 1][idx : idx + n_vals] = update_gradient(
                     param,
                     _s_cond,
-                    G[len(G) - _j - 1][idx : idx + n_vals],
+                    G[len(G) - _j - 1],
                     idx,
                     n_vals,
                     -_j - 2,
@@ -454,16 +455,13 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
                 return True
         return False
 
-    def scale_initial_gradient(self) -> Tuple[float, NDArrayFloat]:
-        """
-        Perform a parameter scaling to enforce the infinite norm of the first gradient.
-        """
-
+    def scale_initial_gradient(self) -> tuple[float, NDArrayFloat]:
+        """Scale the parameters so the first gradient has unit infinite norm."""
         # evaluate objective function and its gradient
         fun: float = self.eval_loss(self.data_model.s_init)
         grad_cond: NDArrayFloat = self.eval_loss_gradient(
             self.data_model.s_init, is_save_state=True
-        )  # type: ignore
+        )
 
         # Adaptive regularization step -> should be done before
         if self.inv_model.is_adaptive_regularization():
@@ -472,8 +470,8 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
                 fun,
                 copy.copy(fun),
                 grad_cond,
-                Deque([]),
-                Deque([]),
+                deque(),
+                deque(),
             )
 
         idx = 0
@@ -531,7 +529,6 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
 
     def callback(self, s: NDArrayFloat, res: sp.optimize.OptimizeResult) -> bool:
         """Experimental stop criterion based on the model change."""
-
         # Old attempt
         # The problème with this approach is that some parameters avec varying amplitude
         # because of precondiitoners, ex: GD with mean.
@@ -543,7 +540,6 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
 
     def callback_new(self, s: NDArrayFloat, res: sp.optimize.OptimizeResult) -> bool:
         """Experimental stop criterion based on the model change."""
-
         # New attempt: evaluation per parameter with no preconditioning.
         # but log scaling if needed.
         s_change = 0
@@ -584,10 +580,10 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
 
         # run L-BFGS-B
         return minimize_lbfgsb(
-            x0=self.data_model.s_init,
+            x0=self.data_model.s_init,  # ty: ignore[invalid-argument-type]
             fun=self.eval_loss,
             jac=self.eval_loss_gradient,  # type: ignore
-            update_fun_def=(
+            update_fun_def=(  # ty: ignore[invalid-argument-type]
                 self._update_fun_def
                 if self.inv_model.is_adaptive_regularization()
                 else None
