@@ -1,13 +1,27 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright (c) 2024-2026 Antoine COLLET
 
-"""Provide a model representing the reactive transport system.
+"""
+Provide the data model of the reactive transport system.
 
-Note: this part is handle with numba so it can be used in functions later on.
+The module gathers
 
-Note :
-- The timestep is fixed.
-- The grid is composed of regular grid cells
+- the parameter classes used to configure a simulation (:class:`TimeParameters`,
+  :class:`FlowParameters`, :class:`TransportParameters`,
+  :class:`GeochemicalParameters`),
+- the source terms and the boundary conditions,
+- the flow and transport models, which hold the results of the simulation as lists
+  of arrays (one entry per time, ``l*`` attributes) and as read-only properties
+  returning the same data as a single array with time as last dimension,
+- the :class:`ForwardModel` which aggregates all of the above.
+
+Note
+----
+- The properties returning arrays (``head``, ``mob``, ``u_darcy_x``, ...) copy the
+  whole simulation history. They are meant for post-processing; the solvers use the
+  lists (``lhead``, ``lmob``, ...) and the ``*_sample`` methods instead.
+- The grid is composed of regular grid cells.
+- The timestep is variable (see :class:`TimeParameters`).
 """
 
 from __future__ import annotations
@@ -25,6 +39,7 @@ from quickpaver import (
     rlg_nn_to_idx,
     span_to_node_numbers_3d,
 )
+from scipy import sparse
 from scipy.sparse import lil_array
 from scipy.sparse.linalg import LinearOperator, SuperLU
 
@@ -112,47 +127,57 @@ class TimeParameters:
         dt_max: Optional[float] = None,
         courant_factor: float = 1.0,
     ) -> None:
-        """Initialize the instance."""
+        """
+        Initialize the instance.
+
+        Parameters
+        ----------
+        duration : float
+            Desired duration of the simulation in seconds.
+        dt_init : float
+            Initial timestep in seconds. It is clipped to ``[dt_min, dt_max]``.
+        dt_min : Optional[float], optional
+            Minimum timestep in seconds. If None, it is set to the (clipped) initial
+            timestep, which means that the timestep cannot decrease.
+        dt_max : Optional[float], optional
+            Maximum timestep in seconds. If None, it is set to the (clipped) initial
+            timestep, which means that the timestep cannot increase. Hence, if
+            neither ``dt_min`` nor ``dt_max`` is given, the timestep is fixed.
+        courant_factor : float, optional
+            Relaxation of the maximum timestep given by the CFL condition,
+            by default 1.0.
+
+        Raises
+        ------
+        ValueError
+            If ``dt_min`` is above ``dt_max``.
+        """
         self.duration = duration
 
-        # First pass on the min/max
-        if dt_min is not None:
-            _dt_min: float = dt_min
-        else:
-            _dt_min = dt_init
-        if dt_max is not None:
-            _dt_max: float = dt_max
-        else:
-            _dt_max = dt_init
-
-        _dt_init = max(min(_dt_max, dt_init), _dt_min, dt_init)
-
-        # Second pass on the min/max
-        if dt_min is not None:
-            self.dt_min: float = dt_min
-        else:
-            self.dt_min = _dt_init
-        if dt_max is not None:
-            self.dt_max: float = dt_max
-        else:
-            self.dt_max = _dt_init
-
         # Check dt_min and dt_max consistency
-        if self.dt_min > self.dt_max:
-            raise ValueError(f"dt_min ({self.dt_min}) is above dt_max ({self.dt_max})!")
+        if dt_min is not None and dt_max is not None and dt_min > dt_max:
+            raise ValueError(f"dt_min ({dt_min}) is above dt_max ({dt_max})!")
 
+        # Apply bounds to the initial timestep
+        _dt_init = dt_init
+        if dt_max is not None:
+            _dt_init = min(_dt_init, dt_max)
+        if dt_min is not None:
+            _dt_init = max(_dt_init, dt_min)
+
+        self.dt_min: float = dt_min if dt_min is not None else _dt_init
+        self.dt_max: float = dt_max if dt_max is not None else _dt_init
         self.courant_factor: float = courant_factor
-        # Apply bounds
         self.dt_init: float = _dt_init
-        self.dt = _dt_init
+        self.dt: float = _dt_init
         self.nfpi: int = 0
         self.ldt: List[float] = []
         self.lnfpi: List[int] = []
 
     @property
     def time_elapsed(self) -> float:
-        """Time elapsed in the simulation."""
-        return np.sum(self.ldt)
+        """Time elapsed in the simulation (sum of the timesteps), in seconds."""
+        return float(np.sum(self.ldt))
 
     @property
     def nts(self) -> int:
@@ -195,10 +220,15 @@ class TimeParameters:
         """
         Update the timestep.
 
+        The timestep is increased by 2% if the last timestep converged in less than
+        ``max_fpi`` iterations, and decreased by 30% otherwise. It is then bounded
+        by the CFL condition and by ``[dt_min, dt_max]``.
+
         Parameters
         ----------
         n_iter: int
-            Number of iterations required to solve the last timestep.
+            Number of iterations required to solve the last timestep. Pass
+            ``max_fpi`` (or more) to force a decrease of the timestep.
         dt_max_cfl: float
             Maximum timestep according to the CFL.
         max_fpi: int
@@ -222,49 +252,79 @@ class TimeParameters:
             self.dt = self.dt_max
 
     def get_dt_max_cfl(self, model: ForwardModel, time_index: int) -> float:
-        """Get the maximum timestep to respect the CFL condition."""
-        dt_cfl = np.min(
-            self.courant_factor
-            * model.tr_model.porosity
-            * model.get_ij_over_u(time_index)
+        """
+        Get the maximum timestep to respect the CFL condition.
+
+        Parameters
+        ----------
+        model : ForwardModel
+            The model, which holds the velocity field and the porosity.
+        time_index : int
+            Index of the time at which the velocity field is evaluated.
+
+        Returns
+        -------
+        float
+            The maximum timestep in seconds (the courant factor is applied).
+        """
+        return float(
+            np.min(
+                self.courant_factor
+                * model.tr_model.porosity
+                * model.get_ij_over_u(time_index)
+            )
         )
-        return float(np.min(dt_cfl))
 
 
 class FlowRegime(StrEnum):
+    """Flow regime: stationary (initial equilibrium) or transient."""
+
     STATIONARY = "stationary"
     TRANSIENT = "transient"
 
 
 class VerticalAxis(StrEnum):
+    """Axis of the grid which is vertical (only matters with the gravity)."""
+
     X = "x"
     Y = "y"
     Z = "z"
 
+    @property
+    def axis_index(self) -> int:
+        """Return the index of the axis (0 for x, 1 for y, 2 for z)."""
+        return {"x": 0, "y": 1, "z": 2}[self.value]
+
 
 class FlowParameters:
     """
-    Class defining the time parameters used in the simulation.
+    Class defining the flow parameters used in the simulation.
 
     Attributes
     ----------
-    k0: float, optional
+    permeability: float, optional
         Default permeability in the grid (m/s). The default is 1.e-4 m/s.
     storage_coefficient: float, optional
         The default storage coefficient in the grid ($m^{-1}$).
-        The default is 1e-3 $m^{-1}$.
+        The default is 1.0 $m^{-1}$.
     crank_nicolson: float
         The Crank-Nicolson parameter allows to set the temporal resolution
         scheme to explicit, fully implicit or somewhere in between these two
         extremes. The value must be comprised between 0.0 and 1.0, 0.0 being a
         full explicit scheme and 1.0 fully implicit. The default is 1.0.
+    regime: FlowRegime
+        Whether the initial heads are equilibrated with the sources and the
+        boundary conditions (stationary) or not (transient). The default is
+        stationary.
     is_gravity: bool, optional
         Whether the gravity is taken into account, i.e. density driven flow.
+        The default is False.
     vertical_axis: VerticalAxis
         Define which axis is the vertical one. It only affects if the gravity is
         enabled. The default is the z axis.
-    tolerance: float, optional
-        The tolerance on the flow. The default is 1e-8.
+    rtol: float, optional
+        The relative tolerance of the iterative linear solver (GMRES) used for the
+        flow. The default is 1e-8.
     """
 
     def __init__(
@@ -277,7 +337,11 @@ class FlowParameters:
         vertical_axis: VerticalAxis = VerticalAxis.Z,
         rtol: float = 1e-8,
     ) -> None:
-        """Initialize the instance."""
+        """
+        Initialize the instance.
+
+        See the class docstring for the description of the parameters.
+        """
         self.permeability: float = permeability
         self.storage_coefficient: float = storage_coefficient
         self.crank_nicolson: float = crank_nicolson
@@ -295,18 +359,21 @@ class TransportParameters:
     ----------
     diffusion: float, optional
         Default diffusion coefficient in the grid in [m2/s]. The default is 1e-4 m2/s.
-    dispercivity: float, optional
+    dispersivity: float, optional
         The dispersivity (kinematic and numeric) in meters. The default is 0.1 m.
     porosity: float, optional
         Default porosity in the grid Should be a number between 0 and 1.
         The default is 1.0.
-    crank_nicolson: float
-        The Crank-Nicholson parameter allows to set the temporal resolution
-        scheme to explicit, fully implicit or somewhere in between these two
-        extremes. The value must be comprised between 0.0 and 1.0, 0.0 being a
-        full explicit scheme and 1.0 fully implicit. The default is 0.5.
-    tolerance: float, optional
-        The tolerance on the transport. The default is 1e-8.
+    crank_nicolson_advection: float
+        The Crank-Nicholson parameter of the advection term allows to set the
+        temporal resolution scheme to explicit, fully implicit or somewhere in
+        between these two extremes. The value must be comprised between 0.0 and 1.0,
+        0.0 being a full explicit scheme and 1.0 fully implicit. The default is 0.5.
+    crank_nicolson_diffusion: float
+        Same as above, for the diffusion/dispersion term. The default is 1.0.
+    rtol: float, optional
+        The relative tolerance of the iterative linear solver (GMRES) used for the
+        transport. The default is 1e-8.
     is_numerical_acceleration: bool, optional
         Whether to use the chemical source term from the previous iteration (at t=n-1)
         as a first guess in the transport equation (only apply to the first coupling
@@ -322,9 +389,10 @@ class TransportParameters:
     fpi_eps: float
        Tolerance on the transport-chemistry coupling error. The default value is 1e-5.
     max_fpi: int
-        Maximum number of fixed point iterations per timestep. If this number is reached
-        then the numerical acceleration is temporarily disabled, otherwise, the
-        timestep is reduced.
+        Maximum number of fixed point iterations per timestep. If this number is
+        exceeded then the numerical acceleration is temporarily disabled and the
+        timestep is solved again. If it is already disabled, the timestep is
+        reduced. The default is 20.
     """
 
     def __init__(
@@ -340,7 +408,11 @@ class TransportParameters:
         fpi_eps: float = 1e-5,
         max_fpi: int = 20,
     ) -> None:
-        """Initialize the instance."""
+        """
+        Initialize the instance.
+
+        See the class docstring for the description of the parameters.
+        """
         self.diffusion: float = diffusion
         self.dispersivity: float = dispersivity
         self.porosity: float = porosity
@@ -355,27 +427,44 @@ class TransportParameters:
 
 class GeochemicalParameters:
     """
-    Class defining the geocgemical parameters used in the simulation.
+    Class defining the geochemical parameters used in the simulation.
+
+    The chemical system is made of one mineral (immobile species 1) dissolving into
+    the mobile species 1 by consuming ``stocoef`` moles of the mobile species 2,
+    which is transformed in the immobile species 2.
 
     Attributes
     ----------
     conc: float, optional
-        Initial tracer concentration in the grid in molal. The default is 0.0.
+        Initial concentration of the mobile species 1 (tracer) in the grid in molal.
+        The default is 1e-10.
     conc2: float, optional
-        Initial reagent concentration in the grid in molal. The default is 0.0.
+        Initial concentration of the mobile species 2 (reagent) in the grid in molal.
+        The default is 1e-10.
     grade: float, optional
-        Default mineral grade in the grid in mol/kg (kg of water).
-        The default is 0.0.
+        Default grade of the immobile species 1 (the mineral) in the grid in mol/kg
+        (kg of water). The default is 1e-10.
+    grade2: float, optional
+        Default grade of the immobile species 2 in the grid in mol/kg (kg of water).
+        The default is 1e-10.
     kv: float, optional
-        The kinetic rate of the mineral in [mol/m2/s]. The default is -6.9e-9.
+        The kinetic rate of the mineral in [mol/m2/s]. It is negative for a
+        dissolution. The default is -6.9e-9.
     As: float, optional
         Specific area in [m2/mol]. The default is 13.5.
     Ks: float, optional
         Solubility constant (no unit). The default is 6.3e-4.
     Ms: float, optional
-        Molar mass in g/mol.
+        Molar mass of the mobile species 1 in g/mol. The default is 270.
+    Ms2: float, optional
+        Molar mass of the mobile species 2 in g/mol. The default is 270.
     stocoef: float
         Number of mole of species 2 consumed when dissolving the mineral.
+        The default is 1.0.
+    use_explicit_formulation: bool
+        Whether to use the explicit formulation of the chemistry, otherwise the
+        (more expensive) implicit formulation is used. See
+        :mod:`pyrtid.forward.geochem_solver`. The default is True.
     """
 
     def __init__(
@@ -392,7 +481,11 @@ class GeochemicalParameters:
         stocoef: float = 1.0,
         use_explicit_formulation: bool = True,
     ) -> None:
-        """Initialize the instance."""
+        """
+        Initialize the instance.
+
+        See the class docstring for the description of the parameters.
+        """
         self.conc: float = conc
         self.conc2: float = conc2
         self.grade: float = grade
@@ -403,27 +496,32 @@ class GeochemicalParameters:
         self.Ms: float = Ms
         self.Ms2: float = Ms2
         self.stocoef: float = stocoef
-        self.use_explicit_formulation = use_explicit_formulation
+        self.use_explicit_formulation: bool = use_explicit_formulation
 
 
 class SourceTerm:
     """
     Define a source term object.
 
-    A well object can pump or inject.
+    A source term (e.g. a well) can pump or inject, with piecewise constant
+    flowrates and concentrations.
 
     Attributes
     ----------
     name: str
         Name of the instance.
-    x_coord: float
-        x coordinate of the well.
-    y_coord: float
-        y_coordinate of the well.
+    node_ids: NDArrayInt
+        Node numbers of the grid cells where the source term applies. The flowrate
+        is equally distributed between them.
+    times: NDArrayFloat
+        Times (in seconds, sorted in ascending order) at which the flowrates and
+        concentrations change. Before the first time, the source term is inactive.
     flowrates: NDArrayFloat
-        Sequence of flowrates of the well. Positive = injection, negative = pumping.
+        Sequence of flowrates (m3/s), one per time. Positive = injection,
+        negative = pumping.
     concentrations: NDArrayFloat
-        Concentrations of the first species, used only if flowrates is positive.
+        Concentrations (mol/l) of the injected species, one row per time. Used only
+        if the flowrate is positive.
     """
 
     __slots__ = [
@@ -449,17 +547,23 @@ class SourceTerm:
         ----------
         name: str
             Name of the instance.
-        x_coord: float
-            x coordinate of the well.
-        y_coord: float
-            y_coordinate of the well.
+        node_ids: NDArrayInt
+            Node numbers of the grid cells where the source term applies.
+        times: NDArrayFloat
+            Times (s) at which the flowrates and concentrations change, sorted in
+            ascending order. With dimension (nt,).
         flowrates: NDArrayFloat
-            Sequence of flowrates of the well (m3/s).
-            Positive = injection, negative = pumping.
+            Sequence of flowrates (m3/s). Positive = injection, negative = pumping.
+            With dimension (nt,).
         concentrations: NDArrayFloat
             Concentration, used only if flowrates is positive (mol/l).
-            With dimension (nt, n_sp).
+            With dimension (nt, n_sp) (or (nt,) for a single species).
 
+        Raises
+        ------
+        ValueError
+            If ``times``, ``flowrates`` and ``concentrations`` do not have the same
+            number of times.
         """
         self.name = name
         self.node_ids = np.array(node_ids).reshape(-1)
@@ -487,18 +591,28 @@ class SourceTerm:
         """Return the number of nodes."""
         return np.size(self.node_ids)
 
-    def get_values(self, time: float) -> Tuple[float, float]:
-        """Return the concentrations and the flowrates for a given time."""
+    def get_values(self, time: float) -> Tuple[float, NDArrayFloat]:
+        """
+        Return the flowrate and the concentrations for a given time.
+
+        The values are piecewise constant: those of the last ``times`` entry which is
+        lower or equal to ``time`` are returned. This is matching the "modify"
+        process behavior of HYTEC.
+
+        Parameters
+        ----------
+        time : float
+            Time in seconds.
+
+        Returns
+        -------
+        Tuple[float, NDArrayFloat]
+            The flowrate (m3/s) and the concentrations (mol/l, one per species). Both
+            are zero before the first time.
+        """
         if time < self.times[0]:
             return 0.0, 0.0
-        time_index = 0  # index in times
-
-        # This is matching the "modify" process behavior of HYTEC
-        for time_index, _time in enumerate(self.times):
-            if _time > time:
-                if time_index > 0:
-                    time_index -= 1
-                break
+        time_index = int(np.searchsorted(self.times, time, side="right")) - 1
         return self.flowrates[time_index], self.concentrations[time_index]
 
 
@@ -572,10 +686,37 @@ def _get_a_not_in_b_1d(a: NDArrayInt, b: NDArrayInt) -> NDArrayInt:
     return np.sort(a[np.isin(a, b, invert=True)])
 
 
+def _get_free_node_numbers(n_nodes: int, constant_nn: NDArrayInt) -> NDArrayInt:
+    """
+    Return the node numbers (sorted) which are not in ``constant_nn``.
+
+    Parameters
+    ----------
+    n_nodes : int
+        Total number of nodes (grid cells).
+    constant_nn : NDArrayInt
+        Node numbers of the nodes with a constant value (boundary conditions).
+    """
+    is_free = np.ones(n_nodes, dtype=bool)
+    is_free[constant_nn] = False
+    return np.flatnonzero(is_free).astype(np.int32)
+
+
 class FlowModel(ABC):
-    """Represent a flow model."""
+    """
+    Represent a flow model.
+
+    The simulated fields are stored in lists with one entry per time (``lhead``,
+    ``lpressure``, ``lu_darcy_x``, ...) and are also available as read-only
+    properties (``head``, ``pressure``, ``u_darcy_x``, ...) returning arrays with
+    time as last dimension.
+
+    The faces velocities (``u_darcy_*``) have one more value than the grid has cells
+    along their axis.
+    """
 
     __slots__ = [
+        "_vertical_pos",
         "vertical_axis",
         "vertical_mesh_size",
         "crank_nicolson",
@@ -646,13 +787,18 @@ class FlowModel(ABC):
             VerticalAxis.Z: grid.dz,
         }[fl_params.vertical_axis]
 
-        # Empty arrays
-        self.west_boundary_idx: NDArrayInt = np.zeros([], dtype=np.int64)
-        self.east_boundary_idx: NDArrayInt = np.zeros([], dtype=np.int64)
-        self.south_boundary_idx: NDArrayInt = np.zeros([], dtype=np.int64)
-        self.north_boundary_idx: NDArrayInt = np.zeros([], dtype=np.int64)
-        self.bottom_boundary_idx: NDArrayInt = np.zeros([], dtype=np.int64)
-        self.top_boundary_idx: NDArrayInt = np.zeros([], dtype=np.int64)
+        # Indices of the constant head cells located on the domain borders (empty by
+        # default). Arrays with shape (2, n), which are updated with
+        # `set_constant_head_indices`.
+        self.west_boundary_idx: NDArrayInt = np.empty((2, 0), dtype=np.int64)
+        self.east_boundary_idx: NDArrayInt = np.empty((2, 0), dtype=np.int64)
+        self.south_boundary_idx: NDArrayInt = np.empty((2, 0), dtype=np.int64)
+        self.north_boundary_idx: NDArrayInt = np.empty((2, 0), dtype=np.int64)
+        self.bottom_boundary_idx: NDArrayInt = np.empty((2, 0), dtype=np.int64)
+        self.top_boundary_idx: NDArrayInt = np.empty((2, 0), dtype=np.int64)
+
+        # Cache of the vertical position of the grid cell centers
+        self._vertical_pos: Optional[NDArrayFloat] = None
 
         # These are list of ndarrays
         self.lhead: List[NDArrayFloat] = [np.zeros(grid.shape, dtype=np.float64)]
@@ -744,20 +890,35 @@ class FlowModel(ABC):
         return np.transpose(np.array(self.lunitflow), axes=(1, 2, 3, 0))
 
     def add_boundary_conditions(self, condition: BoundaryCondition) -> None:
-        """Add a boundary condition to the flow model."""
+        """
+        Add a boundary condition to the flow model.
+
+        The head (and the pressure) of the initial state is set to the value of the
+        condition over its span.
+
+        Raises
+        ------
+        ValueError
+            If the condition is not a :class:`ConstantHead`.
+        """
         if not isinstance(condition, ConstantHead):
             raise ValueError(
                 f"{condition} is not a valid boundary condition for the flow model !"
             )
         self.boundary_conditions.append(condition)
 
-        if isinstance(condition, ConstantHead):
-            # 0) Set the values
-            self.lhead[0][condition.span] = condition.values
-            # 1) Get the new constant head node numbers
+        # Set the values (both the head and the pressure, which are used for the
+        # constant head cells when the gravity is considered). The constant head node
+        # numbers are updated by `set_constant_head_indices`.
+        self.set_initial_head(condition.values, condition.span)
 
     def set_constant_head_indices(self) -> None:
-        """Set the indices of nodes with constant head."""
+        """
+        Set the indices of nodes with constant head.
+
+        It also identifies the constant head cells which are on the borders of the
+        domain (``west_boundary_idx``, ``east_boundary_idx``, ...).
+        """
         node_numbers = np.array([], dtype=np.int32)
         nx, ny, nz = self.lhead[0].shape  # type: ignore
 
@@ -840,34 +1001,23 @@ class FlowModel(ABC):
 
     @property
     def cst_head_indices(self) -> NDArrayInt:
-        """Return the indices (array) of the constant head grid cells."""
-        # [:2] to ignore the z axis
-        return np.array(
-            rlg_nn_to_idx(
-                self.cst_head_nn, nx=self.head.shape[0], ny=self.head.shape[1]
-            )
-        )
+        """Return the indices (array with shape (3, n)) of the constant head cells."""
+        nx, ny = self.lhead[0].shape[:2]
+        return np.array(rlg_nn_to_idx(self.cst_head_nn, nx=nx, ny=ny))
 
     @property
     def free_head_nn(self) -> NDArrayInt:
         """Return the free head node numbers."""
-        return _get_a_not_in_b_1d(
-            np.arange(np.prod(self.lhead[0].shape), dtype=np.int32),  # type: ignore
-            self.cst_head_nn,
-        )
+        return _get_free_node_numbers(self.lhead[0].size, self.cst_head_nn)
 
     @property
     def free_head_indices(self) -> NDArrayInt:
-        """Return the indices (array) of the free head grid cells."""
-        # [:2] to ignore the z axis
-        return np.array(
-            rlg_nn_to_idx(
-                self.free_head_nn, nx=self.head.shape[0], ny=self.head.shape[1]
-            )
-        )
+        """Return the indices (array with shape (3, n)) of the free head cells."""
+        nx, ny = self.lhead[0].shape[:2]
+        return np.array(rlg_nn_to_idx(self.free_head_nn, nx=nx, ny=ny))
 
     def reinit(self) -> None:
-        """Set all arrays to zero except for the initial conditions(first time)."""
+        """Reset all the results, but keep the initial conditions (first time)."""
         self.lhead = self.lhead[:1]
         self.lpressure = self.lpressure[:1]
         self.lu_darcy_x = []
@@ -881,185 +1031,138 @@ class FlowModel(ABC):
         self.super_ilu = None
         self.preconditioner = None
 
+    def _get_center_weights(self, axis: int) -> NDArrayFloat:
+        """
+        Return the weights to average the face velocities at the cell centers.
+
+        The velocity at a cell center along ``axis`` is the sum of the velocities of
+        its two faces multiplied by these weights, with shape (nx, ny, nz):
+
+        - 1/2 for the cells which are not on the border of the domain,
+        - 1 for the cells on the border of the domain: one of their faces has no
+          flow, except for the constant head cells, for which the evacuation flow is
+          reported on the border face. The weight is then 1/2 there as well.
+        """
+        weights = np.ones(self.lhead[0].shape, dtype=np.float64)
+        lower = [slice(None)] * 3
+        upper = [slice(None)] * 3
+        lower[axis] = 0
+        upper[axis] = -1
+        interior = [slice(None)] * 3
+        interior[axis] = slice(1, -1)
+        weights[tuple(interior)] = 0.5
+
+        # (low border, high border) indices of the constant head cells
+        borders = {
+            0: (self.west_boundary_idx, self.east_boundary_idx),
+            1: (self.south_boundary_idx, self.north_boundary_idx),
+            2: (self.bottom_boundary_idx, self.top_boundary_idx),
+        }[axis]
+        for border_slicer, idx in zip((lower, upper), borders):
+            if idx.size == 0:
+                continue
+            # idx holds the indices along the two other axes (in increasing order)
+            slicer = list(border_slicer)
+            other_axes = [a for a in range(3) if a != axis]
+            slicer[other_axes[0]] = idx[0]
+            slicer[other_axes[1]] = idx[1]
+            weights[tuple(slicer)] *= 0.5
+        return weights
+
+    def _get_u_darcy_center_sample(self, axis: int, time_index: int) -> NDArrayFloat:
+        """
+        Return the darcy velocity along ``axis`` at the cell centers for one time.
+
+        Parameters
+        ----------
+        axis : int
+            0 for x, 1 for y, 2 for z.
+        time_index : int
+            Index of the time.
+
+        Returns
+        -------
+        NDArrayFloat
+            Array with shape (nx, ny, nz).
+        """
+        u_faces = (self.lu_darcy_x, self.lu_darcy_y, self.lu_darcy_z)[axis][time_index]
+        low = [slice(None)] * 3
+        high = [slice(None)] * 3
+        low[axis] = slice(None, -1)
+        high[axis] = slice(1, None)
+        return (u_faces[tuple(low)] + u_faces[tuple(high)]) * self._get_center_weights(
+            axis
+        )
+
     @property
     def u_darcy_x_center(self) -> NDArrayFloat:
-        """The darcy x-velocities estimated at the mesh centers."""
-        # Compute the average velocity
-        tmp = np.zeros((self.head.shape))
-        tmp += self.u_darcy_x[:-1, :, :, :]
-        tmp += self.u_darcy_x[1:, :, :, :]
-        # All nodes have 2 boundaries along the y axis, except for the
-        # borders grid cells
-        tmp[1:-1, :, :, :] /= 2
-        # for the borders we need to check if a boundary (flow) exist or not
-        # this is a consequence of constant head and imposed flux
-        if self.west_boundary_idx.size != 0:
-            tmp[0, self.west_boundary_idx[0], self.west_boundary_idx[1], :] /= 2
-        if self.east_boundary_idx.size != 0:
-            tmp[-1, self.east_boundary_idx[0], self.east_boundary_idx[1], :] /= 2
-        return tmp
+        """The darcy x-velocities estimated at the mesh centers (nx, ny, nz, nt)."""
+        return np.stack(
+            [self._get_u_darcy_center_sample(0, t) for t in range(len(self.lhead))],
+            axis=-1,
+        )
 
     @property
     def u_darcy_y_center(self) -> NDArrayFloat:
-        """The darcy y-velocities estimated at the mesh centers."""
-        # Compute the average velocity
-        tmp = np.zeros((self.head.shape))
-        tmp += self.u_darcy_y[:, :-1, :, :]
-        tmp += self.u_darcy_y[:, 1:, :, :]
-        tmp[:, 1:-1, :, :] /= 2
-        # All nodes have 2 boundaries along the x axis, except for the
-        # borders grid cells
-        # for the borders we need to check if a boundary (flow) exist or not
-        # this is a consequence of constant head and imposed flux
-        if self.south_boundary_idx.size != 0:
-            tmp[self.south_boundary_idx[0], 0, self.south_boundary_idx[1], :] /= 2
-        if self.north_boundary_idx.size != 0:
-            tmp[self.north_boundary_idx[0], -1, self.north_boundary_idx[1], :] /= 2
-
-        return tmp
+        """The darcy y-velocities estimated at the mesh centers (nx, ny, nz, nt)."""
+        return np.stack(
+            [self._get_u_darcy_center_sample(1, t) for t in range(len(self.lhead))],
+            axis=-1,
+        )
 
     @property
     def u_darcy_z_center(self) -> NDArrayFloat:
-        """The darcy Z-velocities estimated at the mesh centers."""
-        # Compute the average velocity
-        tmp = np.zeros((self.head.shape))
-        tmp += self.u_darcy_z[:, :, :-1, :]
-        tmp += self.u_darcy_z[:, :, 1:, :]
-        tmp[:, :, 1:-1, :] /= 2
-        # All nodes have 2 boundaries along the z axis, except for the
-        # borders grid cells
-        # for the borders we need to check if a boundary (flow) exist or not
-        # this is a consequence of constant head and imposed flux
-        if self.bottom_boundary_idx.size != 0:
-            tmp[self.bottom_boundary_idx[0], self.bottom_boundary_idx[1], 0, :] /= 2
-        if self.top_boundary_idx.size != 0:
-            tmp[self.top_boundary_idx[0], self.top_boundary_idx[1], -1, :] /= 2
-
-        return tmp
+        """The darcy z-velocities estimated at the mesh centers (nx, ny, nz, nt)."""
+        return np.stack(
+            [self._get_u_darcy_center_sample(2, t) for t in range(len(self.lhead))],
+            axis=-1,
+        )
 
     @property
     def u_darcy_norm(self) -> NDArrayFloat:
         """The norm of the darcy velocity estimated at the center of the mesh."""
-        return np.sqrt(self.u_darcy_x_center**2 + self.u_darcy_y_center**2)
+        return self.get_u_darcy_norm()
 
     def get_u_darcy_norm_sample(self, time_index: int) -> NDArrayFloat:
-        """The norm of the darcy velocity estimated at the center of the grid cell."""
-        # for x
-        tmp_x = np.zeros_like(self.lhead[time_index])
-        tmp_x += (
-            self.lu_darcy_x[time_index][:-1, :, :]
-            + self.lu_darcy_x[time_index][1:, :, :]
-        )
-        # All nodes have 2 boundaries along the y axis, except for the
-        # borders grid cells
-        tmp_x[1:-1, :, :] /= 2
-        # for the borders we need to check if a boundary (flow) exist or not
-        # this is a consequence of constant head and imposed flux
-        if self.west_boundary_idx.size != 0:
-            tmp_x[0, self.west_boundary_idx[0], self.west_boundary_idx[1]] /= 2
-        if self.east_boundary_idx.size != 0:
-            tmp_x[-1, self.east_boundary_idx[0], self.east_boundary_idx[1]] /= 2
+        """
+        The norm of the darcy velocity estimated at the center of the grid cell.
 
-        # for y
-        tmp_y = np.zeros((self.lhead[time_index].shape))
-        tmp_y += (
-            self.lu_darcy_y[time_index][:, :-1, :]
-            + self.lu_darcy_y[time_index][:, 1:, :]
-        )
-        # All nodes have 2 boundaries along the y axis, except for the
-        # borders grid cells
-        tmp_y[:, 1:-1, :] /= 2
-        # for the borders we need to check if a boundary (flow) exist or not
-        # this is a consequence of constant head and imposed flux
-        if self.south_boundary_idx.size != 0:
-            tmp_y[self.south_boundary_idx[0], 0, self.south_boundary_idx[1]] /= 2
-        if self.north_boundary_idx.size != 0:
-            tmp_y[self.north_boundary_idx[0], -1, self.north_boundary_idx[1]] /= 2
+        Parameters
+        ----------
+        time_index : int
+            Index of the time.
 
-        # for z
-        tmp_z = np.zeros((self.lhead[time_index].shape))
-        tmp_z += (
-            self.lu_darcy_z[time_index][:, :, :-1]
-            + self.lu_darcy_z[time_index][:, :, 1:]
+        Returns
+        -------
+        NDArrayFloat
+            Array with shape (nx, ny, nz).
+        """
+        return np.sqrt(
+            self._get_u_darcy_center_sample(0, time_index) ** 2
+            + self._get_u_darcy_center_sample(1, time_index) ** 2
+            + self._get_u_darcy_center_sample(2, time_index) ** 2
         )
-        # All nodes have 2 boundaries along the y axis, except for the
-        # borders grid cells
-        tmp_z[:, :, 1:-1] /= 2
-        # for the borders we need to check if a boundary (flow) exist or not
-        # this is a consequence of constant head and imposed flux
-        if self.bottom_boundary_idx.size != 0:
-            tmp_z[self.bottom_boundary_idx[0], self.bottom_boundary_idx[1], 0] /= 2
-        if self.top_boundary_idx.size != 0:
-            tmp_z[self.top_boundary_idx[0], self.top_boundary_idx[1], -1] /= 2
-
-        # norm
-        return np.sqrt(tmp_x**2 + tmp_y**2 + tmp_z**2)
 
     def get_du_darcy_norm_sample(
         self, time_index: int
     ) -> Tuple[NDArrayFloat, NDArrayFloat, NDArrayFloat]:
-        """The norm of the darcy velocity estimated at the center of the grid cell."""
-        # for x
-        tmp_x = np.zeros_like(self.lhead[time_index])
-        tmp_x += (
-            self.lu_darcy_x[time_index][:-1, :, :]
-            + self.lu_darcy_x[time_index][1:, :, :]
-        )
-        # All nodes have 2 boundaries along the y axis, except for the
-        # borders grid cells
-        divx = np.ones_like(tmp_x)
-        divx[1:-1, :, :] /= 2
-        # for the borders we need to check if a boundary (flow) exist or not
-        # this is a consequence of constant head and imposed flux
-        if self.west_boundary_idx.size != 0:
-            divx[0, self.west_boundary_idx[0], self.west_boundary_idx[1]] /= 2
-        if self.east_boundary_idx.size != 0:
-            divx[-1, self.east_boundary_idx[0], self.east_boundary_idx[1]] /= 2
+        """
+        Return the derivatives of the cell-center velocity norm for one time.
 
-        tmp_x *= divx
-
-        # for y
-        tmp_y = np.zeros((self.lhead[time_index].shape))
-        tmp_y += (
-            self.lu_darcy_y[time_index][:, :-1, :]
-            + self.lu_darcy_y[time_index][:, 1:, :]
-        )
-        # All nodes have 2 boundaries along the y axis, except for the
-        # borders grid cells
-        divy = np.ones_like(tmp_y)
-        divy[:, 1:-1, :] /= 2
-
-        # for the borders we need to check if a boundary (flow) exist or not
-        # this is a consequence of constant head and imposed flux
-        if self.south_boundary_idx.size != 0:
-            divy[self.south_boundary_idx[0], 0, self.south_boundary_idx[1]] /= 2
-        if self.north_boundary_idx.size != 0:
-            divy[self.north_boundary_idx[0], -1, self.north_boundary_idx[1]] /= 2
-
-        tmp_y *= divy
-
-        # for z
-        tmp_z = np.zeros((self.lhead[time_index].shape))
-        tmp_z += (
-            self.lu_darcy_z[time_index][:, :, :-1]
-            + self.lu_darcy_z[time_index][:, :, 1:]
-        )
-        # All nodes have 2 boundaries along the y axis, except for the
-        # borders grid cells
-        divz = np.ones_like(tmp_z)
-        divz[:, :, 1:-1] /= 2
-
-        # for the borders we need to check if a boundary (flow) exist or not
-        # this is a consequence of constant head and imposed flux
-        if self.bottom_boundary_idx.size != 0:
-            divz[self.bottom_boundary_idx[0], self.bottom_boundary_idx[1], 0] /= 2
-        if self.top_boundary_idx.size != 0:
-            divz[self.top_boundary_idx[0], self.top_boundary_idx[1], -1] /= 2
-
-        tmp_z *= divz
-
-        # norm
-        norm = np.sqrt(tmp_x**2 + tmp_y**2, tmp_z**2)
+        Returns
+        -------
+        Tuple[NDArrayFloat, NDArrayFloat, NDArrayFloat]
+            The derivatives of the norm of the velocity at the grid cell centers with
+            respect to the *face* velocities, ``(d|U|/dUx, d|U|/dUy, d|U|/dUz)``,
+            each with shape (nx, ny, nz). The derivatives are null where the norm is
+            null. They are the same for the two faces of a grid cell, up to the
+            weights ``_get_center_weights``.
+        """
+        weights = [self._get_center_weights(axis) for axis in range(3)]
+        centers = [
+            self._get_u_darcy_center_sample(axis, time_index) for axis in range(3)
+        ]
+        norm = np.sqrt(centers[0] ** 2 + centers[1] ** 2 + centers[2] ** 2)
 
         # inverse of the norm -> avoid division by zero
         inv_norm = np.zeros_like(norm)
@@ -1067,77 +1170,44 @@ class FlowModel(ABC):
         inv_norm[mask] = 1.0 / norm[mask]
 
         # return (d|U|/dUx , d|U|/dUy, d|U|/dUz)
-        return inv_norm * tmp_x * divx, inv_norm * tmp_y * divy, inv_norm * tmp_z * divz
+        return tuple(inv_norm * c * w for c, w in zip(centers, weights))  # type: ignore
 
     def get_u_darcy_norm(self) -> NDArrayFloat:
-        """The norm of the darcy velocity estimated at the center of the grid cell."""
-        # for x
-        tmp_x = np.zeros_like(self.head)
-        tmp_x += self.u_darcy_x[:-1, :, :] + self.u_darcy_x[1:, :, :]
-        # All nodes have 2 boundaries along the y axis, except for the
-        # borders grid cells
-        tmp_x[1:-1, :, :] /= 2
-        # for the borders we need to check if a boundary (flow) exist or not
-        # this is a consequence of constant head and imposed flux
+        """
+        The norm of the darcy velocity estimated at the center of the grid cells.
 
-        if self.west_boundary_idx.size != 0:
-            tmp_x[0, self.west_boundary_idx[0], self.west_boundary_idx[1]] /= 2
-        if self.east_boundary_idx.size != 0:
-            tmp_x[-1, self.east_boundary_idx[0], self.east_boundary_idx[1]] /= 2
+        Returns
+        -------
+        NDArrayFloat
+            Array with shape (nx, ny, nz, nt).
+        """
+        return np.stack(
+            [self.get_u_darcy_norm_sample(t) for t in range(len(self.lhead))], axis=-1
+        )
 
-        # for y
-        tmp_y = np.zeros((self.head.shape))
-        tmp_y += self.u_darcy_y[:, :-1, :] + self.u_darcy_y[:, 1:, :]
-        # All nodes have 2 boundaries along the y axis, except for the
-        # borders grid cells
-        tmp_y[:, 1:-1, :] /= 2
-        # for the borders we need to check if a boundary (flow) exist or not
-        # this is a consequence of constant head and imposed flux
-        if self.south_boundary_idx.size != 0:
-            tmp_y[self.south_boundary_idx[0], 0, self.south_boundary_idx[1]] /= 2
-        if self.north_boundary_idx.size != 0:
-            tmp_y[self.north_boundary_idx[0], -1, self.north_boundary_idx[1]] /= 2
-
-        # for z
-        tmp_z = np.zeros((self.head.shape))
-        tmp_z += self.u_darcy_z[:, :, :-1] + self.u_darcy_z[:, :, 1:]
-        # All nodes have 2 boundaries along the y axis, except for the
-        # borders grid cells
-        tmp_z[:, :, 1:-1] /= 2
-        # for the borders we need to check if a boundary (flow) exist or not
-        # this is a consequence of constant head and imposed flux
-        if self.bottom_boundary_idx.size != 0:
-            tmp_z[self.bottom_boundary_idx[0], self.bottom_boundary_idx[1], 0] /= 2
-        if self.top_boundary_idx.size != 0:
-            tmp_z[self.top_boundary_idx[0], self.top_boundary_idx[1], -1] /= 2
-
-        # norm
-        return np.sqrt(tmp_x**2 + tmp_y**2 + tmp_z**2)
+    @property
+    def vertical_axis_index(self) -> int:
+        """Return the index of the vertical axis (0 for x, 1 for y, 2 for z)."""
+        return VerticalAxis(self.vertical_axis).axis_index
 
     def get_vertical_dim(self) -> int:
         """Return the number of voxel along the vertical_axis axis."""
-        if self.vertical_axis == VerticalAxis.X:
-            return self.lhead[0].shape[0]
-        elif self.vertical_axis == VerticalAxis.Y:
-            return self.lhead[0].shape[1]
-        else:
-            return self.lhead[0].shape[2]
+        return self.lhead[0].shape[self.vertical_axis_index]
 
-    # TODO: cache
     def _get_mesh_center_vertical_pos(self) -> NDArrayFloat:
-        """Return the vertical position of the grid cells centers."""
-        xv, yv, zv = np.meshgrid(
-            range(self.lhead[0].shape[0]),
-            range(self.lhead[0].shape[1]),
-            range(self.lhead[0].shape[2]),
-            indexing="ij",
-        )
-        if self.vertical_axis == VerticalAxis.X:
-            return (xv + 0.5) * self.vertical_mesh_size
-        elif self.vertical_axis == VerticalAxis.Y:
-            return (yv + 0.5) * self.vertical_mesh_size
-        else:
-            return (zv + 0.5) * self.vertical_mesh_size
+        """
+        Return the vertical position of the grid cells centers.
+
+        The result is cached (a copy is returned).
+        """
+        if self._vertical_pos is None:
+            axis = self.vertical_axis_index
+            shape = self.lhead[0].shape
+            pos = (np.arange(shape[axis]) + 0.5) * self.vertical_mesh_size
+            bshape = [1, 1, 1]
+            bshape[axis] = shape[axis]
+            self._vertical_pos = np.broadcast_to(pos.reshape(bshape), shape).copy()
+        return self._vertical_pos.copy()
 
     def get_pressure_pa(self) -> NDArrayFloat:
         """Return the pressure in Pa."""
@@ -1196,6 +1266,8 @@ class FlowModel(ABC):
 
 # TODO: make the link with the initial density for the pressure
 class SaturatedFlowModel(FlowModel):
+    """Flow model of a saturated medium, where the density effects are ignored."""
+
     __slots__ = [
         "_head",
     ]
@@ -1216,6 +1288,8 @@ class SaturatedFlowModel(FlowModel):
 
 
 class DensityFlowModel(FlowModel):
+    """Flow model of a saturated medium with density driven flow (gravity)."""
+
     __slots__ = ["_pressure", "density"]
 
     def __init__(
@@ -1234,7 +1308,17 @@ class DensityFlowModel(FlowModel):
 
 
 class TransportModel:
-    """Represent a flow model."""
+    """
+    Represent a transport (and chemistry) model.
+
+    The simulated fields are stored in lists with one entry per time (``lmob``,
+    ``limmob``, ``ldensity``, ...) and are also available as read-only properties
+    returning arrays with time as last dimension.
+
+    The first axis of the concentrations arrays is the species. Two mobile species
+    are simulated (``n_sp``): the tracer/product (species 0) and the reagent
+    (species 1). The immobile species are the minerals (grades).
+    """
 
     __slots__ = [
         "crank_nicolson_diffusion",
@@ -1300,8 +1384,13 @@ class TransportModel:
             (self.n_sp, grid.nx, grid.ny, grid.nz), dtype=np.float64
         )
         self.boundary_conditions: List[BoundaryCondition] = []
-        self.q_prev: lil_array = lil_array((grid.n_grid_cells, grid.n_grid_cells))
-        self.q_next: lil_array = lil_array((grid.n_grid_cells, grid.n_grid_cells))
+        # Stiffness matrices of the transport (lil when built, csc once solved)
+        self.q_prev: Union[lil_array, sparse.csc_array] = lil_array(
+            (grid.n_grid_cells, grid.n_grid_cells)
+        )
+        self.q_next: Union[lil_array, sparse.csc_array] = lil_array(
+            (grid.n_grid_cells, grid.n_grid_cells)
+        )
         self.cst_conc_nn: NDArrayInt = np.array([], dtype=np.int64)
         self.rtol: float = tr_params.rtol
         self.is_numerical_acceleration: bool = tr_params.is_numerical_acceleration
@@ -1346,25 +1435,25 @@ class TransportModel:
     @property
     def conc(self) -> NDArrayFloat:
         """
-        Return mobile concentrations as array with dimension (2, nx, ny, nz, nt + 1).
+        Return the first mobile species as array with dimension (nx, ny, nz, nt + 1).
 
-        This is read-only. Alias for mob.
+        This is read-only. Alias for mob[0].
         """
         return self.mob[0]
 
     @property
     def conc2(self) -> NDArrayFloat:
         """
-        Return mobile concentrations as array with dimension (2, nx, ny, nz, nt + 1).
+        Return the second mobile species as array with dimension (nx, ny, nz, nt + 1).
 
-        This is read-only. Alias for mob.
+        This is read-only. Alias for mob[1].
         """
         return self.mob[1]
 
     @property
     def grade(self) -> NDArrayFloat:
         """
-        Return immobile concentrations as array with dimension (nx, ny, nz, nt + 1).
+        Return the first immobile species as array with dimension (nx, ny, nz, nt + 1).
 
         This is read-only. Alias for immob[0].
         """
@@ -1373,7 +1462,8 @@ class TransportModel:
     @property
     def grade2(self) -> NDArrayFloat:
         """
-        Return immobile concentrations as array with dimension (nx, ny, nz, nt + 1).
+        Return the second immobile species as array with dimension
+        (nx, ny, nz, nt + 1).
 
         This is read-only. Alias for immob[1].
         """
@@ -1382,9 +1472,9 @@ class TransportModel:
     @property
     def density(self) -> NDArrayFloat:
         """
-        Return densities in g/l as array with dimension (nx, ny, nz, nt + 1).
+        Return densities in kg/m3 as array with dimension (nx, ny, nz, nt + 1).
 
-        This is read-only.
+        This is read-only. It is empty if the simulation has not been run.
         """
         if len(self.ldensity) == 0:
             return np.array([])
@@ -1440,7 +1530,21 @@ class TransportModel:
         self.lmob[0][sp][span] = values
 
     def add_boundary_conditions(self, condition: BoundaryCondition) -> None:
-        """Add a boundary condition to the transport model."""
+        """
+        Add a boundary condition to the transport model.
+
+        Note
+        ----
+        The grid cells of a :class:`ConstantConcentration` condition keep the
+        concentration of the initial state (set it with :meth:`set_initial_conc`):
+        the ``values`` of the condition are not applied to the initial state.
+
+        Raises
+        ------
+        ValueError
+            If the condition is neither a :class:`ConstantConcentration` nor a
+            :class:`ZeroConcGradient`.
+        """
         if not isinstance(condition, ConstantConcentration) and not isinstance(
             condition, ZeroConcGradient
         ):
@@ -1450,55 +1554,44 @@ class TransportModel:
             )
         self.boundary_conditions.append(condition)
 
-        if isinstance(condition, ConstantConcentration):
-            # 0) Set the values
-            # TODO
-            pass
+    @property
+    def _grid_shape(self) -> Tuple[int, int, int]:
+        """Shape (nx, ny, nz) of the grid."""
+        return self.lmob[0].shape[1:]  # type: ignore
 
     def set_constant_conc_indices(self) -> None:
-        """Set the indices of nodes with constant head."""
+        """Set the node numbers of the grid cells with a constant concentration."""
+        nx, ny, nz = self._grid_shape
         node_numbers = np.array([], dtype=np.int32)
         for condition in self.boundary_conditions:
             if isinstance(condition, ConstantConcentration):
                 node_numbers = np.hstack(
                     [
                         node_numbers,
-                        span_to_node_numbers_3d(
-                            condition.span,
-                            self.mob.shape[0],
-                            self.mob.shape[1],
-                            self.mob.shape[2],
-                        ),
+                        span_to_node_numbers_3d(condition.span, nx, ny, nz),
                     ]
                 )
         self.cst_conc_nn: NDArrayInt = np.unique(node_numbers.flatten())
 
     @property
     def cst_conc_indices(self) -> NDArrayInt:
-        """Return the indices (array) of the constant conc grid cells."""
-        # [:2] to ignore the z axis
-        return np.array(
-            rlg_nn_to_idx(self.cst_conc_nn, nx=self.mob.shape[0], ny=self.mob.shape[1])
-        )
+        """Return the indices (array with shape (3, n)) of the constant conc cells."""
+        nx, ny, _ = self._grid_shape
+        return np.array(rlg_nn_to_idx(self.cst_conc_nn, nx=nx, ny=ny))
 
     @property
     def free_conc_nn(self) -> NDArrayInt:
         """Return the free conc node numbers."""
-        return _get_a_not_in_b_1d(
-            np.arange(np.prod(self.lmob[0].shape), dtype=np.int32),  # type: ignore
-            self.cst_conc_nn,
-        )
+        return _get_free_node_numbers(int(np.prod(self._grid_shape)), self.cst_conc_nn)
 
     @property
     def free_conc_indices(self) -> NDArrayInt:
-        """Return the indices (array) of the free conc grid cells."""
-        # [:2] to ignore the z axis
-        return np.array(
-            rlg_nn_to_idx(self.free_conc_nn, nx=self.mob.shape[0], ny=self.mob.shape[1])
-        )
+        """Return the indices (array with shape (3, n)) of the free conc cells."""
+        nx, ny, _ = self._grid_shape
+        return np.array(rlg_nn_to_idx(self.free_conc_nn, nx=nx, ny=ny))
 
     def reinit(self) -> None:
-        """Set all arrays to zero except for the initial conditions(first time)."""
+        """Reset all the results, but keep the initial conditions (first time)."""
         self.lmob = self.lmob[:1]
         self.limmob = self.limmob[:1]
         self.immob_prev = self.limmob[0]
@@ -1516,28 +1609,34 @@ class ForwardModel:
     """
     Class representing the reactive transport model.
 
-    wadv: float
-        Advection weight (for testing between 0.0 and 1.0). The default is 1.0.
+    It aggregates the grid, the parameters, the flow and transport models (which hold
+    the results) and the source terms. It is solved by
+    :class:`~pyrtid.forward.ForwardSolver`.
 
+    Attributes
+    ----------
+    grid: RectilinearGrid
+        The grid.
+    time_params: TimeParameters
+        The time parameters.
+    gch_params: GeochemicalParameters
+        The geochemical parameters.
+    fl_model: FlowModel
+        The flow model (:class:`DensityFlowModel` if the gravity is enabled in the
+        flow parameters, :class:`SaturatedFlowModel` otherwise).
+    tr_model: TransportModel
+        The transport model.
+    source_terms: Dict[str, SourceTerm]
+        The source terms, by name.
     """
-
-    slots = [
-        "grid",
-        "time_params",
-        "fl_params",
-        "tr_params",
-        "gch_params",
-        "source_terms",
-        "boundary_conditions",
-    ]
 
     def __init__(
         self,
         grid: RectilinearGrid,
         time_params: TimeParameters,
-        fl_params: FlowParameters = FlowParameters(),
-        tr_params: TransportParameters = TransportParameters(),
-        gch_params: GeochemicalParameters = GeochemicalParameters(),
+        fl_params: Optional[FlowParameters] = None,
+        tr_params: Optional[TransportParameters] = None,
+        gch_params: Optional[GeochemicalParameters] = None,
         source_terms: Optional[Union[SourceTerm, Sequence[SourceTerm]]] = None,
         boundary_conditions: Optional[
             Union[BoundaryCondition, Sequence[BoundaryCondition]]
@@ -1549,46 +1648,77 @@ class ForwardModel:
         Parameters
         ----------
         grid : RectilinearGrid
-            _description_
+            The grid.
         time_params : TimeParameters
-            _description_
-        fl_params : FlowParameters
-            _description_
-        tr_params : TransportParameters
-            _description_
-        gch_params : GeochemicalParameters
-            _description_
-        wells : Sequence[Well], optional
-            _description_, by default default_field([])
+            The time parameters.
+        fl_params : Optional[FlowParameters], optional
+            The flow parameters. By default None, which means default
+            :class:`FlowParameters`.
+        tr_params : Optional[TransportParameters], optional
+            The transport parameters. By default None, which means default
+            :class:`TransportParameters`.
+        gch_params : Optional[GeochemicalParameters], optional
+            The geochemical parameters. By default None, which means default
+            :class:`GeochemicalParameters`.
+        source_terms : Optional[Union[SourceTerm, Sequence[SourceTerm]]], optional
+            One or several source terms (wells, ...). By default None.
+        boundary_conditions : BoundaryCondition or Sequence of, optional
+            One or several boundary conditions, for the flow
+            (:class:`ConstantHead`) or for the transport
+            (:class:`ConstantConcentration`, :class:`ZeroConcGradient`).
+            By default None.
         """
+        # Parameters instances are created here, rather than in the signature, so
+        # that they are not shared between models.
+        fl_params = FlowParameters() if fl_params is None else fl_params
+        tr_params = TransportParameters() if tr_params is None else tr_params
+        gch_params = GeochemicalParameters() if gch_params is None else gch_params
+
         self.grid: RectilinearGrid = grid
         self.time_params: TimeParameters = time_params
         self.gch_params: GeochemicalParameters = gch_params
         # Two possible flowmodels
+        self.fl_model: FlowModel
         if fl_params.is_gravity:
-            self.fl_model: FlowModel = DensityFlowModel(grid, time_params, fl_params)
+            self.fl_model = DensityFlowModel(grid, time_params, fl_params)
         else:
-            self.fl_model: FlowModel = SaturatedFlowModel(grid, time_params, fl_params)
+            self.fl_model = SaturatedFlowModel(grid, time_params, fl_params)
 
         self.tr_model: TransportModel = TransportModel(
             grid, time_params, tr_params, gch_params
         )
+        self.source_terms: Dict[str, SourceTerm] = {}
         if source_terms is not None:
-            self.source_terms: Dict[str, SourceTerm] = {
+            self.source_terms = {
                 v.name: v for v in object_or_object_sequence_to_list(source_terms)
             }
-        else:
-            self.source_terms: Dict[str, SourceTerm] = {}
-        if boundary_conditions is None:
-            return
-        for condition in object_or_object_sequence_to_list(boundary_conditions):
-            self.add_boundary_conditions(condition)
-        self.fl_model.set_constant_head_indices()
+        if boundary_conditions is not None:
+            for condition in object_or_object_sequence_to_list(boundary_conditions):
+                self.add_boundary_conditions(condition)
+            self.fl_model.set_constant_head_indices()
 
     def get_sources(
         self, time: float, grid: RectilinearGrid
     ) -> Tuple[NDArrayFloat, NDArrayFloat]:
-        """Get the flow sources and sink terms."""
+        """
+        Get the flow sources and sink terms at a given time.
+
+        Parameters
+        ----------
+        time : float
+            Time in seconds.
+        grid : RectilinearGrid
+            The grid.
+
+        Returns
+        -------
+        Tuple[NDArrayFloat, NDArrayFloat]
+            The flow sources (1/s, with shape (nx, ny, nz)) and the concentration
+            sources (mol/l/s, with shape (n_sp, nx, ny, nz)). Positive flow values
+            are injections, negative ones are pumpings. The concentration sources
+            only account for the injections. They are null in the constant head
+            (flow) and constant concentration (concentration) grid cells.
+        """
 
         _unitflw_src = np.zeros(grid.shape)
         _conc_src = np.zeros((self.tr_model.n_sp, grid.nx, grid.ny, grid.nz))
@@ -1604,13 +1734,11 @@ class ForwardModel:
 
             # Keep only non negative flowrates (remove sink terms)
             if _flw > 0:
-                for sp in range(self.tr_model.n_sp):
-                    try:
-                        _conc_src[sp, nids[0], nids[1], nids[2]] += (
-                            _flw * _conc[sp] / source.n_nodes
-                        )
-                    except IndexError:
-                        pass
+                # A source term may define the concentration of the first species only
+                for sp in range(min(self.tr_model.n_sp, np.size(_conc))):
+                    _conc_src[sp, nids[0], nids[1], nids[2]] += (
+                        _flw * _conc[sp] / source.n_nodes
+                    )
         for condition in self.fl_model.boundary_conditions:
             if isinstance(condition, ConstantHead):
                 # Set zero where there constant head
@@ -1628,7 +1756,12 @@ class ForwardModel:
         )
 
     def add_src_term(self, source_term: SourceTerm) -> None:
-        """Add a source term."""
+        """
+        Add a source term.
+
+        A warning is raised and the existing source term is overwritten if one with
+        the same name exists.
+        """
         if self.source_terms.get(source_term.name) is not None:
             warnings.warn(
                 f"{source_term.name} is already among the source terms"
@@ -1637,7 +1770,14 @@ class ForwardModel:
         self.source_terms[source_term.name] = source_term
 
     def add_boundary_conditions(self, condition: BoundaryCondition) -> None:
-        """Add a boundary condition to the flow or the transport model."""
+        """
+        Add a boundary condition to the flow or the transport model.
+
+        Raises
+        ------
+        ValueError
+            If the type of the condition is not supported.
+        """
         # TODO: add a check to see if the given condition is on a border of the grid or
         # not.
         if isinstance(condition, ConstantHead):
@@ -1651,13 +1791,26 @@ class ForwardModel:
         raise ValueError(f"{condition} is not a valid boundary condition !")
 
     def reinit(self) -> None:
-        """Set all arrays to zero except for the initial conditions(first time)."""
+        """Reset all the results, but keep the initial conditions (first time)."""
         self.fl_model.reinit()
         self.tr_model.reinit()
         self.time_params.reset_to_init()
 
     def get_ij_over_u(self, time_index: int) -> NDArrayFloat:
-        """Get the ij/Unorm for the CFL condition."""
+        """
+        Get the ij/Unorm for the CFL condition.
+
+        Parameters
+        ----------
+        time_index : int
+            Index of the time at which the velocity field is evaluated.
+
+        Returns
+        -------
+        NDArrayFloat
+            The smallest grid cell size divided by the norm of the velocity at the
+            grid cell centers, with shape (nx, ny, nz).
+        """
         num = 1e300
         if self.grid.nx > 1:
             num = min(self.grid.dx, num)
@@ -1665,38 +1818,45 @@ class ForwardModel:
             num = min(self.grid.dy, num)
         if self.grid.nz > 1:
             num = min(self.grid.dz, num)
-        den = np.sqrt(
-            self.fl_model.u_darcy_x_center[:, :, :, time_index] ** 2
-            + self.fl_model.u_darcy_y_center[:, :, :, time_index] ** 2
-            + self.fl_model.u_darcy_z_center[:, :, :, time_index] ** 2
-        )
+        den = self.fl_model.get_u_darcy_norm_sample(time_index)
         # VERY_SMALL_NUMBER to avoid division by zero.
         den = np.where(den < VERY_SMALL_NUMBER, VERY_SMALL_NUMBER, den)
         return num / den
 
     def __deepcopy__(self, memo):
+        """
+        Deep copy the model.
+
+        The SuperLU factorizations and the preconditioners are not copied
+        (they can't be pickled): the copy shares them with the original.
+        """
         deepcopy_method = self.__deepcopy__
         self.__deepcopy__ = None
 
         # Handle non pickebeable objects
         tmp_fl_spilu = self.fl_model.super_ilu
-        self.fl_model.super_ilu = None
         tmp_fl_pcd = self.fl_model.preconditioner
-        self.fl_model.preconditioner = None
-
         tmp_tr_spilu = self.tr_model.super_ilu
-        self.tr_model.super_ilu = None
         tmp_tr_pcd = self.tr_model.preconditioner
+        self.fl_model.super_ilu = None
+        self.fl_model.preconditioner = None
+        self.tr_model.super_ilu = None
         self.tr_model.preconditioner = None
 
-        cp = copy.deepcopy(self, memo)
-        self.__deepcopy__ = deepcopy_method
+        try:
+            cp = copy.deepcopy(self, memo)
+        finally:
+            # always restore the original object, even if the copy failed
+            self.__deepcopy__ = deepcopy_method
+            self.fl_model.super_ilu = tmp_fl_spilu
+            self.fl_model.preconditioner = tmp_fl_pcd
+            self.tr_model.super_ilu = tmp_tr_spilu
+            self.tr_model.preconditioner = tmp_tr_pcd
 
         # Bind to cp by types.MethodType
         cp.__deepcopy__ = types.MethodType(deepcopy_method.__func__, cp)
 
-        # custom treatments
-        # restore the attributes
+        # restore the attributes in the copy
         cp.fl_model.super_ilu = tmp_fl_spilu
         cp.fl_model.preconditioner = tmp_fl_pcd
         cp.tr_model.super_ilu = tmp_tr_spilu
@@ -1705,25 +1865,103 @@ class ForwardModel:
         return cp
 
 
+class SparseMatrixBuilder:
+    """
+    Accumulate the entries of a sparse matrix as ``(row, col, value)`` triplets.
+
+    Assembling a matrix by incrementing the entries of a ``lil_array`` is slow
+    (python loops), especially for the diagonal. This builder only stores the
+    triplets, and the duplicated entries are summed when converting to a sparse
+    format, which is fast and vectorized.
+
+    Use :func:`add_entries` and :func:`add_to_diagonal` to fill either a builder or a
+    ``lil_array`` with the same code.
+    """
+
+    __slots__ = ["shape", "_rows", "_cols", "_values"]
+
+    def __init__(self, shape: Tuple[int, int]) -> None:
+        """Initialize an empty matrix with the given shape."""
+        self.shape = shape
+        self._rows: List[NDArrayInt] = []
+        self._cols: List[NDArrayInt] = []
+        self._values: List[NDArrayFloat] = []
+
+    def add(self, rows: NDArrayInt, cols: NDArrayInt, values: NDArrayFloat) -> None:
+        """
+        Add ``values`` to the entries ``(rows[i], cols[i])``.
+
+        ``values`` can be a scalar. The same entry can be added several times.
+        """
+        rows = np.asarray(rows).ravel()
+        self._rows.append(rows)
+        self._cols.append(np.asarray(cols).ravel())
+        self._values.append(np.broadcast_to(values, rows.shape).astype(np.float64))
+
+    def tocsc(self) -> sparse.csc_array:
+        """Return the matrix in csc format (duplicated entries are summed)."""
+        if len(self._rows) == 0:
+            return sparse.csc_array(self.shape, dtype=np.float64)
+        return sparse.coo_array(
+            (
+                np.concatenate(self._values),
+                (np.concatenate(self._rows), np.concatenate(self._cols)),
+            ),
+            shape=self.shape,
+        ).tocsc()
+
+    def tolil(self) -> lil_array:
+        """Return the matrix in lil format (duplicated entries are summed)."""
+        return self.tocsc().tolil()
+
+
+def add_entries(
+    matrix: Union[lil_array, SparseMatrixBuilder],
+    rows: NDArrayInt,
+    cols: NDArrayInt,
+    values: Union[float, NDArrayFloat],
+) -> None:
+    """
+    Add ``values`` to the entries ``(rows[i], cols[i])`` of a matrix, in place.
+
+    The pairs ``(rows[i], cols[i])`` must be unique.
+    """
+    if isinstance(matrix, SparseMatrixBuilder):
+        matrix.add(rows, cols, values)
+    else:
+        matrix[rows, cols] += values  # type: ignore
+
+
+def add_to_diagonal(
+    matrix: Union[lil_array, SparseMatrixBuilder], values: Union[float, NDArrayFloat]
+) -> None:
+    """Add ``values`` to the diagonal of a square matrix, in place."""
+    if isinstance(matrix, SparseMatrixBuilder):
+        idx = np.arange(matrix.shape[0])
+        matrix.add(idx, idx, values)
+    else:
+        matrix.setdiag(matrix.diagonal() + values)
+
+
 def remove_cst_bound_indices(
     indices_owner: NDArrayInt, indices_neigh: NDArrayInt, indices_to_remove: NDArrayInt
 ) -> Tuple[NDArrayInt, NDArrayInt]:
     """
-    Remove the indices because of the boundary condition.
+    Remove the owner/neighbor pairs whose owner is a boundary condition node.
 
     Parameters
     ----------
-    indices_owner : _type_
+    indices_owner : NDArrayInt
         Indices of owner grid cells.
-    indices_neigh : _type_
+    indices_neigh : NDArrayInt
         Indices of neighbor grid cells.
-    indices_to_remove : DArrayInt
-        Indices to remove.
+    indices_to_remove : NDArrayInt
+        Owner indices to remove.
 
     Returns
     -------
     Tuple[NDArrayInt, NDArrayInt]
-        _description_
+        The remaining owner and neighbor indices.
     """
     is_kept = ~np.isin(indices_owner, indices_to_remove)
     return indices_owner[is_kept], indices_neigh[is_kept]
@@ -1732,7 +1970,7 @@ def remove_cst_bound_indices(
 def keep_a_b_if_c_in_a(
     a: NDArrayInt, b: NDArrayInt, c: NDArrayInt
 ) -> Tuple[NDArrayInt, NDArrayInt]:
-    """Keep values in a and b if c in a."""
+    """Keep the pairs ``(a[i], b[i])`` for which ``a[i]`` is in ``c``."""
     is_kept = np.isin(a, c)
     return a[is_kept], b[is_kept]
 
@@ -1745,23 +1983,31 @@ def get_owner_neigh_indices(
     owner_indices_to_keep: Optional[NDArrayInt] = None,
     neigh_indices_to_keep: Optional[NDArrayInt] = None,
 ) -> Tuple[NDArrayInt, NDArrayInt]:
-    """_summary_
+    """
+    Return the node numbers of the pairs of neighbor grid cells.
+
+    The two spans must select the same number of grid cells: the i-th owner is paired
+    with the i-th neighbor.
 
     Parameters
     ----------
     grid : RectilinearGrid
-        _description_
+        The grid.
     span_owner : Tuple[slice, slice, slice]
-        _description_
+        Span of the owner grid cells.
     span_neigh : Tuple[slice, slice, slice]
-        _description_
-    indices_to_remove : NDArrayInt
-        _description_
+        Span of the neighbor grid cells.
+    owner_indices_to_keep : Optional[NDArrayInt], optional
+        If given, only the pairs whose owner node number is in this array are kept.
+        By default None.
+    neigh_indices_to_keep : Optional[NDArrayInt], optional
+        If given, only the pairs whose neighbor node number is in this array are
+        kept. By default None.
 
     Returns
     -------
     Tuple[NDArrayInt, NDArrayInt]
-        _description_
+        The node numbers of the owners and of the neighbors.
     """
     # Get indices
     indices_owner: NDArrayInt = span_to_node_numbers_3d(

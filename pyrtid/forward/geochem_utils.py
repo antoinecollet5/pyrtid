@@ -1,18 +1,119 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright (c) 2024-2026 Antoine COLLET
 
+"""
+Numerical helpers for the local (cell-wise) geochemical solvers.
+
+The module gathers the generic building blocks used to solve the small non-linear
+chemical system of each grid cell with a Newton-Raphson algorithm:
+
+- :func:`newton`: a damped Newton-Raphson loop with a bounded number of iterations.
+- :func:`backtracking_linesearch`: a dependency-free Armijo backtracking line search
+  (section 9.7.1 of *Numerical Recipes*).
+- :func:`standalone_linesearch`: an optional Wolfe line search relying on the
+  ``lbfgsb`` package (imported lazily, so that ``lbfgsb`` is not a hard dependency).
+- :func:`get_polish`: a per-component step damping ("polishing") that prevents
+  concentrations from changing sign during an iteration.
+- :func:`solve_with_svd`: a truncated-SVD (minimum norm) linear solver, robust to
+  (nearly) singular Jacobians.
+"""
+
+from __future__ import annotations
+
 import logging
 from typing import Callable, Optional, Tuple
 
-import numpy as np  # NumPy for numerical operations
-import scipy as sp
-from lbfgsb.base import get_bounds, is_any_inf
-from lbfgsb.linesearch import line_search as ls2
-from lbfgsb.scalar_function import ScalarFunction
-from lbfgsb.types import NDArrayFloat
+import numpy as np
+from scipy import linalg
 from scipy.optimize import OptimizeResult
 
+from pyrtid.utils import NDArrayFloat
+
+__all__ = [
+    "SMALL_VALUE",
+    "backtracking_linesearch",
+    "standalone_linesearch",
+    "get_polish",
+    "solve_with_svd",
+    "newton",
+]
+
+#: Values below this threshold are considered null when computing relative changes.
 SMALL_VALUE = 1e-25
+
+
+def backtracking_linesearch(
+    fun: Callable[[NDArrayFloat], float],
+    x: NDArrayFloat,
+    d: NDArrayFloat,
+    f0: float,
+    slope: float,
+    alpha_max: float = 1.0,
+    c1: float = 1e-4,
+    max_iter: int = 30,
+    min_shrink: float = 0.1,
+    max_shrink: float = 0.5,
+) -> Optional[float]:
+    r"""
+    Find a step length satisfying the Armijo (sufficient decrease) condition.
+
+    The step is found by backtracking from ``alpha_max`` using a safeguarded
+    quadratic interpolation, see section 9.7.1 *Line Searches and Backtracking* of
+    W. H. Press and S. A. Teukolsky, *Numerical Recipes 3rd Edition*, Cambridge
+    University Press, 2007. The returned ``alpha`` satisfies
+
+    .. math::
+        f(x + \alpha d) \leq f(x) + c_1 \alpha \langle \nabla f(x), d \rangle.
+
+    Parameters
+    ----------
+    fun : Callable[[NDArrayFloat], float]
+        Objective function.
+    x : NDArrayFloat
+        Current point.
+    d : NDArrayFloat
+        Search direction. It must be a descent direction.
+    f0 : float
+        Objective function value at ``x``.
+    slope : float
+        Directional derivative :math:`\langle \nabla f(x), d \rangle` at ``x``.
+        It must be strictly negative.
+    alpha_max : float, optional
+        Largest step length tried first, by default 1.0 (full Newton step).
+    c1 : float, optional
+        Sufficient decrease parameter, with :math:`0 < c_1 < 1`. By default 1e-4.
+    max_iter : int, optional
+        Maximum number of objective evaluations, by default 30.
+    min_shrink : float, optional
+        A new trial step is never smaller than ``min_shrink`` times the previous
+        one, by default 0.1.
+    max_shrink : float, optional
+        A new trial step is never larger than ``max_shrink`` times the previous
+        one, by default 0.5.
+
+    Returns
+    -------
+    Optional[float]
+        The step length, or None if ``d`` is not a descent direction or if no
+        acceptable step has been found within ``max_iter`` evaluations.
+    """
+    if not slope < 0.0:
+        return None
+
+    alpha = alpha_max
+    for _ in range(max_iter):
+        f_new = fun(x + alpha * d)
+        if np.isfinite(f_new) and f_new <= f0 + c1 * alpha * slope:
+            return alpha
+
+        if np.isfinite(f_new):
+            # minimizer of the quadratic interpolation of f along d
+            denom = 2.0 * (f_new - f0 - slope * alpha)
+            alpha_new = -slope * alpha**2 / denom if denom > 0.0 else 0.0
+        else:
+            alpha_new = 0.0
+        alpha = min(max(alpha_new, min_shrink * alpha), max_shrink * alpha)
+    return None
 
 
 def standalone_linesearch(
@@ -21,7 +122,7 @@ def standalone_linesearch(
     grad: Callable,
     d: NDArrayFloat,
     bounds: Optional[NDArrayFloat] = None,
-    max_steplength_user: float = 1e-8,
+    max_steplength_user: float = 1e8,
     ftol: float = 1e-3,
     gtol: float = 0.9,
     xtol: float = 1e-1,
@@ -31,23 +132,27 @@ def standalone_linesearch(
     logger: Optional[logging.Logger] = None,
 ) -> Tuple[Optional[float], int, int, float, float, NDArrayFloat]:
     r"""
-    Find a step that satisfies both decrease condition and a curvature condition.
+    Find a step satisfying the strong Wolfe conditions (``lbfgsb`` line search).
 
-        f(x0+stp*d) <= f(x0) + alpha*stp*\langle f'(x0),d\rangle,
+    The step satisfies both a sufficient decrease condition
 
-    and the curvature condition
+    .. math::
+        f(x_0 + \alpha d) \leq f(x_0) + c_1 \alpha \langle \nabla f(x_0), d \rangle,
 
-        abs(f'(x0+stp*d)) <= beta*abs(\langle f'(x0),d\rangle).
+    and a curvature condition
 
-    If alpha is less than beta and if, for example, the functionis bounded below, then
-    there is always a step which satisfies both conditions.
+    .. math::
+        |\langle \nabla f(x_0 + \alpha d), d \rangle| \leq c_2
+        |\langle \nabla f(x_0), d \rangle|.
+
+    If :math:`c_1 < c_2` and the function is bounded below, there is always a step
+    satisfying both conditions.
 
     Note
     ----
-    When using scipy-1.11 and below, this subroutine calls subroutine dcsrch from the
-    Minpack2 library to perform the line search.  Subroutine dscrch is safeguarded so
-    that all trial points lie within the feasible region. Otherwise, it uses the
-    python reimplementation introduced in scipy-1.12.
+    This function relies on the (internal) line search of the ``lbfgsb`` package,
+    which is imported lazily. For a dependency-free alternative, use
+    :func:`backtracking_linesearch`.
 
     Parameters
     ----------
@@ -57,97 +162,71 @@ def standalone_linesearch(
         Objective function.
     grad : Callable
         Gradient of the objective function.
-    bounds : sequence or `Bounds`, optional
-        Bounds on variables for Nelder-Mead, L-BFGS-B, TNC, SLSQP, Powell, and
-        trust-constr methods. There are two ways to specify the bounds:
-
-            1. Instance of `Bounds` class.
-            2. Sequence of ``(min, max)`` pairs for each element in `x`. None
-               is used to specify no bound.
     d : NDArrayFloat
         Search direction.
-    max_steplength : float
-        Maximum steplength allowed.
-    ftol: float, optional
-        Specify a nonnegative tolerance for the sufficient decrease condition in
-        `minpack2.dcsrch <https://ftp.mcs.anl.gov/pub/MINPACK-2/csrch/dcsrch.f>`_
-        (used for the line search). This is :math:`c_1` in
-        the Armijo condition (or Goldstein, Goldstein-Armijo condition) where
-        :math:`\alpha_{k}` is the estimated step.
-
-        .. math::
-
-            f(\mathbf{x}_{k}+\alpha_{k}\mathbf{p}_{k})\leq
-            f(\mathbf{x}_{k})+c_{1}\alpha_{k}\mathbf{p}_{k}^{\mathrm{T}}
-            \nabla f(\mathbf{x}_{k})
-
-        Note that :math:`0 < c_1 < 1`. Usually :math:`c_1` is small, see the Wolfe
-        conditions in :cite:t:`nocedalNumericalOptimization1999`.
-        In the fortran implementation
-        algo 778, it is hardcoded to 1e-3. The default is 1e-4.
-    gtol: float, optional
-        Specify a nonnegative tolerance for the curvature condition in
-        `minpack2.dcsrch <https://ftp.mcs.anl.gov/pub/MINPACK-2/csrch/dcsrch.f>`_
-        (used for the line search). This is :math:`c_2` in
-        the Armijo condition (or Goldstein, Goldstein-Armijo condition) where
-        :math:`\alpha_{k}` is the estimated step.
-
-        .. math::
-
-            \left|\mathbf{p}_{k}^{\mathrm {T}}\nabla f(\mathbf{x}_{k}+\alpha_{k}
-            \mathbf{p}_{k})\right|\leq c_{2}\left|\mathbf {p}_{k}^{\mathrm{T}}\nabla
-            f(\mathbf{x}_{k})\right|
-
-        Note that :math:`0 < c_1 < c_2 < 1`. Usually, :math:`c_2` is
-        much larger than :math:`c_2`.
-        see :cite:t:`nocedalNumericalOptimization1999`. In the fortran implementation
-        algo 778, it is hardcoded to 0.9. The default is 0.9.
-    xtol: float, optional
-        Specify a nonnegative relative tolerance for an acceptable step in the line
-        search procedure (see
-        `minpack2.dcsrch <https://ftp.mcs.anl.gov/pub/MINPACK-2/csrch/dcsrch.f>`_).
-        In the fortran implementation algo 778, it is hardcoded to 0.1.
-        The default is 1e-5.
+    bounds : sequence or `Bounds`, optional
+        Bounds on the variables, as a sequence of ``(min, max)`` pairs for each
+        element of ``x0`` (None is used to specify no bound) or as a ``Bounds``
+        instance. By default None (unbounded).
+    max_steplength_user : float, optional
+        Maximum step length allowed. The default is 1e8 (no practical limit).
+    ftol : float, optional
+        Tolerance for the sufficient decrease condition (:math:`c_1`, with
+        :math:`0 < c_1 < c_2 < 1`). By default 1e-3, as hardcoded in algorithm 778.
+    gtol : float, optional
+        Tolerance for the curvature condition (:math:`c_2`). By default 0.9, as
+        hardcoded in algorithm 778.
+    xtol : float, optional
+        Relative tolerance for an acceptable step. By default 1e-1, as hardcoded in
+        algorithm 778.
     max_iter : int, optional
-            Maximum number of linesearch iterations, by default 30.
+        Maximum number of line search iterations, by default 30.
+    opt_iter : int, optional
+        Number of iterations of the outer optimization algorithm, by default 0.
     iprint : int, optional
         Controls the frequency of output. ``iprint < 0`` means no output;
-        ``iprint = 0``    print only one line at the last iteration;
-        ``0 < iprint < 99`` print also f and ``|proj g|`` every iprint iterations;
-        ``iprint >= 99``   print details of every iteration except n-vectors;
-    logger: Optional[Logger], optional
-        :class:`logging.Logger` instance. If None, nothing is displayed, no matter the
-        value of `iprint`, by default None.
+        ``iprint = 0`` prints only one line at the last iteration;
+        ``0 < iprint < 99`` prints also f and ``|proj g|`` every iprint iterations;
+        ``iprint >= 99`` prints details of every iteration except n-vectors.
+    logger : Optional[logging.Logger], optional
+        Logger instance. If None, nothing is displayed, no matter the value of
+        `iprint`.
 
     Returns
     -------
     alpha : float or None
-        Alpha for which ``x_new = x0 + alpha * pk``,
-        or None if the line search algorithm did not converge.
-    fc : int
+        Step length such that ``x_new = x0 + alpha * d``, or None if the line search
+        did not converge.
+    nfev : int
         Number of function evaluations made.
-    gc : int
+    ngev : int
         Number of gradient evaluations made.
-    new_fval : float or None
-        New function value ``f(x_new)=f(x0+alpha*pk)``,
-        or None if the line search algorithm did not converge.
+    new_fval : float
+        New function value ``f(x0 + alpha * d)``. Equal to ``f0`` on failure.
     old_fval : float
         Old function value ``f(x0)``.
-    new_slope : float or None
-        The local slope along the search direction at the
-        new value ``<myfprime(x_new), pk>``,
-        or None if the line search algorithm did not converge.
+    new_grad : NDArrayFloat
+        Gradient at ``x0 + alpha * d`` (or the search direction ``d`` on failure).
     """
+    # Lazy imports: the lbfgsb internals are only needed by this function and they
+    # may change from one version to another.
+    from lbfgsb.base import get_bounds, is_any_inf
+    from lbfgsb.linesearch import line_search as ls2
+    from lbfgsb.scalar_function import ScalarFunction
+
     lb, ub = get_bounds(x0, bounds)
 
-    sf = ScalarFunction(
+    sf_kwargs = dict(
         fun=fun,
         x0=x0,
-        args=(),
         grad=grad,
         finite_diff_bounds=(lb, ub),
         finite_diff_rel_step=None,
     )
+    try:
+        sf = ScalarFunction(args=(), **sf_kwargs)
+    except TypeError:  # newer versions of lbfgsb dropped the `args` argument
+        sf = ScalarFunction(**sf_kwargs)
     f0 = sf.fun(x0)
 
     alpha = ls2(
@@ -176,28 +255,48 @@ def standalone_linesearch(
 
 def get_polish(dC: NDArrayFloat, C: NDArrayFloat) -> NDArrayFloat:
     """
-    Get a polishing factor.
+    Get a (per-component) polishing factor for a Newton increment.
 
-    See section 10.3.2 of Yann's report Improvement of the Newton-Raphson method.
+    The factor damps the components of the increment which are large compared to the
+    current values, so that concentrations do not change sign. See section 10.3.2 of
+    Yann's report *Improvement of the Newton-Raphson method*.
+
+    Parameters
+    ----------
+    dC : NDArrayFloat
+        Newton increment, to be *subtracted* from ``C``.
+    C : NDArrayFloat
+        Current (non-preconditioned) unknowns.
+
+    Returns
+    -------
+    NDArrayFloat
+        Polishing factors, with the same shape as ``C``. They are all equal to one
+        if at least one component of ``C`` is null (relative changes are then
+        undefined).
     """
-    ratio: NDArrayFloat = dC / C
-    pf: NDArrayFloat = np.ones_like(ratio)  # polishing factor initialized to one
-    abs_ratio: NDArrayFloat = np.abs(ratio)
+    pf: NDArrayFloat = np.ones_like(C, dtype=float)  # polishing factor (default: 1)
+    if not np.all(np.abs(C) > SMALL_VALUE):
+        return pf
+
     a = 0.5
     b = 3.0
     c = 0.9
 
-    if all(x > SMALL_VALUE for x in abs(C)):
-        tmp = np.where(
-            ratio > 0.0,
-            (b * abs_ratio - a * a) / ((b + abs_ratio - 2.0 * a) * ratio),
-            -c * (abs_ratio - a * a) / ((1.0 + abs_ratio - 2.0 * a) * ratio),
-        )
-        mask = abs_ratio > a
-        pf[mask] = tmp[mask]
-    else:
-        pf = np.ones_like(ratio)
+    ratio: NDArrayFloat = dC / C
+    abs_ratio: NDArrayFloat = np.abs(ratio)
+    mask = abs_ratio > a
+    if not np.any(mask):
+        return pf
 
+    # Only evaluate the formulas where they are used (ratio > a > 0 => ratio != 0)
+    r = ratio[mask]
+    ar = abs_ratio[mask]
+    pf[mask] = np.where(
+        r > 0.0,
+        (b * ar - a * a) / ((b + ar - 2.0 * a) * r),
+        -c * (ar - a * a) / ((1.0 + ar - 2.0 * a) * r),
+    )
     return pf
 
 
@@ -209,114 +308,133 @@ def solve_with_svd(
     check_finite: bool = True,
 ) -> NDArrayFloat:
     """
-    Solve the system Ax = b using the SVD as a preconditioner.
+    Solve the system ``A x = b`` with a truncated SVD (minimum-norm solution).
+
+    Singular values below ``atol + rtol * max(s)`` are discarded. For a full-rank
+    square matrix, the result is the usual solution of the linear system. For a
+    singular or rectangular matrix, it is the minimum-norm least-squares solution
+    (:math:`x = A^{+} b`).
 
     Parameters
     ----------
     A : NDArrayFloat
-        Matrix, not necessarily square.
+        Matrix, not necessarily square, with shape (M, N).
     b : NDArrayFloat
-        RHS vector.
-    rcond : _type_, optional
-        Threshold to discard small singular values, by default 1e-15.
+        Right-hand side, with shape (M,) or (M, K).
+    atol : Optional[float], optional
+        Absolute threshold below which singular values are discarded.
+        The default is 0.
+    rtol : Optional[float], optional
+        Relative threshold (to the largest singular value) below which singular
+        values are discarded. The default is ``max(M, N) * eps``.
+    check_finite : bool, optional
+        Whether to check that the input matrix contains only finite numbers.
+        By default True.
 
     Returns
     -------
     NDArrayFloat
-        x = A^{1} @ b
-    """
-    u, s, vh = sp.linalg.svd(A, full_matrices=False, check_finite=check_finite)
-    t = u.dtype.char.lower()
-    maxS = np.max(s, initial=0.0)
+        The solution ``x`` with shape (N,) or (N, K).
 
+    Raises
+    ------
+    ValueError
+        If ``atol`` or ``rtol`` is negative.
+    """
     atol = 0.0 if atol is None else atol
-    rtol = max(A.shape) * np.finfo(t).eps if (rtol is None) else rtol
+    u, s, vh = linalg.svd(A, full_matrices=False, check_finite=check_finite)
+    rtol = max(A.shape) * np.finfo(u.dtype).eps if rtol is None else rtol
 
     if (atol < 0.0) or (rtol < 0.0):
         raise ValueError("atol and rtol values must be positive.")
 
-    val = atol + maxS * rtol
-    rank = np.sum(s > val)
+    rank = int(np.count_nonzero(s > atol + np.max(s, initial=0.0) * rtol))
+    if rank == 0:
+        return np.zeros((A.shape[1],) + np.shape(b)[1:], dtype=u.dtype)
 
-    u = u[:, :rank]
-    u /= s[:rank]
-    vh = vh[:rank]
-
-    def invA_matvec(z: NDArrayFloat) -> NDArrayFloat:
-        return vh.T @ u.T @ z
-
-    # solve P^{-1} A x = P^{-1} b
-    # instead of A x = b
-    # The advantage is that P^{-1} A is square even if A is not square
-    # print(invA_matvec(A))  # this should be close to the identity matrix
-    return sp.linalg.solve(invA_matvec(A), invA_matvec(b))
+    coeffs = u[:, :rank].T @ b
+    coeffs = coeffs / (s[:rank] if coeffs.ndim == 1 else s[:rank, None])
+    return vh[:rank].T @ coeffs
 
 
 def newton(
     x0: NDArrayFloat,
-    get_res: Callable,
-    get_invjacres: Callable,
+    get_res: Callable[[NDArrayFloat], NDArrayFloat],
+    get_invjacres: Callable[[NDArrayFloat], NDArrayFloat],
     atol: float,
-    linesearch: Optional[Callable] = None,
+    linesearch: Optional[Callable[[NDArrayFloat, NDArrayFloat, int], object]] = None,
+    rtol: float = 1e-12,
+    max_iter: int = 100,
 ) -> OptimizeResult:
-    """
-    Solve Ax = b with Newton.
+    r"""
+    Find a root of :math:`F(x) = 0` with a (damped) Newton-Raphson algorithm.
+
+    The iteration reads :math:`x^{k+1} = x^k - \alpha^k J^{-1}(x^k) F(x^k)` where
+    :math:`\alpha^k` is a scalar or a per-component damping factor given by the
+    optional line search. The algorithm stops when
+
+    - the norm of the residuals is below ``atol``, or
+    - the (undamped) Newton increment is below ``atol + rtol * ||x||``, or
+    - ``max_iter`` iterations have been performed (``success`` is then False).
 
     Parameters
     ----------
     x0 : NDArrayFloat
-        Unknowns to be found. With shape (Ns, Ne).
-    get_res : Callable
-        _description_
-    get_invjacres : Callable
-        _description_
+        Initial guess of the unknowns.
+    get_res : Callable[[NDArrayFloat], NDArrayFloat]
+        Function returning the residuals :math:`F(x)`.
+    get_invjacres : Callable[[NDArrayFloat], NDArrayFloat]
+        Function returning the Newton increment :math:`J^{-1}(x) F(x)`, which is
+        subtracted from ``x``.
     atol : float
-        _description_
-    linesearch : Optional[Callable], optional
-        _description_, by default None
+        Absolute tolerance on the residuals and on the Newton increment.
+    linesearch : Optional[Callable[[NDArrayFloat, NDArrayFloat, int], object]]
+        Function ``linesearch(x, dx, n_iterations)`` returning the damping factor
+        (a float or an array broadcastable to ``x``) to apply to the increment
+        ``dx``. If None, the full Newton step is taken. By default None.
+    rtol : float, optional
+        Relative tolerance on the Newton increment, by default 1e-12.
+    max_iter : int, optional
+        Maximum number of iterations, by default 100.
 
     Returns
     -------
     OptimizeResult
-        _description_
+        The result with attributes ``x`` (solution), ``success`` (bool),
+        ``status`` (``"convergence"`` or ``"max_iter"``), ``message``, ``nit``
+        (number of iterations) and ``fun`` (norm of the final residuals).
     """
-
-    # number of iterations
+    x = np.array(x0, dtype=float)  # copy
+    residuals = get_res(x)
+    res_norm = float(np.linalg.norm(residuals))
     n_iterations = 0
-    # make sure that the residuals norm and update_steps norm are above atol
-    residuals_norm = atol + 10.0
-    dt_norm = atol + 10.0
-    # initiate x as x0
-    x = x0.copy()
+    is_converged = res_norm <= atol
 
-    while (residuals_norm > atol) and (dt_norm > atol):
-        # update the number of iterations
+    while not is_converged and n_iterations < max_iter:
         n_iterations += 1
 
-        # print(f"iteration #{n_iteration}")
-
-        # Calculate the residual error
-        residuals = get_res(x)
-
-        # compute the update
+        # Newton increment (to subtract) and optional damping
         dx = get_invjacres(x)
+        alpha = linesearch(x, dx, n_iterations) if linesearch is not None else 1.0
 
-        # eventually use a linesearch step
-        if linesearch is not None:
-            alpha = linesearch(x, dx, n_iterations)
-        else:
-            alpha = 1.0
-
-        # update x
+        # update x and the residuals
         x = x - alpha * dx
+        residuals = get_res(x)
+        res_norm = float(np.linalg.norm(residuals))
 
-        # update the norms
-        residuals_norm = np.linalg.norm(residuals).item()
-        residuals_norm = np.linalg.norm(dx).item()
+        is_converged = (res_norm <= atol) or (
+            float(np.linalg.norm(dx)) <= atol + rtol * float(np.linalg.norm(x))
+        )
 
     return OptimizeResult(
         x=x,
-        success=True,
-        status="convergence",
+        success=is_converged,
+        status="convergence" if is_converged else "max_iter",
+        message=(
+            "Newton converged."
+            if is_converged
+            else f"Newton did not converge within {max_iter} iterations."
+        ),
         nit=n_iterations,
+        fun=res_norm,
     )

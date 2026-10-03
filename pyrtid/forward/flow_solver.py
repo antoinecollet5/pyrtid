@@ -1,7 +1,20 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright (c) 2024-2026 Antoine COLLET
 
-"""Provide a reactive transport solver."""
+r"""
+Provide the flow solver.
+
+The flow is described by the diffusivity equation, written in terms of the head
+(saturated flow) or of the pressure (density driven flow, i.e. with gravity):
+
+.. math::
+    S \dfrac{\partial h}{\partial t} = \nabla \cdot (K \nabla h) + q
+
+where :math:`S` is the storage coefficient, :math:`K` the permeability and :math:`q`
+the source terms. The equation is discretized with finite volumes on a rectilinear
+grid, with a Crank-Nicolson time scheme. The darcy velocities are computed at the grid
+cell faces.
+"""
 
 from __future__ import annotations
 
@@ -16,6 +29,7 @@ from inv_toolbox.utils import (
     harmonic_mean,
 )
 from quickpaver import RectilinearGrid
+from scipy import sparse
 from scipy.sparse import lil_array
 from scipy.sparse.linalg import LinearOperator, SuperLU, gmres
 
@@ -23,20 +37,42 @@ from pyrtid.forward.models import (
     GRAVITY,
     WATER_DENSITY,
     FlowModel,
+    SparseMatrixBuilder,
     TimeParameters,
     TransportModel,
-    VerticalAxis,
+    add_entries,
     get_owner_neigh_indices,
 )
-from pyrtid.utils import (
-    Callback,
-    NDArrayFloat,
-)
+from pyrtid.utils import NDArrayFloat
+
+# The matrices can be filled in a lil_array or in a SparseMatrixBuilder
+MatrixLike = Union[lil_array, SparseMatrixBuilder]
 
 
 def get_kmean(
-    grid: RectilinearGrid, fl_model: FlowModel, axis: int, is_flatten=True
+    grid: RectilinearGrid, fl_model: FlowModel, axis: int, is_flatten: bool = True
 ) -> NDArrayFloat:
+    """
+    Return the permeability at the faces between neighbor grid cells (harmonic mean).
+
+    Parameters
+    ----------
+    grid : RectilinearGrid
+        The grid.
+    fl_model : FlowModel
+        The flow model.
+    axis : int
+        Axis (0 for x, 1 for y, 2 for z) along which the faces are considered.
+    is_flatten : bool, optional
+        Whether to return a flat array (Fortran order, i.e. indexed by node number),
+        by default True. Otherwise, the array has the shape of the grid.
+
+    Returns
+    -------
+    NDArrayFloat
+        The mean permeability, stored in the cell located *before* the face.
+        It is null in the last grid cell along ``axis``.
+    """
     kmean: NDArrayFloat = np.zeros(grid.shape, dtype=np.float64)
     fwd_slicer = grid.get_slicer_forward(axis)
     bwd_slicer = grid.get_slicer_backward(axis)
@@ -56,6 +92,28 @@ def get_rhomean(
     time_index: Union[int, slice],
     is_flatten: bool = True,
 ) -> NDArrayFloat:
+    """
+    Return the density at the faces between neighbor grid cells (arithmetic mean).
+
+    Parameters
+    ----------
+    grid : RectilinearGrid
+        The grid.
+    tr_model : TransportModel
+        The transport model, which holds the densities.
+    axis : int
+        Axis (0 for x, 1 for y, 2 for z) along which the faces are considered.
+    time_index : Union[int, slice]
+        Time index (or slice of time indices) of the density.
+    is_flatten : bool, optional
+        Whether to return a flat array (Fortran order, i.e. indexed by node number),
+        by default True. Only for a single time index.
+
+    Returns
+    -------
+    NDArrayFloat
+        The mean density, stored in the cell located *before* the face.
+    """
     # get the density -> 2D or 3D array
     density = np.array(tr_model.ldensity[time_index])
     fwd_slicer = grid.get_slicer_forward(axis)
@@ -75,8 +133,9 @@ def get_rhomean(
 
 
 def fill_stationary_flmat_for_axis(
-    grid: RectilinearGrid, fl_model: FlowModel, q_next: lil_array, axis: int
+    grid: RectilinearGrid, fl_model: FlowModel, q_next: MatrixLike, axis: int
 ) -> None:
+    """Add the contribution of the faces along ``axis`` to the stationary matrix."""
     kmean = get_kmean(grid, fl_model, axis)
     tmp = grid.gc_face_area_m2(axis) / grid.pipj_m(axis) / grid.grid_cell_volume_m3
     fwd_slicer = grid.get_slicer_forward(axis)
@@ -93,8 +152,8 @@ def fill_stationary_flmat_for_axis(
         owner_indices_to_keep=fl_model.free_head_nn,
     )
 
-    q_next[idc_owner, idc_neigh] -= kmean[idc_owner] * tmp  # type: ignore
-    q_next[idc_owner, idc_owner] += kmean[idc_owner] * tmp  # type: ignore
+    add_entries(q_next, idc_owner, idc_neigh, -(kmean[idc_owner] * tmp))
+    add_entries(q_next, idc_owner, idc_owner, kmean[idc_owner] * tmp)
 
     # Backward scheme
     idc_owner, idc_neigh = get_owner_neigh_indices(
@@ -104,20 +163,17 @@ def fill_stationary_flmat_for_axis(
         owner_indices_to_keep=fl_model.free_head_nn,
     )
 
-    q_next[idc_owner, idc_neigh] -= kmean[idc_neigh] * tmp  # type: ignore
-    q_next[idc_owner, idc_owner] += kmean[idc_neigh] * tmp  # type: ignore
+    add_entries(q_next, idc_owner, idc_neigh, -(kmean[idc_neigh] * tmp))
+    add_entries(q_next, idc_owner, idc_owner, kmean[idc_neigh] * tmp)
 
 
 def make_stationary_flow_matrices(
     grid: RectilinearGrid, fl_model: FlowModel
 ) -> lil_array:
     """
-    Make matrices for the transient flow.
+    Make the matrix of the stationary flow.
 
-    Note
-    ----
-    Since the permeability and the storage coefficient does not vary with time,
-    matrices q_prev and q_next are the same.
+    The rows of the constant head grid cells are the identity.
     """
 
     dim = grid.n_grid_cells
@@ -137,13 +193,19 @@ def fill_transient_flmat_for_axis(
     grid: RectilinearGrid,
     fl_model: FlowModel,
     tr_model: TransportModel,
-    q_next: lil_array,
-    q_prev: lil_array,
+    q_next: MatrixLike,
+    q_prev: MatrixLike,
     time_index: int,
     axis: int,
 ) -> None:
+    """Add the contribution of the faces along ``axis`` to the transient matrices."""
     kmean = get_kmean(grid, fl_model, axis)
-    rhomean = get_rhomean(grid, tr_model, axis=axis, time_index=time_index - 1)
+    # The density is only needed with the gravity
+    rhomean = (
+        get_rhomean(grid, tr_model, axis=axis, time_index=time_index - 1)
+        if fl_model.is_gravity
+        else None
+    )
     sc = fl_model.storage_coefficient.ravel("F")
 
     _tmp: float = (
@@ -166,10 +228,10 @@ def fill_transient_flmat_for_axis(
     if fl_model.is_gravity:
         tmp *= rhomean[idc_owner] / WATER_DENSITY
 
-    q_next[idc_owner, idc_neigh] -= fl_model.crank_nicolson * tmp  # type: ignore
-    q_next[idc_owner, idc_owner] += fl_model.crank_nicolson * tmp  # type: ignore
-    q_prev[idc_owner, idc_neigh] += (1.0 - fl_model.crank_nicolson) * tmp  # type: ignore
-    q_prev[idc_owner, idc_owner] -= (1.0 - fl_model.crank_nicolson) * tmp  # type: ignore
+    add_entries(q_next, idc_owner, idc_neigh, -(fl_model.crank_nicolson * tmp))
+    add_entries(q_next, idc_owner, idc_owner, fl_model.crank_nicolson * tmp)
+    add_entries(q_prev, idc_owner, idc_neigh, (1.0 - fl_model.crank_nicolson) * tmp)
+    add_entries(q_prev, idc_owner, idc_owner, -((1.0 - fl_model.crank_nicolson) * tmp))
 
     # Backward scheme
     idc_owner, idc_neigh = get_owner_neigh_indices(
@@ -185,10 +247,29 @@ def fill_transient_flmat_for_axis(
     if fl_model.is_gravity:
         tmp *= rhomean[idc_neigh] / WATER_DENSITY
 
-    q_next[idc_owner, idc_neigh] -= fl_model.crank_nicolson * tmp  # type: ignore
-    q_next[idc_owner, idc_owner] += fl_model.crank_nicolson * tmp  # type: ignore
-    q_prev[idc_owner, idc_neigh] += (1.0 - fl_model.crank_nicolson) * tmp  # type: ignore
-    q_prev[idc_owner, idc_owner] -= (1.0 - fl_model.crank_nicolson) * tmp  # type: ignore
+    add_entries(q_next, idc_owner, idc_neigh, -(fl_model.crank_nicolson * tmp))
+    add_entries(q_next, idc_owner, idc_owner, fl_model.crank_nicolson * tmp)
+    add_entries(q_prev, idc_owner, idc_neigh, (1.0 - fl_model.crank_nicolson) * tmp)
+    add_entries(q_prev, idc_owner, idc_owner, -((1.0 - fl_model.crank_nicolson) * tmp))
+
+
+def _assemble_transient_flow_matrices(
+    grid: RectilinearGrid,
+    fl_model: FlowModel,
+    tr_model: TransportModel,
+    time_index: int,
+) -> Tuple[SparseMatrixBuilder, SparseMatrixBuilder]:
+    """Fill (and return) the builders of the transient flow matrices (no 1/dt)."""
+    dim = grid.n_grid_cells
+    q_prev = SparseMatrixBuilder((dim, dim))
+    q_next = SparseMatrixBuilder((dim, dim))
+
+    for n, axis in zip(grid.shape, (0, 1, 2)):
+        if n >= 2:
+            fill_transient_flmat_for_axis(
+                grid, fl_model, tr_model, q_next, q_prev, time_index, axis
+            )
+    return q_next, q_prev
 
 
 def make_transient_flow_matrices(
@@ -198,50 +279,46 @@ def make_transient_flow_matrices(
     time_index: int,
 ) -> Tuple[lil_array, lil_array]:
     """
-    Make matrices for the transient flow.
+    Make the matrices for the transient flow, without the time derivative term.
 
     Note
     ----
-    Since the permeability and the storage coefficient does not vary with time,
-    matrices q_prev and q_next are the same.
+    Without gravity, the permeability and the storage coefficient do not vary with
+    time, so the matrices only need to be built once. With the gravity, they depend
+    on the density and must be updated.
+
+    Returns
+    -------
+    Tuple[lil_array, lil_array]
+        The matrices of the implicit (next time) and explicit (previous time) terms.
     """
-
-    dim = grid.n_grid_cells
-    q_prev = lil_array((dim, dim), dtype=np.float64)
-    q_next = lil_array((dim, dim), dtype=np.float64)
-
-    for n, axis in zip(grid.shape, (0, 1, 2)):
-        if n >= 2:
-            fill_transient_flmat_for_axis(
-                grid, fl_model, tr_model, q_next, q_prev, time_index, axis
-            )
-
-    return q_next, q_prev
+    q_next, q_prev = _assemble_transient_flow_matrices(
+        grid, fl_model, tr_model, time_index
+    )
+    return q_next.tolil(), q_prev.tolil()
 
 
 def get_zj_zi_rhs(grid: RectilinearGrid, fl_model: FlowModel) -> NDArrayFloat:
+    """
+    Return the gravity contribution to the right hand side of the stationary flow.
+
+    It is made of the differences of elevation between neighbor grid cells along the
+    vertical axis, weighted by the permeability. It is null for the constant head
+    grid cells and if the grid has a single cell along the vertical axis.
+    """
     rhs_z = np.zeros((grid.n_grid_cells), dtype=np.float64)
     z = fl_model._get_mesh_center_vertical_pos().ravel("F")
 
-    if fl_model.vertical_axis == VerticalAxis.X:
-        if grid.nx < 2:
-            return rhs_z
-        axis = 0
-    if fl_model.vertical_axis == VerticalAxis.Y:
-        if grid.ny < 2:
-            return rhs_z
-        axis = 1
-    if fl_model.vertical_axis == VerticalAxis.Z:
-        if grid.nz < 2:
-            return rhs_z
-        axis = 2
+    axis = fl_model.vertical_axis_index
+    if grid.shape[axis] < 2:
+        return rhs_z
 
     fwd_slicer = grid.get_slicer_forward(axis)
     bwd_slicer = grid.get_slicer_backward(axis)
 
     kmean = get_kmean(grid, fl_model, axis)
 
-    tmp = grid.gamma_ij_x_m2(axis) / grid.pipj_m(axis) / grid.grid_cell_volume_m3
+    tmp = grid.gc_face_area_m2(axis) / grid.pipj_m(axis) / grid.grid_cell_volume_m3
 
     # Forward scheme:
     idc_owner, idc_neigh = get_owner_neigh_indices(
@@ -275,10 +352,30 @@ def solve_flow_stationary(
     unitflw_sources: NDArrayFloat,
     time_index: int,
 ) -> int:
-    """
-    Solving the diffusivity equation:
+    r"""
+    Solve the stationary flow, i.e. equilibrate the initial heads.
 
-    dh/dt = div K grad h + ...
+    The stationary diffusivity equation :math:`\nabla \cdot (K \nabla h) + q = 0` is
+    solved with the sources and the constant head boundary conditions. The initial
+    head, pressure and darcy velocities (time index 0) are overwritten.
+
+    Parameters
+    ----------
+    grid : RectilinearGrid
+        The grid.
+    fl_model : FlowModel
+        The flow model.
+    tr_model : TransportModel
+        The transport model (for the density).
+    unitflw_sources : NDArrayFloat
+        The flow sources (1/s) with shape (nx, ny, nz).
+    time_index : int
+        The time index (0).
+
+    Returns
+    -------
+    int
+        The exit code of the linear solver (0 for a successful exit).
     """
     # Make stationary matrices
     fl_model.q_next = make_stationary_flow_matrices(grid, fl_model)
@@ -358,20 +455,30 @@ def find_u(
     time_index: int,
     axis: int,
 ) -> NDArrayFloat:
-    """
-    Compute the darcy velocities at the mesh boundaries along the x axis.
+    r"""
+    Compute the darcy velocities at the faces of the grid cells along an axis.
 
-    U = - k grad(h)
+    :math:`U = - k \nabla h` (the gravity term is included for the vertical axis
+    if the gravity is considered).
 
     Parameters
     ----------
     fl_model : FlowModel
-        The
+        The flow model.
+    tr_model : TransportModel
+        The transport model (for the density).
+    grid : RectilinearGrid
+        The grid.
+    time_index : int
+        The time index.
+    axis : int
+        Axis (0 for x, 1 for y, 2 for z).
 
     Returns
     -------
-    _type_
-        _description_
+    NDArrayFloat
+        The velocities at the faces, with one more value than the grid has cells
+        along ``axis``. The velocities of the faces on the domain borders are null.
     """
     dim = list(grid.shape)
     dim[axis] += 1
@@ -386,21 +493,18 @@ def find_u(
             axis
         )
 
-        rhomean = get_rhomean(
-            grid, tr_model, axis=axis, time_index=time_index - 1, is_flatten=False
-        )[fwd_slicer]
-
-        if (
-            (fl_model.vertical_axis == VerticalAxis.X and axis == 0)
-            or (fl_model.vertical_axis == VerticalAxis.Y and axis == 1)
-            or (fl_model.vertical_axis == VerticalAxis.Z and axis == 2)
-        ):
+        if axis == fl_model.vertical_axis_index:
             if time_index == 0:
                 out[bwd_slicer] += WATER_DENSITY * GRAVITY
             else:
+                rhomean = get_rhomean(
+                    grid,
+                    tr_model,
+                    axis=axis,
+                    time_index=time_index - 1,
+                    is_flatten=False,
+                )[fwd_slicer]
                 out[bwd_slicer] += rhomean * GRAVITY
-        else:
-            pass
 
         # Apply the front factor
         out[bwd_slicer] *= -kmean / WATER_DENSITY / GRAVITY
@@ -419,7 +523,13 @@ def compute_u_darcy(
     grid: RectilinearGrid,
     time_index: int,
 ) -> None:
-    """Update the darcy velocities at the node boundaries."""
+    """
+    Update the darcy velocities at the faces of the grid cells.
+
+    The velocities are appended to ``fl_model.lu_darcy_x``, ``lu_darcy_y`` and
+    ``lu_darcy_z``, and the constant head grid cells are handled by
+    :func:`update_unitflow_cst_head_nodes`.
+    """
     fl_model.lu_darcy_x.append(find_u(fl_model, tr_model, grid, time_index, axis=0))
     fl_model.lu_darcy_y.append(find_u(fl_model, tr_model, grid, time_index, axis=1))
     fl_model.lu_darcy_z.append(find_u(fl_model, tr_model, grid, time_index, axis=2))
@@ -449,8 +559,7 @@ def update_unitflow_cst_head_nodes(
     # Need to evacuate the overflow for the boundaries with constant head.
     # Note: constant head nodes can only be on the domain boundaries
 
-    # 1) Compute the flow in each cell -> oriented darcy times the node centers
-    # distances
+    # 1) Compute the flow in each cell -> oriented darcy times the faces area
     flow = np.zeros(grid.shape)
     _flow = np.zeros(grid.shape)
     if grid.nx > 1:
@@ -464,15 +573,9 @@ def update_unitflow_cst_head_nodes(
         flow -= fl_model.lu_darcy_z[time_index][:, :, 1:] * grid.gamma_ij_z_m2
 
     # Trick: Set the flow to zero where the head is not constant
-    # Q: est-ce que c'est juste pour les constant head ????
-    _flow[
-        fl_model.cst_head_indices[0],
-        fl_model.cst_head_indices[1],
-        fl_model.cst_head_indices[2],
-    ] = flow[
-        fl_model.cst_head_indices[0],
-        fl_model.cst_head_indices[1],
-        fl_model.cst_head_indices[2],
+    cst_head_idx = fl_model.cst_head_indices
+    _flow[cst_head_idx[0], cst_head_idx[1], cst_head_idx[2]] = flow[
+        cst_head_idx[0], cst_head_idx[1], cst_head_idx[2]
     ]
 
     # Total boundary length per mesh
@@ -509,11 +612,9 @@ def update_unitflow_cst_head_nodes(
             )
 
     # 2) Update unitflow for the constant-head nodes
-    fl_model.lunitflow[time_index][
-        fl_model.cst_head_indices[0], fl_model.cst_head_indices[1]
-    ] = (
-        _flow[fl_model.cst_head_indices[0], fl_model.cst_head_indices[1]]
-        / grid.grid_cell_volume_m3
+    cst_idx = fl_model.cst_head_indices
+    fl_model.lunitflow[time_index][cst_idx[0], cst_idx[1], cst_idx[2]] = (
+        _flow[cst_idx[0], cst_idx[1], cst_idx[2]] / grid.grid_cell_volume_m3
     )
 
     # 3) Now creates an artificial flow on the domain boundaries
@@ -522,7 +623,7 @@ def update_unitflow_cst_head_nodes(
     # grid cells located in the boundary of the domain.
 
     # 3.1) For constant head in the borders -> unitflow is null
-    cst_head_border_mask = _flow != 0 & quickpaver.get_array_borders_selection(
+    cst_head_border_mask = (_flow != 0) & quickpaver.get_array_borders_selection(
         *grid.shape
     )
     fl_model.lunitflow[time_index][cst_head_border_mask] = 0.0
@@ -634,21 +735,17 @@ def get_gravity_gradient(
     tr_model: TransportModel,
     time_index: int,
 ) -> NDArrayFloat:
+    """
+    Return the gravity term of the right hand side of the transient (pressure) flow.
+
+    It is null if the grid has a single cell along the vertical axis.
+    """
     tmp = np.zeros(grid.n_grid_cells)
     sc = fl_model.storage_coefficient.ravel("F")
 
-    if fl_model.vertical_axis == VerticalAxis.X:
-        if grid.nx < 2:
-            return tmp
-        axis = 0
-    if fl_model.vertical_axis == VerticalAxis.Y:
-        if grid.ny < 2:
-            return tmp
-        axis = 1
-    if fl_model.vertical_axis == VerticalAxis.Z:
-        if grid.nz < 2:
-            return tmp
-        axis = 2
+    axis = fl_model.vertical_axis_index
+    if grid.shape[axis] < 2:
+        return tmp
 
     fwd_slicer = grid.get_slicer_forward(axis)
     bwd_slicer = grid.get_slicer_backward(axis)
@@ -705,37 +802,55 @@ def solve_flow_transient_semi_implicit(
     time_index: int,
 ) -> int:
     """
-    Solving the diffusivity equation:
+    Solve the transient diffusivity equation for one timestep (Crank-Nicolson).
 
-    dh/dt = div K grad h + ...
+    The head (or the pressure with the gravity) is appended to ``fl_model.lhead``
+    (and ``lpressure``), and the darcy velocities and their divergence are updated.
+
+    Parameters
+    ----------
+    grid : RectilinearGrid
+        The grid.
+    fl_model : FlowModel
+        The flow model.
+    tr_model : TransportModel
+        The transport model (for the density).
+    unitflw_sources : NDArrayFloat
+        The flow sources (1/s) at the current time, with shape (nx, ny, nz).
+    unitflw_sources_old : NDArrayFloat
+        The flow sources (1/s) at the previous time.
+    time_params : TimeParameters
+        The time parameters (the current timestep is ``time_params.dt``).
+    time_index : int
+        The time index (>= 1).
+
+    Returns
+    -------
+    int
+        The exit code of the linear solver (0 for a successful exit).
     """
     if fl_model.is_gravity or time_index == 1:
         # If the gravity is involved, then the updated density must be used and
         # consequently, the matrix must be updated
         # time_index = 1 => first time the matrix is built
-        fl_model.q_next, fl_model.q_prev = make_transient_flow_matrices(
+        builder_next, builder_prev = _assemble_transient_flow_matrices(
             grid, fl_model, tr_model, time_index
         )
+        q_next_no_dt, q_prev_no_dt = builder_next.tocsc(), builder_prev.tocsc()
         if not fl_model.is_gravity:  # store for the saturated case only
-            fl_model.q_next_no_dt = fl_model.q_next.copy()
-            fl_model.q_prev_no_dt = fl_model.q_prev.copy()
+            fl_model.q_next_no_dt = q_next_no_dt
+            fl_model.q_prev_no_dt = q_prev_no_dt
     else:
         # Otherwise it does not vary
-        fl_model.q_next = fl_model.q_next_no_dt.copy()
-        fl_model.q_prev = fl_model.q_prev_no_dt.copy()
+        q_next_no_dt = fl_model.q_next_no_dt
+        q_prev_no_dt = fl_model.q_prev_no_dt
 
-    # Add 1/dt for the left term contribution (note: the timestep is variable)
-    # Only for free head
-    fl_model.q_next.setdiag(fl_model.q_next.diagonal() + 1 / time_params.dt)
-    fl_model.q_prev.setdiag(fl_model.q_prev.diagonal() + 1 / time_params.dt)
-
-    # Take constant head into account
-    fl_model.q_next[fl_model.cst_head_nn, fl_model.cst_head_nn] = 1.0
-    fl_model.q_prev[fl_model.cst_head_nn, fl_model.cst_head_nn] = 0.0
-
-    # csc format for efficiency
-    fl_model.q_next = fl_model.q_next.tocsc()
-    fl_model.q_prev = fl_model.q_prev.tocsc()
+    # Add 1/dt for the left term contribution (note: the timestep is variable) and
+    # take the constant head into account. The matrices are in csc format for
+    # efficiency.
+    fl_model.q_next, fl_model.q_prev = _add_time_derivative_and_cst_head(
+        fl_model, q_next_no_dt, q_prev_no_dt, time_params.dt
+    )
 
     # only useful to store for dev and to check the adjoint state correctness
     if fl_model.is_save_spmats:
@@ -810,25 +925,73 @@ def solve_flow_transient_semi_implicit(
     return exit_code
 
 
+def _add_time_derivative_and_cst_head(
+    fl_model: FlowModel,
+    q_next_no_dt: sparse.csc_array,
+    q_prev_no_dt: sparse.csc_array,
+    dt: float,
+) -> Tuple[sparse.csc_array, sparse.csc_array]:
+    r"""
+    Add the time derivative term to the transient matrices (csc format).
+
+    :math:`1 / \Delta t` is added to the diagonal of the free head rows. The
+    constant head rows are the identity in ``q_next`` and null in ``q_prev``. The
+    input matrices are not modified.
+    """
+    n = q_next_no_dt.shape[0]
+    cst = fl_model.cst_head_nn
+    inv_dt = np.full(n, 1.0 / dt)
+    inv_dt[cst] = 0.0
+    is_cst = np.zeros(n)
+    is_cst[cst] = 1.0
+
+    def _diag(values: NDArrayFloat) -> sparse.dia_array:
+        return sparse.dia_array((values[None, :], [0]), shape=(n, n))
+
+    q_next = (q_next_no_dt.tocsc() + _diag(inv_dt + is_cst)).tocsc()
+    q_prev = (q_prev_no_dt.tocsc() + _diag(inv_dt)).tocsc()
+    return q_next, q_prev
+
+
 def solve_fl_gmres(
     fl_model: FlowModel,
     rhs: NDArrayFloat,
     super_ilu: Optional[SuperLU] = None,
     preconditioner: Optional[LinearOperator] = None,
 ) -> Tuple[NDArrayFloat, int]:
-    # Solve Ax = b with A sparse using LU preconditioner
-    callback = Callback()
+    """
+    Solve ``fl_model.q_next @ x = rhs`` with GMRES.
+
+    Parameters
+    ----------
+    fl_model : FlowModel
+        The flow model, which holds the matrix ``q_next`` and the tolerance.
+    rhs : NDArrayFloat
+        The right hand side.
+    super_ilu : Optional[SuperLU], optional
+        Incomplete LU factorization of ``q_next``, used for the initial guess.
+    preconditioner : Optional[LinearOperator], optional
+        Preconditioner of the linear system.
+
+    Returns
+    -------
+    Tuple[NDArrayFloat, int]
+        The solution and the exit code of GMRES (0 for a successful exit).
+    """
+    matrix = fl_model.q_next
+    if matrix.format not in ("csc", "csr"):
+        # avoid a costly conversion at each matrix-vector product
+        matrix = matrix.tocsc()
+
     res, exit_code = gmres(
-        fl_model.q_next,
+        matrix,
         rhs,
         x0=super_ilu.solve(rhs) if super_ilu is not None else None,
         M=preconditioner,
         rtol=fl_model.rtol,
         maxiter=1000,
         restart=20,
-        callback=callback,
-        callback_type="legacy",
     )
-    # TODO = display
-    # log...(f"Number of it for gmres {callback.itercount()}")
+    if exit_code != 0:
+        warnings.warn(f"The GMRES solver of the flow did not converge ({exit_code}).")
     return res, exit_code
