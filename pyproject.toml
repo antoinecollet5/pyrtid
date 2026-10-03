@@ -79,7 +79,7 @@ examples = [
     "tomli",
 ]
 scikit_sparse_old = ["scikit-sparse<0.5.0"]
-lint = ["pre-commit", "pre-commit-hooks", "codespell>=2.1.0", "ruff", "ty"]
+lint = ["pre-commit", "pre-commit-hooks", "codespell>=2.1.0", "ruff==0.16.10", "ty==0.0.84"]
 install = ["pip", "wheel"]
 
 [project.urls]
