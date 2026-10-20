@@ -2,6 +2,8 @@
 # Copyright (c) 2024-2026 Antoine COLLET
 
 """
+Reactive transport inversion with the adjoint state method.
+
 Purpose
 =======
 
@@ -26,7 +28,10 @@ try:
 except ImportError:
 
     class ScoobyReport:
+        """Placeholder for :class:`scooby.Report` when scooby is not installed."""
+
         def __init__(self, *args, **kwargs):
+            """Warn that scooby is required to build a report."""
             message = (
                 "\n  *ERROR*: `Report` requires `scooby`."
                 "\n           Install it via `pip install scooby` or"
@@ -41,9 +46,26 @@ from pyrtid.__about__ import __author__, __email__, __version__
 
 
 class Report(ScoobyReport):  # ty:ignore[unsupported-base]
-    def __init__(self, additional=None, ncol=3, text_width=80, sort=False):
-        """Initiate a scooby.Report instance."""
+    """Report the versions of pyrtid, python and the main dependencies (scooby)."""
 
+    def __init__(
+        self, additional=None, ncol: int = 3, text_width: int = 80, sort: bool = False
+    ):
+        """
+        Initialize a scooby.Report instance.
+
+        Parameters
+        ----------
+        additional : list of str or module, optional
+            Additional packages (or modules) to include in the report. The default is
+            None.
+        ncol : int, optional
+            Number of columns of the report. The default is 3.
+        text_width : int, optional
+            Text width of the report. The default is 80.
+        sort : bool, optional
+            Whether to sort the packages alphabetically. The default is False.
+        """
         # Mandatory packages.
         core = [
             "pyrtid",
