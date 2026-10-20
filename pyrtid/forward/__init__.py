@@ -85,13 +85,16 @@ Some useful functions
 
 """
 
-from .flow_solver import solve_flow_stationary, solve_flow_transient_semi_implicit
-from .geochem_solver import (
+from pyrtid.forward.flow_solver import (
+    solve_flow_stationary,
+    solve_flow_transient_semi_implicit,
+)
+from pyrtid.forward.geochem_solver import (
     solve_geochem,
     solve_geochem_explicit,
     solve_geochem_implicit,
 )
-from .models import (
+from pyrtid.forward.models import (
     ConstantConcentration,
     ConstantHead,
     FlowParameters,
@@ -105,8 +108,12 @@ from .models import (
     ZeroConcGradient,
     get_owner_neigh_indices,
 )
-from .solver import CouplingConvergenceError, ForwardSolver, get_max_coupling_error
-from .transport_solver import solve_transport_semi_implicit
+from pyrtid.forward.solver import (
+    CouplingConvergenceError,
+    ForwardSolver,
+    get_max_coupling_error,
+)
+from pyrtid.forward.transport_solver import solve_transport_semi_implicit
 
 __all__ = [
     "TimeParameters",
