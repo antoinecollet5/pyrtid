@@ -24,15 +24,13 @@ import logging
 import numpy as np
 import scipy as sp
 
-from pyrtid.utils import NDArrayFloat
-
-from .flow_solver import (
+from pyrtid.forward.flow_solver import (
     compute_u_darcy_div,
     solve_flow_stationary,
     solve_flow_transient_semi_implicit,
 )
-from .geochem_solver import solve_geochem
-from .models import (
+from pyrtid.forward.geochem_solver import solve_geochem
+from pyrtid.forward.models import (
     H_PLUS_CONC,
     TDS_LINEAR_COEFFICIENT,
     VERY_SMALL_NUMBER,
@@ -42,7 +40,8 @@ from .models import (
     ForwardModel,
     TransportModel,
 )
-from .transport_solver import solve_transport_semi_implicit
+from pyrtid.forward.transport_solver import solve_transport_semi_implicit
+from pyrtid.utils import NDArrayFloat
 
 logger = logging.getLogger(__name__)
 
