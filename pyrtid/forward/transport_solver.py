@@ -360,7 +360,6 @@ def _apply_divergence_effect(
     The divergence due to the flow sources is excluded, since the sources are
     handled by the sink term and by the concentration sources.
     """
-
     div = (fl_model.lu_darcy_div[time_index] - fl_model.lunitflow[time_index]).flatten(
         order="F"
     )
