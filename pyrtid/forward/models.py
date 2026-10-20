@@ -209,11 +209,11 @@ class TimeParameters:
         self.lnfpi = []
 
     def save_dt(self) -> None:
-        "Save the current timestep to the list of timesteps."
+        """Save the current timestep to the list of timesteps."""
         self.ldt.append(self.dt)
 
     def save_nfpi(self) -> None:
-        "Save the current number of fixed point iterations."
+        """Save the current number of fixed point iterations."""
         self.lnfpi.append(self.nfpi)
 
     def update_dt(self, n_iter: float, dt_max_cfl: float, max_fpi: int) -> None:
@@ -581,7 +581,19 @@ class SourceTerm:
             )
 
     def get_node_indices(self, grid: RectilinearGrid) -> NDArrayInt:
-        """Return the node indices."""
+        """
+        Return the node indices.
+
+        Parameters
+        ----------
+        grid : RectilinearGrid
+            Grid of the problem (grid definition).
+
+        Returns
+        -------
+        NDArrayInt
+            The indices of the grid cells, with shape (3, n_nodes).
+        """
         return np.array(rlg_nn_to_idx(self.node_ids, nx=grid.nx, ny=grid.ny)).reshape(
             3, -1
         )
@@ -650,7 +662,7 @@ class ConstantHead(BoundaryCondition):
 @dataclass
 class ConstantConcentration(BoundaryCondition):
     """
-    Represent a constant conentration boundary condition (Dirichlet).
+    Represent a constant concentration boundary condition (Dirichlet).
 
     Parameters
     ----------
@@ -667,7 +679,7 @@ class ConstantConcentration(BoundaryCondition):
 @dataclass
 class ZeroConcGradient(BoundaryCondition):
     """
-    Represent a zero conentration gradient boundary condition (Neumann).
+    Represent a zero concentration gradient boundary condition (Neumann).
 
     Parameters
     ----------
@@ -757,7 +769,18 @@ class FlowModel(ABC):
         time_params: TimeParameters,
         fl_params: FlowParameters,
     ) -> None:
-        """Initialize the instance."""
+        """
+        Initialize the instance.
+
+        Parameters
+        ----------
+        grid : RectilinearGrid
+            Grid of the problem (grid definition).
+        time_params : TimeParameters
+            Time parameters from the forward problem.
+        fl_params : FlowParameters
+            Flow parameters.
+        """
         self.crank_nicolson: float = fl_params.crank_nicolson
         self.storage_coefficient: NDArrayFloat = (
             np.ones(grid.shape, dtype=np.float64) * fl_params.storage_coefficient
@@ -811,7 +834,8 @@ class FlowModel(ABC):
         # These are list of ndarrays
         self.lhead: list[NDArrayFloat] = [np.zeros(grid.shape, dtype=np.float64)]
 
-        # TODO: provide the initial density
+        # Initial hydrostatic pressure, computed with the reference water density
+        # (WATER_DENSITY): the initial density field is not taken into account here.
         self.lpressure: list[NDArrayFloat] = [
             (
                 np.zeros(grid.shape, dtype=np.float64)
@@ -903,6 +927,11 @@ class FlowModel(ABC):
 
         The head (and the pressure) of the initial state is set to the value of the
         condition over its span.
+
+        Parameters
+        ----------
+        condition : BoundaryCondition
+            Boundary condition to add.
 
         Raises
         ------
@@ -1136,7 +1165,7 @@ class FlowModel(ABC):
 
     def get_u_darcy_norm_sample(self, time_index: int) -> NDArrayFloat:
         """
-        The norm of the darcy velocity estimated at the center of the grid cell.
+        Return the norm of the darcy velocity at the center of the grid cell.
 
         Parameters
         ----------
@@ -1159,6 +1188,11 @@ class FlowModel(ABC):
     ) -> tuple[NDArrayFloat, NDArrayFloat, NDArrayFloat]:
         """
         Return the derivatives of the cell-center velocity norm for one time.
+
+        Parameters
+        ----------
+        time_index : int
+            Index of the time step.
 
         Returns
         -------
@@ -1185,7 +1219,7 @@ class FlowModel(ABC):
 
     def get_u_darcy_norm(self) -> NDArrayFloat:
         """
-        The norm of the darcy velocity estimated at the center of the grid cells.
+        Return the norm of the darcy velocity at the center of the grid cells.
 
         Returns
         -------
@@ -1202,7 +1236,14 @@ class FlowModel(ABC):
         return VerticalAxis(self.vertical_axis).axis_index
 
     def get_vertical_dim(self) -> int:
-        """Return the number of voxel along the vertical_axis axis."""
+        """
+        Return the number of voxel along the vertical_axis axis.
+
+        Returns
+        -------
+        int
+            The number of grid cells along the vertical axis.
+        """
         return self.lhead[0].shape[self.vertical_axis_index]
 
     def _get_mesh_center_vertical_pos(self) -> NDArrayFloat:
@@ -1221,25 +1262,63 @@ class FlowModel(ABC):
         return self._vertical_pos.copy()
 
     def get_pressure_pa(self) -> NDArrayFloat:
-        """Return the pressure in Pa."""
+        """
+        Return the pressure in Pa.
+
+        Returns
+        -------
+        NDArrayFloat
+            The pressure in Pa, with shape (nx, ny, nz, nt + 1).
+        """
         return self.pressure
 
     def get_pressure_bar(self) -> NDArrayFloat:
-        """Return the pressure in bar."""
+        """
+        Return the pressure in bar.
+
+        Returns
+        -------
+        NDArrayFloat
+            The pressure in bar, with shape (nx, ny, nz, nt + 1).
+        """
         return self.get_pressure_pa() / 1e5
 
     def pressure_to_head(
         self,
         pressure: NDArrayFloat,
     ) -> NDArrayFloat:
-        """Convert pressure [Pa] to head [m]."""
+        """
+        Convert pressure [Pa] to head [m].
+
+        Parameters
+        ----------
+        pressure : NDArrayFloat
+            Pressure field in Pa.
+
+        Returns
+        -------
+        NDArrayFloat
+            The head field in m.
+        """
         return pressure / GRAVITY / WATER_DENSITY + self._get_mesh_center_vertical_pos()
 
     def head_to_pressure(
         self,
         head: NDArrayFloat,
     ) -> NDArrayFloat:
-        """Convert head [m] to pressure [Pa]."""
+        """
+        Convert head [m] to pressure [Pa].
+
+        Parameters
+        ----------
+        head : NDArrayFloat
+            Head field in m.
+
+        Returns
+        -------
+        NDArrayFloat
+            The pressure field in Pa.
+        """
         return (head - self._get_mesh_center_vertical_pos()) * GRAVITY * WATER_DENSITY
 
     def set_initial_head(
@@ -1251,7 +1330,18 @@ class FlowModel(ABC):
             slice(None),
         ),
     ) -> None:
-        """Set the initial head field."""
+        """
+        Set the initial head field.
+
+        Parameters
+        ----------
+        values : float or int or NDArrayInt or NDArrayFloat
+            Initial head values in m (scalar or array broadcastable to the selected grid
+            cells).
+        span : NDArrayInt or tuple[slice, slice, slice] or NDArrayBool, optional
+            Selection of the grid cells to update (slices, index array or boolean mask).
+            By default, all the grid cells.
+        """
         self.lhead[0][span] = values
         self.lpressure[0][span] = self.head_to_pressure(self.lhead[0])[span]
 
@@ -1264,7 +1354,18 @@ class FlowModel(ABC):
             slice(None),
         ),
     ) -> None:
-        """Set the initial pressure field in Pa."""
+        """
+        Set the initial pressure field in Pa.
+
+        Parameters
+        ----------
+        values : float or int or NDArrayInt or NDArrayFloat
+            Initial pressure values in Pa (scalar or array broadcastable to the selected
+            grid cells).
+        span : NDArrayInt or tuple[slice, slice, slice] or NDArrayBool, optional
+            Selection of the grid cells to update (slices, index array or boolean mask).
+            By default, all the grid cells.
+        """
         self.lpressure[0][span] = values
         self.lhead[0][span] = self.pressure_to_head(self.lpressure[0])[span]
 
@@ -1275,7 +1376,8 @@ class FlowModel(ABC):
         ...
 
 
-# TODO: make the link with the initial density for the pressure
+# Note: the initial pressure of this model is hydrostatic and uses the reference
+# water density, it is not linked to an initial density field.
 class SaturatedFlowModel(FlowModel):
     """Flow model of a saturated medium, where the density effects are ignored."""
 
@@ -1289,7 +1391,18 @@ class SaturatedFlowModel(FlowModel):
         time_params: TimeParameters,
         fl_params: FlowParameters,
     ) -> None:
-        """Initialize the instance."""
+        """
+        Initialize the instance.
+
+        Parameters
+        ----------
+        grid : RectilinearGrid
+            Grid of the problem (grid definition).
+        time_params : TimeParameters
+            Time parameters from the forward problem.
+        fl_params : FlowParameters
+            Flow parameters.
+        """
         super().__init__(grid, time_params, fl_params)
 
     @property
@@ -1309,7 +1422,18 @@ class DensityFlowModel(FlowModel):
         time_params: TimeParameters,
         fl_params: FlowParameters,
     ) -> None:
-        """Initialize the instance."""
+        """
+        Initialize the instance.
+
+        Parameters
+        ----------
+        grid : RectilinearGrid
+            Grid of the problem (grid definition).
+        time_params : TimeParameters
+            Time parameters from the forward problem.
+        fl_params : FlowParameters
+            Flow parameters.
+        """
         super().__init__(grid, time_params, fl_params)
 
     @property
@@ -1368,7 +1492,20 @@ class TransportModel:
         tr_params: TransportParameters,
         gch_params: GeochemicalParameters,
     ) -> None:
-        """Initialize the instance."""
+        """
+        Initialize the instance.
+
+        Parameters
+        ----------
+        grid : RectilinearGrid
+            Grid of the problem (grid definition).
+        time_params : TimeParameters
+            Time parameters from the forward problem.
+        tr_params : TransportParameters
+            Transport parameters.
+        gch_params : GeochemicalParameters
+            Geochemical parameters.
+        """
         self.crank_nicolson_diffusion: float = tr_params.crank_nicolson_diffusion
         self.crank_nicolson_advection: float = tr_params.crank_nicolson_advection
         self.diffusion: NDArrayFloat = (
@@ -1477,10 +1614,10 @@ class TransportModel:
     @property
     def grade2(self) -> NDArrayFloat:
         """
-        Return the second immobile species as array with dimension
-        (nx, ny, nz, nt + 1).
+        Return the second immobile species as an array.
 
-        This is read-only. Alias for immob[1].
+        The array has dimension (nx, ny, nz, nt + 1). This is read-only. Alias for
+        immob[1].
         """
         return self.immob[1]
 
@@ -1528,7 +1665,19 @@ class TransportModel:
             slice(None),
         ),
     ) -> None:
-        """Set the initial grades."""
+        """
+        Set the initial grades.
+
+        Parameters
+        ----------
+        values : float or int or NDArrayInt or NDArrayFloat
+            Initial grades (scalar or array broadcastable to the selected grid cells).
+        sp : int or None, optional
+            Index of the species. The default is 0.
+        span : NDArrayInt or tuple[slice, slice, slice] or NDArrayBool, optional
+            Selection of the grid cells to update (slices, index array or boolean mask).
+            By default, all the grid cells.
+        """
         self.limmob[0][sp][span] = values
 
     def set_initial_conc(
@@ -1541,24 +1690,42 @@ class TransportModel:
             slice(None),
         ),
     ) -> None:
-        """Set the initial concentrations."""
+        """
+        Set the initial concentrations.
+
+        Parameters
+        ----------
+        values : float or int or NDArrayInt or NDArrayFloat
+            Initial concentrations (scalar or array broadcastable to the selected grid
+            cells).
+        sp : int, optional
+            Index of the species. The default is 0.
+        span : NDArrayInt or tuple[slice, slice, slice] or NDArrayBool, optional
+            Selection of the grid cells to update (slices, index array or boolean mask).
+            By default, all the grid cells.
+        """
         self.lmob[0][sp][span] = values
 
     def add_boundary_conditions(self, condition: BoundaryCondition) -> None:
         """
         Add a boundary condition to the transport model.
 
-        Note
-        ----
-        The grid cells of a :class:`ConstantConcentration` condition keep the
-        concentration of the initial state (set it with :meth:`set_initial_conc`):
-        the ``values`` of the condition are not applied to the initial state.
+        Parameters
+        ----------
+        condition : BoundaryCondition
+            Boundary condition to add.
 
         Raises
         ------
         ValueError
             If the condition is neither a :class:`ConstantConcentration` nor a
             :class:`ZeroConcGradient`.
+
+        Note
+        ----
+        The grid cells of a :class:`ConstantConcentration` condition keep the
+        concentration of the initial state (set it with :meth:`set_initial_conc`):
+        the ``values`` of the condition are not applied to the initial state.
         """
         if not isinstance(condition, ConstantConcentration) and not isinstance(
             condition, ZeroConcGradient
@@ -1734,7 +1901,6 @@ class ForwardModel:
             only account for the injections. They are null in the constant head
             (flow) and constant concentration (concentration) grid cells.
         """
-
         _unitflw_src = np.zeros(grid.shape)
         _conc_src = np.zeros((self.tr_model.n_sp, grid.nx, grid.ny, grid.nz))
 
@@ -1776,6 +1942,11 @@ class ForwardModel:
 
         A warning is raised and the existing source term is overwritten if one with
         the same name exists.
+
+        Parameters
+        ----------
+        source_term : SourceTerm
+            Source term to add.
         """
         if self.source_terms.get(source_term.name) is not None:
             warnings.warn(
@@ -1789,13 +1960,18 @@ class ForwardModel:
         """
         Add a boundary condition to the flow or the transport model.
 
+        Parameters
+        ----------
+        condition : BoundaryCondition
+            Boundary condition to add.
+
         Raises
         ------
         ValueError
             If the type of the condition is not supported.
         """
-        # TODO: add a check to see if the given condition is on a border of the grid or
-        # not.
+        # The position of the condition is not checked: conditions are accepted on any
+        # grid cell, including interior ones.
         if isinstance(condition, ConstantHead):
             self.fl_model.add_boundary_conditions(condition)
             return
@@ -1900,7 +2076,14 @@ class SparseMatrixBuilder:
     __slots__ = ["shape", "_rows", "_cols", "_values"]
 
     def __init__(self, shape: tuple[int, int]) -> None:
-        """Initialize an empty matrix with the given shape."""
+        """
+        Initialize an empty matrix with the given shape.
+
+        Parameters
+        ----------
+        shape : tuple[int, int]
+            Shape (n_rows, n_cols) of the matrix.
+        """
         self.shape = shape
         self._rows: list[NDArrayInt] = []
         self._cols: list[NDArrayInt] = []
@@ -1911,6 +2094,15 @@ class SparseMatrixBuilder:
         Add ``values`` to the entries ``(rows[i], cols[i])``.
 
         ``values`` can be a scalar. The same entry can be added several times.
+
+        Parameters
+        ----------
+        rows : NDArrayInt
+            Row indices of the entries.
+        cols : NDArrayInt
+            Column indices of the entries.
+        values : NDArrayFloat
+            Values to add to the entries (scalar or array).
         """
         rows = np.asarray(rows).ravel()
         self._rows.append(rows)
@@ -1918,7 +2110,14 @@ class SparseMatrixBuilder:
         self._values.append(np.broadcast_to(values, rows.shape).astype(np.float64))
 
     def tocsc(self) -> sparse.csc_array:
-        """Return the matrix in csc format (duplicated entries are summed)."""
+        """
+        Return the matrix in csc format (duplicated entries are summed).
+
+        Returns
+        -------
+        csc_array
+            The assembled matrix.
+        """
         if len(self._rows) == 0:
             return sparse.csc_array(self.shape, dtype=np.float64)
         return sparse.coo_array(
@@ -1930,7 +2129,14 @@ class SparseMatrixBuilder:
         ).tocsc()
 
     def tolil(self) -> lil_array:
-        """Return the matrix in lil format (duplicated entries are summed)."""
+        """
+        Return the matrix in lil format (duplicated entries are summed).
+
+        Returns
+        -------
+        lil_array
+            The assembled matrix.
+        """
         return self.tocsc().tolil()
 
 
@@ -1944,6 +2150,17 @@ def add_entries(
     Add ``values`` to the entries ``(rows[i], cols[i])`` of a matrix, in place.
 
     The pairs ``(rows[i], cols[i])`` must be unique.
+
+    Parameters
+    ----------
+    matrix : lil_array or SparseMatrixBuilder
+        Matrix (or matrix builder) to update in place.
+    rows : NDArrayInt
+        Row indices of the entries.
+    cols : NDArrayInt
+        Column indices of the entries.
+    values : float or NDArrayFloat
+        Values to add to the entries (scalar or array).
     """
     if isinstance(matrix, SparseMatrixBuilder):
         matrix.add(rows, cols, np.broadcast_to(values, np.shape(rows)).astype(float))
@@ -1954,7 +2171,16 @@ def add_entries(
 def add_to_diagonal(
     matrix: lil_array | SparseMatrixBuilder, values: float | NDArrayFloat
 ) -> None:
-    """Add ``values`` to the diagonal of a square matrix, in place."""
+    """
+    Add ``values`` to the diagonal of a square matrix, in place.
+
+    Parameters
+    ----------
+    matrix : lil_array or SparseMatrixBuilder
+        Square matrix (or matrix builder) to update in place.
+    values : float or NDArrayFloat
+        Values to add to the diagonal (scalar or array).
+    """
     if isinstance(matrix, SparseMatrixBuilder):
         idx = np.arange(matrix.shape[0])
         matrix.add(idx, idx, np.broadcast_to(values, idx.shape).astype(float))
@@ -1989,12 +2215,28 @@ def remove_cst_bound_indices(
 def keep_a_b_if_c_in_a(
     a: NDArrayInt, b: NDArrayInt, c: NDArrayInt
 ) -> tuple[NDArrayInt, NDArrayInt]:
-    """Keep the pairs ``(a[i], b[i])`` for which ``a[i]`` is in ``c``."""
+    """
+    Keep the pairs ``(a[i], b[i])`` for which ``a[i]`` is in ``c``.
+
+    Parameters
+    ----------
+    a : NDArrayInt
+        Array of values to filter on.
+    b : NDArrayInt
+        Array paired with ``a``, with the same size.
+    c : NDArrayInt
+        Values to keep in ``a``.
+
+    Returns
+    -------
+    tuple[NDArrayInt, NDArrayInt]
+        The filtered arrays ``a`` and ``b``.
+    """
     is_kept = np.isin(a, c)
     return a[is_kept], b[is_kept]
 
 
-# TODO cache
+# The indices are recomputed at each call (no caching).
 def get_owner_neigh_indices(
     grid: RectilinearGrid,
     span_owner: tuple[slice, slice, slice],
