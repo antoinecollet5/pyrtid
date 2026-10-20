@@ -57,7 +57,7 @@ class CouplingConvergenceError(RuntimeError):
 
 
 def get_max_coupling_error(current_arr: NDArrayFloat, prev_arr: NDArrayFloat) -> float:
-    """
+    r"""
     Return the maximum relative variation between two successive iterates.
 
     Parameters
@@ -70,7 +70,7 @@ def get_max_coupling_error(current_arr: NDArrayFloat, prev_arr: NDArrayFloat) ->
     Returns
     -------
     float
-        :math:`\\max |1 - x^{k+1} / x^{k}|`. Values whose magnitude is below
+        :math:`\max |1 - x^{k+1} / x^{k}|`. Values whose magnitude is below
         ``VERY_SMALL_NUMBER`` are replaced by ``VERY_SMALL_NUMBER`` to avoid
         divisions by zero.
     """
@@ -99,6 +99,18 @@ def get_max_coupling_error_forward(tr_model: TransportModel, time_index: int) ->
     with $k$ the number of fixed point iterations.
 
     This error is evaluated from the immobile concentrations (mineral grades).
+
+    Parameters
+    ----------
+    tr_model : TransportModel
+        Transport model.
+    time_index : int
+        Index of the time step.
+
+    Returns
+    -------
+    float
+        The maximum relative variation of the grades between two fixed point iterations.
     """
     return get_max_coupling_error(tr_model.limmob[time_index], tr_model.immob_prev)
 
@@ -192,7 +204,6 @@ class ForwardSolver:
             If the transport-chemistry coupling does not converge, even for the
             smallest timestep allowed.
         """
-
         self.initialize()
         time_index = 0  # iteration on time
 
