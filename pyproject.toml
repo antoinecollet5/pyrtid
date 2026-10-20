@@ -116,7 +116,13 @@ lint.select = [
     "UP",
     # flake8-bugbear
     "B",
+    # pydocstyle
+    "D",
 ]
+lint.ignore = ["D203", "D213", "D407", "D413"]
+# D414: the parameter sections of the solver configs are completed by a decorator
+lint.per-file-ignores = { "tests/**" = ["D"], "docs/**" = ["D"], "pyrtid/inverse/executors/*.py" = ["D414"] }
+lint.pydocstyle.convention = "numpy"
 src = ["src", "tests", "docs"]
 
 # Allow autofix for all enabled rules (when `--fix`) is provided.
