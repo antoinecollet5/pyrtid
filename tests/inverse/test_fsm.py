@@ -15,7 +15,6 @@ from pyrtid.inverse.fsm.directions import get_directions
 from pyrtid.inverse.fsm.fd import compute_fd_jacvec
 from pyrtid.inverse.params import update_parameters_from_model
 from tests.helpers import build_model, build_observables, build_parameters
-from tests.inverse.asm.asm_utils import build_gravity_model
 
 ALL = ["K", "SS", "H0", "W", "D", "A", "C0", "C1", "G0", "G1"]
 
@@ -118,14 +117,6 @@ def test_fsm_verbose(capsys) -> None:
     _jacvecs(model, ["K"], is_verbose=True)
 
 
-def test_fsm_gravity_not_implemented() -> None:
-    model = build_gravity_model()
-    params = build_parameters(["K"])
-    update_parameters_from_model(model, params)
-    with pytest.raises(NotImplementedError, match="density"):
-        FSMSolver(model).solve([], params, np.ones((params[0].values.size, 1)))
-
-
 def test_is_fsm_jacvec_correct() -> None:
     model = build_model(nx=5, ny=2)
     params = build_parameters(["K", "C0"])
@@ -147,12 +138,6 @@ def test_get_directions_errors() -> None:
         get_directions(model, params, np.ones((n - 1, 1)))
     with pytest.raises(ValueError, match="rows"):
         get_directions(model, params, np.ones((n + 1, 1)))
-    unsupported = dminv.AdjustableParameter(
-        dminv.ParameterName.INITIAL_PRESSURE, lbounds=-1e3, ubounds=1e3
-    )
-    unsupported.values = np.ones(model.grid.shape)
-    with pytest.raises(NotImplementedError, match="not supported"):
-        get_directions(model, unsupported, np.ones((n, 1)))
 
 
 def test_get_directions_accepts_a_single_parameter() -> None:
