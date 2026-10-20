@@ -42,6 +42,12 @@ class AdjointSolver:
             The forward model instance.
         adj_model : AdjointModel
             The adjoint model instance.
+
+        Raises
+        ------
+        ValueError
+            If the continuous adjoint is used while the reactive transport is not
+            skipped.
         """
         self.fwd_model: ForwardModel = fwd_model
         self.adj_model: AdjointModel = adj_model
@@ -80,8 +86,22 @@ class AdjointSolver:
 
         Parameters
         ----------
+        observables : Observables
+            Observables of the inverse problem.
+        hm_end_time : float or None, optional
+            Threshold time from which the observations are ignored. If None, all the
+            observations are used. The default is None.
         is_verbose : bool, optional
             Whether to display computation infrmation, by default False.
+        max_nafpi : int, optional
+            Maximum number of adjoint fixed point iterations per time step. The default
+            is 30.
+
+        Raises
+        ------
+        RuntimeError
+            If the adjoint fixed point loop does not converge within ``max_nafpi``
+            iterations, even once the numerical acceleration is disabled.
         """
         # Reset all adjoint variables to zero.
         self.adj_model.reinit()

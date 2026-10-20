@@ -63,11 +63,19 @@ esmda_base_solver_config_params_ds = r"""n_assimilations : int, optional
 
 # Same for ESMDA and ESMDA-RS
 esmda_solver_config_params_ds_common = r"""inversion_type: ESMDAInversionType
-        Type of inversion used to solve :math:`(C_DD + \alpha CD)^{-1)(d-dobs)`.
-        TODO: check the docstrings + add a comment about the best method for
-        large scale problems. Maybe add a reference to the class + update
-        the docs interpshinx. + Add to ESMDARS.
-        The default is ESMDAInversionType.NAIVE.
+        Type of inversion used to solve
+        :math:`C_{md} (C_{dd} + \alpha C_{d})^{-1} (d - d_{obs})`
+        (see :class:`pyesmda.ESMDAInversionType`). Available types are "naive"
+        (direct inversion), "cholesky", "lstsq" (slow, rank-deficient
+        covariances), "woodbury", "rescaled" (truncated SVD of :math:`C_{dd}`),
+        "subspace" (truncated SVD of :math:`U` with :math:`C_{dd} = UU^{T}`) and
+        "subspace_rescaled" (as "subspace" with a rescaling that avoids losing
+        information when truncating small singular values). For large scale
+        problems (many observations and/or large ensembles), "subspace_rescaled"
+        is the recommended and the most robust choice, "naive" and "cholesky"
+        being the cheapest only for small problems. The ``truncation`` argument
+        applies to the SVD based types.
+        The default is ESMDAInversionType.SUBSPACE_RESCALED.
     cov_ss_inflation_factor: float
         Factor used to inflate the initial ensemble around its mean.
         See :cite:p:`andersonExploringNeedLocalization2007`.
@@ -107,9 +115,18 @@ esmda_solver_config_params_ds_common = r"""inversion_type: ESMDAInversionType
         corresponding to this fraction of the sum of the nonzero singular values.
         The goal of truncation is to deal with smaller matrices (dimensionality
         reduction), easier to inverse. The default is 0.99.
+    max_failure_fraction: float
+        Maximum fraction (in [0, 1[) of the initial ensemble members allowed to
+        fail (the forward model returns NaN values, typically because of a
+        non-convergence) over the whole optimization. Failed members are excluded
+        from the ensemble (from the analysis step and subsequent assimilations).
+        If the cumulative fraction of failed members exceeds this threshold, an
+        exception is raised. The default is 0.0, meaning that no failure is
+        tolerated.
     logger: Optional[logging.Logger]
         Optional :class:`logging.Logger` instance used for event logging.
-        The default is None.
+        The default is a logger named after the solver ("ESMDA", "ESMDA-RS"
+        or "ESMDA-DMC").
     """
 
 
@@ -137,6 +154,7 @@ class ESMDASolverConfig(FSMSolverConfig):
     batch_size: int = 5000
     is_parallel_analyse_step: bool = True
     truncation: float = 0.99
+    max_failure_fraction: float = 0.0
     logger: logging.Logger | None = field(
         default_factory=lambda: logging.getLogger("ESMDA")
     )
@@ -146,7 +164,14 @@ class ESMDAInversionExecutor(FSMInversionExecutor[ESMDASolverConfig]):
     """Ensemble Smoother with Multiple Data Assimilation Inversion Executor."""
 
     def _init_solver(self, s_init: NDArrayFloat) -> None:
-        """Initiate a solver with its args."""
+        """
+        Initiate the solver with all the arguments of the configuration.
+
+        Parameters
+        ----------
+        s_init : NDArrayFloat
+            Initial ensemble of (preconditioned) parameters, shape (Ns, Ne).
+        """
         self.solver: ESMDA = ESMDA(
             self.data_model.obs,
             s_init,
@@ -166,25 +191,34 @@ class ESMDAInversionExecutor(FSMInversionExecutor[ESMDASolverConfig]):
             is_forecast_for_last_assimilation=self.solver_config.is_forecast_for_last_assimilation,
             batch_size=self.solver_config.batch_size,
             is_parallel_analyse_step=self.solver_config.is_parallel_analyse_step,
+            truncation=self.solver_config.truncation,
+            max_failure_fraction=self.solver_config.max_failure_fraction,
             logger=self.solver_config.logger,
         )
 
     def _get_solver_name(self) -> str:
-        """Return the solver name."""
+        """
+        Return the solver name.
+
+        Returns
+        -------
+        str
+            The solver name.
+        """
         return "ESMDA"
 
     def run(self) -> None:
         """
         Run the history matching.
 
-        First is creates raw folders to store the different runs
-        required by the HM algorithms.
+        The ensemble is assimilated and the model is updated with the mean of the
+        posterior ensemble.
         """
         super().run()
 
         self.solver.solve()
 
-        # TODO: see if this works
+        # The best estimate is the ensemble mean (m_posterior is (Ns, Ne)).
         s_best_av_esmda = np.mean(self.solver.m_posterior, axis=1)
 
         # Update the model with the new values of s (preconditioned)
@@ -198,10 +232,25 @@ class ESMDAInversionExecutor(FSMInversionExecutor[ESMDASolverConfig]):
 
     @property
     def s_history(self) -> list[NDArrayFloat]:
-        """Return the successive ensembles."""
+        """
+        Return the successive ensembles.
+
+        Returns
+        -------
+        list[NDArrayFloat]
+            The ensembles history (initial, then after each assimilation).
+        """
         return self.solver.m_history
 
     def get_display_dict(self) -> dict[str, Any]:
+        """
+        Return the solver specific information displayed at the start of the run.
+
+        Returns
+        -------
+        dict[str, Any]
+            The number of realizations.
+        """
         return {"Number of realizations": self.solver.n_ensemble}
 
 
@@ -216,6 +265,7 @@ esmda_rs_solver_config_params_ds = r"""std_s_prior: Optional[npt.NDArray[np.floa
 
 @register_params_ds(esmda_solver_config_params_ds_common)
 @register_params_ds(esmda_rs_solver_config_params_ds)
+@register_params_ds(fsm_solver_config_params_ds)
 @register_params_ds(base_solver_config_params_ds)
 @dataclass
 class ESMDARSSolverConfig(FSMSolverConfig):
@@ -240,20 +290,31 @@ class ESMDARSSolverConfig(FSMSolverConfig):
     batch_size: int = 10000
     is_parallel_analyse_step: bool = True
     truncation: float = 0.99
-    logger: logging.Logger | None = logging.getLogger("ESMDA-RS")
+    max_failure_fraction: float = 0.0
+    logger: logging.Logger | None = field(
+        default_factory=lambda: logging.getLogger("ESMDA-RS")
+    )
 
 
 class ESMDARSInversionExecutor(FSMInversionExecutor[ESMDARSSolverConfig]):
     """Restricted Step Ensemble Smoother with Multiple Data Assimilation Executor."""
 
     def _init_solver(self, s_init: NDArrayFloat) -> None:
-        """Initiate a solver with its args."""
+        """
+        Initiate the solver with all the arguments of the configuration.
+
+        Parameters
+        ----------
+        s_init : NDArrayFloat
+            Initial ensemble of (preconditioned) parameters, shape (Ns, Ne).
+        """
         self.solver: ESMDA_RS = ESMDA_RS(
             self.data_model.obs,  # ty: ignore[invalid-argument-type]
             s_init,  # To change back  # ty: ignore[invalid-argument-type]
             self.data_model.get_cov_obs_as_covmats(),
             self._map_forward_model,  # ty: ignore[invalid-argument-type]
             std_m_prior=self.solver_config.std_s_prior,
+            inversion_type=self.solver_config.inversion_type,
             m_bounds=get_parameters_bounds(
                 self.inv_model.parameters_to_adjust, is_preconditioned=True
             ),
@@ -265,24 +326,33 @@ class ESMDARSInversionExecutor(FSMInversionExecutor[ESMDARSSolverConfig]):
             is_forecast_for_last_assimilation=self.solver_config.is_forecast_for_last_assimilation,
             batch_size=self.solver_config.batch_size,
             is_parallel_analyse_step=self.solver_config.is_parallel_analyse_step,
+            truncation=self.solver_config.truncation,
+            max_failure_fraction=self.solver_config.max_failure_fraction,
             logger=self.solver_config.logger,
         )
 
     def _get_solver_name(self) -> str:
-        """Return the solver name."""
+        """
+        Return the solver name.
+
+        Returns
+        -------
+        str
+            The solver name.
+        """
         return "ESMDA-RS"
 
     def run(self) -> None:
         """
         Run the history matching.
 
-        First is creates raw folders to store the different runs
-        required by the HM algorithms.
+        The ensemble is assimilated and the model is updated with the mean of the
+        posterior ensemble.
         """
         super().run()
         self.solver.solve()
 
-        # TODO: see if this works
+        # The best estimate is the ensemble mean (m_posterior is (Ns, Ne)).
         s_best_av_esmda = np.mean(self.solver.m_posterior, axis=1)
 
         # Update the model with the new values of s (preconditioned)
@@ -297,11 +367,19 @@ class ESMDARSInversionExecutor(FSMInversionExecutor[ESMDARSSolverConfig]):
 
     @property
     def s_history(self) -> list[NDArrayFloat]:
-        """Return the successive ensembles."""
+        """
+        Return the successive ensembles.
+
+        Returns
+        -------
+        list[NDArrayFloat]
+            The ensembles history (initial, then after each assimilation).
+        """
         return self.solver.m_history
 
 
 @register_params_ds(esmda_solver_config_params_ds_common)
+@register_params_ds(fsm_solver_config_params_ds)
 @register_params_ds(base_solver_config_params_ds)
 @dataclass
 class ESMDADMCSolverConfig(FSMSolverConfig):
@@ -325,19 +403,30 @@ class ESMDADMCSolverConfig(FSMSolverConfig):
     batch_size: int = 10000
     is_parallel_analyse_step: bool = True
     truncation: float = 0.99
-    logger: logging.Logger | None = logging.getLogger("ESMDA-DMC")
+    max_failure_fraction: float = 0.0
+    logger: logging.Logger | None = field(
+        default_factory=lambda: logging.getLogger("ESMDA-DMC")
+    )
 
 
 class ESMDADMCInversionExecutor(FSMInversionExecutor[ESMDADMCSolverConfig]):
     """Data Misfit Controller ESMDA Executor."""
 
     def _init_solver(self, s_init: NDArrayFloat) -> None:
-        """Initiate a solver with its args."""
+        """
+        Initiate the solver with all the arguments of the configuration.
+
+        Parameters
+        ----------
+        s_init : NDArrayFloat
+            Initial ensemble of (preconditioned) parameters, shape (Ns, Ne).
+        """
         self.solver: ESMDA_DMC = ESMDA_DMC(
             self.data_model.obs,  # ty: ignore[invalid-argument-type]
             s_init,  # To change back  # ty: ignore[invalid-argument-type]
             self.data_model.get_cov_obs_as_covmats(),
             self._map_forward_model,  # ty: ignore[invalid-argument-type]
+            inversion_type=self.solver_config.inversion_type,
             m_bounds=get_parameters_bounds(
                 self.inv_model.parameters_to_adjust, is_preconditioned=True
             ),
@@ -349,24 +438,33 @@ class ESMDADMCInversionExecutor(FSMInversionExecutor[ESMDADMCSolverConfig]):
             is_forecast_for_last_assimilation=self.solver_config.is_forecast_for_last_assimilation,
             batch_size=self.solver_config.batch_size,
             is_parallel_analyse_step=self.solver_config.is_parallel_analyse_step,
+            truncation=self.solver_config.truncation,
+            max_failure_fraction=self.solver_config.max_failure_fraction,
             logger=self.solver_config.logger,
         )
 
     def _get_solver_name(self) -> str:
-        """Return the solver name."""
+        """
+        Return the solver name.
+
+        Returns
+        -------
+        str
+            The solver name.
+        """
         return "ESMDA-DMC"
 
     def run(self) -> None:
         """
         Run the history matching.
 
-        First is creates raw folders to store the different runs
-        required by the HM algorithms.
+        The ensemble is assimilated and the model is updated with the mean of the
+        posterior ensemble.
         """
         super().run()
         self.solver.solve()
 
-        # TODO: see if this works
+        # The best estimate is the ensemble mean (m_posterior is (Ns, Ne)).
         s_best_av_esmda = np.mean(self.solver.m_posterior, axis=1)
 
         # Update the model with the new values of s (preconditioned)
@@ -381,5 +479,12 @@ class ESMDADMCInversionExecutor(FSMInversionExecutor[ESMDADMCSolverConfig]):
 
     @property
     def s_history(self) -> list[NDArrayFloat]:
-        """Return the successive ensembles."""
+        """
+        Return the successive ensembles.
+
+        Returns
+        -------
+        list[NDArrayFloat]
+            The ensembles history (initial, then after each assimilation).
+        """
         return self.solver.m_history

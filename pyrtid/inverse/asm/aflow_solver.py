@@ -35,6 +35,20 @@ from pyrtid.inverse.asm.amodels import AdjointFlowModel, AdjointTransportModel
 def add_adj_stationary_flow_to_q_next_for_axis(
     grid: RectilinearGrid, fl_model: FlowModel, q_next: lil_array, axis: int
 ) -> None:
+    """
+    Add the contribution of the faces along ``axis`` to the adjoint stationary matrix.
+
+    Parameters
+    ----------
+    grid : RectilinearGrid
+        Grid of the problem (grid definition).
+    fl_model : FlowModel
+        Forward flow model.
+    q_next : lil_array
+        Adjoint matrix of the stationary flow, updated in place.
+    axis : int
+        Axis along which the faces are considered (0: x, 1: y, 2: z).
+    """
     kmean = get_kmean(grid, fl_model, axis)
     fwd_slicer = grid.get_slicer_forward(axis)
     bwd_slicer = grid.get_slicer_backward(axis)
@@ -92,7 +106,21 @@ def add_adj_stationary_flow_to_q_next(
     q_next: lil_array,
 ) -> lil_array:
     """
-    Make matrices for the initial time step with a potential stationary flow.
+    Add the adjoint of the stationary flow equation to the matrix ``q_next``.
+
+    Parameters
+    ----------
+    grid : RectilinearGrid
+        Grid of the problem (grid definition).
+    fl_model : FlowModel
+        Forward flow model.
+    q_next : lil_array
+        Adjoint matrix of the stationary flow, updated in place.
+
+    Returns
+    -------
+    lil_array
+        The updated matrix ``q_next``.
 
     Note
     ----
@@ -117,7 +145,28 @@ def fill_transient_adj_flow_matrices_for_axis(
     axis: int,
 ) -> None:
     """
-    Make matrices for the initial time step with a potential stationary flow.
+    Add the contribution of the faces along ``axis`` to the adjoint transient matrices.
+
+    Parameters
+    ----------
+    grid : RectilinearGrid
+        Grid of the problem (grid definition).
+    fl_model : FlowModel
+        Forward flow model.
+    tr_model : TransportModel
+        Forward transport model.
+    a_fl_model : AdjointFlowModel
+        Adjoint flow model.
+    time_params : TimeParameters
+        Time parameters from the forward problem.
+    time_index : int
+        Index of the current time step (the adjoint is solved backward in time).
+    q_next : lil_array
+        Adjoint matrix of the next (in backward time) time step, updated in place.
+    q_prev : lil_array
+        Adjoint matrix of the previous time step, updated in place.
+    axis : int
+        Axis along which the faces are considered (0: x, 1: y, 2: z).
 
     Note
     ----
@@ -226,7 +275,27 @@ def make_transient_adj_flow_matrices(
     time_index: int,
 ) -> tuple[lil_array, lil_array]:
     """
-    Make matrices for the transient flow.
+    Make the adjoint matrices of the transient flow, without the time derivative term.
+
+    Parameters
+    ----------
+    grid : RectilinearGrid
+        Grid of the problem (grid definition).
+    fl_model : FlowModel
+        Forward flow model.
+    tr_model : TransportModel
+        Forward transport model.
+    a_fl_model : AdjointFlowModel
+        Adjoint flow model.
+    time_params : TimeParameters
+        Time parameters from the forward problem.
+    time_index : int
+        Index of the current time step (the adjoint is solved backward in time).
+
+    Returns
+    -------
+    tuple[lil_array, lil_array]
+        The adjoint matrices ``(q_next, q_prev)``.
 
     Note
     ----
@@ -262,8 +331,32 @@ def get_aflow_matrices(
     time_params: TimeParameters,
     time_index: int,
 ) -> tuple[csc_matrix, csc_matrix]:
-    # Since the density vary over time, it is required to rebuild the adjoint
-    # matrices at each timestep.
+    """
+    Return the adjoint flow matrices of the time step.
+
+    The time derivative terms are included. Since the density varies over time, the
+    matrices are rebuilt at each time step with a density flow.
+
+    Parameters
+    ----------
+    grid : RectilinearGrid
+        Grid of the problem (grid definition).
+    fl_model : FlowModel
+        Forward flow model.
+    tr_model : TransportModel
+        Forward transport model.
+    a_fl_model : AdjointFlowModel
+        Adjoint flow model.
+    time_params : TimeParameters
+        Time parameters from the forward problem.
+    time_index : int
+        Index of the current time step (the adjoint is solved backward in time).
+
+    Returns
+    -------
+    tuple[csc_matrix, csc_matrix]
+        The adjoint matrices ``(q_next, q_prev)`` in csc format.
+    """
     if fl_model.is_gravity:
         _q_next, _q_prev = make_transient_adj_flow_matrices(
             grid, fl_model, tr_model, a_fl_model, time_params, time_index
@@ -321,6 +414,26 @@ def update_adjoint_u_darcy(
     time_params: TimeParameters,
     time_index: int,
 ) -> None:
+    """
+    Update the adjoint darcy velocities from the adjoint transport variables.
+
+    Parameters
+    ----------
+    grid : RectilinearGrid
+        Grid of the problem (grid definition).
+    tr_model : TransportModel
+        Forward transport model.
+    a_tr_model : AdjointTransportModel
+        Adjoint transport model.
+    fl_model : FlowModel
+        Forward flow model.
+    a_fl_model : AdjointFlowModel
+        Adjoint flow model.
+    time_params : TimeParameters
+        Time parameters from the forward problem.
+    time_index : int
+        Index of the current time step (the adjoint is solved backward in time).
+    """
     crank_adv = tr_model.crank_nicolson_advection
     crank_diff = tr_model.crank_nicolson_diffusion
     # for the dispersion derivation
@@ -456,9 +569,29 @@ def solve_adj_flow(
     time_index: int,
 ) -> int:
     """
-    Solving the adjoint diffusivity equation:
+    Solve the adjoint flow equation, with or without density effects.
 
     dh/dt = div K grad h + ...
+
+    Parameters
+    ----------
+    grid : RectilinearGrid
+        Grid of the problem (grid definition).
+    fl_model : FlowModel
+        Forward flow model.
+    tr_model : TransportModel
+        Forward transport model.
+    a_fl_model : AdjointFlowModel
+        Adjoint flow model.
+    time_params : TimeParameters
+        Time parameters from the forward problem.
+    time_index : int
+        Index of the current time step (the adjoint is solved backward in time).
+
+    Returns
+    -------
+    int
+        The exit code of the linear solver (0 on success).
     """
     if fl_model.is_gravity:
         return solve_adj_flow_density(
@@ -478,9 +611,29 @@ def solve_adj_flow_saturated(
     time_index: int,
 ) -> int:
     """
-    Solving the adjoint diffusivity equation:
+    Solve the adjoint diffusivity equation for a saturated flow (adjoint head).
 
     dh/dt = div K grad h + ...
+
+    Parameters
+    ----------
+    grid : RectilinearGrid
+        Grid of the problem (grid definition).
+    fl_model : FlowModel
+        Forward flow model.
+    tr_model : TransportModel
+        Forward transport model.
+    a_fl_model : AdjointFlowModel
+        Adjoint flow model.
+    time_params : TimeParameters
+        Time parameters from the forward problem.
+    time_index : int
+        Index of the current time step (the adjoint is solved backward in time).
+
+    Returns
+    -------
+    int
+        The exit code of the linear solver (0 on success).
     """
     # 1) Obtain the adjoint pressure and add it as a source term (observation on the
     # pressure field)
@@ -552,9 +705,29 @@ def solve_adj_flow_density(
     time_index: int,
 ) -> int:
     """
-    Solving the adjoint diffusivity equation:
+    Solve the adjoint diffusivity equation for a density flow (adjoint pressure).
 
     dh/dt = div K grad h + ...
+
+    Parameters
+    ----------
+    grid : RectilinearGrid
+        Grid of the problem (grid definition).
+    fl_model : FlowModel
+        Forward flow model.
+    tr_model : TransportModel
+        Forward transport model.
+    a_fl_model : AdjointFlowModel
+        Adjoint flow model.
+    time_params : TimeParameters
+        Time parameters from the forward problem.
+    time_index : int
+        Index of the current time step (the adjoint is solved backward in time).
+
+    Returns
+    -------
+    int
+        The exit code of the linear solver (0 on success).
     """
     # 1) Obtain the adjoint head field and add it as a source term (observation on the
     # head field)
@@ -630,25 +803,23 @@ def get_adjoint_transport_src_terms(
     time_index: int,
 ) -> NDArrayFloat:
     """
-    Add the source terms linked with the transport (mob observations).
+    Return the adjoint flow source terms linked with the transport (mob observations).
 
     Parameters
     ----------
     grid : RectilinearGrid
-        _description_
-    tmp : NDArrayFloat
-        _description_
+        Grid of the problem (grid definition).
     fl_model : FlowModel
-        _description_
+        Forward flow model.
     a_fl_model : AdjointFlowModel
-        _description_
-    is_transient : bool
-        _description_
+        Adjoint flow model.
+    time_index : int
+        Index of the current time step (the adjoint is solved backward in time).
 
     Returns
     -------
     NDArrayFloat
-        _description_
+        The source terms, flattened in Fortran order, with size ``grid.n_grid_cells``.
     """
     src = np.zeros(grid.shape, dtype=np.float64)
     tmp = 1.0

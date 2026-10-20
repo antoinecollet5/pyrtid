@@ -86,9 +86,7 @@ class InverseModel:
         Raises
         ------
         ValueError
-            _description_
-        ValueError
-            _description_
+            If no adjustable parameter or no observable is provided.
         """
         self.observables: list[Observable] = object_or_object_sequence_to_list(
             observables
@@ -162,9 +160,13 @@ class InverseModel:
 
         Parameters
         ----------
-        max_optimization_round_nb: int
+        max_optimization_round_nb : int
             The maximum number of optimization rounds.
 
+        Returns
+        -------
+        bool
+            True if a new optimization round is needed.
         """
         # Case of first loop
         if self.optimization_round_nb < 1:
@@ -176,7 +178,14 @@ class InverseModel:
         return self.optimization_round_nb < max_optimization_round_nb
 
     def is_adaptive_regularization(self) -> bool:
-        """Whether any adjusted parameter use adaptive regularization strategy."""
+        """
+        Return whether any adjusted parameter uses an adaptive regularization strategy.
+
+        Returns
+        -------
+        bool
+            True if at least one adjusted parameter uses an adaptive regularization.
+        """
         for param in self.parameters_to_adjust:
             if param.is_adaptive_regularization():
                 return True
@@ -185,7 +194,22 @@ class InverseModel:
     def get_loss_function_scaling_factor(
         self, loss_function: float, is_first_call: bool
     ) -> float:
-        """Return the scaling factor so the loss function is 1.0 at first evaluation."""
+        """
+        Return the scaling factor so the loss function is 1.0 at first evaluation.
+
+        Parameters
+        ----------
+        loss_function : float
+            Value of the loss function.
+        is_first_call : bool
+            Whether this is the first evaluation of the loss function (the scaling
+            factor is only updated at the first call).
+
+        Returns
+        -------
+        float
+            The scaling factor to apply to the loss function.
+        """
         # First iteration -> we compute a coefficient so that J ~ 1.
         if is_first_call:
             if loss_function == 0.0:
@@ -208,6 +232,14 @@ class InverseModel:
             Sequence of adjusted parameter instances.
         model : ForwardModel
             Forward model.
+
+        Raises
+        ------
+        ValueError
+            If ``parameters_to_adjust`` is not an adjustable parameter or a list of
+            adjustable parameters, or if a parameter name is not supported.
+        NotImplementedError
+            If the initial values of a parameter cannot be read from the forward model.
         """
         if isinstance(parameters_to_adjust, list):
             self.parameters_to_adjust = parameters_to_adjust
@@ -240,14 +272,27 @@ class InverseModel:
                     model.tr_model.immob[param.sp][:, :, :, 0]
                 )
             else:
-                raise (
-                    NotImplementedError(
-                        "Please contact the developer to handle this issue."
-                    )
+                raise NotImplementedError(
+                    f"Reading the initial values of the parameter '{param.name}' from"
+                    " the forward model is not supported. Supported parameters are:"
+                    " diffusion, porosity, permeability, initial concentration and"
+                    " initial grade."
                 )
 
     def set_observables(self, observables: Observable | list[Observable]) -> None:
-        """Set the parameters to adjust during the inversion."""
+        """
+        Set the observables of the inversion.
+
+        Parameters
+        ----------
+        observables : Observable or list[Observable]
+            Observable or list of observables.
+
+        Raises
+        ------
+        ValueError
+            If ``observables`` is neither an observable nor a list of observables.
+        """
         if isinstance(observables, list):
             self.observables = observables
         elif isinstance(observables, Observable):

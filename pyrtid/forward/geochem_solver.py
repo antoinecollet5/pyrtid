@@ -536,6 +536,11 @@ def get_phi(
         Grades at the beginning of the timestep, with shape (2, ...).
     gch_params : GeochemicalParameters
         The geochemical parameters.
+
+    Returns
+    -------
+    NDArrayFloat
+        The dissolution rate, with shape (...).
     """
     return (
         gch_params.kv
@@ -609,6 +614,21 @@ def Jacobian(
 
     The arguments are the same as for :func:`F`.
 
+    Parameters
+    ----------
+    mob_next : NDArrayFloat
+        Unknown mobile concentrations, with shape (2, ...).
+    immob_next : NDArrayFloat
+        Unknown grades, with shape (2, ...).
+    mob_prev : NDArrayFloat
+        Mobile concentrations *before the reaction*, with shape (2, ...).
+    immob_prev : NDArrayFloat
+        Grades *before the reaction* (beginning of the timestep), with shape (2, ...).
+    gch_params : GeochemicalParameters
+        The geochemical parameters.
+    dt : float
+        The timestep in seconds.
+
     Returns
     -------
     NDArrayFloat
@@ -662,11 +682,11 @@ def _backtrack_batch(
     c1: float = 1e-4,
     max_backtrack: int = 20,
 ) -> None:
-    """
+    r"""
     Cell-wise Armijo backtracking, updating ``x_new`` and ``F_new`` in place.
 
     The step of a cell is halved until the least-squares objective
-    :math:`0.5 \\lVert F \\rVert^2` is sufficiently decreased. Since ``dx`` is the
+    :math:`0.5 \lVert F \rVert^2` is sufficiently decreased. Since ``dx`` is the
     Newton direction, the slope is :math:`-\\lVert F \\rVert^2`. Cells flagged in
     ``accept`` (Newton increment already negligible) keep the full step.
     """
@@ -1022,8 +1042,11 @@ class _LocalNewtonProblem:
         return self._residuals
 
     def get_jac(self, x: NDArrayFloat) -> NDArrayFloat:
-        """Get the Jacobian of the residuals (with respect to the non-preconditioned
-        unknowns)."""
+        """
+        Get the Jacobian of the residuals.
+
+        The Jacobian is computed with respect to the non-preconditioned unknowns.
+        """
         self._update_x(x)
         if self._jac is None:
             self.njev += 1

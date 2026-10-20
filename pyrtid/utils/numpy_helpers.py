@@ -12,6 +12,22 @@ def np_cache(*args, pos: int = 0, **kwargs):
     """
     LRU cache implementation for functions whose FIRST parameter is a numpy array.
 
+    Parameters
+    ----------
+    pos : int, optional
+        Position of the numpy array argument in the decorated function signature. The
+        default is 0.
+    *args : Any
+        Positional arguments forwarded to :func:`functools.lru_cache` (e.g.
+        ``maxsize``).
+    **kwargs : Any
+        Keyword arguments forwarded to :func:`functools.lru_cache`.
+
+    Returns
+    -------
+    Callable
+        The decorator to apply to the function.
+
     Examples
     --------
     >>> array = np.array([[1, 2, 3], [4, 5, 6]])
@@ -28,7 +44,6 @@ def np_cache(*args, pos: int = 0, **kwargs):
            [ 8, 10, 12]])
     >>> multiply.cache_info()
     CacheInfo(hits=1, misses=1, maxsize=256, currsize=1)
-
     """
 
     def decorator(function):
@@ -45,7 +60,19 @@ def np_cache(*args, pos: int = 0, **kwargs):
             return function(*args, **kwargs)
 
         def array_to_tuple(np_array):
-            """Iterates recursively."""
+            """
+            Convert a (nested) array to a (nested) tuple, recursively.
+
+            Parameters
+            ----------
+            np_array : Any
+                Array to convert.
+
+            Returns
+            -------
+            tuple or Any
+                The (nested) tuple, or the input itself if it is not iterable.
+            """
             try:
                 return tuple(array_to_tuple(_) for _ in np_array)
             except TypeError:

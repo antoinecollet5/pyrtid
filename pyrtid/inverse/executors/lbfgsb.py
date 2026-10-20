@@ -5,7 +5,8 @@
 Implement an interface to solve the inverse problem with the L-BFGS-B from PyTRID.
 
 PyRTID implements its own L-BFGS-B solver which is a pure python reimplementation of the
-original fortran 778 algorithm (add references). The main difference lies in the
+original fortran 778 algorithm (C. Zhu, R. H. Byrd, P. Lu, J. Nocedal, ACM Trans.
+Math. Softw. 23(4), 1997). The main difference lies in the
 implementation of a procedure to update the objective function during the minimization
 process. This experimental feature aims at adjusting the weight in front of
 regularization during the optimization. Hence, the gradient sequence must be updated
@@ -18,7 +19,8 @@ from __future__ import annotations
 import copy
 import logging
 from collections import deque
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 
 import numpy as np
 import scipy as sp
@@ -47,6 +49,65 @@ from pyrtid.inverse.params import (
 from pyrtid.utils import NDArrayFloat
 
 lbfgsb_solver_config_params_ds = r"""
+    maxcor: int
+        Maximum number of variable metric corrections used to define the limited
+        memory matrix (the number of past updates kept for the L-BFGS Hessian
+        approximation). The default is 10.
+    ftarget: Optional[Union[float, Callable[[], float]]]
+        Target objective function value (stop criterion): the iterations stop as
+        soon as the objective function is lower than or equal to this value.
+        A callable returning a float is also accepted. If None, the criterion is
+        ignored. The default is None.
+    ftol: float
+        Relative objective function reduction stop criterion. The iterations stop
+        when ``(f^k - f^{k+1}) / max(|f^k|, |f^{k+1}|, 1) <= ftol``.
+        The default is 1e-5.
+    gtol: Union[float, Callable[[], float]]
+        Projected gradient stop criterion. The iterations stop when
+        ``max{|proj g_i|, i = 1, ..., n} <= gtol``. A callable returning a float
+        is also accepted. The default is 1e-5.
+    stol: float
+        Experimental stop criterion on the relative change of the (preconditioned)
+        parameters values between two iterations, used by the PyRTID callback
+        (it is not an argument of the L-BFGS-B solver itself).
+        The default is 1e-3.
+    maxiter: int
+        Maximum number of iterations. The default is 50.
+    maxfun: int
+        Maximum number of objective function evaluations. The default is 100
+        (the default of the solver itself is 15000).
+    iprint: int
+        Verbosity level. ``iprint < 0``: no output; ``iprint == 0``: only the final
+        summary; ``0 < iprint < 99``: print the objective function and the projected
+        gradient norm every ``iprint`` iterations; ``iprint >= 99``: detailed
+        information at every iteration. The default is -1.
+    maxls: int
+        Maximum number of line search steps per iteration. The default is 20.
+    eps: float
+        Absolute step size of the forward finite difference approximation of the
+        gradient. It is only used by the solver when no gradient is provided, which
+        never happens here because PyRTID always provides the gradient (adjoint or
+        finite difference computed by PyRTID). It is exposed for completeness.
+        The default is 1e-8.
+    finite_diff_rel_step: Optional[float]
+        Relative step size of the numerical gradient approximation of the solver.
+        Same remark as for ``eps``: unused since the gradient is always provided.
+        The default is None.
+    eps_SY: float
+        Numerical threshold used when updating the L-BFGS correction matrices
+        (a pair ``(s, y)`` is skipped if ``s^T y <= eps_SY * y^T y``).
+        The default is 2.2e-16.
+    is_check_factorizations: bool
+        Whether to run additional consistency checks on the matrix factorizations.
+        Intended for development and debugging only. The default is False.
+    is_use_numba_jit: bool
+        Whether to use numba just-in-time compilation in the solver (a warning is
+        raised and a pure python fallback is used if numba is not available).
+        The default is True.
+    logger: Optional[logging.Logger]
+        Logger used for the textual output of the solver. If None, the solver does
+        not emit any output whatever ``iprint``. The default is the
+        ``"L-BFGS-B"`` logger.
     ftol_linesearch: float
         Specify a nonnegative tolerance for the sufficient decrease condition in
         `minpack2.dcsrch <https://ftp.mcs.anl.gov/pub/MINPACK-2/csrch/dcsrch.f>`_
@@ -217,9 +278,9 @@ class LBFGSBSolverConfig(AdjointSolverConfig):
     """
 
     maxcor: int = 10
-    ftarget: float | None = None
+    ftarget: float | Callable[[], float] | None = None
     ftol: float = 1e-5
-    gtol: float = 1e-5
+    gtol: float | Callable[[], float] = 1e-5
     stol: float = 1e-3
     maxiter: int = 50
     maxfun: int = 100
@@ -229,14 +290,29 @@ class LBFGSBSolverConfig(AdjointSolverConfig):
     gtol_linesearch: float = 0.9
     max_steplength: float = 1e8
     xtol_linesearch: float = 1e-5
+    eps: float = 1e-8
+    finite_diff_rel_step: float | None = None
     eps_SY: float = 2.2e-16
+    is_check_factorizations: bool = False
+    is_use_numba_jit: bool = True
+    logger: logging.Logger | None = field(
+        default_factory=lambda: logging.getLogger("L-BFGS-B")
+    )
 
 
 class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
     """Represent a inversion executor instance using the L-BFGS-B from PyRTID."""
 
     def _init_solver(self, s_init: NDArrayFloat) -> None:
-        """Careful, s_init is supposed to be preconditioned."""
+        """
+        Initiate the solver (and the adjoint model if needed).
+
+        Parameters
+        ----------
+        s_init : NDArrayFloat
+            Initial parameters vector. Careful, it is supposed to be
+            preconditioned.
+        """
         super()._init_solver(s_init)
 
         # Create an adjoint model only if needed
@@ -249,7 +325,14 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
             )
 
     def _get_solver_name(self) -> str:
-        """Return the solver name."""
+        """
+        Return the solver name.
+
+        Returns
+        -------
+        str
+            The solver name.
+        """
         return "L-BFGS-B (PyRTID)"
 
     def _update_fun_def(
@@ -449,6 +532,11 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
 
         True if the user has defined a configuration for gradient scaler for at least
         one of the adjusted parameter.
+
+        Returns
+        -------
+        bool
+            Whether the initial gradient must be scaled.
         """
         for param in self.inv_model.parameters_to_adjust:
             if param.gradient_scaler_config is not None:
@@ -456,7 +544,15 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
         return False
 
     def scale_initial_gradient(self) -> tuple[float, NDArrayFloat]:
-        """Scale the parameters so the first gradient has unit infinite norm."""
+        """
+        Scale the parameters so the first gradient has unit infinite norm.
+
+        Returns
+        -------
+        tuple[float, NDArrayFloat]
+            The objective function value and its (preconditioned) gradient at the
+            initial parameters vector, after the update of the preconditioners.
+        """
         # evaluate objective function and its gradient
         fun: float = self.eval_loss(self.data_model.s_init)
         grad_cond: NDArrayFloat = self.eval_loss_gradient(
@@ -528,7 +624,21 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
         return fun, grad_cond
 
     def callback(self, s: NDArrayFloat, res: sp.optimize.OptimizeResult) -> bool:
-        """Experimental stop criterion based on the model change."""
+        """
+        Experimental stop criterion based on the model change (old version).
+
+        Parameters
+        ----------
+        s : NDArrayFloat
+            Current (preconditioned) parameters vector.
+        res : scipy.optimize.OptimizeResult
+            Current optimization state. ``res.hess_inv.sk`` is used.
+
+        Returns
+        -------
+        bool
+            True if the relative change of ``s`` is below ``stol`` (stop).
+        """
         # Old attempt
         # The problème with this approach is that some parameters avec varying amplitude
         # because of precondiitoners, ex: GD with mean.
@@ -539,7 +649,22 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
         return s_change < self.solver_config.stol
 
     def callback_new(self, s: NDArrayFloat, res: sp.optimize.OptimizeResult) -> bool:
-        """Experimental stop criterion based on the model change."""
+        """
+        Experimental stop criterion based on the model change.
+
+        Parameters
+        ----------
+        s : NDArrayFloat
+            Current (preconditioned) parameters vector (unused, the change is
+            evaluated per parameter from the archived values).
+        res : scipy.optimize.OptimizeResult
+            Current optimization state (unused).
+
+        Returns
+        -------
+        bool
+            True if the summed change of the parameters is below ``stol`` (stop).
+        """
         # New attempt: evaluation per parameter with no preconditioning.
         # but log scaling if needed.
         s_change = 0
@@ -552,8 +677,13 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
         """
         Run the history matching.
 
-        First is creates raw folders to store the different runs
-        required by the HM algorithms.
+        The initial gradient is first scaled if requested, then the L-BFGS-B
+        minimization is launched with all the options of the configuration.
+
+        Returns
+        -------
+        scipy.optimize.OptimizeResult
+            The optimization result.
         """
         super().run()
 
@@ -604,7 +734,11 @@ class LBFGSBInversionExecutor(AdjointInversionExecutor[LBFGSBSolverConfig]):
             ftol_linesearch=self.solver_config.ftol_linesearch,
             gtol_linesearch=self.solver_config.gtol_linesearch,
             xtol_linesearch=self.solver_config.xtol_linesearch,
+            eps=self.solver_config.eps,
+            finite_diff_rel_step=self.solver_config.finite_diff_rel_step,
             eps_SY=self.solver_config.eps_SY,
-            logger=logging.getLogger("L-BFGS-B"),
+            is_check_factorizations=self.solver_config.is_check_factorizations,
+            is_use_numba_jit=self.solver_config.is_use_numba_jit,
+            logger=self.solver_config.logger,
             callback=self.callback_new,
         )

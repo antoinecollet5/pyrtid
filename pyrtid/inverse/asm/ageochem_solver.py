@@ -29,6 +29,26 @@ def solve_adj_geochem(
     time_index: int,
     nafpi: int,
 ) -> None:
+    """
+    Solve the adjoint geochemical equation for one fixed point iteration.
+
+    Parameters
+    ----------
+    tr_model : TransportModel
+        Transport model.
+    a_tr_model : AdjointTransportModel
+        Adjoint transport model.
+    gch_params : GeochemicalParameters
+        Geochemical parameters.
+    grid : RectilinearGrid
+        Grid of the problem (grid definition).
+    time_params : TimeParameters
+        Time parameters from the forward problem.
+    time_index : int
+        Index of the time step.
+    nafpi : int
+        Number of adjoint fixed point iterations (starting at 1).
+    """
     # Notations for time indices
     # prev = n+1
     # next = n
@@ -127,7 +147,25 @@ def ddMdimmobprev(
     time_index: int,
     dt_prev: float,
 ) -> NDArrayFloat:
-    """Return the derivative of dM(n+1) w.r.t. immob (n)."""
+    """
+    Return the derivative of dM(n+1) with respect to the grades at time n.
+
+    Parameters
+    ----------
+    tr_model : TransportModel
+        Transport model.
+    gch_params : GeochemicalParameters
+        Geochemical parameters.
+    time_index : int
+        Index of the time step.
+    dt_prev : float
+        Time step of the previous time step in seconds.
+
+    Returns
+    -------
+    NDArrayFloat
+        The derivative, with shape (nx, ny, nz).
+    """
     dM = get_dM(tr_model, gch_params, time_index + 1, dt_prev)
     # Initiate the derivative to zero
     deriv = np.zeros_like(dM)
@@ -160,7 +198,32 @@ def ddMdmobnext(
     dt_next: float,
     sp: int,
 ) -> NDArrayFloat:
-    """Return the derivative of dM w.r.t. mob. (n+1)."""
+    """
+    Return the derivative of dM with respect to the mobile concentrations at n+1.
+
+    Parameters
+    ----------
+    tr_model : TransportModel
+        Transport model.
+    gch_params : GeochemicalParameters
+        Geochemical parameters.
+    time_index : int
+        Index of the time step.
+    dt_next : float
+        Time step of the next (in forward time) time step in seconds.
+    sp : int
+        Index of the species (0 or 1).
+
+    Returns
+    -------
+    NDArrayFloat
+        The derivative, with shape (nx, ny, nz).
+
+    Raises
+    ------
+    ValueError
+        If ``sp`` is neither 0 nor 1.
+    """
     dM = get_dM(tr_model, gch_params, time_index, dt_next)
     # Initiate the derivative to zero
     deriv = np.zeros_like(dM)

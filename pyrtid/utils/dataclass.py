@@ -9,5 +9,17 @@ from typing import Any
 
 
 def default_field(obj) -> Any:
-    """Helper to set a default value for a dataclass field."""
+    """
+    Set a default value for a dataclass field (copied for each instance).
+
+    Parameters
+    ----------
+    obj : Any
+        Object used as default value; a shallow copy is made for each instance.
+
+    Returns
+    -------
+    dataclasses.Field
+        The dataclass field with a ``default_factory`` returning a copy of ``obj``.
+    """
     return field(default_factory=lambda: copy.copy(obj))

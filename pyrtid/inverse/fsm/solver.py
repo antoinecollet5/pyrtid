@@ -25,7 +25,15 @@ The following equations are considered (see :mod:`pyrtid.inverse.fsm.dFds` and
    sensitivities of the coupled system are solved in one go, which corresponds to
    the limit of the fixed point iterations of the forward solver.
 
-Only the saturated flow is supported (the gravity must be off).
+Both the saturated flow (the unknown is the head) and the density driven flow (with
+the gravity, the unknown is the pressure) are supported. With the gravity, the
+density is a linear function of the mobile concentrations and the flow of the time
+:math:`n` is solved with the density of the time :math:`n-1`, as in the forward
+solver (no fixed point iteration between the flow and the transport). The
+sensitivity of the flow at the time :math:`n` thus depends on the sensitivity of the
+concentrations at the time :math:`n-1`, which are all known when the flow
+sensitivities are computed. The heads are deduced from the pressures and from the
+densities of the previous time.
 """
 
 from __future__ import annotations
@@ -40,7 +48,7 @@ from scipy.sparse import csc_array
 from scipy.sparse.linalg import splu
 
 from pyrtid.forward.flow_solver import GRAVITY, WATER_DENSITY
-from pyrtid.forward.models import TDS_LINEAR_COEFFICIENT, FlowRegime, ForwardModel
+from pyrtid.forward.models import FlowRegime, ForwardModel
 from pyrtid.forward.solver import ForwardSolver
 from pyrtid.inverse.fsm.dFds import (
     FlowFields,
@@ -48,6 +56,7 @@ from pyrtid.inverse.fsm.dFds import (
     dFhds_stationary,
     dFhds_transient,
     dflow_fields,
+    get_density_sensitivity,
     get_flow_sources,
 )
 from pyrtid.inverse.fsm.dFdu import get_chemistry_relations, get_coupled_matrix
@@ -79,6 +88,8 @@ class FSMState:
     ----------
     head : NDArrayFloat
         Sensitivity of the head with shape (nx * ny * nz, ne).
+    pressure : NDArrayFloat
+        Sensitivity of the pressure with shape (nx * ny * nz, ne).
     mob : NDArrayFloat
         Sensitivity of the mobile concentrations with shape (2, nx * ny * nz, ne).
     immob : NDArrayFloat
@@ -88,6 +99,7 @@ class FSMState:
     """
 
     head: NDArrayFloat
+    pressure: NDArrayFloat
     mob: NDArrayFloat
     immob: NDArrayFloat
     fields: FlowFields
@@ -151,19 +163,12 @@ class FSMObservationRecorder:
         if var == StateVariable.HEAD:
             return state.head
         if var == StateVariable.PRESSURE:
-            return GRAVITY * WATER_DENSITY * state.head
+            return state.pressure
         if var == StateVariable.CONCENTRATION:
             return state.mob[obs.sp]
         if var == StateVariable.GRADE:
             return state.immob[obs.sp]
-        # density
-        gch = self.model.gch_params
-        return (
-            WATER_DENSITY
-            * TDS_LINEAR_COEFFICIENT
-            * (state.mob[0] * gch.Ms + state.mob[1] * gch.Ms2)
-            / 1000.0
-        )
+        return get_density_sensitivity(self.model, state.mob)
 
     def _get_field_values(self, obs: Observable, time_index: int) -> NDArrayFloat:
         """Return the field of the state variable at a given time (flat)."""
@@ -300,15 +305,7 @@ class FSMSolver:
             and the products between the Jacobian matrix and the vectors, with shape
             (:math:`N_{obs}`, :math:`N_e`).
 
-        Raises
-        ------
-        NotImplementedError
-            If the model uses a density flow (the gravity is on).
         """
-        if self.model.fl_model.is_gravity:
-            raise NotImplementedError(
-                "The forward sensitivity method is not implemented for density flows."
-            )
         directions = get_directions(self.model, parameters_to_adjust, vecs)
         recorder = FSMObservationRecorder(
             self.model, observables, directions, hm_end_time
@@ -345,25 +342,25 @@ class FSMSolver:
         n_cells = grid.n_grid_cells
         ne = directions.ne
 
-        # initial head
-        d_head = np.zeros((n_cells, ne))
+        # Initial head and pressure -> unknown of the flow (pressure with the
+        # gravity, head otherwise). They are linked by the density of the water.
+        head_to_pressure = GRAVITY * WATER_DENSITY
+        d_unknown = np.zeros((n_cells, ne))
         if directions.head is not None:
             d_head = directions.head.reshape(n_cells, ne, order="F")
+            d_unknown += d_head * (head_to_pressure if fl_model.is_gravity else 1.0)
+        if directions.pressure is not None:
+            d_pressure = directions.pressure.reshape(n_cells, ne, order="F")
+            d_unknown += d_pressure / (1.0 if fl_model.is_gravity else head_to_pressure)
 
         if fl_model.regime == FlowRegime.STATIONARY:
-            # The stationary flow is solved with the initial head at the constant
-            # head nodes.
+            # The stationary flow is solved with the initial head (pressure) at the
+            # constant head nodes.
             matrix = splu(fl_model.q_next.tocsc())
             for e in range(ne):
                 rhs = dFhds_stationary(model, directions.column(e, "permeability"))
-                rhs[fl_model.cst_head_nn] = d_head[fl_model.cst_head_nn, e]
-                d_head[:, e] = matrix.solve(rhs)
-
-        # sensitivities of the fields at t=0
-        if fl_model.regime == FlowRegime.STATIONARY:
-            fields = self._get_fields_sensitivity(0, d_head, directions)
-        else:  # null velocities
-            fields = FlowFields.zeros(grid, ne)
+                rhs[fl_model.cst_head_nn] = d_unknown[fl_model.cst_head_nn, e]
+                d_unknown[:, e] = matrix.solve(rhs)
 
         mob = np.zeros((2, n_cells, ne))
         immob = np.zeros((2, n_cells, ne))
@@ -374,12 +371,66 @@ class FSMSolver:
             grade_dir = directions.grade[sp]
             if grade_dir is not None:
                 immob[sp] = grade_dir.reshape(n_cells, ne, order="F")
-        return FSMState(d_head, mob, immob, fields)
+
+        # sensitivities of the fields at t=0
+        if fl_model.regime == FlowRegime.STATIONARY:
+            fields = self._get_fields_sensitivity(0, d_unknown, directions, None)
+        else:  # null velocities
+            fields = FlowFields.zeros(grid, ne)
+        head, pressure = self._get_head_and_pressure(0, d_unknown, mob)
+        return FSMState(head, pressure, mob, immob, fields)
+
+    def _get_head_and_pressure(
+        self, time_index: int, d_unknown: NDArrayFloat, prev_mob: NDArrayFloat
+    ) -> tuple[NDArrayFloat, NDArrayFloat]:
+        """
+        Return the sensitivities of the head and of the pressure of a time.
+
+        Parameters
+        ----------
+        time_index : int
+            The time index.
+        d_unknown : NDArrayFloat
+            Sensitivity of the unknown of the flow (the head, or the pressure with
+            the gravity) with shape (n_cells, ne).
+        prev_mob : NDArrayFloat
+            Sensitivities of the concentrations at the previous time (for the
+            density), with shape (2, n_cells, ne).
+
+        Returns
+        -------
+        tuple[NDArrayFloat, NDArrayFloat]
+            The sensitivities of the head and of the pressure.
+        """
+        fl_model = self.model.fl_model
+        if not fl_model.is_gravity:
+            # the pressure is derived with the density of the water
+            return d_unknown, GRAVITY * WATER_DENSITY * d_unknown
+        if time_index == 0:
+            return d_unknown / (GRAVITY * WATER_DENSITY), d_unknown
+        # The head is p / (g rho^{n-1}) + z
+        rho = self.model.tr_model.ldensity[time_index - 1].ravel(order="F")
+        pressure = fl_model.lpressure[time_index].ravel(order="F")
+        d_rho = get_density_sensitivity(self.model, prev_mob)
+        head = (
+            d_unknown / (GRAVITY * rho)[:, np.newaxis]
+            - (pressure / (GRAVITY * rho**2))[:, np.newaxis] * d_rho
+        )
+        return head, d_unknown
 
     def _get_fields_sensitivity(
-        self, time_index: int, d_head: NDArrayFloat, directions: FSMDirections
+        self,
+        time_index: int,
+        d_unknown: NDArrayFloat,
+        directions: FSMDirections,
+        d_density: NDArrayFloat | None,
     ) -> FlowFields:
-        """Return the sensitivities of the flow fields in all the directions."""
+        """
+        Return the sensitivities of the flow fields in all the directions.
+
+        ``d_density`` is the sensitivity of the density at ``time_index - 1``, with
+        shape (n_cells, ne). It is only used with the gravity.
+        """
         grid = self.model.grid
         ne = directions.ne
         out = FlowFields.zeros(grid, ne)
@@ -392,7 +443,10 @@ class FSMSolver:
                     time_index,
                     unitflow,
                     directions.column(e, "permeability"),
-                    d_head[:, e].reshape(grid.shape, order="F"),
+                    d_unknown[:, e].reshape(grid.shape, order="F"),
+                    None
+                    if d_density is None
+                    else d_density[:, e].reshape(grid.shape, order="F"),
                 ),
             )
         return out
@@ -402,21 +456,44 @@ class FSMSolver:
     ) -> FSMState:
         """Return the sensitivities at ``time_index`` from the ones at the previous."""
         dt = self.model.time_params.ldt[time_index - 1]
-        d_head = self._solve_flow_sensitivities(prev, directions, time_index, dt)
-        fields = self._get_fields_sensitivity(time_index, d_head, directions)
+        # The flow of the timestep depends on the density of the previous time
+        d_density = (
+            get_density_sensitivity(self.model, prev.mob)
+            if self.model.fl_model.is_gravity
+            else None
+        )
+        d_unknown = self._solve_flow_sensitivities(
+            prev, directions, time_index, dt, d_density
+        )
+        head, pressure = self._get_head_and_pressure(time_index, d_unknown, prev.mob)
+        fields = self._get_fields_sensitivity(
+            time_index, d_unknown, directions, d_density
+        )
         mob, immob = self._solve_transport_sensitivities(
             prev, fields, directions, time_index, dt
         )
-        return FSMState(d_head, mob, immob, fields)
+        return FSMState(head, pressure, mob, immob, fields)
 
     def _solve_flow_sensitivities(
-        self, prev: FSMState, directions: FSMDirections, time_index: int, dt: float
+        self,
+        prev: FSMState,
+        directions: FSMDirections,
+        time_index: int,
+        dt: float,
+        d_density: NDArrayFloat | None,
     ) -> NDArrayFloat:
-        """Return the head sensitivities of a timestep, with shape (n_cells, ne)."""
+        """
+        Return the sensitivities of the flow unknown of a timestep.
+
+        The unknown is the head (the pressure with the gravity). The result has shape
+        (n_cells, ne).
+        """
         fl_model = self.model.fl_model
+        grid = self.model.grid
         ne = directions.ne
+        prev_unknown = prev.pressure if fl_model.is_gravity else prev.head
         matrix = splu(fl_model.q_next.tocsc())
-        rhs = fl_model.q_prev @ prev.head
+        rhs = fl_model.q_prev @ prev_unknown
         for e in range(ne):
             rhs[:, e] += dFhds_transient(
                 self.model,
@@ -424,9 +501,12 @@ class FSMSolver:
                 dt,
                 directions.column(e, "permeability"),
                 directions.column(e, "storage_coefficient"),
+                None
+                if d_density is None
+                else d_density[:, e].reshape(grid.shape, order="F"),
             )
         # constant head grid cells
-        rhs[fl_model.cst_head_nn, :] = prev.head[fl_model.cst_head_nn, :]
+        rhs[fl_model.cst_head_nn, :] = prev_unknown[fl_model.cst_head_nn, :]
         return matrix.solve(rhs)
 
     def _solve_transport_sensitivities(

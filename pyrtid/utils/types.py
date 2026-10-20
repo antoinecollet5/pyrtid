@@ -26,6 +26,16 @@ def object_or_object_sequence_to_list(
 
     The return type is loose on purpose: type checkers infer the element type as the
     union of the singleton and iterable types when a union is given.
+
+    Parameters
+    ----------
+    _input : _Object or Iterable[_Object]
+        A single object or an iterable of objects.
+
+    Returns
+    -------
+    list[_Any]
+        The list of objects.
     """
     if isinstance(_input, Iterable):
         return list(_input)

@@ -97,30 +97,39 @@ class Observable:
         """
         Initiate the instance.
 
-        Warning
-        -------
-        For the control parameters such as porosity or permeability which are constant
-        in time, we consider that all observations are done at time 0, no matter
-        what is set by the user.
-
         Parameters
         ----------
-        state_variable: StateVariable
+        state_variable : StateVariable
             Name of the state variable or the parameter being observed.
-        node_indices: Int
+        node_indices : Int
             Location of the observation in the grid (indices from 0 to nx * ny - 1).
-        times: NDArrayFloat
+        times : NDArrayFloat
             Timesteps matching the values.
-        values: NDArrayFloat
+        values : NDArrayFloat
             Observed values.
-        uncertainties: Optional[Union[float, NDArrayFloat]]
+        uncertainties : Optional[Union[float, NDArrayFloat]]
             Absolute uncertainties associated with the observed values.
-        mean_type: Optional[MeanType] = None
+        mean_type : Optional[MeanType] = None
             Type of mean used to averaged the simulated values when the observations
             are performed over several grid cells. If None, an harmonic mean is used
             for diffusion and hydraulic conductivity coefficients, otherwise,
             an arithmetic mean is used.
             The default is None.
+        sp : int or None, optional
+            Index of the observed species. It is required when observing grades or
+            concentrations. The default is None.
+
+        Raises
+        ------
+        ValueError
+            If ``uncertainties`` or ``times`` do not have the same dimension as
+            ``values``, or if ``sp`` is missing when observing grades or concentrations.
+
+        Warning
+        -------
+        For the control parameters such as porosity or permeability which are constant
+        in time, we consider that all observations are done at time 0, no matter
+        what is set by the user.
         """
         self.state_variable = state_variable
         self.node_indices = np.sort(np.array(node_indices).ravel())
@@ -177,7 +186,14 @@ class Observable:
         return self._values + self.perturbations
 
     def set_values(self, values: NDArrayFloat) -> None:
-        """Set the observed values."""
+        """
+        Set the observed values.
+
+        Parameters
+        ----------
+        values : NDArrayFloat
+            The observed values.
+        """
         self._values = values
 
     @property
@@ -219,7 +235,21 @@ class Observable:
         ).replace("null", "None")
 
     def set_perturbations(self, pvals: NDArrayFloat) -> None:
-        """Set the values perturbations (see ensemble smoothers)."""
+        """
+        Set the values perturbations (see ensemble smoothers).
+
+        Parameters
+        ----------
+        pvals : NDArrayFloat
+            Perturbation values (see ensemble smoothers), with the same size as the
+            observed values.
+
+        Raises
+        ------
+        ValueError
+            If the size of the perturbations does not match the size of the observed
+            values.
+        """
         if self.values.size != pvals.size:
             raise ValueError(
                 "perturbations size should match observation values size !"
@@ -232,7 +262,17 @@ Observables = Observable | Sequence[Observable]
 
 
 def update_perturbation_values(observables: Observables, pvals: NDArrayFloat) -> None:
-    """Update the perturbation values for the given observables instances."""
+    """
+    Update the perturbation values for the given observables instances.
+
+    Parameters
+    ----------
+    observables : Observables
+        Sequence of observable instances.
+    pvals : NDArrayFloat
+        Perturbation values of all the observables, concatenated in the order of
+        ``observables``.
+    """
     first_index = 0
     for obs in object_or_object_sequence_to_list(observables):
         last_index = first_index + obs.values.size
@@ -338,6 +378,31 @@ def get_sorted_observable_uncertainties(
 def get_array_from_state_variable(
     model: ForwardModel, state_variable: StateVariable, sp: int | None = None
 ) -> NDArrayFloat:
+    """
+    Return the model array corresponding to a state variable or a parameter.
+
+    Parameters
+    ----------
+    model : ForwardModel
+        The forward model.
+    state_variable : StateVariable
+        The state variable or parameter.
+    sp : int or None, optional
+        Index of the species. It is required for concentrations and grades, and ignored
+        otherwise. The default is None.
+
+    Returns
+    -------
+    NDArrayFloat
+        The array of the state variable (with a time axis for state variables varying in
+        time).
+
+    Raises
+    ------
+    ValueError
+        If ``sp`` is None while the state variable is a concentration or a grade, or
+        if the state variable is not supported.
+    """
     if state_variable == StateVariable.CONCENTRATION:
         if sp is None:
             raise ValueError("sp cannot be None for concentrations")
@@ -375,17 +440,22 @@ def get_observables_values_as_1d_vector(
     """
     Return the values of all given observables as a 1D vector.
 
-    Note
-    ----
-    The observation values are sorted first by Observable instance (observation
-    location) and by ascending time at a second level.
-
     Parameters
     ----------
     observables
         Sequence of observable instances.
     max_obs_time : Optional[float], optional
         Maximum time for which to consider an observation value, by default None.
+
+    Returns
+    -------
+    NDArrayFloat
+        The observed values of all the observables, concatenated.
+
+    Note
+    ----
+    The observation values are sorted first by Observable instance (observation
+    location) and by ascending time at a second level.
     """
     return np.hstack(
         [
@@ -399,12 +469,8 @@ def get_observables_uncertainties_as_1d_vector(
     observables: Observables,
     max_obs_time: float | None = None,
 ) -> NDArrayFloat:
-    """Return the uncertainties of all observables as a 1D vector.
-
-    Note
-    ----
-    The observation values are sorted first by Observable instance (observation
-    location) and by ascending time at a second level.
+    """
+    Return the uncertainties of all observables as a 1D vector.
 
     Parameters
     ----------
@@ -413,6 +479,15 @@ def get_observables_uncertainties_as_1d_vector(
     max_obs_time : Optional[float], optional
         Maximum time for which to consider an observation value, by default None.
 
+    Returns
+    -------
+    NDArrayFloat
+        The uncertainties of all the observables, concatenated.
+
+    Note
+    ----
+    The observation values are sorted first by Observable instance (observation
+    location) and by ascending time at a second level.
     """
     return np.hstack(
         [
@@ -527,13 +602,16 @@ def get_interp_simu_values_matching_obs_times(
     simu_times: NDArrayFloat,
     simu_values: NDArrayFloat,
 ) -> NDArrayFloat:
-    """
+    r"""
     Get an array of interpolated values that match the observation times.
 
-    TODO: add ref to paper + a scheme.
-
     A simple linear interpolation is performed with two values only (the one before
-    and the one after the observation time.)
+    and the one after the observation time.) For an observation at time :math:`t`
+    comprised between the simulation times :math:`t_n` and :math:`t_{n+1}`, the
+    interpolated value reads :math:`\omega_n v_n + \omega_{n+1} v_{n+1}` with
+    :math:`\omega_n = 1 - (t - t_n) / (t_{n+1} - t_n)` and
+    :math:`\omega_{n+1} = 1 - \omega_n`. The same weights are used to derive the
+    adjoint sources, see :func:`get_adjoint_sources_for_obs`.
 
     Note
     ----
@@ -571,7 +649,7 @@ def get_simulated_values_matching_obs(
     max_obs_time: float | None = None,
 ) -> NDArrayFloat:
     """
-    Get the simulated values matching the given observable and the hm end time.
+    Return the simulated values matching the given observable and the hm end time.
 
     Parameters
     ----------
@@ -579,9 +657,6 @@ def get_simulated_values_matching_obs(
         The forward model.
     obs : Observable
         The observable instance.
-    ldt : List[float]
-        The list of timesteps used to solve the forward model. The simulation times
-        are derived from the list.
     max_obs_time : Optional[float], optional
         Maximum time for which to consider an observation value, by default None.
 
@@ -681,13 +756,13 @@ def get_adjoint_sources_for_obs(
     Parameters
     ----------
     model : ForwardModel
-        _description_
+        The forward model.
     obs : Observable
-        _description_
+        The observable instance.
+    n_obs : float
+        The number of observation point to consider.
     max_obs_time : Optional[float], optional
         Maximum time for which to consider an observation value, by default None.
-    n_obs: float
-        The number of observation point to consider.
 
     Returns
     -------
@@ -766,16 +841,16 @@ def get_predictions_matching_observations(
     Parameters
     ----------
     model : ForwardModel
-        _description_
+        The forward model.
     observables : Observables
-        _description_
+        Sequence of observable instances.
     max_obs_time : Optional[float], optional
         Maximum time for which to consider an observation value, by default None.
 
     Returns
     -------
     NDArrayFloat
-        _description_
+        The simulated values matching all the observations, concatenated.
     """
     res = [
         get_simulated_values_matching_obs(model, obs, max_obs_time).flatten()

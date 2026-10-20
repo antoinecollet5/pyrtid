@@ -55,8 +55,9 @@ Water Resources, 88: 186-197, 2016
 
 import logging
 import multiprocessing
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import astuple, dataclass, field
+from typing import Any
 
 import covmats
 from pypcga import PCGA
@@ -71,10 +72,84 @@ from pyrtid.inverse.executors.base import (
 from pyrtid.inverse.params import update_model_with_parameters_values
 from pyrtid.utils import NDArrayFloat
 
-pcga_solver_config_params_ds = (
-    r"solver_kwargs: Optional[Dict[str, Any]]\n"
-    r"   Additional arguments for PCGA instance. The default is None."
-)
+pcga_solver_config_params_ds = r"""eig_cov: Optional[covmats.CovViaEigenFactorization]
+        Eigen factorization of the covariance matrix of the inverted parameters
+        with shape (:math:`N_{s}`, :math:`N_{s}`). It is mandatory: a
+        :class:`ValueError` is raised at the solver initialization if None.
+        The default is None.
+    drift: Optional[covmats.DriftMatrix]
+        Drift (prior mean trend) matrix :math:`X` such that the prior mean of
+        :math:`s` is :math:`X \beta` for unknown coefficients :math:`\beta`.
+        If None, a constant drift is used. The default is None.
+    prior_s_var: Optional[Union[float, NDArrayFloat]]
+        A priori variance of the control variables (a float applied to all
+        parameters or one value per parameter). If None, it is taken from the
+        diagonal of ``eig_cov``. The default is None.
+    callback: Optional[Callable]
+        User callback invoked as ``callback(solver, s_hat=..., simul_obs=...,
+        n_iter=...)`` after the initial state and at the end of every
+        Gauss-Newton iteration. The default is None.
+    is_line_search: bool
+        Whether to use a line search if a Gauss-Newton iteration fails to lower
+        the cost function (extra forward runs, not parallelized).
+        The default is False.
+    is_lm: bool
+        Whether to use Levenberg-Marquardt inner iterations in each Gauss-Newton
+        iteration (inflation of the observation errors covariance). It costs
+        ``max_it_lm`` extra forward runs per iteration. The default is False.
+    is_direct_solve: bool
+        Whether to solve the saddle point system with a direct approach
+        (Cholesky factorization), practical for around 100 observations or less,
+        rather than with iterative Krylov subspace methods. The default is False.
+    is_use_preconditioner: bool
+        Deprecated and ignored: pypcga has no such argument (a preconditioner is
+        always used by the iterative solver). Kept for backward compatibility.
+        The default is False.
+    is_objfun_exact: bool
+        Reserved flag (formerly ``objeval``) currently not used by pypcga.
+        The default is False.
+    max_it_lm: int
+        Maximum number of Levenberg-Marquardt iterations (only if ``is_lm``).
+        The default is the number of CPUs.
+    max_workers_lm: int
+        Number of workers used to run the Levenberg-Marquardt forward models in
+        parallel (only if ``is_lm``); pypcga uses at least ``max_it_lm`` workers.
+        The default is the number of CPUs.
+    alphamax_lm: float
+        Maximum inflation weight of the observation errors covariance during the
+        Levenberg-Marquardt iterations (the weights are logarithmically spaced
+        between 1 and ``alphamax_lm``). The default is 1e3.
+    lm_smin: Optional[float]
+        Minimum value of the Levenberg-Marquardt solution (lower bound).
+        The default is None.
+    lm_smax: Optional[float]
+        Maximum value of the Levenberg-Marquardt solution (upper bound).
+        The default is None.
+    max_it_ls: int
+        Maximum number of line search iterations. The default is 20.
+    maxiter: int
+        Maximum number of Gauss-Newton iterations. The default is 10.
+    ftarget: Optional[Union[float, Callable]]
+        Target objective function value (stop criterion). If None, ignored.
+        The default is None.
+    ftol: float
+        Relative objective function change stop criterion:
+        ``(f^k - f^{k+1}) / max(|f^k|, |f^{k+1}|, 1) <= ftol``.
+        The default is 1e-5.
+    restol: float
+        Minimum relative change of the parameters between two iterations below
+        which the inversion is stopped. The default is 1e-2.
+    logger: Optional[logging.Logger]
+        Logger instance. If None there is no output. The default is the "PCGA"
+        logger.
+    is_save_jac: bool
+        Whether to keep the last Jacobian related products (required to compute
+        the posterior covariance after the inversion). The default is False
+        (the pypcga default is True).
+    eps: float
+        Perturbation scalar used for the finite difference products with the
+        Jacobian. The default is 1e-8.
+"""
 
 
 @register_params_ds(pcga_solver_config_params_ds)
@@ -85,7 +160,11 @@ class PCGASolverConfig(FSMSolverConfig):
     """
     Principal Component Geostatistical Approach Inversion Configuration.
 
-    Attributes
+    Every tunable argument of :class:`pypcga.PCGA` is exposed (the initial guess,
+    observations, observation covariance, forward model and random state are
+    provided by the executor and the base configuration).
+
+    Parameters
     ----------
     """
 
@@ -99,6 +178,7 @@ class PCGASolverConfig(FSMSolverConfig):
     is_use_preconditioner: bool = False
     is_objfun_exact: bool = False  # former objeval
     max_it_lm: int = multiprocessing.cpu_count()
+    max_workers_lm: int = multiprocessing.cpu_count()
     alphamax_lm: float = 10.0**3.0  # does it sound ok?
     lm_smin: float | None = None
     lm_smax: float | None = None
@@ -111,10 +191,17 @@ class PCGASolverConfig(FSMSolverConfig):
         default_factory=lambda: logging.getLogger("PCGA")
     )
     is_save_jac: bool = False
-    eps = 1.0e-8
+    eps: float = 1.0e-8
 
-    def __iter__(self):
-        """Iterate over the values of the configuration fields."""
+    def __iter__(self) -> Iterator[Any]:
+        """
+        Iterate over the values of the configuration fields.
+
+        Returns
+        -------
+        Iterator[Any]
+            Iterator over the values of the fields (in declaration order).
+        """
         return iter(astuple(self))
 
 
@@ -122,7 +209,19 @@ class PCGAInversionExecutor(FSMInversionExecutor[PCGASolverConfig]):
     """Principal Component Geostatistical Approach Inversion Executor."""
 
     def _init_solver(self, s_init: NDArrayFloat | None = None) -> None:
-        """Initiate a solver with its args."""
+        """
+        Initiate the PCGA solver with all the arguments of the configuration.
+
+        Parameters
+        ----------
+        s_init : Optional[NDArrayFloat]
+            Unused: the initial guess is taken from the data model.
+
+        Raises
+        ------
+        ValueError
+            If no factorized covariance (``eig_cov``) is given in the configuration.
+        """
         # Array with grid coordinates. (X, Y, Z)...
         # Note: for regular grid you don't need to specify pts.
         if self.solver_config.eig_cov is not None:
@@ -141,6 +240,7 @@ class PCGAInversionExecutor(FSMInversionExecutor[PCGASolverConfig]):
                 random_state=self.solver_config.random_state,
                 is_objfun_exact=self.solver_config.is_objfun_exact,
                 max_it_lm=self.solver_config.max_it_lm,
+                max_workers_lm=self.solver_config.max_workers_lm,
                 alphamax_lm=self.solver_config.alphamax_lm,
                 lm_smin=self.solver_config.lm_smin,
                 lm_smax=self.solver_config.lm_smax,
@@ -160,15 +260,26 @@ class PCGAInversionExecutor(FSMInversionExecutor[PCGASolverConfig]):
             )
 
     def _get_solver_name(self) -> str:
-        """Return the solver name."""
+        """
+        Return the solver name.
+
+        Returns
+        -------
+        str
+            The solver name.
+        """
         return "PCGA"
 
     def run(self) -> tuple[NDArrayFloat, NDArrayFloat, NDArrayFloat, int]:
         """
         Run the history matching.
 
-        First is creates raw folders to store the different runs
-        required by the HM algorithms.
+        Returns
+        -------
+        tuple[NDArrayFloat, NDArrayFloat, NDArrayFloat, int]
+            The best parameters vector (preconditioned), the corresponding
+            simulated observations, the posterior variance diagonal and the
+            index of the best iteration.
         """
         super().run()
         # run PCGA

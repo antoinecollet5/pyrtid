@@ -47,6 +47,19 @@ def get_adjoint_max_coupling_error(
     with $k$ the number of fixed point iterations.
 
     This error is evaluated from the mobile adjoint concentrations.
+
+    Parameters
+    ----------
+    atr_model : AdjointTransportModel
+        Adjoint transport model.
+    time_index : int
+        Index of the time step.
+
+    Returns
+    -------
+    float
+        The maximum relative variation of the adjoint mobile concentrations between two
+        fixed point iterations.
     """
     return get_max_coupling_error(
         atr_model.a_mob[:, :, :, :, time_index], atr_model.a_mob_prev
@@ -61,7 +74,25 @@ def make_transient_adj_transport_matrices(
     time_index: int,
 ) -> tuple[lil_array, lil_array]:
     """
-    Make matrices for the transient transport.
+    Make the adjoint matrices of the transient transport.
+
+    Parameters
+    ----------
+    grid : RectilinearGrid
+        Grid of the problem (grid definition).
+    fl_model : FlowModel
+        Flow model.
+    tr_model : TransportModel
+        Transport model.
+    time_params : TimeParameters
+        Time parameters from the forward problem.
+    time_index : int
+        Index of the time step.
+
+    Returns
+    -------
+    tuple[lil_array, lil_array]
+        The adjoint matrices ``(q_next, q_prev)``.
 
     Note
     ----
@@ -288,7 +319,33 @@ def solve_adj_transport_transient_semi_implicit(
     gch_params: GeochemicalParameters,
     nafpi: int,
 ) -> int:
-    """Solving the adjoint transport equation."""
+    """
+    Solve the adjoint transport equation for one fixed point iteration.
+
+    Parameters
+    ----------
+    grid : RectilinearGrid
+        Grid of the problem (grid definition).
+    fl_model : FlowModel
+        Flow model.
+    tr_model : TransportModel
+        Transport model.
+    a_tr_model : AdjointTransportModel
+        Adjoint transport model.
+    time_params : TimeParameters
+        Time parameters from the forward problem.
+    time_index : int
+        Index of the time step.
+    gch_params : GeochemicalParameters
+        Geochemical parameters.
+    nafpi : int
+        Number of adjoint fixed point iterations (starting at 1).
+
+    Returns
+    -------
+    int
+        The exit code of the linear solver (0 on success).
+    """
     # The matrix with respect to the diffusion never changes.
     # The matrix with respect to the advection only needs to be updated at the first
     # fix point iteration

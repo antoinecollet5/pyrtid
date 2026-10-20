@@ -39,7 +39,19 @@ from pyrtid.utils import (
 
 
 def identify_function(x: NDArrayFloat) -> NDArrayFloat:
-    """Return x untransformed (f(x) = x)."""
+    """
+    Return x untransformed (f(x) = x).
+
+    Parameters
+    ----------
+    x : NDArrayFloat
+        Array to return.
+
+    Returns
+    -------
+    NDArrayFloat
+        The input array, unchanged.
+    """
     return x
 
 
@@ -380,31 +392,55 @@ class AdjustableParameter:
         return not self == other
 
     def is_adaptive_regularization(self) -> bool:
-        """Whether an adaptive regularization strategy is used."""
+        """
+        Whether an adaptive regularization strategy is used.
+
+        Returns
+        -------
+        bool
+            True if the regularization weight is updated during the inversion.
+        """
         if len(self.regularizators) == 0:
             return False
         return self.reg_weight_update_strategy.is_adaptive()
 
     def update(self, other: AdjustableParameter) -> None:
-        """Update the attributes with other's."""
+        """
+        Update the attributes with other's.
+
+        Parameters
+        ----------
+        other : AdjustableParameter
+            Parameter whose (non-None) attributes are copied into this instance.
+        """
         for attr in other.__slots__:
             val = other.__getattribute__(attr)
             if val is not None:
                 setattr(self, attr, val)
 
     def get_values_from_model_field(self, input_field: NDArrayFloat) -> None:
-        """Update the parameter values from the given input field."""
+        """
+        Update the parameter values from the given input field.
+
+        Parameters
+        ----------
+        input_field : NDArrayFloat
+            Field of the model from which the values are read.
+        """
         self.values = input_field
 
     def update_values_with_vector(
         self, update_values: NDArrayFloat, is_preconditioned: bool = False
     ) -> None:
-        """Update the values attribute from the given vector.
+        """
+        Update the values attribute from the given vector.
 
         Parameters
         ----------
         update_values : NDArrayFloat
             The values used for update (preconditioned) in 1D.
+        is_preconditioned : bool, optional
+            Whether ``update_values`` are preconditioned. The default is False.
         """
         if is_preconditioned:
             func: Callable = self.preconditioner.backtransform
@@ -422,8 +458,14 @@ class AdjustableParameter:
 
         Parameters
         ----------
-        is_preconditioned: bool, optional
+        is_preconditioned : bool, optional
             Whether to return preconditioned bounds or not. The default is False.
+
+        Returns
+        -------
+        NDArrayFloat
+            The bounds matrix with shape (n_values, 2): lower bounds in the first column
+            and upper bounds in the second.
 
         Note
         ----
@@ -455,10 +497,16 @@ class AdjustableParameter:
 
         Parameters
         ----------
-        s_raw: Optional[NDArrayFloat]
+        s_raw : Optional[NDArrayFloat]
             Optional values for which to compute the regularization. If no values are
             provided, the values stored in the parameter instances are used.
             The values are not preconditioned.
+
+        Returns
+        -------
+        float
+            The regularization objective function (not weighted by the regularization
+            weight).
 
         Note
         ----
@@ -478,12 +526,16 @@ class AdjustableParameter:
 
         Parameters
         ----------
-        s_raw: Optional[NDArrayFloat]
+        s_raw : Optional[NDArrayFloat]
             Optional values for which to compute the regularization. If no values are
             provided, the values stored in the parameter instances are used.
             The values are not preconditioned.
 
-        The returned gradient is not preconditioned.
+
+        Returns
+        -------
+        NDArrayFloat
+            The regularization gradient, not preconditioned.
         """
         grad: NDArrayFloat = np.zeros(self.values.size)
         for reg in self.regularizators:
@@ -497,7 +549,16 @@ class AdjustableParameter:
         return grad
 
     def save_reg_status(self, reg_param: float, loss_reg: float) -> None:
-        """Save both the regularization weight and objective function."""
+        """
+        Save both the regularization weight and objective function.
+
+        Parameters
+        ----------
+        reg_param : float
+            Regularization weight.
+        loss_reg : float
+            Regularization objective function, without the weight factor.
+        """
         # The loss_reg should be without the reg_param factor
         self.loss_reg_history.append(copy.copy(loss_reg))
         self.reg_weight_history.append(copy.copy(reg_param))
@@ -551,6 +612,21 @@ class AdjustableParameter:
 
         The log of values is used for non additive properties such as permeability,
         storage coefficients or diffusion coefficient.
+
+        Parameters
+        ----------
+        is_use_pcd : bool, optional
+            Whether to compute the change on the preconditioned values. The default is
+            True.
+        ord : float or None, optional
+            Order of the norm (see :func:`scipy.linalg.norm`). The default is None,
+            which corresponds to the 2-norm.
+
+        Returns
+        -------
+        float
+            The relative change between the two last archived vectors of values (0 if
+            there are fewer than two).
         """
         if len(self.archived_values) < 2:
             return 0
@@ -576,25 +652,26 @@ def get_parameter_values_from_model(
     """
     Get the adjusted parameter values in the model.
 
-    Note
-    ----
-    Returned values are not preconditioned.
-
     Parameters
     ----------
+    model : ForwardModel
+        Forward model from which the data are extracted.
     param : AdjustableParameter
         The adjusted parameter.
-
-    Raises
-    ------
-    ValueError
-        If the given parameter is not supported.
 
     Returns
     -------
     NDArrayFloat
         The required parameter values form the model.
 
+    Raises
+    ------
+    ValueError
+        If the given parameter is not supported.
+
+    Note
+    ----
+    Returned values are not preconditioned.
     """
     if param.name not in ParameterName.to_list():
         raise ValueError(
@@ -637,8 +714,17 @@ def get_parameters_values_from_model(
 
     Parameters
     ----------
-    is_preconditioned: bool, optional
+    model : ForwardModel
+        Forward model from which the data are extracted.
+    params : AdjustableParameters
+        Sequence of adjusted parameters.
+    is_preconditioned : bool, optional
         Whether to return preconditioned bounds or not. The default is False.
+
+    Returns
+    -------
+    NDArrayFloat
+        The stacked values of the parameters, flattened in Fortran order.
 
     Note
     ----
@@ -668,6 +754,19 @@ def update_model_with_parameters_values(
     """
     Update the params and the model with the given preconditoned values `x`.
 
+    Parameters
+    ----------
+    model : ForwardModel
+        Forward model from which the data are extracted.
+    parameters_values : NDArrayFloat
+        Vector of stacked values of the parameters, in the order of ``params``.
+    params : AdjustableParameters
+        Sequence of adjusted parameters.
+    is_preconditioned : bool, optional
+        Whether ``parameters_values`` are preconditioned. The default is False.
+    is_to_save : bool, optional
+        Whether to archive the values in the parameters. The default is False.
+
     Note
     ----
     x is a preconditoned vector.
@@ -693,13 +792,21 @@ def get_parameters_bounds(
     params: AdjustableParameters,
     is_preconditioned: bool = False,
 ) -> np.ndarray:
-    """Return a 2xn bounds matrix, n being the number of parameters values inverted.
+    """
+    Return a 2xn bounds matrix, n being the number of parameters values inverted.
 
     Parameters
     ----------
-    is_preconditioned: bool, optional
+    params : AdjustableParameters
+        Sequence of adjusted parameters.
+    is_preconditioned : bool, optional
         Whether to return preconditioned bounds or not. The default is False.
 
+    Returns
+    -------
+    NDArrayFloat
+        The bounds matrix with shape (n_values, 2) (lower bounds in the first column and
+        upper bounds in the second), stacked over the parameters.
     """
     return np.concatenate(
         [
@@ -712,6 +819,22 @@ def get_parameters_bounds(
 def get_backconditioned_adj_gradient(
     param: AdjustableParameter, index: int
 ) -> NDArrayFloat:
+    """
+    Return the archived adjoint gradient converted to the non-preconditioned space.
+
+    Parameters
+    ----------
+    param : AdjustableParameter
+        The adjusted parameter.
+    index : int
+        Index of the archived gradient in ``param.grad_adj_history``.
+
+    Returns
+    -------
+    NDArrayFloat
+        The gradient with respect to the parameter values, with the shape of
+        ``param.values``.
+    """
     return param.preconditioner.dbacktransform_vec(
         param.preconditioner(param.values.ravel("F")),
         param.grad_adj_history[index].ravel("F"),
@@ -721,6 +844,22 @@ def get_backconditioned_adj_gradient(
 def get_backconditioned_fd_gradient(
     param: AdjustableParameter, index: int
 ) -> NDArrayFloat:
+    """
+    Return the archived finite difference gradient, in the non-preconditioned space.
+
+    Parameters
+    ----------
+    param : AdjustableParameter
+        The adjusted parameter.
+    index : int
+        Index of the archived gradient in ``param.grad_fd_history``.
+
+    Returns
+    -------
+    NDArrayFloat
+        The gradient with respect to the parameter values, with the shape of
+        ``param.values``.
+    """
     return param.preconditioner.dbacktransform_vec(
         param.preconditioner(param.values.ravel("F")),
         param.grad_fd_history[index].ravel("F"),
@@ -730,21 +869,31 @@ def get_backconditioned_fd_gradient(
 def get_gridded_archived_gradients(
     param, is_adjoint: bool, is_preconditioned: bool = False
 ) -> NDArrayFloat:
-    """Return an array (nx, ny, nt) of gridded archived gradients.
-
-    Note
-    ----
-    The non adjusted grid cells are given as NaNs.
+    """
+    Return an array (nx, ny, nt) of gridded archived gradients.
 
     Parameters
     ----------
+    param : Any
+        The adjusted parameter (``AdjustableParameter``).
     is_adjoint : bool
         Whether to use adjoint or finite differences gradients.
+    is_preconditioned : bool, optional
+        Whether to work with preconditioned values. The default is False.
 
     Returns
     -------
     NDArrayFloat
         Array (nx, ny, nt) of gridded archived gradients.
+
+    Raises
+    ------
+    ValueError
+        If the gradients cannot be reshaped to the grid dimensions.
+
+    Note
+    ----
+    The non adjusted grid cells are given as NaNs.
     """
     if is_adjoint:
         if is_preconditioned:
@@ -766,7 +915,21 @@ def get_param_values(
     param: AdjustableParameter,
     is_preconditioned: bool = False,
 ) -> NDArrayFloat:
-    """Return a slice of the input data field."""
+    """
+    Return the values of the parameter, optionally preconditioned.
+
+    Parameters
+    ----------
+    param : AdjustableParameter
+        The adjusted parameter.
+    is_preconditioned : bool, optional
+        Whether to work with preconditioned values. The default is False.
+
+    Returns
+    -------
+    NDArrayFloat
+        The (flattened if preconditioned) values of the parameter.
+    """
     _values = param.values
     if is_preconditioned:
         return param.preconditioner(_values.ravel("F"))
@@ -776,7 +939,25 @@ def get_param_values(
 def update_model_with_param_values(
     model: ForwardModel, param: AdjustableParameter, sp: int | None = None
 ) -> None:
-    """Update the input field with the Adjustable parameter current values."""
+    """
+    Update the model field with the current values of the parameter.
+
+    Parameters
+    ----------
+    model : ForwardModel
+        Forward model from which the data are extracted.
+    param : AdjustableParameter
+        The adjusted parameter.
+    sp : int or None, optional
+        Index of the species (required for concentrations and grades). The default is
+        None.
+
+    Raises
+    ------
+    ValueError
+        If ``sp`` is None for a concentration or a grade, or if the parameter name is
+        not supported.
+    """
     if param.name == ParameterName.INITIAL_CONCENTRATION:
         if sp is None:
             raise ValueError("sp cannot be None for concentrations!")
@@ -813,13 +994,13 @@ def eval_weighted_loss_reg(
     is_save_reg_state: bool = False,
 ) -> float:
     """
-    Get the regularization loss function for the provided parameters.
+    Return the weighted regularization loss function for the provided parameters.
 
     Parameters
     ----------
-    param : AdjustableParameters
-        Sequence of adjutable parameters.
-    model: ForwardModel
+    params : AdjustableParameters
+        Sequence of adjusted parameters.
+    model : ForwardModel
         Forward model from which the data are exctrated.
     s_raw : Optional[NDArrayFloat], optional
         Optional non-preconditioned values for the parameters.
@@ -827,6 +1008,9 @@ def eval_weighted_loss_reg(
     s_cond : Optional[NDArrayFloat], optional
         Optional transformed values for the parameters. If None, the value stored in the
         parameter instances are used, by default None.
+    is_save_reg_state : bool, optional
+        Whether to save the regularization weight and objective function in the
+        parameters. The default is False.
 
     Returns
     -------
@@ -857,19 +1041,22 @@ def eval_weighted_loss_reg_gradient(
     params: AdjustableParameters, model: ForwardModel, x: NDArrayFloat | None = None
 ) -> NDArrayFloat:
     """
-    Get the regularization loss function for the provided parameters.
+    Return the gradient of the weighted regularization loss function.
 
     Parameters
     ----------
-    param : AdjustableParameters
-        Sequence of adjutable parameters.
+    params : AdjustableParameters
+        Sequence of adjusted parameters.
+    model : ForwardModel
+        Forward model from which the data are extracted.
     x : Optional[NDArrayFloat], optional
-        Optional values for the parameters. If None, the value stored in the
-        parameter instances are used, by default None. MUST BE PRECONDITONED !!!
+        Optional values for the parameters. If None, the value stored in the parameter
+        instances are used, by default None. The values must be preconditioned.
 
     Returns
     -------
-    The preconditoned gradient of regularization.
+    NDArrayFloat
+        The preconditioned gradient of the regularization.
     """
     full_grad: NDArrayFloat = np.array([], dtype=np.float64)
     idx = 0

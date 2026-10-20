@@ -36,5 +36,12 @@ class StrEnum(str, Enum):
 
     @classmethod
     def to_list(cls) -> list[str]:
-        """Return all enums as a list."""
+        """
+        Return all enums as a list.
+
+        Returns
+        -------
+        list[str]
+            The members of the enumeration.
+        """
         return list(cls)

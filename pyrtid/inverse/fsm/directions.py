@@ -31,6 +31,8 @@ class FSMDirections:
         Perturbations of the storage coefficient.
     head : NDArrayFloat | None
         Perturbations of the initial head.
+    pressure : NDArrayFloat | None
+        Perturbations of the initial pressure.
     porosity : NDArrayFloat | None
         Perturbations of the porosity.
     diffusion : NDArrayFloat | None
@@ -49,6 +51,7 @@ class FSMDirections:
     permeability: NDArrayFloat | None = None
     storage_coefficient: NDArrayFloat | None = None
     head: NDArrayFloat | None = None
+    pressure: NDArrayFloat | None = None
     porosity: NDArrayFloat | None = None
     diffusion: NDArrayFloat | None = None
     dispersivity: NDArrayFloat | None = None
@@ -65,6 +68,7 @@ _ATTRIBUTES = {
     ParameterName.PERMEABILITY: "permeability",
     ParameterName.STORAGE_COEFFICIENT: "storage_coefficient",
     ParameterName.INITIAL_HEAD: "head",
+    ParameterName.INITIAL_PRESSURE: "pressure",
     ParameterName.POROSITY: "porosity",
     ParameterName.DIFFUSION: "diffusion",
     ParameterName.DISPERSIVITY: "dispersivity",
@@ -104,10 +108,8 @@ def get_directions(
     Raises
     ------
     ValueError
-        If the first dimension of ``vecs`` does not match the number of adjusted
-        values.
-    NotImplementedError
-        If a parameter is not supported by the forward sensitivity method.
+        If ``vecs`` is not a 2D array or if its first dimension does not match the
+        number of adjusted values.
     """
     if vecs.ndim != 2:
         raise ValueError(f"`vecs` must be a 2D array, got {vecs.ndim} dimension(s).")
@@ -132,13 +134,9 @@ def get_directions(
             directions.conc[param.sp] = _add(directions.conc[param.sp], arr)
         elif param.name == ParameterName.INITIAL_GRADE:
             directions.grade[param.sp] = _add(directions.grade[param.sp], arr)
-        elif param.name in _ATTRIBUTES:
+        else:
             name = _ATTRIBUTES[param.name]
             setattr(directions, name, _add(getattr(directions, name), arr))
-        else:
-            raise NotImplementedError(
-                f'The parameter "{param.name}" is not supported by the FSM.'
-            )
     if idx != vecs.shape[0]:
         raise ValueError(
             f"`vecs` has {vecs.shape[0]} rows but {idx} values are adjusted."

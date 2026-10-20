@@ -18,12 +18,21 @@ velocities, ...) are assembled by the forward code, their directional derivative
 are obtained by differencing the assembly itself, which is cheap (no linear system
 is solved) and guarantees the consistency with the forward discretization:
 
-- the operators are affine with respect to the heads and to the velocities (for a
-  given sign of the velocity, i.e., a given upwind direction), so the
-  derivatives with respect to these variables are exact;
+- the operators are affine with respect to the heads (or the pressures with the
+  gravity) and to the velocities (for a given sign of the velocity, i.e., a given
+  upwind direction), so the derivatives with respect to these variables are exact;
+- the flow operators and sources are affine (and the gravity term quadratic) in the
+  density, which makes the centered differences exact, whatever the step;
 - the others (harmonic means of the permeability and of the dispersion) are smooth,
   and are differentiated with a centered scheme with a small relative step. The
   error is of the order of :math:`10^{-10}`.
+
+With the gravity (density driven flow), the unknown of the flow is the pressure
+:math:`p^n`, which is solved with the density :math:`\rho^{n-1}` of the previous
+time (the density is lagged: there is no fixed point iteration between the flow
+and the transport). The density sensitivity :math:`z_\rho^{n-1}` hence acts as a
+forcing term of the flow at the time :math:`n`, through the matrices, the sources
+and the gravity term, and through the darcy velocities.
 
 The functions work on one direction (i.e., one column of the matrix of vectors to
 multiply with the Jacobian matrix) at a time.
@@ -43,18 +52,27 @@ from pyrtid.forward.flow_solver import (
     _assemble_transient_flow_matrices,
     compute_u_darcy,
     compute_u_darcy_div,
+    get_gravity_gradient,
+    get_zj_zi_rhs,
     make_stationary_flow_matrices,
 )
 from pyrtid.forward.models import (
+    GRAVITY,
+    TDS_LINEAR_COEFFICIENT,
+    WATER_DENSITY,
     FlowModel,
     ForwardModel,
     SparseMatrixBuilder,
+    TransportModel,
 )
 from pyrtid.forward.transport_solver import _assemble_transport_matrices
 from pyrtid.utils import NDArrayFloat
 
 # Relative size of the perturbation used to differentiate the smooth operators.
 REL_STEP = 1e-6
+# Relative size of the perturbation of the density. The flow operators are polynomials
+# (of degree 2 at most) of the density: centered differences are exact.
+DENSITY_REL_STEP = 1e-2
 
 
 @dataclass
@@ -154,10 +172,12 @@ def _rel_step(direction: NDArrayFloat, values: NDArrayFloat) -> float:
     return REL_STEP * (vmax if vmax > 0.0 else 1.0) / dmax
 
 
-def _rel_step_ratio(direction: NDArrayFloat, values: NDArrayFloat) -> float:
-    """Same as :func:`_rel_step` but the variation is relative cell by cell."""
+def _rel_step_ratio(
+    direction: NDArrayFloat, values: NDArrayFloat, rel_step: float = REL_STEP
+) -> float:
+    """Return the step like :func:`_rel_step`, relative cell by cell."""
     dmax = float(np.max(np.abs(direction / values)))
-    return 0.0 if dmax == 0.0 else REL_STEP / dmax
+    return 0.0 if dmax == 0.0 else rel_step / dmax
 
 
 def _scratch_flow_model(
@@ -170,6 +190,46 @@ def _scratch_flow_model(
     scratch.permeability = permeability
     if storage_coefficient is not None:
         scratch.storage_coefficient = storage_coefficient
+    return scratch
+
+
+def get_density_sensitivity(model: ForwardModel, mob: NDArrayFloat) -> NDArrayFloat:
+    r"""
+    Return the sensitivity of the density from the one of the concentrations.
+
+    The density is linear in the mobile concentrations (see
+    :func:`pyrtid.forward.solver.get_density`).
+
+    Parameters
+    ----------
+    model : ForwardModel
+        The forward model (for the molar weights).
+    mob : NDArrayFloat
+        Sensitivities of the concentrations with shape (2, nx * ny * nz, ne).
+
+    Returns
+    -------
+    NDArrayFloat
+        Sensitivity of the density, with shape (nx * ny * nz, ne).
+    """
+    gch = model.gch_params
+    return (
+        WATER_DENSITY
+        * TDS_LINEAR_COEFFICIENT
+        * (mob[0] * gch.Ms + mob[1] * gch.Ms2)
+        / 1000.0
+    )
+
+
+def _scratch_transport_model(
+    tr_model: TransportModel, time_index: int, density: NDArrayFloat | None
+) -> TransportModel:
+    """Return a shallow copy of the transport model with a given density at a time."""
+    if density is None:
+        return tr_model
+    scratch = copy.copy(tr_model)
+    scratch.ldensity = list(tr_model.ldensity)
+    scratch.ldensity[time_index] = density
     return scratch
 
 
@@ -208,18 +268,22 @@ def _transient_flow_residual(
     dt: float,
     permeability: NDArrayFloat,
     storage_coefficient: NDArrayFloat,
+    density: NDArrayFloat | None,
     sources: NDArrayFloat,
     sources_old: NDArrayFloat,
 ) -> NDArrayFloat:
     """
-    Return the residual of the (saturated) transient flow equation of one timestep.
+    Return the residual of the transient flow equation of one timestep.
 
-    The heads at the new and at the previous times are the ones of the model. The
-    constant head rows are removed.
+    The heads (or pressures with the gravity) at the new and at the previous times
+    are the ones of the model. With the gravity, the density of the previous time
+    is ``density`` (the one of the model if None). The constant head rows are
+    removed.
     """
     fl_model = _scratch_flow_model(model.fl_model, permeability, storage_coefficient)
+    tr_model = _scratch_transport_model(model.tr_model, time_index - 1, density)
     builder_next, builder_prev = _assemble_transient_flow_matrices(
-        model.grid, fl_model, model.tr_model, time_index
+        model.grid, fl_model, tr_model, time_index
     )
     q_next, q_prev = _add_time_derivative_and_cst_head(
         fl_model, builder_next.tocsc(), builder_prev.tocsc(), dt
@@ -228,8 +292,14 @@ def _transient_flow_residual(
         fl_model.crank_nicolson * sources.ravel(order="F")
         + (1.0 - fl_model.crank_nicolson) * sources_old.ravel(order="F")
     ) / storage_coefficient.ravel(order="F")
-    rhs += q_prev @ fl_model.lhead[time_index - 1].ravel(order="F")
-    res = rhs - q_next @ fl_model.lhead[time_index].ravel(order="F")
+    if fl_model.is_gravity:
+        rhs *= tr_model.ldensity[time_index - 1].ravel(order="F") * GRAVITY
+        rhs += get_gravity_gradient(model.grid, fl_model, tr_model, time_index)
+        unknown = fl_model.lpressure
+    else:
+        unknown = fl_model.lhead
+    rhs += q_prev @ unknown[time_index - 1].ravel(order="F")
+    res = rhs - q_next @ unknown[time_index].ravel(order="F")
     res[fl_model.cst_head_nn] = 0.0
     return res
 
@@ -240,14 +310,16 @@ def dFhds_transient(
     dt: float,
     d_permeability: NDArrayFloat | None,
     d_storage_coefficient: NDArrayFloat | None,
+    d_density: NDArrayFloat | None = None,
 ) -> NDArrayFloat:
     r"""
     Return the product of the derivative of the flow equation with a direction.
 
     It is the derivative of the residual (right hand side minus left hand side) of
-    the head equation of the timestep ``time_index``, with respect to the
-    permeability and to the storage coefficient. The sign is such that the
-    sensitivities solve :math:`A z^n = B z^{n-1} + \mathrm{forcing}`.
+    the head equation (pressure equation with the gravity) of the timestep
+    ``time_index``, with respect to the permeability, to the storage coefficient
+    and to the density of the previous time (only with the gravity). The sign is
+    such that the sensitivities solve :math:`A z^n = B z^{n-1} + \mathrm{forcing}`.
 
     Parameters
     ----------
@@ -262,6 +334,9 @@ def dFhds_transient(
     d_storage_coefficient : NDArrayFloat | None
         Direction for the storage coefficient, with shape (nx, ny, nz).
         None if null.
+    d_density : NDArrayFloat | None, optional
+        Direction for the density at ``time_index - 1``, with shape (nx, ny, nz).
+        It is ignored without the gravity. The default is None.
 
     Returns
     -------
@@ -274,25 +349,33 @@ def dFhds_transient(
     sources_old = get_flow_sources(model, time_index - 1)
     kperm = fl_model.permeability
     ss = fl_model.storage_coefficient
+    rho = model.tr_model.ldensity[time_index - 1] if fl_model.is_gravity else None
 
-    def _res(k: NDArrayFloat, s: NDArrayFloat) -> NDArrayFloat:
+    def _res(k: NDArrayFloat, s: NDArrayFloat, r: NDArrayFloat | None) -> NDArrayFloat:
         return _transient_flow_residual(
-            model, time_index, dt, k, s, sources, sources_old
+            model, time_index, dt, k, s, r, sources, sources_old
         )
 
     if d_permeability is not None:
         eps = _rel_step_ratio(d_permeability, kperm)
         if eps > 0.0:
             out += (
-                _res(kperm + eps * d_permeability, ss)
-                - _res(kperm - eps * d_permeability, ss)
+                _res(kperm + eps * d_permeability, ss, rho)
+                - _res(kperm - eps * d_permeability, ss, rho)
             ) / (2.0 * eps)
     if d_storage_coefficient is not None:
         eps = _rel_step_ratio(d_storage_coefficient, ss)
         if eps > 0.0:
             out += (
-                _res(kperm, ss + eps * d_storage_coefficient)
-                - _res(kperm, ss - eps * d_storage_coefficient)
+                _res(kperm, ss + eps * d_storage_coefficient, rho)
+                - _res(kperm, ss - eps * d_storage_coefficient, rho)
+            ) / (2.0 * eps)
+    if d_density is not None and rho is not None:
+        eps = _rel_step_ratio(d_density, rho, DENSITY_REL_STEP)
+        if eps > 0.0:
+            out += (
+                _res(kperm, ss, rho + eps * d_density)
+                - _res(kperm, ss, rho - eps * d_density)
             ) / (2.0 * eps)
     return out
 
@@ -303,8 +386,11 @@ def dFhds_stationary(
     r"""
     Return the product of the derivative of the stationary flow with a direction.
 
-    The stationary flow equation is :math:`A(K) h = b`. The returned forcing is
-    :math:`- \frac{\partial A}{\partial K} v \, h` (without the constant head rows).
+    The stationary flow equation is :math:`A(K) h = b` (:math:`A(K) p = b + g(K)`
+    for the pressure with the gravity, :math:`g` being the gravity term). The returned
+    forcing is :math:`- \frac{\partial A}{\partial K} v \, h` (plus
+    :math:`\frac{\partial g}{\partial K} v` with the gravity), without the constant
+    head rows.
 
     Parameters
     ----------
@@ -326,13 +412,16 @@ def dFhds_stationary(
     eps = _rel_step_ratio(d_permeability, kperm)
     if eps == 0.0:
         return out
-    head = fl_model.lhead[0].ravel(order="F")
+    unknown = (fl_model.lpressure if fl_model.is_gravity else fl_model.lhead)[0]
+    unknown = unknown.ravel(order="F")
 
     def _res(k: NDArrayFloat) -> NDArrayFloat:
-        matrix = make_stationary_flow_matrices(
-            model.grid, _scratch_flow_model(fl_model, k)
-        )
-        return -(matrix.tocsc() @ head)
+        scratch = _scratch_flow_model(fl_model, k)
+        matrix = make_stationary_flow_matrices(model.grid, scratch)
+        res = -(matrix.tocsc() @ unknown)
+        if fl_model.is_gravity:
+            res += get_zj_zi_rhs(model.grid, scratch)
+        return res
 
     out += (_res(kperm + eps * d_permeability) - _res(kperm - eps * d_permeability)) / (
         2.0 * eps
@@ -343,26 +432,35 @@ def dFhds_stationary(
 
 def get_flow_fields(
     model: ForwardModel,
+    time_index: int,
     permeability: NDArrayFloat,
-    head: NDArrayFloat,
+    unknown: NDArrayFloat,
     unitflow: NDArrayFloat,
+    density: NDArrayFloat | None = None,
 ) -> FlowFields:
     """
     Return the darcy velocities, their divergence and the unit flow.
 
     This is a side effect free version of what the forward solver does after
-    the head has been computed (saturated flow).
+    the head (or the pressure with the gravity) has been computed.
 
     Parameters
     ----------
     model : ForwardModel
         The forward model.
+    time_index : int
+        The time index. With the gravity, the velocities of the time 0 are computed
+        with the density of the water, the other ones with the density of the
+        previous time.
     permeability : NDArrayFloat
         Permeability, with shape (nx, ny, nz).
-    head : NDArrayFloat
-        Head, with shape (nx, ny, nz).
+    unknown : NDArrayFloat
+        Head (pressure with the gravity), with shape (nx, ny, nz).
     unitflow : NDArrayFloat
         Flow sources before the correction on the constant head grid cells.
+    density : NDArrayFloat | None, optional
+        Density at ``time_index - 1`` with shape (nx, ny, nz), used instead of the
+        one of the model with the gravity. The default is None.
 
     Returns
     -------
@@ -370,15 +468,22 @@ def get_flow_fields(
         The fields.
     """
     scratch = _scratch_flow_model(model.fl_model, permeability)
-    scratch.lhead = [head]
-    scratch.lu_darcy_x = []
-    scratch.lu_darcy_y = []
-    scratch.lu_darcy_z = []
-    scratch.lu_darcy_div = []
-    scratch.lunitflow = [unitflow.copy()]
-    compute_u_darcy(scratch, model.tr_model, model.grid, 0)
-    compute_u_darcy_div(scratch, model.grid, 0)
-    return FlowFields.from_model(scratch, 0)
+    pad: list = [None] * time_index
+    if scratch.is_gravity:
+        scratch.lpressure = [*scratch.lpressure[:time_index], unknown]
+    else:
+        scratch.lhead = [*scratch.lhead[:time_index], unknown]
+    scratch.lu_darcy_x = list(pad)
+    scratch.lu_darcy_y = list(pad)
+    scratch.lu_darcy_z = list(pad)
+    scratch.lu_darcy_div = list(pad)
+    scratch.lunitflow = [*pad, unitflow.copy()]
+    tr_model = _scratch_transport_model(
+        model.tr_model, max(time_index - 1, 0), density if time_index > 0 else None
+    )
+    compute_u_darcy(scratch, tr_model, model.grid, time_index)
+    compute_u_darcy_div(scratch, model.grid, time_index)
+    return FlowFields.from_model(scratch, time_index)
 
 
 def dflow_fields(
@@ -386,7 +491,8 @@ def dflow_fields(
     time_index: int,
     unitflow: NDArrayFloat,
     d_permeability: NDArrayFloat | None,
-    d_head: NDArrayFloat,
+    d_unknown: NDArrayFloat,
+    d_density: NDArrayFloat | None = None,
 ) -> FlowFields:
     """
     Return the derivative of the flow fields in one direction.
@@ -401,40 +507,53 @@ def dflow_fields(
         Flow sources before the correction on the constant head grid cells.
     d_permeability : NDArrayFloat | None
         Direction for the permeability with shape (nx, ny, nz). None if null.
-    d_head : NDArrayFloat
-        Sensitivity of the head with shape (nx, ny, nz).
+    d_unknown : NDArrayFloat
+        Sensitivity of the head (of the pressure with the gravity) with shape
+        (nx, ny, nz).
+    d_density : NDArrayFloat | None, optional
+        Sensitivity of the density at ``time_index - 1`` with shape (nx, ny, nz).
+        It is used only with the gravity and if ``time_index`` is not 0. The default
+        is None.
 
     Returns
     -------
     FlowFields
         The derivatives of the fields.
     """
-    kperm = model.fl_model.permeability
-    head = model.fl_model.lhead[time_index]
+    fl_model = model.fl_model
+    kperm = fl_model.permeability
+    unknown = (fl_model.lpressure if fl_model.is_gravity else fl_model.lhead)[
+        time_index
+    ]
+    density = model.tr_model.ldensity[max(time_index - 1, 0)]
 
-    def _fields(k: NDArrayFloat, h: NDArrayFloat) -> FlowFields:
-        return get_flow_fields(model, k, h, unitflow)
+    def _fields(
+        k: NDArrayFloat, u: NDArrayFloat, r: NDArrayFloat | None = None
+    ) -> FlowFields:
+        return get_flow_fields(model, time_index, k, u, unitflow, r)
 
-    out = FlowFields(
-        np.zeros((model.grid.nx + 1, model.grid.ny, model.grid.nz)),
-        np.zeros((model.grid.nx, model.grid.ny + 1, model.grid.nz)),
-        np.zeros((model.grid.nx, model.grid.ny, model.grid.nz + 1)),
-        np.zeros(model.grid.shape),
-        np.zeros(model.grid.shape),
-    )
+    out = FlowFields.zeros(model.grid, 1).column(0)
 
-    # Affine in the head
-    eps = _rel_step(d_head, head)
+    # Affine in the head (pressure)
+    eps = _rel_step(d_unknown, unknown)
     if eps > 0.0:
-        plus = _fields(kperm, head + eps * d_head)
-        minus = _fields(kperm, head - eps * d_head)
+        plus = _fields(kperm, unknown + eps * d_unknown)
+        minus = _fields(kperm, unknown - eps * d_unknown)
         out = out.shifted(plus, 0.5 / eps).shifted(minus, -0.5 / eps)
 
     if d_permeability is not None:
         eps = _rel_step_ratio(d_permeability, kperm)
         if eps > 0.0:
-            plus = _fields(kperm + eps * d_permeability, head)
-            minus = _fields(kperm - eps * d_permeability, head)
+            plus = _fields(kperm + eps * d_permeability, unknown)
+            minus = _fields(kperm - eps * d_permeability, unknown)
+            out = out.shifted(plus, 0.5 / eps).shifted(minus, -0.5 / eps)
+
+    # Affine in the density
+    if d_density is not None and fl_model.is_gravity and time_index > 0:
+        eps = _rel_step_ratio(d_density, density, DENSITY_REL_STEP)
+        if eps > 0.0:
+            plus = _fields(kperm, unknown, density + eps * d_density)
+            minus = _fields(kperm, unknown, density - eps * d_density)
             out = out.shifted(plus, 0.5 / eps).shifted(minus, -0.5 / eps)
     return out
 

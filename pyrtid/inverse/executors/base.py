@@ -56,11 +56,22 @@ def register_params_ds(params_ds: str):
     ----------
     params_ds : str
         String added to the parameters section.
+
+    Returns
+    -------
+    Callable[[type], type]
+        A class decorator appending ``params_ds`` to the class docstring.
     """
 
     def decorator(klass: type):
         """Decorate the klass."""
-        klass.__doc__ = (klass.__doc__ or "") + params_ds
+        # The first line of a block is not always indented: normalize the
+        # indentation so that all the blocks form one numpy parameters section.
+        lines = params_ds.strip("\n").rstrip().splitlines() or [""]
+        lines[0] = "    " + lines[0].lstrip()
+        klass.__doc__ = (
+            (klass.__doc__ or "").rstrip() + "\n" + "\n".join(lines) + "\n    "
+        )
         return klass
 
     return decorator
@@ -90,7 +101,7 @@ base_solver_config_params_ds = """
     is_fwd_verbose: bool
         Whether to solve the forward problem displaying all information.
         By default False.
-    is_save_sp_mats: bool
+    is_save_spmats: bool
         Whether to save all the stiffness matrices from flow and transport.
         This is mostly useful to check the adjoint state correctness and devs.
         The default is False.
@@ -148,53 +159,132 @@ class DataModel:
         s_init: NDArrayFloat,
         cov_obs: NDArrayFloat,
     ) -> None:
-        """Construct the instance."""
+        """
+        Construct the instance.
+
+        Parameters
+        ----------
+        obs : NDArrayFloat
+            Observation values as a 1D vector.
+        s_init : NDArrayFloat
+            Initial (preconditioned) parameters, either a vector (:math:`N_s`) or
+            an ensemble (:math:`N_s`, :math:`N_e`).
+        cov_obs : NDArrayFloat
+            Observation errors covariance: diagonal as a 1D array or full 2D matrix.
+
+        Raises
+        ------
+        ValueError
+            If the shape of ``cov_obs`` does not match the observations.
+        """
         self.obs = obs
         self.s_init = s_init
         self.cov_obs = cov_obs
 
     def is_ensemble(self) -> bool:
-        """Return whether the optimization is performed over an ensemble."""
+        """
+        Return whether the optimization is performed over an ensemble.
+
+        Returns
+        -------
+        bool
+            True if ``s_init`` is a 2D array.
+        """
         return len(self.s_init.shape) == 2
 
     @property
     def n_ensemble(self):
-        """Return the length of the parameters vector."""
+        """
+        Return the number of ensemble members.
+
+        Returns
+        -------
+        int
+            The number of members (1 if the optimization is not over an ensemble).
+        """
         if not self.is_ensemble():
             return 1
         return self.s_init.shape[1]
 
     @property
     def s_dim(self):
-        """Return the length of the parameters vector."""
+        """
+        Return the length of the parameters vector.
+
+        Returns
+        -------
+        int
+            The number of adjusted values.
+        """
         return self.s_init.shape[0]
 
     @property
     def d_dim(self):
-        """Return the number of observations / forecast data."""
+        """
+        Return the number of observations / forecast data.
+
+        Returns
+        -------
+        int
+            The number of observations.
+        """
         # alias for n_obs
         return self.obs.shape[0]
 
     @property
     def n_obs(self):
-        """Return the number of observations / forecast data."""
+        """
+        Return the number of observations / forecast data (alias of ``d_dim``).
+
+        Returns
+        -------
+        int
+            The number of observations.
+        """
         # alias for d_dim
         return self.d_dim
 
     def get_cov_obs_as_covmats(self) -> covmats.CovarianceMatrix:
-        """Return the observation covariance as a :mod:`covmats` object."""
+        """
+        Return the observation covariance as a :mod:`covmats` object.
+
+        Returns
+        -------
+        covmats.CovarianceMatrix
+            Diagonal covariance if ``cov_obs`` is 1D, Cholesky based otherwise.
+        """
         if self.cov_obs.ndim == 1:
             return covmats.CovViaDiagonal(self.cov_obs)
         return covmats.CovViaCholesky(np.linalg.cholesky(self.cov_obs))
 
     @property
     def cov_obs(self) -> NDArrayFloat:
-        """Get the observation errors covariance matrix."""
+        """
+        Get the observation errors covariance matrix.
+
+        Returns
+        -------
+        NDArrayFloat
+            The 1D diagonal or the 2D covariance matrix.
+        """
         return self._cov_obs
 
     @cov_obs.setter
     def cov_obs(self, s: NDArrayFloat) -> None:
-        """Set the observation errors covariance matrix."""
+        """
+        Set the observation errors covariance matrix.
+
+        Parameters
+        ----------
+        s : NDArrayFloat
+            1D diagonal of shape (:math:`N_{obs}`) or 2D matrix of shape
+            (:math:`N_{obs}`, :math:`N_{obs}`).
+
+        Raises
+        ------
+        ValueError
+            If the shape is not compatible with the observations.
+        """
         # pylint: disable=C0103  # arg name does not conform to snake_case naming style
         is_error = False
         if s.shape[0] != self.d_dim:
@@ -307,14 +397,28 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
 
     @property
     def obs(self) -> NDArrayFloat:
-        """Return the observation values as a 1d vector."""
+        """
+        Return the observation values as a 1d vector.
+
+        Returns
+        -------
+        NDArrayFloat
+            The observations values up to ``hm_end_time``.
+        """
         return get_observables_values_as_1d_vector(
             self.inv_model.observables, self.solver_config.hm_end_time
         )
 
     @property
     def std_obs(self) -> NDArrayFloat:
-        """Return the observation uncertainties as a 1d vector."""
+        """
+        Return the observation uncertainties as a 1d vector.
+
+        Returns
+        -------
+        NDArrayFloat
+            The observations standard deviations up to ``hm_end_time``.
+        """
         return get_observables_uncertainties_as_1d_vector(
             self.inv_model.observables, self.solver_config.hm_end_time
         )
@@ -343,6 +447,14 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
 
     @adj_model.setter
     def adj_model(self, adj_model: AdjointModel | None) -> None:
+        """
+        Set the adjoint model.
+
+        Parameters
+        ----------
+        adj_model : AdjointModel | None
+            The adjoint model, or None if the solver does not use it.
+        """
         self._adj_model: AdjointModel | None = adj_model
 
     def _init_adjoint_model(
@@ -351,7 +463,18 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         is_numerical_acceleration: bool = False,
         is_use_continuous_adj: bool = False,
     ) -> None:
-        """Initialize a new adjoint model for the executor."""
+        """
+        Initialize a new adjoint model for the executor.
+
+        Parameters
+        ----------
+        afpi_eps : float
+            Epsilon of the adjoint fixed point iterations.
+        is_numerical_acceleration : bool, optional
+            Whether to use numerical acceleration. The default is False.
+        is_use_continuous_adj : bool, optional
+            Whether to use the continuous adjoint. The default is False.
+        """
         self.adj_model = AdjointModel(
             self.fwd_model.grid,
             self.fwd_model.time_params,
@@ -364,14 +487,36 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
 
     @abstractmethod
     def _init_solver(self, s_init: NDArrayFloat) -> None:
-        """Initiate a solver with its args."""
+        """
+        Initiate a solver with its args.
+
+        Parameters
+        ----------
+        s_init : NDArrayFloat
+            Initial (preconditioned) parameters.
+        """
 
     @abstractmethod
     def _get_solver_name(self) -> str:
-        """Return the solver name."""
+        """
+        Return the solver name.
+
+        Returns
+        -------
+        str
+            The solver name.
+        """
         return "unknown"
 
     def get_display_dict(self) -> dict[str, Any]:
+        """
+        Return the solver specific information displayed at the start of the run.
+
+        Returns
+        -------
+        dict[str, Any]
+            Mapping from the label to the value to display.
+        """
         return {}
 
     def _initial_display(self) -> None:
@@ -477,9 +622,15 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         each ensemble member. this function is responsible for the creation of
         simulation folder etc.
 
+        Parameters
+        ----------
+        s_ensemble : NDArrayFloat
+            Ensemble of (preconditioned) parameters, shape (:math:`N_s`, :math:`N_e`).
+
         Returns
         -------
-        None.
+        NDArrayFloat
+            Predictions, shape (:math:`N_{obs}`, :math:`N_e`).
         """
         run_n: int = self.inv_model.nb_f_calls
         n_ensemble: int = s_ensemble.shape[1]
@@ -534,8 +685,17 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
 
         Parameters
         ----------
+        s_cond : NDArrayFloat
+            Preconditioned parameters vector.
+        is_save_state : bool, optional
+            Whether to save the state of the model. The default is True.
         is_verbose: bool
             Whether to display info. The default is False.
+
+        Returns
+        -------
+        float
+            The total (least squares plus weighted regularization) loss.
         """
         d_obs = get_observables_values_as_1d_vector(
             self.inv_model.observables, max_obs_time=self.solver_config.hm_end_time
@@ -598,16 +758,19 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
         """
         Run the history matching.
 
-        First is creates raw folders to store the different runs
-        required by the HM algorithms.
+        Child classes call it first: it displays the information and clears the
+        history of the inverse model and of the adjusted parameters.
+
+        Returns
+        -------
+        Sequence[Any] | NDArrayFloat | None
+            Child classes return the solver results. Here, an empty tuple.
         """
         self._initial_display()
 
-        # clear models and all
+        # clear models and all. ``clear_history`` resets both the inverse model
+        # state and the archived values of every adjusted parameter.
         self.inv_model.clear_history()
-
-        # TODO: see if we add a function or a boolean to reset the
-        # inverse model, the param archived values etc.
         return ()
 
     @staticmethod
@@ -674,7 +837,26 @@ class BaseInversionExecutor(ABC, Generic[_BaseSolverConfig]):
     def validate_s_init(
         self, s_init: NDArrayFloat, expected_s_dim: int
     ) -> NDArrayFloat:
-        """Check if s init has the correct size."""
+        """
+        Check if s init has the correct size and clip it to the bounds.
+
+        Parameters
+        ----------
+        s_init : NDArrayFloat
+            Initial (preconditioned) parameters, vector or ensemble.
+        expected_s_dim : int
+            Expected number of adjusted values.
+
+        Returns
+        -------
+        NDArrayFloat
+            ``s_init`` clipped to the (preconditioned) bounds.
+
+        Raises
+        ------
+        ValueError
+            If the shape of ``s_init`` is incorrect.
+        """
         if s_init.size == expected_s_dim:
             s_init = s_init.ravel("F")
         if s_init.ndim != 2 and s_init.shape[0] != expected_s_dim:
@@ -709,6 +891,8 @@ adjoint_solver_config_params_ds = """is_check_gradient: bool
         Whether to use the adjoint for the gradient calculation. The default is True.
     afpi_eps: float
         Epsilon for the adjoint fixed point iterations. The default is 1e-5.
+    max_nafpi: int
+        Maximum number of adjoint fixed point iterations. The default is 50.
     is_adj_numerical_acceleration: bool
         Whether to use numerical acceleration in the adjoint state.
         The default is False.
@@ -716,8 +900,8 @@ adjoint_solver_config_params_ds = """is_check_gradient: bool
         Whether to solve the adjoint problem displaying information.
         By default False.
     is_use_continuous_adj: bool
-        Whether to use numerical acceleration in the adjoint state.
-        The default is False.
+        Whether to use the continuous adjoint (instead of the discrete one) to
+        compute the gradient. The default is False.
 
         """
 
@@ -749,7 +933,14 @@ class AdjointInversionExecutor(BaseInversionExecutor, Generic[_AdjointSolverConf
     """Represent a inversion executor instance using the adjoint state from PyRTID."""
 
     def _init_solver(self, s_init: NDArrayFloat) -> None:
-        """Careful, s_init is supposed to be preconditioned."""
+        """
+        Initiate the solver (the adjoint model is created if needed).
+
+        Parameters
+        ----------
+        s_init : NDArrayFloat
+            Initial parameters. Careful, it is supposed to be preconditioned.
+        """
         # super()._init_solver(s_init)
 
         # Create an adjoint model only if needed
@@ -798,6 +989,11 @@ class AdjointInversionExecutor(BaseInversionExecutor, Generic[_AdjointSolverConf
         max_nafpi: int
             Maximum number of iteration per adjoint chemistry-transport loop allowed
             (fixed point iterations.)
+
+        Returns
+        -------
+        bool
+            True if the adjoint gradient matches the finite difference one.
         """
         # The adjoint model must be allocated once the number of time steps is known
         # (i.e. after a forward run), otherwise its arrays have the wrong size.
@@ -1188,7 +1384,7 @@ class FSMInversionExecutor(BaseInversionExecutor, Generic[_FSMSolverConfig]):
         is_verbose: bool = False,
     ) -> bool:
         r"""
-        Return whether the adjoint gradient is correct or not.
+        Return whether the FSM Jacobian is correct or not.
 
         Note
         ----
@@ -1199,10 +1395,6 @@ class FSMInversionExecutor(BaseInversionExecutor, Generic[_FSMSolverConfig]):
 
         Parameters
         ----------
-        vecs: NDArrayFloat
-            Ensemble of vectors to multiply with the Jacobian matrix.
-            It must have shape ($N_s \times N_e$), $N_s$ being the number of values
-            optimized and $N_e$ the number of vectors.
         eps: float, optional
             The epsilon for the computation of the approximated gradient by finite
             difference. If None, it is automatically inferred. The default is None.
@@ -1217,6 +1409,12 @@ class FSMInversionExecutor(BaseInversionExecutor, Generic[_FSMSolverConfig]):
             multi-processing to decrease the computation time. The default is 1.
         is_verbose : bool, optional
             Whether to display computation infrmation, by default False
+
+        Returns
+        -------
+        bool
+            True if the FSM Jacobian-vector products match the finite difference
+            ones.
         """
         return self.is_fsm_jacvec_correct(
             np.eye(N=self.data_model.s_dim),  # identity matrix
@@ -1235,7 +1433,7 @@ class FSMInversionExecutor(BaseInversionExecutor, Generic[_FSMSolverConfig]):
         is_verbose: bool = False,
     ) -> bool:
         r"""
-        Return whether the adjoint gradient is correct or not.
+        Return whether the FSM Jacobian-vector products are correct or not.
 
         Note
         ----
@@ -1264,6 +1462,12 @@ class FSMInversionExecutor(BaseInversionExecutor, Generic[_FSMSolverConfig]):
             multi-processing to decrease the computation time. The default is 1.
         is_verbose : bool, optional
             Whether to display computation infrmation, by default False
+
+        Returns
+        -------
+        bool
+            True if the FSM Jacobian-vector products match the finite difference
+            ones.
         """
         # Assert that the size of vecs is correct
         assert vecs.shape[0] == self.data_model.s_dim

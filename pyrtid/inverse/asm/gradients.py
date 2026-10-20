@@ -35,6 +35,8 @@ from pyrtid.utils import object_or_object_sequence_to_list
 
 
 class DerivationVariable(StrEnum):
+    """Variables with respect to which the transport diffusive term is derived."""
+
     POROSITY = "porosity"
     DIFFUSION = "diffusion"
     DISPERSIVITY = "dispersivity"
@@ -891,7 +893,9 @@ def get_initial_grade_adjoint_gradient(
     fwd_model: ForwardModel, adj_model: AdjointModel, sp: int
 ) -> NDArrayFloat:
     r"""
-    Gradient with respect to mineral phase initial concentrations.
+    Compute the gradient with respect to the initial grades.
+
+    The grades are the concentrations of the mineral phase.
 
     The gradient reads
 
@@ -905,6 +909,19 @@ def get_initial_grade_adjoint_gradient(
         - \overline{c}_{i}^{0, \mathrm{calc}}}{\left(
             \sigma_{\overline{c}_{i}}^{0, \mathrm{obs}}\right)^{2}}
 
+    Parameters
+    ----------
+    fwd_model : ForwardModel
+        The forward model which contains all forward variables and parameters.
+    adj_model : AdjointModel
+        The adjoint model which contains all adjoint variables and parameters.
+    sp : int
+        Index of the species.
+
+    Returns
+    -------
+    NDArrayFloat
+        The gradient, with the shape of the initial grades field.
     """
     # Prat common for all species
     grad = (
@@ -941,6 +958,21 @@ def get_initial_grade_adjoint_gradient(
 def get_initial_head_adjoint_gradient(
     fwd_model: ForwardModel, adj_model: AdjointModel
 ) -> NDArrayFloat:
+    """
+    Compute the gradient with respect to the initial head.
+
+    Parameters
+    ----------
+    fwd_model : ForwardModel
+        The forward model which contains all forward variables and parameters.
+    adj_model : AdjointModel
+        The adjoint model which contains all adjoint variables and parameters.
+
+    Returns
+    -------
+    NDArrayFloat
+        The gradient, with the shape of the initial head field.
+    """
     # flatten the heads
     a_head = adj_model.a_fl_model.a_head.reshape(
         (-1, fwd_model.time_params.nt), order="F"
@@ -964,12 +996,30 @@ def get_initial_pressure_adjoint_gradient(
     fwd_model: ForwardModel, adj_model: AdjointModel
 ) -> NDArrayFloat:
     r"""
-    Gradient with respect to mineral phase initial concentrations.
+    Compute the gradient with respect to the initial pressure.
 
-    The gradient reads
+    The initial pressure only enters the discretized problem through the
+    constant-head (Dirichlet) nodes and, for transient flow, through the first
+    time step. The gradient therefore reads (in a discrete sense)
 
-    # TODO
+    .. math::
+        \nabla_{p^0} J = - \sum_{n} a_p^{n}\big|_{\text{cst. head}}
+        - a_p^{0}\big|_{\text{free head}}
 
+    where :math:`a_p^{n}` is the adjoint pressure at time step :math:`n`. The last
+    term is only included for non-stationary flow regimes.
+
+    Parameters
+    ----------
+    fwd_model : ForwardModel
+        The forward model which contains all forward variables and parameters.
+    adj_model : AdjointModel
+        The adjoint model which contains all adjoint variables and parameters.
+
+    Returns
+    -------
+    NDArrayFloat
+        The gradient, with the shape of the initial pressure field.
     """
     # flatten the pressures
     a_pressure = adj_model.a_fl_model.a_pressure.reshape(
@@ -994,7 +1044,7 @@ def get_initial_conc_adjoint_gradient(
     fwd_model: ForwardModel, adj_model: AdjointModel, sp: int
 ) -> NDArrayFloat:
     r"""
-    Gradient with respect to aqueous phase initial concentrations.
+    Compute the gradient with respect to the initial aqueous phase concentrations.
 
     The gradient reads
 
@@ -1008,6 +1058,19 @@ def get_initial_conc_adjoint_gradient(
         (1 - \alpha_{\mathrm{d}})\dfrac{\lambda_{c_{j}}^{1} - \lambda_{c_{i}}^{1}}{
             \left\lVert \overrightarrow{\mathrm{P}_{i}\mathrm{P}_{j}} \right\rVert}
 
+    Parameters
+    ----------
+    fwd_model : ForwardModel
+        The forward model which contains all forward variables and parameters.
+    adj_model : AdjointModel
+        The adjoint model which contains all adjoint variables and parameters.
+    sp : int
+        Index of the species.
+
+    Returns
+    -------
+    NDArrayFloat
+        The gradient, with the shape of the initial concentrations field.
     """
     # The initial concentration only enters the first timestep through the matrix
     # of the previous time (diffusion, dispersion and advection) and the
@@ -1048,6 +1111,14 @@ def compute_param_adjoint_loss_ls_function_gradient(
     -------
     NDArrayFloat
         The computed ls loss function gradient.
+
+    Raises
+    ------
+    RuntimeError
+        If the initial head is optimized with a density flow, or the initial pressure
+        with a saturated flow.
+    NotImplementedError
+        If the gradient is not available for the parameter.
     """
     if param.name == ParameterName.DIFFUSION:
         return get_diffusion_adjoint_gradient(fwd_model, adj_model)
@@ -1077,7 +1148,9 @@ def compute_param_adjoint_loss_ls_function_gradient(
                 " (gravity is off). Optimize the initial head instead!"
             )
         return get_initial_pressure_adjoint_gradient(fwd_model, adj_model)
-    raise (NotImplementedError("Please contact the developer to handle this issue."))
+    raise NotImplementedError(
+        f"The adjoint gradient is not implemented for the parameter '{param.name}'."
+    )
 
 
 def compute_adjoint_gradient(
@@ -1089,10 +1162,26 @@ def compute_adjoint_gradient(
     """
     Compute the gradient of the given parameters with the adjoint state.
 
+    Parameters
+    ----------
+    fwd_model : ForwardModel
+        The forward model which contains all forward variables and parameters.
+    adj_model : AdjointModel
+        The adjoint model which contains all adjoint variables and parameters.
+    parameters_to_adjust : AdjustableParameters
+        Sequence of adjusted parameter instances.
+    is_save_state : bool, optional
+        Whether to save the gradient in the parameters history. The default is True.
+
+    Returns
+    -------
+    NDArrayFloat
+        The concatenated gradients of the parameters, preconditioned and flattened in
+        Fortran order.
+
     Note
     ----
     Return the preconditioned adjoint gradient.
-
     """
     grad = np.array([], dtype=np.float64)
     for param in object_or_object_sequence_to_list(parameters_to_adjust):
@@ -1168,11 +1257,8 @@ def compute_fd_gradient(
     max_obs_time: float | None = None,
     is_save_state: bool = True,
 ) -> NDArrayFloat:
-    """Compute the gradient of the given parameters by finite difference approximation.
-
-    Warning
-    -------
-    This function does not update the model (a copy is used instead).
+    """
+    Compute the gradient of the given parameters by finite difference approximation.
 
     Parameters
     ----------
@@ -1182,7 +1268,7 @@ def compute_fd_gradient(
         Sequence of observable instances.
     parameters_to_adjust : AdjustableParameters
         Sequence of adjusted parameter instances.
-    eps: float, optional
+    eps : float, optional
         The epsilon for the computation of the approximated gradient by finite
         difference. If None, it is automatically inferred. The default is None.
     accuracy : int, optional
@@ -1190,15 +1276,24 @@ def compute_fd_gradient(
         Possible values are 0 (2 points), 1 (4 points), 2 (6 points),
         3 (8 points). The default is 0 which corresponds to the central
         difference scheme (2 points).
-    max_workers: int
+    max_workers : int
         Number of workers used  if the gradient is approximated by finite
         differences. If different from one, the calculation relies on
         multi-processing to decrease the computation time. The default is 1.
     max_obs_time : Optional[float], optional
         Maximum time for which to consider an observation value, by default None.
-    is_save_state: bool
+    is_save_state : bool
         Whether to save the FD gradient in memory. The default is True.
 
+    Returns
+    -------
+    NDArrayFloat
+        The concatenated finite difference gradients of the parameters, with respect to
+        the preconditioned values and flattened in Fortran order.
+
+    Warning
+    -------
+    This function does not update the model (a copy is used instead).
     """
     _model = copy.deepcopy(model)
 
@@ -1270,14 +1365,14 @@ def is_adjoint_gradient_correct(
     Parameters
     ----------
     fwd_model : ForwardModel
-        _description_
+        The forward model which contains all forward variables and parameters.
     adj_model : AdjointModel
-        _description_
+        The adjoint model which contains all adjoint variables and parameters.
     parameters_to_adjust : AdjustableParameters
         Sequence of adjusted parameter instances.
     observables : Observables
         Sequence of observable instances.
-    eps: float, optional
+    eps : float, optional
         The epsilon for the computation of the approximated gradient by finite
         difference. If None, it is automatically inferred. The default is None.
     accuracy : int, optional
@@ -1285,16 +1380,19 @@ def is_adjoint_gradient_correct(
         Possible values are 0 (2 points), 1 (4 points), 2 (6 points),
         3 (8 points). The default is 0 which corresponds to the central
         difference scheme (2 points).
-    max_workers: int
+    max_workers : int
         Number of workers used  if the gradient is approximated by finite
         differences. If different from one, the calculation relies on
         multi-processing to decrease the computation time. The default is 1.
     hm_end_time : Optional[float], optional
         Threshold time from which the observation are ignored, by default None.
-    is_verbose: bool
+    is_verbose : bool
         Whether to display info. The default is False.
-    is_save_state: bool
+    is_save_state : bool
         Whether to save the FD gradient in memory. The default is True.
+    max_nafpi : int, optional
+        Maximum number of adjoint fixed point iterations per time step. The default is
+        30.
 
     Returns
     -------

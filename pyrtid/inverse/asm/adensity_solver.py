@@ -32,6 +32,27 @@ def get_drhomean(
     time_index: int,
     is_flatten: bool = True,
 ) -> NDArrayFloat:
+    """
+    Return the derivative of the arithmetic mean of the density between neighbor cells.
+
+    Parameters
+    ----------
+    grid : RectilinearGrid
+        Grid of the problem (grid definition).
+    tr_model : TransportModel
+        Transport model.
+    axis : int
+        Axis along which the neighbor cells are considered (0: x, 1: y, 2: z).
+    time_index : int
+        Index of the time step.
+    is_flatten : bool, optional
+        Whether to flatten the result (Fortran order). The default is True.
+
+    Returns
+    -------
+    NDArrayFloat
+        The derivative of the mean density, null in the last layer along ``axis``.
+    """
     drhomean: NDArrayFloat = np.zeros(grid.shape, dtype=np.float64)
     if axis == 0:
         drhomean[:-1, :] = dxi_arithmetic_mean(
@@ -64,6 +85,28 @@ def solve_adj_density(
     grid: RectilinearGrid,
     mw: float,
 ) -> None:
+    """
+    Compute the adjoint density from the adjoint flow variables.
+
+    Parameters
+    ----------
+    fl_model : FlowModel
+        Flow model.
+    tr_model : TransportModel
+        Transport model.
+    a_fl_model : AdjointFlowModel
+        Adjoint flow model.
+    a_tr_model : AdjointTransportModel
+        Adjoint transport model.
+    time_index : int
+        Index of the time step.
+    time_params : TimeParameters
+        Time parameters from the forward problem.
+    grid : RectilinearGrid
+        Grid of the problem (grid definition).
+    mw : float
+        Molar weight of the mineral.
+    """
     shape = tr_model.ldensity[0].shape
 
     # Add the density observations derivative (adjoint source term)

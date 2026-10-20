@@ -64,11 +64,13 @@ class AdjointFlowModel:
             RectilinearGrid of the problem, grid definition.
         time_params : TimeParameters
             Time parameters from the forward problem.
-        is_use_continuous_adj: bool
+        is_use_continuous_adj : bool
             Whether to use the adjoint state derived using the "continuous" way,
             aka the differentiate-then-discretize method.
             This is only working with saturated flow. This option has been
-            added to illustrate the paper TODO: add ref. The default is False.
+            added for comparison purposes with the default discrete adjoint
+            (discretize-then-differentiate), which is the one implemented in PyRTID.
+            The default is False.
         """
         self.a_head = np.zeros((*grid.shape, time_params.nt), dtype=np.float64)
         self.a_pressure = np.zeros((*grid.shape, time_params.nt), dtype=np.float64)
@@ -124,6 +126,15 @@ class AdjointFlowModel:
         )
 
     def set_crank_nicolson(self, value: float | None) -> None:
+        """
+        Set the Crank-Nicolson parameter of the adjoint flow.
+
+        Parameters
+        ----------
+        value : float or None
+            The Crank-Nicolson parameter. If None, the value of the forward flow
+            model is used.
+        """
         self.crank_nicolson = value
 
     def reinit(self) -> None:
@@ -156,12 +167,13 @@ class SaturatedAdjointFlowModel(AdjointFlowModel):
             RectilinearGrid of the problem, grid definition.
         time_params : TimeParameters
             Time parameters from the forward problem.
-        is_use_continuous_adj: bool
+        is_use_continuous_adj : bool
             Whether to use the adjoint state derived using the "continuous" way,
             aka the differentiate-then-discretize method.
             This is only working with saturated flow. This option has been
-            added to illustrate the paper TODO: add ref. The default is False.
-
+            added for comparison purposes with the default discrete adjoint
+            (discretize-then-differentiate), which is the one implemented in PyRTID.
+            The default is False.
         """
         super().__init__(grid, time_params, is_use_continuous_adj)
 
@@ -184,12 +196,19 @@ class DensityAdjointFlowModel(AdjointFlowModel):
             RectilinearGrid of the problem, grid definition.
         time_params : TimeParameters
             Time parameters from the forward problem.
-        is_use_continuous_adj: bool
+        is_use_continuous_adj : bool
             Whether to use the adjoint state derived using the "continuous" way,
             aka the differentiate-then-discretize method.
             This is only working with saturated flow. This option has been
-            added to illustrate the paper TODO: add ref. The default is False.
+            added for comparison purposes with the default discrete adjoint
+            (discretize-then-differentiate), which is the one implemented in PyRTID.
+            The default is False.
 
+        Raises
+        ------
+        ValueError
+            If the continuous adjoint is requested: it is only available with saturated
+            flow.
         """
         if is_use_continuous_adj:
             raise ValueError("Continuous adjoint not implemented for density flow!")
@@ -252,17 +271,17 @@ class AdjointTransportModel:
 
         Parameters
         ----------
-        grid: RectilinearGrid
+        grid : RectilinearGrid
             Simulation grid definition.
-        time_params: TimeParameters
+        time_params : TimeParameters
             Simulation time parameters (duration, timesteps, etc.)
-        n_sp: int
+        n_sp : int
             Number of species in the system.
-        afpi_eps: float
-            Adjoint fixed point iteration criterion.
-        is_numerical_acceleration: bool
-            Whether to use numerical acceleration in the ajdoint.
-
+        afpi_eps : float, optional
+            Adjoint fixed point iteration criterion. The default is 1e-5.
+        is_adj_numerical_acceleration : bool, optional
+            Whether to use numerical acceleration in the adjoint fixed point
+            iterations. The default is False.
         """
         self.n_sp = n_sp
         self.a_mob: NDArrayFloat = np.zeros(
@@ -364,24 +383,25 @@ class AdjointModel:
 
         Parameters
         ----------
-        grid: RectilinearGrid
+        grid : RectilinearGrid
             Simulation grid definition.
-        time_params: TimeParameters
+        time_params : TimeParameters
             Simulation time parameters (duration, timesteps, etc.)
-        is_gravity: bool
+        is_gravity : bool
             Whether to consider gravity for a density driven flow.
-        n_sp: int
+        n_sp : int
             The number of species in the system.
-        afpi_eps: float
+        afpi_eps : float
             Epsilon for the adjoint fixed point iterations. The default is 1e-5.
-        is_adj_numerical_acceleration: bool
+        is_adj_numerical_acceleration : bool
             Whether to use numerical acceleration in the adjoint state.
             The default is False.
-        is_use_continuous_adj: bool
+        is_use_continuous_adj : bool
             Whether to use the adjoint state derived using the "continuous" way,
             aka the differentiate-then-discretize method. This option has been
-            added to illustrate the paper TODO: add ref. The default is False.
-
+            added for comparison purposes with the default discrete adjoint
+            (discretize-then-differentiate), which is the one implemented in PyRTID.
+            The default is False.
         """
         self.grid: RectilinearGrid = grid
         self.time_params: TimeParameters = time_params
@@ -413,8 +433,8 @@ class AdjointModel:
 
         Parameters
         ----------
-        model : ForwardModel
-            The forward model.
+        fwd_model : ForwardModel
+            Forward model.
         observables : Observables
             Sequence of observable instances for which to derive the adjoint sources.
         hm_end_time : Optional[float], optional
