@@ -134,7 +134,20 @@ def get_rhomean(
 def fill_stationary_flmat_for_axis(
     grid: RectilinearGrid, fl_model: FlowModel, q_next: MatrixLike, axis: int
 ) -> None:
-    """Add the contribution of the faces along ``axis`` to the stationary matrix."""
+    """
+    Add the contribution of the faces along ``axis`` to the stationary matrix.
+
+    Parameters
+    ----------
+    grid : RectilinearGrid
+        Grid of the problem (grid definition).
+    fl_model : FlowModel
+        Flow model.
+    q_next : MatrixLike
+        Matrix of the stationary flow (updated in place).
+    axis : int
+        Axis along which the faces are considered (0: x, 1: y, 2: z).
+    """
     kmean = get_kmean(grid, fl_model, axis)
     tmp = grid.gc_face_area_m2(axis) / grid.pipj_m(axis) / grid.grid_cell_volume_m3
     fwd_slicer = grid.get_slicer_forward(axis)
@@ -173,8 +186,19 @@ def make_stationary_flow_matrices(
     Make the matrix of the stationary flow.
 
     The rows of the constant head grid cells are the identity.
-    """
 
+    Parameters
+    ----------
+    grid : RectilinearGrid
+        Grid of the problem (grid definition).
+    fl_model : FlowModel
+        Flow model.
+
+    Returns
+    -------
+    lil_array
+        The matrix of the stationary flow.
+    """
     dim = grid.n_grid_cells
     q_next = lil_array((dim, dim), dtype=np.float64)
 
@@ -197,7 +221,26 @@ def fill_transient_flmat_for_axis(
     time_index: int,
     axis: int,
 ) -> None:
-    """Add the contribution of the faces along ``axis`` to the transient matrices."""
+    """
+    Add the contribution of the faces along ``axis`` to the transient matrices.
+
+    Parameters
+    ----------
+    grid : RectilinearGrid
+        Grid of the problem (grid definition).
+    fl_model : FlowModel
+        Flow model.
+    tr_model : TransportModel
+        Transport model.
+    q_next : MatrixLike
+        Matrix of the next time step (updated in place).
+    q_prev : MatrixLike
+        Matrix of the previous time step (updated in place).
+    time_index : int
+        Index of the time step.
+    axis : int
+        Axis along which the faces are considered (0: x, 1: y, 2: z).
+    """
     kmean = get_kmean(grid, fl_model, axis)
     # The density is only needed with the gravity
     rhomean = (
@@ -282,16 +325,27 @@ def make_transient_flow_matrices(
     """
     Make the matrices for the transient flow, without the time derivative term.
 
-    Note
-    ----
-    Without gravity, the permeability and the storage coefficient do not vary with
-    time, so the matrices only need to be built once. With the gravity, they depend
-    on the density and must be updated.
+    Parameters
+    ----------
+    grid : RectilinearGrid
+        Grid of the problem (grid definition).
+    fl_model : FlowModel
+        Flow model.
+    tr_model : TransportModel
+        Transport model.
+    time_index : int
+        Index of the time step.
 
     Returns
     -------
     Tuple[lil_array, lil_array]
         The matrices of the implicit (next time) and explicit (previous time) terms.
+
+    Note
+    ----
+    Without gravity, the permeability and the storage coefficient do not vary with
+    time, so the matrices only need to be built once. With the gravity, they depend
+    on the density and must be updated.
     """
     q_next, q_prev = _assemble_transient_flow_matrices(
         grid, fl_model, tr_model, time_index
@@ -306,6 +360,18 @@ def get_zj_zi_rhs(grid: RectilinearGrid, fl_model: FlowModel) -> NDArrayFloat:
     It is made of the differences of elevation between neighbor grid cells along the
     vertical axis, weighted by the permeability. It is null for the constant head
     grid cells and if the grid has a single cell along the vertical axis.
+
+    Parameters
+    ----------
+    grid : RectilinearGrid
+        Grid of the problem (grid definition).
+    fl_model : FlowModel
+        Flow model.
+
+    Returns
+    -------
+    NDArrayFloat
+        The right hand side contribution, of size ``grid.n_grid_cells``.
     """
     rhs_z = np.zeros((grid.n_grid_cells), dtype=np.float64)
     z = fl_model._get_mesh_center_vertical_pos().ravel("F")
@@ -530,6 +596,17 @@ def compute_u_darcy(
     The velocities are appended to ``fl_model.lu_darcy_x``, ``lu_darcy_y`` and
     ``lu_darcy_z``, and the constant head grid cells are handled by
     :func:`update_unitflow_cst_head_nodes`.
+
+    Parameters
+    ----------
+    fl_model : FlowModel
+        Flow model.
+    tr_model : TransportModel
+        Transport model.
+    grid : RectilinearGrid
+        Grid of the problem (grid definition).
+    time_index : int
+        Index of the time step.
     """
     fl_model.lu_darcy_x.append(find_u(fl_model, tr_model, grid, time_index, axis=0))
     fl_model.lu_darcy_y.append(find_u(fl_model, tr_model, grid, time_index, axis=1))
@@ -703,8 +780,18 @@ def update_unitflow_cst_head_nodes(
 def compute_u_darcy_div(
     fl_model: FlowModel, grid: RectilinearGrid, time_index: int
 ) -> None:
-    """Update the darcy velocities divergence (at the node centers)."""
+    """
+    Update the darcy velocities divergence (at the node centers).
 
+    Parameters
+    ----------
+    fl_model : FlowModel
+        Flow model.
+    grid : RectilinearGrid
+        Grid of the problem (grid definition).
+    time_index : int
+        Index of the time step.
+    """
     # Reset to zero
     u_darcy_div = np.zeros(grid.shape)
 
@@ -740,6 +827,22 @@ def get_gravity_gradient(
     Return the gravity term of the right hand side of the transient (pressure) flow.
 
     It is null if the grid has a single cell along the vertical axis.
+
+    Parameters
+    ----------
+    grid : RectilinearGrid
+        Grid of the problem (grid definition).
+    fl_model : FlowModel
+        Flow model.
+    tr_model : TransportModel
+        Transport model.
+    time_index : int
+        Index of the time step.
+
+    Returns
+    -------
+    NDArrayFloat
+        The gravity term, of size ``grid.n_grid_cells``.
     """
     tmp = np.zeros(grid.n_grid_cells)
     sc = fl_model.storage_coefficient.ravel("F")
