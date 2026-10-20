@@ -91,8 +91,10 @@ Changelog = "https://github.com/antoinecollet5/pyrtid/blob/master/CHANGELOG.rst"
 
 [tool.setuptools]
 py-modules = []
-packages = ["pyrtid"]
 include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["pyrtid*"]
 
 [tool.setuptools.package-data]
 nested_grid_plotter = ["fonts/*", "*.rst"]
