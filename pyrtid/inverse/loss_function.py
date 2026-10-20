@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright (c) 2024-2026 Antoine COLLET
 
+"""Provide the objective functions of the inversion (least-squares, regularization)."""
+
 from collections.abc import Sequence
 
 import numpy as np
@@ -89,16 +91,19 @@ def eval_model_loss_function(
     parameters_to_adjust: AdjustableParameters,
     max_obs_time: float | None = None,
 ) -> float:
-    """_summary_.
+    """
+    Evaluate the total objective function of a forward model.
+
+    It is the sum of the least-squares and of the weighted regularization terms.
 
     Parameters
     ----------
     model : ForwardModel
         Forward model.
-    parameters_to_adjust : AdjustableParameters
-        Sequence of adjusted parameter instances.
     observables : Observables
         Sequence of observable instances.
+    parameters_to_adjust : AdjustableParameters
+        Sequence of adjusted parameter instances.
     max_obs_time : Optional[float], optional
         Maximum time for which to consider an observation value, by default None
 
@@ -116,13 +121,25 @@ def get_theoretical_noise_level(
     observables: Sequence[Observable], n_std: float = 5
 ) -> float:
     """
-    Get the theoretical noise level in the solution.
+    Return the theoretical noise level in the solution.
 
     If the obersations uncertaintes are well mastered, it can be used as a threshold for
     the loss function ad defined by Gao et al. 2006.
 
     It is propotionnal to the number of observations. And assume that the observation
     noise is well known.
+
+    Parameters
+    ----------
+    observables : Sequence[Observable]
+        Sequence of observable instances.
+    n_std : float, optional
+        Number of standard deviations added to the expected value. The default is 5.
+
+    Returns
+    -------
+    float
+        The theoretical noise level of the loss function.
     """
     n_obs = np.sum([obs.values.size for obs in observables])
     return 0.5 * n_obs + n_std * np.sqrt(0.5 * n_obs)
